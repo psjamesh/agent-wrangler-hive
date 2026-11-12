@@ -5,6 +5,7 @@ import { newId } from './metadata-store.js';
 import { actorFor, descendantIds, GROUP_KINDS } from './bead-model.js';
 import { COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller } from './access.js';
 import { HiveError, ensureWritable, text, withLock, claimBead, bindIfMissing } from './ops.js';
+import { applyLaunchPolicy, launchRestriction } from './launch-policy.js';
 import { ADMISSION_LOCK, capacity, checkAdmission, RESERVED_LAUNCH_STATES } from './admission.js';
 
 const inFlight = new Set();
@@ -210,7 +211,7 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     reviewForLaunch(rt, { reviewId, beadId: bead.id, cellId: cell.id });
     checkAdmission(rt, graph, bead.id, { sessionId: null, review: attach });
     rt.metadata.mutate((d) => {
-      d.workerLaunches[launchId] = { id: launchId, cellId: cell.id, taskId: cell.taskId, beadId: bead.id, requestedBy: actor.sessionId, role, reviewId, sessionId: null, state: 'reserved', createdAt: Date.now(), updatedAt: Date.now() };
+      d.workerLaunches[launchId] = { id: launchId, cellId: cell.id, taskId: cell.taskId, beadId: bead.id, requestedBy: actor.sessionId, role, reviewId, sessionId: null, state: 'reserved', restriction: launchRestriction(opts.agent), createdAt: Date.now(), updatedAt: Date.now() };
       if (reviewId) d.reviews[reviewId].launchId = launchId;
     });
   });
@@ -223,10 +224,11 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     if (l.state !== 'reserved') throw new HiveError('This launch was cancelled or changed before dispatch.', 'conflict');
     reviewForLaunch(rt, l, { initial: true });
     const baseIntent = l.role === 'investigator' ? `You are a helper on Hive bead ${l.beadId} in cell ${l.cellId}; its holder keeps the claim and you take none. Your helper binding is made before your first action. Report to session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}` : l.reviewId ? `You are the reviewer of Hive bead ${l.beadId} in cell ${l.cellId}; its builder keeps the claim. Your reviewer binding is made before your first action. Report to session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}` : `You own Hive bead ${l.beadId} in cell ${l.cellId}. Its claim and binding are made before your first action. Report to queen/coordinator session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}`;
-    const intent = `${baseIntent}\n\nUse the hive-worker skill. Start with hive_context({ scope: "bead", bead_id: "${l.beadId}", cell_id: "${l.cellId}" }) for your bounded work context.\n\nHive task: ${l.taskId}. When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Worker/reviewer requests go to this hive's queen and remain out of human views until forwarded; human step-in is not supported. Recover with hive_list_my_requests and withdraw with hive_withdraw_request when answered elsewhere. Launch helpers into this same resolved task; ancestry alone does not enroll them. Missing native tools require a membership check or refreshed agent terminal.`;
+    const delegation = launchRestriction(opts.agent) === 'denied' ? 'Delegate only through Hive: spawn_session and spawn_workflow are denied to you; use hive_spawn_worker where your role allows it, or ask the queen. ' : 'Delegate only through Hive (hive_spawn_worker where your role allows it, or ask the queen); do not use spawn_session or spawn_workflow, which Hive cannot restrict for this provider and which leave the session untracked. ';
+    const intent = `${baseIntent}\n\nUse the hive-worker skill. Start with hive_context({ scope: "bead", bead_id: "${l.beadId}", cell_id: "${l.cellId}" }) for your bounded work context.\n\nHive task: ${l.taskId}. When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Worker/reviewer requests go to this hive's queen and remain out of human views until forwarded; human step-in is not supported. Recover with hive_list_my_requests and withdraw with hive_withdraw_request when answered elsewhere. ${delegation}Launch helpers into this same resolved task; ancestry alone does not enroll them. Missing native tools require a membership check or refreshed agent terminal.`;
     dispatched = true;
     assertCurrent(rt, host);
-    const result = await host.sessions.spawn({ ...opts, intent, parentSession: actor.sessionId, taskId: l.taskId, ext: { hive: { workerLaunchId: launchId, beadId: l.beadId, ...(l.reviewId ? { reviewId: l.reviewId } : {}) } } });
+    const result = await host.sessions.spawn(applyLaunchPolicy({ ...opts, intent, parentSession: actor.sessionId, taskId: l.taskId, ext: { hive: { workerLaunchId: launchId, beadId: l.beadId, ...(l.reviewId ? { reviewId: l.reviewId } : {}) } } }));
     const rec = rt.metadata.read().workerLaunches[launchId];
     if (['archived', 'cancelled'].includes(rec.state) && rec.sessionId === result?.sessionId) return { launch_id: launchId, bead_id: l.beadId, session_id: result.sessionId, state: rec.state, capacity: capacity(rt) };
     if (!['claimed', 'launched'].includes(rec.state) || rec.sessionId !== result?.sessionId) throw new HiveError('Worker startup returned without a confirmed launch claim.');
