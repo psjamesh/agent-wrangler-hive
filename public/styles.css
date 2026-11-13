@@ -538,45 +538,6 @@
 .hive-mark-tooltip[hidden] { display: none; }
 .hive-canvas.is-panning { cursor: grabbing; }
 
-.hive-back-edge {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 48px;
-  background: linear-gradient(to right, color-mix(in srgb, var(--fg) 6%, transparent), transparent);
-  border-right: 1px solid var(--border-muted, var(--border));
-  pointer-events: none;
-  transition: background-color 120ms ease;
-}
-
-.hive-canvas.is-back-edge { cursor: pointer; }
-.hive-canvas.is-back-edge .hive-back-edge { background-color: color-mix(in srgb, var(--fg) 7%, transparent); }
-
-.hive-back-tab {
-  position: absolute;
-  left: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 32px;
-  height: 56px;
-  padding: 0;
-  font: inherit;
-  font-size: 22px;
-  line-height: 1;
-  border: 1px solid var(--border-muted, var(--border));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  color: var(--fg);
-  cursor: pointer;
-}
-
-.hive-back-tab:hover,
-.hive-canvas.is-back-edge .hive-back-tab { border-color: var(--fg-subtle, var(--fg-muted, var(--fg))); background: var(--surface-2); }
-.hive-back-tab:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
-.has-back-edge .hive-key,
-.has-back-edge .hive-stage-empty { left: 60px; }
-
 .hive-hexmap {
   position: absolute;
   inset: 0;
@@ -1452,8 +1413,7 @@
   .hive-disclosure-mark,
   .hive-hex,
   .hive-hex-shape,
-  .hive-hex-rim,
-  .hive-back-edge { transition: none; }
+  .hive-hex-rim { transition: none; }
 }
 
 .hive-overhead, .hive-cellhead { position: relative; }
