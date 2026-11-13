@@ -117,6 +117,8 @@ export async function requestReview(rt, host, actor, input) {
   const intent = text(input.intent, 'intent', 20000, { required: true });
   const commit = input.commit === undefined ? undefined : text(input.commit, 'commit', 80, { required: true });
   const asAttach = { attach: true, beadId: input.bead_id };
+  const reviewerSessionId = input.reviewer_session_id === undefined ? undefined : text(input.reviewer_session_id, 'reviewer_session_id', 200, { required: true });
+  let retained = null;
   let reviewId;
   let policy = null;
   let cellOf = null;
@@ -132,6 +134,31 @@ export async function requestReview(rt, host, actor, input) {
       const { bead, cell } = requireBeadAccess(rt, actor, input.bead_id);
       cellOf = cell;
       if (cell.id !== actor.cell.id || bead.status === 'closed' || bead.id === cell.rootBeadId) throw new HiveError('Request a review for open work in this cell.');
+      if (reviewerSessionId) {
+        const launchOptions = ['agent', 'model', 'effort', 'override_reason'].filter(k => input[k] !== undefined);
+        if (launchOptions.length) throw new HiveError(`Cannot use ${launchOptions.join(', ')} with reviewer_session_id; a retained reviewer keeps its existing configuration.`, 'refused');
+        if (!commit) throw new HiveError('A retained review requires a new commit.', 'refused');
+        const doc = rt.metadata.read();
+        const record = Object.values(doc.reviews).filter(r => r.workBeadId === bead.id).at(-1);
+        const worked = bead.assignee === actorFor(reviewerSessionId)
+          || (doc.bindings[cell.id] || []).some(b => b.sessionId === reviewerSessionId && b.beadId === bead.id && ['worker', 'investigator'].includes(b.role))
+          || Object.values(doc.workerLaunches || {}).some(l => l.sessionId === reviewerSessionId && l.beadId === bead.id && !l.reviewId);
+        if (worked) throw new HiveError('A session that has worked on this bead cannot review it.', 'access');
+        if (!record || record.cellId !== cell.id || !retainedReviewer(rt, host, record, reviewerSessionId)) throw new HiveError('The session must be this bead’s retained bound reviewer and must not be archived or exited.', 'access');
+        if (openReview(rt, bead.id)) throw new HiveError('This bead already has an open review; wait for its verdict or cancel it.', 'conflict');
+        if (commit === record.commit || (record.history || []).some(h => h.commit === commit)) throw new HiveError('A retained review requires a new commit, not one from an earlier round.', 'conflict');
+        checkAdmission(rt, await rt.beads.loadSnapshot({ all: true }), bead.id, { sessionId: null, review: true });
+        const fresh = await rt.beads.show(bead.id);
+        if (!fresh || fresh.status === 'closed') throw new HiveError('Reviewed work is missing or closed.', 'conflict');
+        await journaled(rt, { kind: 'review-request', cellId: cell.id, actor: actorFor(actor.sessionId), summary: `Re-request review of ${bead.id}`, beadIds: [bead.id], intent: { reviewId: record.id, reviewerSessionId, commit } }, async () => {
+          startReviewRound(rt, record.id, { commit, summary: intent });
+          return { journal: { reviewId: record.id } };
+        });
+        const round = rt.metadata.read().reviews[record.id].round;
+        await rt.snapshots.refresh(); rt.changed();
+        retained = { session_id: reviewerSessionId, review_id: record.id, round, policy: record.policy };
+        return;
+      }
       policy = resolveReviewPolicy(cell, builderAgentOf(host, bead), input, byHolder);
       const prior = openReview(rt, bead.id);
       if (prior) {
@@ -153,6 +180,13 @@ export async function requestReview(rt, host, actor, input) {
       });
     });
   });
+  if (retained) {
+    const delivery = await safeDeliver(host, reviewerSessionId, `[Hive] Re-review ${input.bead_id}, round ${retained.round}, commit ${commit}. ${intent}\nUse hive_review_verdict with bead_id ${input.bead_id} and commit ${commit}. Earlier findings remain in review history.`, rt);
+    rt.metadata.mutate(d => { d.reviews[retained.review_id].requestDelivery = { ...delivery, at: Date.now() }; });
+    const deliveryWarning = delivery.state === 'delivered' ? '' : ` Reviewer mail ${delivery.state}: ${delivery.error}. The round remains open; confirm delivery before waiting for its verdict.`;
+    await notifyQueen(rt, host, cellOf, actor, `[Hive] Review round ${retained.round} reopened on ${input.bead_id} with retained reviewer ${reviewerSessionId}, commit ${commit}.${deliveryWarning}`);
+    return { ...retained, delivery };
+  }
   try {
     const launchInput = { ...input, agent: policy.agent, model: policy.model, effort: policy.effort, intent: `${intent}${commit ? `\n\nReview commit ${commit}.` : ''}\n\nYou review work bead ${input.bead_id}; its builder keeps the claim. Give hive_review_verdict with bead_id ${input.bead_id}, approved or changes_requested, findings${commit ? ` and commit ${commit}` : ' and the reviewed commit'}.` };
     const launch = await spawnWorker(rt, host, actor, launchInput, { reviewId });
@@ -181,6 +215,7 @@ export async function reviewVerdict(rt, host, actor, input) {
     }
     await reconcileReview(rt, host, record);
     let saved = rt.metadata.read().reviews[record.id];
+    if (saved.state === 'in_review' && (saved.round || 1) > 1 && saved.commit && commit !== saved.commit) throw new HiveError('The verdict commit must match the current review round commit.', 'conflict');
     const reopen = saved.state === 'changes_requested' && saved.verdict && !sameVerdict(saved, actor.sessionId, input, summary, commit);
     if (!reopen) {
       if (saved.state === input.verdict && saved.verdict?.by === actor.sessionId) return { bead_id: id, review_id: saved.id, verdict: saved.state };
