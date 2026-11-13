@@ -24,6 +24,7 @@
       "tasks:read",
       "tasks:write",
       "sessions:read",
+      "mail:read",
       "sessions:spawn",
       "sessions:archive",
       "deliver",
