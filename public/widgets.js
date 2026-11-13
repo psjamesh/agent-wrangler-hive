@@ -105,6 +105,10 @@ function formatTokens(tokens) {
 // Agent, model, effort, auto-compaction threshold and folder for a queen
 // launch. How the queen should work is the separate, saved Queen instructions
 // field.
+export const field = (label, control, hint) => h('label', { class: 'hive-field' }, h('span', {}, label), control, hint ? h('small', { class: 'hive-muted' }, hint) : null);
+
+export const errorNote = (error) => error ? h('p', { class: 'hive-dialog-error', role: 'alert' }, error) : null;
+
 export function launchFields(api, value, onChange, onPatch = onChange) {
   const agents = agentOptions(api);
   const agent = value.agent || agents[0]?.id || '';
@@ -112,7 +116,6 @@ export function launchFields(api, value, onChange, onPatch = onChange) {
   const efforts = agents.find((a) => a.id === agent)?.efforts || [];
   const presets = compactPresets(agents, agent);
   const compactChoices = Number.isInteger(value.autoCompactTokens) && !presets.includes(value.autoCompactTokens) ? [...presets, value.autoCompactTokens] : presets;
-  const field = (label, control) => h('label', { class: 'hive-field' }, h('span', {}, label), control);
   const set = (k) => (e) => onChange({ [k]: e.target.value });
   const setAgent = (e) => {
     const next = e.target.value;
