@@ -1,6 +1,8 @@
 export const CLAUDE_SPAWN_DENIES = Object.freeze([
   'mcp__agent-wrangler__spawn_session',
   'mcp__agent-wrangler__spawn_workflow',
+  'mcp__agent-wrangler__schedule_session',
+  'mcp__agent-wrangler__update_schedule',
 ]);
 
 export const DEFAULT_AGENT = 'claude';

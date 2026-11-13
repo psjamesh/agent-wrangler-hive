@@ -35,10 +35,22 @@ export function ungovernedDescendants(rt, host, cell, openBeads = []) {
   for (const r of Object.values(doc.reviews || {})) if (r.reviewerSessionId) governed.add(r.reviewerSessionId);
   for (const b of openBeads) if (b.ownerSessionId) governed.add(b.ownerSessionId);
   const members = new Set([cell.queenSessionId, ...(doc.bindings?.[cell.id] || []).filter((b) => b.active).map((b) => b.sessionId), ...host.sessions.forTask(cell.taskId).map((s) => s.sessionId)]);
+  const all = host.sessions.list();
+  const byId = new Map(all.map((s) => [s.sessionId, s]));
+  const fromParticipant = (s) => {
+    const seen = new Set([s.sessionId]);
+    for (let p = s.spawnedBy; p && !seen.has(p); p = byId.get(p)?.spawnedBy) {
+      if (members.has(p)) return p;
+      seen.add(p);
+    }
+    return null;
+  };
   const out = [];
-  for (const s of host.sessions.list()) {
-    if (!s.spawnedBy || !members.has(s.spawnedBy) || governed.has(s.sessionId) || GONE(s)) continue;
-    out.push({ session_id: s.sessionId, spawned_by: s.spawnedBy, task_id: s.taskId || null, in_cell_task: s.taskId === cell.taskId, status: s.status, note: 'Started by a cell participant outside Hive; it holds no claim, review or binding. Reconcile it: bind it to a bead, or leave it deliberately untracked. Hive does not claim it for anyone.' });
+  for (const s of all) {
+    if (governed.has(s.sessionId) || GONE(s)) continue;
+    const origin = fromParticipant(s);
+    if (!origin) continue;
+    out.push({ session_id: s.sessionId, spawned_by: s.spawnedBy, origin_session_id: origin, task_id: s.taskId || null, in_cell_task: s.taskId === cell.taskId, status: s.status, note: 'Started by a cell participant outside Hive; it holds no claim, review or binding. Reconcile it: bind it to a bead, or leave it deliberately untracked. Hive does not claim it for anyone.' });
   }
   return out;
 }

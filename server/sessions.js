@@ -20,7 +20,7 @@ export function instructionsBlock(cell) {
 export function queenBrief({ cell, taskName, extra = '' }) {
   return [
     `You are the queen of the Hive cell for task "${taskName}" (cell ${cell.id}, task ${cell.taskId}).`,
-    'Use the hive-queen skill. Start with hive_context to recover the goal, the work graph and any input from the human, then keep the work record coherent: maintain goals and readiness with the hive_* tools, delegate tracked work with hive_spawn_worker (passing its bead_id) and request reviews with hive_request_review, and reconcile what workers report. Do not call spawn_session or spawn_workflow; every helper, advisor or investigation is a bead launched with hive_spawn_worker, and a successor queen is requested with hive_handoff_queen.',
+    'Use the hive-queen skill. Start with hive_context to recover the goal, the work graph and any input from the human, then keep the work record coherent: maintain goals and readiness with the hive_* tools, delegate tracked work with hive_spawn_worker (passing its bead_id) and request reviews with hive_request_review, and reconcile what workers report. Do not call spawn_session, spawn_workflow or schedule_session; every helper, advisor or investigation is a bead launched with hive_spawn_worker, and a successor queen is requested with hive_handoff_queen.',
     'If the task already has sessions or work, map it before anything else, as the hive-queen skill\'s "Map existing work" section describes: reuse any beads and bindings already there, and do not spawn workers just to represent sessions that exist.',
     'Follow the review and merge instructions the human, the repository and your global skills give you. Answer each [Hive] message from the human with hive_publish and its reply_to: your terminal text is not shown in Hive. Also publish what the human should know even when they need not act: meaningful milestones and results, significant changes of approach, scope or timing, material blockers and how you are handling them, decisions, questions, and completion or verification outcomes. Say in one concise message what changed, why it matters and what comes next. Leave routine bookkeeping, unchanged status and worker chatter on the beads, and post no timed status updates.',
     `When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Review worker/reviewer input_requests in hive_context: answer within your authority with hive_answer_request or forward the same id with hive_forward_request. Queen-stage requests stay out of human views; human step-in is not supported. Helpers must launch into task ${cell.taskId}; ancestry alone does not enroll them. If tools are missing, check membership and refresh the agent terminal.`,
@@ -139,7 +139,7 @@ export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort,
       l.superseded = true;
       return;
     }
-    recordQueen(d, cellId, l.sessionId, Date.now(), 'launched');
+    recordQueen(d, cellId, l.sessionId, Date.now(), 'launched', { revokeFrom: l.handoff?.fromSessionId });
     l.generation = cell.queenGeneration;
   });
   return { launchId, sessionId };
@@ -200,6 +200,7 @@ export function onBeforeDispatch({ sessionId, ext, host }) {
   const launchId = ext && typeof ext === 'object' ? ext.launchId : null;
   if (typeof launchId === 'string' && !rt.metadata.error) {
     const l = rt.metadata.read().launches[launchId];
+    if (l) (rt.queenDispatches ||= new Map()).set(sessionId, launchId);
     if (l && l.state === 'pending') {
       rt.metadata.mutate((d) => {
         const rec = d.launches[launchId];
@@ -210,7 +211,7 @@ export function onBeforeDispatch({ sessionId, ext, host }) {
         const cell = d.cells[rec.cellId];
         if (!cell) return;
         if ((cell.queenGeneration || 0) === rec.generation) {
-          recordQueen(d, rec.cellId, sessionId, rec.boundAt, 'launched');
+          recordQueen(d, rec.cellId, sessionId, rec.boundAt, 'launched', { revokeFrom: rec.handoff?.fromSessionId });
           rec.generation = cell.queenGeneration;
         } else {
           rec.superseded = true;
@@ -226,7 +227,7 @@ export async function queenLaunchContext({ sid, ext, reason, host }) {
   const rt = host?.stores?.hive;
   if (!rt || rt.metadata.error) return;
   const launches = Object.values(rt.metadata.read().launches || {});
-  const launch = (typeof ext?.launchId === 'string' && rt.metadata.read().launches[ext.launchId]) || launches.find((l) => l.sessionId === sid);
+  const launch = rt.metadata.read().launches[(typeof ext?.launchId === 'string' && ext.launchId) || rt.queenDispatches?.get(sid)] || launches.find((l) => l.sessionId === sid);
   if (!launch || (launch.sessionId && launch.sessionId !== sid)) return;
   try { assertCurrent(rt, host); } catch (err) { return { refuse: `Hive refused queen startup: ${err.message}` }; }
   const cell = rt.metadata.cell(launch.cellId);

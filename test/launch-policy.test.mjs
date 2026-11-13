@@ -10,7 +10,7 @@ import { spawnRestriction, workTools } from '../server/tools.js';
 import { ungovernedDescendants } from '../server/tracking.js';
 import { reconcileLaunch } from '../server/sessions.js';
 
-const DENIES = ['mcp__agent-wrangler__spawn_session', 'mcp__agent-wrangler__spawn_workflow'];
+const DENIES = ['mcp__agent-wrangler__spawn_session', 'mcp__agent-wrangler__spawn_workflow', 'mcp__agent-wrangler__schedule_session', 'mcp__agent-wrangler__update_schedule'];
 
 test('the exact AW MCP deny names are applied to Claude and cannot be overridden', () => {
   assert.deepEqual([...CLAUDE_SPAWN_DENIES], DENIES);
@@ -37,7 +37,7 @@ function recordSpawns(f) {
     const sessionId = `s-${++n}`;
     const ext = opts.ext.hive;
     await manifest.session.onBeforeDispatch({ sessionId, ext, host: f.host });
-    const out = await manifest.hooks['session.launchContext']({ sid: sessionId, task: { id: opts.taskId }, ext, reason: 'spawn', host: f.host });
+    const out = await manifest.hooks['session.launchContext']({ sid: sessionId, task: { id: opts.taskId }, reason: 'spawn', host: f.host });
     if (out?.refuse) throw new Error(out.refuse);
     f.board.set(sessionId, { sessionId, taskId: opts.taskId, status: 'working', spawnedBy: null });
     return { sessionId };
@@ -45,13 +45,13 @@ function recordSpawns(f) {
   return { calls, manifest };
 }
 
-test('worker and helper launches deny the AW spawn tools; Codex workers do not and record it', async () => {
+test('worker launches deny the AW spawn tools; Codex workers do not and record it', async () => {
   const f = fixture(0);
   const { calls } = recordSpawns(f);
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build' });
-  await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'b', intent: 'advise' }, { role: 'investigator' });
+  await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'b', intent: 'advise' });
   assert.deepEqual(calls.map((c) => c.disallowedTools), [DENIES, DENIES]);
-  assert.match(calls[0].intent, /spawn_session and spawn_workflow are denied/);
+  assert.match(calls[0].intent, /schedule_session and update_schedule are denied/);
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'again', agent: 'codex' }).catch(() => {});
   f.live.a.assignee = null; f.live.a.status = 'open';
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'codex build', agent: 'codex' });
@@ -123,7 +123,7 @@ test('a human nomination during the handoff supersedes it and the stale successo
   f.host.sessions.spawn = async (opts) => {
     f.rt.metadata.mutate((d) => { d.cells.cell.queens.push({ sessionId: 'human-pick', from: 2, to: null, via: 'nominated' }); d.cells.cell.queenSessionId = 'human-pick'; d.cells.cell.queenGeneration += 1; });
     await manifest.session.onBeforeDispatch({ sessionId: 'stale-succ', ext: opts.ext.hive, host: f.host });
-    const gate = await manifest.hooks['session.launchContext']({ sid: 'stale-succ', task: { id: 'task' }, ext: opts.ext.hive, reason: 'spawn', host: f.host });
+    const gate = await manifest.hooks['session.launchContext']({ sid: 'stale-succ', task: { id: 'task' }, reason: 'spawn', host: f.host });
     assert.match(gate.refuse, /superseded/);
     return { sessionId: 'stale-succ' };
   };
@@ -176,4 +176,97 @@ test('every host.sessions.spawn call in the server goes through the launch polic
     .flatMap((n) => fs.readFileSync(new URL(`../server/${n}`, import.meta.url), 'utf8').split('\n').filter((l) => /sessions\.spawn\(/.test(l)).map((l) => [n, l]));
   assert.deepEqual(hits.map(([n]) => n).sort(), ['sessions.js', 'workers.js']);
   assert(hits.every(([, l]) => l.includes('applyLaunchPolicy(')));
+});
+
+test('the denies cover scheduled dispatch', () => {
+  assert(DENIES.includes('mcp__agent-wrangler__schedule_session') && DENIES.includes('mcp__agent-wrangler__update_schedule'));
+});
+
+test('a swallowed dispatch-hook failure cannot let a stale successor start, even with no ext at launch context', async () => {
+  const f = queenFixture();
+  const manifest = createManifest({ dir: '.' });
+  const mutate = f.rt.metadata.mutate;
+  let started = false;
+  f.host.sessions.spawn = async (opts) => {
+    f.rt.metadata.mutate = () => { throw new Error('simulated disk failure'); };
+    try { manifest.session.onBeforeDispatch({ sessionId: 'stale-start', ext: opts.ext.hive, host: f.host }); } catch {}
+    f.rt.metadata.mutate = mutate;
+    mutate((d) => { d.cells.cell.queens.push({ sessionId: 'human-pick', from: 2, to: null, via: 'nominated' }); d.cells.cell.queenSessionId = 'human-pick'; d.cells.cell.queenGeneration += 1; });
+    const gate = await manifest.hooks['session.launchContext']({ sid: 'stale-start', task: { id: 'task' }, reason: 'spawn', host: f.host });
+    assert.match(gate?.refuse, /superseded|replaced|abandoned/);
+    return { sessionId: 'stale-start' };
+  };
+  const out = await handoffQueen(f.rt, f.host, f.actor(), { summary: 'continue' });
+  assert.equal(started, false);
+  assert.equal(out.installed, false);
+  assert.equal(f.doc().cells.cell.queenSessionId, 'human-pick');
+});
+
+test('a successor whose dispatch binding was never recorded is refused even when nobody replaced the queen', async () => {
+  const f = queenFixture();
+  const manifest = createManifest({ dir: '.' });
+  const mutate = f.rt.metadata.mutate;
+  f.host.sessions.spawn = async (opts) => {
+    f.rt.metadata.mutate = () => { throw new Error('simulated disk failure'); };
+    try { manifest.session.onBeforeDispatch({ sessionId: 'unbound', ext: opts.ext.hive, host: f.host }); } catch {}
+    f.rt.metadata.mutate = mutate;
+    const gate = await manifest.hooks['session.launchContext']({ sid: 'unbound', task: { id: 'task' }, reason: 'spawn', host: f.host });
+    assert.match(gate?.refuse, /Hive refused queen startup/);
+    return { sessionId: 'unbound' };
+  };
+  await handoffQueen(f.rt, f.host, f.actor(), { summary: 's' });
+});
+
+test('handoff revokes the outgoing queen\'s coordinator bindings but keeps its claims and other bindings', async () => {
+  const f = queenFixture();
+  recordSpawns(f);
+  f.live.b.assignee = 'aw:queen'; f.live.b.status = 'in_progress';
+  f.rt.metadata.mutate((d) => { d.bindings.cell = [{ sessionId: 'queen', beadId: 'a', role: 'coordinator', active: true }, { sessionId: 'queen', beadId: 'b', role: 'worker', active: true }, { sessionId: 'other', beadId: 'a', role: 'coordinator', active: true }]; });
+  await handoffQueen(f.rt, f.host, f.actor(), { summary: 's' });
+  const bindings = f.doc().bindings.cell;
+  assert.equal(bindings[0].active, false);
+  assert.equal(bindings[1].active, true);
+  assert.equal(bindings[2].active, true);
+  assert.equal(f.live.b.assignee, 'aw:queen');
+  assert.equal(resolveCaller(f.rt, f.host, 'queen', 'cell').role, 'worker');
+});
+
+test('a later nomination keeps its coordinator bindings when an older handoff is superseded', async () => {
+  const f = queenFixture();
+  f.rt.metadata.mutate((d) => { d.bindings.cell = [{ sessionId: 'queen', beadId: 'a', role: 'coordinator', active: true }]; });
+  const manifest = createManifest({ dir: '.' });
+  f.host.sessions.spawn = async (opts) => {
+    f.rt.metadata.mutate((d) => { d.cells.cell.queens.push({ sessionId: 'human-pick', from: 2, to: null, via: 'nominated' }); d.cells.cell.queenSessionId = 'human-pick'; d.cells.cell.queenGeneration += 1; });
+    await manifest.session.onBeforeDispatch({ sessionId: 'late', ext: opts.ext.hive, host: f.host });
+    return { sessionId: 'late' };
+  };
+  await handoffQueen(f.rt, f.host, f.actor(), { summary: 's' });
+  assert.equal(f.doc().bindings.cell[0].active, true);
+});
+
+test('a helper cannot share a builder bead through the tool or spawn path', async () => {
+  const f = fixture(1);
+  recordSpawns(f);
+  const tool = workTools.find((t) => t.name === 'hive_spawn_worker');
+  assert.equal(tool.inputSchema.safeParse({ bead_id: 'a', intent: 'x', role: 'helper' }).success, false);
+  await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build' });
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'advise' }, { role: 'investigator' }), /own bead/);
+  assert.equal(Object.values(f.live).filter((b) => b.assignee).length, 1);
+});
+
+test('descendants are found transitively across tasks, through exited intermediates, with cycle protection', () => {
+  const f = queenFixture();
+  f.rt.metadata.mutate((d) => { d.workerLaunches.w1 = { id: 'w1', cellId: 'cell', sessionId: 'governed', state: 'launched' }; });
+  f.host.sessions.list = () => [
+    { sessionId: 'child', spawnedBy: 'queen', taskId: 'elsewhere', status: 'working' },
+    { sessionId: 'grandchild', spawnedBy: 'child', taskId: 'elsewhere', status: 'working' },
+    { sessionId: 'dead-mid', spawnedBy: 'queen', taskId: 'elsewhere', status: 'exited' },
+    { sessionId: 'orphan-gc', spawnedBy: 'dead-mid', taskId: 'x', status: 'working' },
+    { sessionId: 'governed', spawnedBy: 'child', taskId: 'x', status: 'working' },
+    { sessionId: 'loop-a', spawnedBy: 'loop-b', taskId: 'x', status: 'working' },
+    { sessionId: 'loop-b', spawnedBy: 'loop-a', taskId: 'x', status: 'working' },
+  ];
+  const out = ungovernedDescendants(f.rt, f.host, f.doc().cells.cell, []);
+  assert.deepEqual(out.map((s) => s.session_id), ['child', 'grandchild', 'orphan-gc']);
+  assert(out.every((s) => s.origin_session_id === 'queen' || s.origin_session_id === 'queen'));
 });

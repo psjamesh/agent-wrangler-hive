@@ -472,7 +472,7 @@ export function moveBeads(rt, { cellId, positions, aspect, base, stack }) {
 // Every change of queen selection bumps queenGeneration. A launch remembers
 // the generation it started from and may only nominate its session while that
 // is still current, so a later human choice is never overridden.
-export function recordQueen(d, cellId, sessionId, at, via) {
+export function recordQueen(d, cellId, sessionId, at, via, { revokeFrom = null } = {}) {
   const cell = d.cells[cellId];
   const current = cell.queens.at(-1);
   if (current && current.sessionId === sessionId && current.to == null) return;
@@ -481,6 +481,11 @@ export function recordQueen(d, cellId, sessionId, at, via) {
   cell.queenSessionId = sessionId;
   cell.queenGeneration = (cell.queenGeneration || 0) + 1;
   cell.updatedAt = at;
+  if (revokeFrom && revokeFrom !== sessionId) {
+    for (const b of d.bindings?.[cellId] || []) {
+      if (b.active && b.sessionId === revokeFrom && b.role === 'coordinator') Object.assign(b, { active: false, unboundAt: at, unboundBy: 'aw:hive-handoff' });
+    }
+  }
 }
 
 export function clearQueen(d, cellId, at) {
