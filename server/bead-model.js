@@ -3,6 +3,7 @@ export const HUMAN_ACTOR = 'aw:human';
 
 export const HIVE_META = {
   kind: 'hive_kind',
+  pickup: 'hive_pickup',
   nextAction: 'hive_next_action',
   waitingFor: 'hive_waiting_for',
   evidence: 'hive_evidence',
@@ -97,6 +98,7 @@ export function normalizeIssue(raw) {
   const op = decodeMeta(metadata[HIVE_META.op]);
   return {
     id: raw.id,
+    pickup: asObject(decodeMeta(metadata[HIVE_META.pickup])),
     parentId: parent ? parent.depends_on_id : null,
     title: text(raw.title),
     kind: typeof kind === 'string' && kind ? kind : (raw.issue_type === 'epic' ? 'workstream' : 'work'),

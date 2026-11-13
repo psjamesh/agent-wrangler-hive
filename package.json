@@ -28,7 +28,8 @@
       "sessions:archive",
       "deliver",
       "board:rebuild",
-      "links:read"
+      "links:read",
+      "agents:read"
     ],
     "engines": {
       "wranglerApi": "^1.71.0"

@@ -1751,3 +1751,10 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 }
 
 .hive-inbox-session-links { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 8px; }
+
+.hive-pickup { padding: 12px 0; border-bottom: 1px solid var(--border, #ddd); }
+.hive-pickup h4 { margin: 0 0 6px; }
+.hive-pickup p { margin: 6px 0; overflow-wrap: anywhere; }
+.hive-pickup summary { cursor: pointer; }
+.hive-pickup .hive-field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.hive-pickup input, .hive-pickup select { max-width: 100%; }

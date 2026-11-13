@@ -1,3 +1,4 @@
+import { setPickup, pickupState } from './pickup.js';
 import { collectWatchdog, watchdogSettings, archiveSuggestions } from './watchdog.js';
 import { reviewPolicy } from './review-policy.js';
 import { attachmentsFor, deriveActivity } from './bead-sessions.js';
@@ -74,6 +75,7 @@ export function hiveTool(spec, run) {
       try {
         const actor = resolveCaller(rt, host, caller, args.cell_id);
         const out = await run({ rt, host, actor, args });
+        if (!['hive_context', 'hive_ready', 'hive_list_my_requests'].includes(spec.name)) rt.pickup?.schedule();
         return result(out);
       } catch (err) {
         if (err && KNOWN_CODES.has(err.code)) return error(`${err.code === 'access' ? 'Not permitted' : 'Hive'}: ${err.message}`);
@@ -89,6 +91,7 @@ function compactBead(rt, b, { full, cell }) {
   const out = {
     ...reviewFields(rt, b.id),
     waiting_for_review: OPEN_REVIEW_STATES.has(b.reviewState),
+    pickup: pickupState(rt, rt.host, cell, b),
     bead_id: b.id,
     parent_id: b.parentId,
     title: b.title,
@@ -548,5 +551,18 @@ export const reportPrWaitTool = hiveTool({
   inputSchema: { bead_id: beadId, url: z.string().max(2000), head_sha: z.string().regex(/^[a-f0-9]{40}$/i), state: z.enum(['ready', 'cannot-fix', 'clear']), reason: z.string().max(500).optional() },
 }, ({ rt, actor, args }) => reportPrWait(rt, actor, args));
 
-export const workTools = [
+export const pickupTool = hiveTool({
+  name: 'hive_set_pickup',
+  description: 'Queen only: mark bounded work ready for one automatic worker launch. Pickup is default behavior; max claimed work controls concurrency. Supply an explicit launch profile (agent, model, effort, cwd, optional worktree and intent). Dependencies may still be pending. Rearming a consumed or held mark requires expected_token and a reason. Failed or uncertain starts never retry automatically.',
+  inputSchema: {
+    bead_id: beadId,
+    ready: z.boolean(),
+    profile: z.object({ agent: z.string().max(120), model: z.string().max(200), effort: z.string().max(120), cwd: z.string().max(4096), intent: z.string().max(12000).optional(), worktree: z.object({ auto: z.boolean().optional(), branch: z.string().max(2000).optional(), folderName: z.string().max(2000).optional(), base: z.string().max(2000).optional() }).strict().optional() }).strict().optional(),
+    rearm: z.boolean().optional(),
+    expected_token: z.string().max(80).optional(),
+    reason: z.string().max(2000).optional(),
+  },
+}, ({ rt, host, actor, args }) => setPickup(rt, host, actor, args));
+
+export const workTools = [pickupTool,
   ...requestTools, handoffQueenTool, reportPrWaitTool, spawnWorkerTool, reconcileWorkerTool, requestReviewTool, reviewVerdictTool, cancelReviewTool, contextTool, readyTool, createBeadsTool, updateBeadTool, linkBeadsTool, claimBeadTool, releaseBeadTool, bindSessionTool, finishBeadTool, deleteBeadsTool, publishTool, acknowledgeInputTool, reconcileOperationTool, updateThreadTool];

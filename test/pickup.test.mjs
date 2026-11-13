@@ -1,0 +1,178 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { pickupFixture } from './helpers/pickup.mjs';
+import { claimBead, updateBead } from '../server/ops.js';
+import { spawnWorker } from '../server/workers.js';
+import * as pickup from '../server/pickup.js';
+
+const arm = (f, id = 'a', extra = {}) => pickup.setPickup(f.rt, f.host, f.actor(), { bead_id: id, ready: true, profile: f.profile, ...extra });
+const run = f => pickup.createPickupDispatcher({ runtime: f.rt, host: f.host, now: f.now }).run();
+
+test('unmarked work never launches; default-on marked work claims exactly once', async () => {
+  const f = pickupFixture();
+  await run(f); assert.equal(f.spawned.length, 0);
+  await arm(f); await run(f); await run(f);
+  assert.equal(f.spawned.length, 1);
+  assert.equal(f.live.a.assignee, 'aw:worker-1');
+  assert.equal(f.doc().workerLaunches[Object.keys(f.doc().workerLaunches)[0]].source, 'automatic');
+  assert.equal(Object.keys(f.doc().pickupAttempts).length, 1);
+});
+
+test('arming is queen/human only and repeated unused readiness is idempotent', async () => {
+  const f = pickupFixture();
+  await assert.rejects(pickup.setPickup(f.rt, f.host, f.actor('worker', 'worker'), { bead_id: 'a', ready: true, profile: f.profile }), /queen/i);
+  const a = await arm(f), b = await arm(f);
+  assert.equal(a.pickup.armToken, b.pickup.armToken);
+  assert.equal(f.live.a.updated_at, b.pickup.nativeVersion);
+});
+
+test('direct claim and release between sweeps cannot revive readiness; rearm is guarded', async () => {
+  const f = pickupFixture(); const first = await arm(f);
+  await claimBead(f.rt, f.actor(), { bead_id: 'a' });
+  f.live.a.assignee = null; f.live.a.status = 'open'; f.bump('a');
+  await run(f); assert.equal(f.spawned.length, 0);
+  await assert.rejects(arm(f), /rearm/i);
+  await assert.rejects(arm(f, 'a', { rearm: true, reason: 'retry', expected_token: 'wrong' }), /token/i);
+  const next = await arm(f, 'a', { rearm: true, reason: 'Confirmed release', expected_token: first.pickup.armToken });
+  assert.notEqual(first.pickup.armToken, next.pickup.armToken);
+});
+
+test('external drift holds; recognized summary/evidence edits preserve readiness', async () => {
+  const f = pickupFixture(); await arm(f);
+  await updateBead(f.rt, f.actor(), { bead_id: 'a', summary: 'Current evidence' });
+  await run(f); assert.equal(f.spawned.length, 1);
+  const g = pickupFixture(); await arm(g); g.bump('a'); await run(g);
+  assert.equal(g.spawned.length, 0);
+  assert.match(pickup.pickupState(g.rt, g.host, g.doc().cells.cell, g.graph().beads.a, g.graph()).reason, /changed|version/i);
+});
+
+for (const scenario of ['disabled', 'snapshot', 'archived', 'setup', 'queen', 'blocked', 'deferred', 'assigned', 'group', 'children', 'review', 'wait', 'missing prerequisite', 'operation']) {
+  test(`pickup refuses ${scenario} with an eligibility reason`, async () => {
+    const f = pickupFixture(); await arm(f);
+    if (scenario === 'disabled') f.doc().cells.cell.enabled = false;
+    if (scenario === 'snapshot') f.doc().cells.cell.snapshot = {};
+    if (scenario === 'archived') f.host.tasks.get = () => ({ archived: true });
+    if (scenario === 'setup') f.doc().cells.cell.setup.state = 'pending';
+    if (scenario === 'queen') f.board.delete('queen');
+    if (scenario === 'blocked') f.live.a.status = 'blocked';
+    if (scenario === 'deferred') f.live.a.status = 'deferred';
+    if (scenario === 'assigned') f.live.a.assignee = 'aw:someone';
+    if (scenario === 'group') f.live.a.metadata.hive_kind = 'workstream';
+    if (scenario === 'children') f.live.b.dependencies[0].depends_on_id = 'a';
+    if (scenario === 'review') f.doc().reviews.r = { workBeadId: 'a', state: 'in_review' };
+    if (scenario === 'wait') f.live.a.metadata.hive_waiting_for = 'External approval';
+    if (scenario === 'missing prerequisite') f.live.a.dependencies.push({ issue_id: 'a', depends_on_id: 'missing', type: 'blocks' });
+    if (scenario === 'operation') f.doc().operations.o = { beadIds: ['a'], state: 'uncertain' };
+    await run(f); assert.equal(f.spawned.length, 0);
+    assert.ok(pickup.pickupState(f.rt, f.host, f.doc().cells.cell, f.graph().beads.a, f.graph()).reason);
+  });
+}
+
+test('parallel wake requests and manual launch races submit only once', async () => {
+  const f = pickupFixture(1); await arm(f);
+  const d = pickup.createPickupDispatcher({ runtime: f.rt, host: f.host, now: f.now });
+  await Promise.allSettled([d.run(), d.run(), spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', ...f.profile })]);
+  assert.equal(f.spawned.length, 1);
+});
+
+test('unknown host outcome is durable and never automatically retried', async () => {
+  const f = pickupFixture(); await arm(f);
+  f.host.sessions.spawn = async opts => { f.spawned.push(opts); throw new Error('unknown host result'); };
+  await run(f); f.advance(120000); await run(f);
+  assert.equal(f.spawned.length, 1);
+  assert.equal(Object.values(f.doc().workerLaunches)[0].state, 'uncertain');
+});
+
+test('strict export failure and retired runtime cannot dispatch', async () => {
+  const f = pickupFixture(); await arm(f);
+  f.rt.beads.loadSnapshot = async () => { throw new Error('invalid export'); };
+  await run(f); assert.equal(f.spawned.length, 0);
+  const g = pickupFixture(); await arm(g); g.rt.metadata.lifetime.stop();
+  await run(g); assert.equal(g.spawned.length, 0);
+});
+
+test('priority and rolling guards order the queue; Unlimited keeps the guard', async () => {
+  const f = pickupFixture(0); f.live.b.priority = 0;
+  await arm(f); await arm(f, 'b'); await run(f);
+  assert.equal(f.spawned[0].ext.hive.beadId, 'b');
+  await run(f); assert.equal(f.spawned.length, 1);
+  f.advance(60000); await run(f); assert.equal(f.spawned.length, 2);
+});
+
+test('two hives share the final capacity slot and round-robin cursor', async () => {
+  const f = pickupFixture(1);
+  f.doc().cells.other = { ...f.doc().cells.cell, id: 'other', taskId: 'task2', rootBeadId: 'root2', queenSessionId: 'queen2' };
+  f.live.root2 = { ...structuredClone(f.live.root), id: 'root2' };
+  f.live.c = { ...structuredClone(f.live.a), id: 'c', dependencies: [{ issue_id: 'c', depends_on_id: 'root2', type: 'parent-child' }] };
+  f.board.set('queen2', { sessionId: 'queen2', taskId: 'task2', status: 'idle' });
+  await f.rt.snapshots.refresh();
+  const cell = f.doc().cells.other;
+  const actor = { sessionId: 'queen2', role: 'queen', cell, cells: [{ cell, role: 'queen' }] };
+  await arm(f); await pickup.setPickup(f.rt, f.host, actor, { bead_id: 'c', ready: true, profile: f.profile });
+  await run(f); assert.equal(f.spawned.length, 1);
+  assert.equal(f.doc().pickupRates.cursor, 'cell');
+  f.live.a.status = 'closed'; f.live.a.assignee = null; f.advance(60000); await run(f);
+  assert.equal(f.spawned.length, 2); assert.equal(f.spawned[1].ext.hive.beadId, 'c');
+});
+
+for (const stage of ['provider', 'refresh', 'export', 'claim', 'pre-dispatch']) {
+  test(`changed queen during ${stage} prevents first worker action`, async () => {
+    const f = pickupFixture(); await arm(f);
+    const change = () => { f.doc().cells.cell.queenGeneration += 1; };
+    if (stage === 'provider') { const original = f.host.agents.list; f.host.agents.list = async () => { const result = await original(); change(); return result; }; }
+    if (stage === 'refresh') { const original = f.rt.snapshots.refresh; let n = 0; f.rt.snapshots.refresh = async () => { const result = await original(); if (++n === 2) change(); return result; }; }
+    if (stage === 'export' || stage === 'pre-dispatch') { const original = f.rt.beads.loadSnapshot; let n = 0; f.rt.beads.loadSnapshot = async opts => { const result = await original(opts); if (++n === (stage === 'export' ? 2 : 3)) change(); return result; }; }
+    if (stage === 'claim') { const original = f.rt.beads.claim; f.rt.beads.claim = async (...args) => { change(); return original(...args); }; }
+    await run(f);
+    assert.equal(f.live.a.assignee || null, null);
+  });
+}
+
+test('retiring during provider read leaves no attempt or spawn', async () => {
+  const f = pickupFixture(); await arm(f);
+  f.host.agents.list = async () => { f.rt.metadata.lifetime.stop(); return f.catalog; };
+  await run(f); assert.equal(f.spawned.length, 0); assert.equal(Object.keys(f.doc().pickupAttempts).length, 0);
+});
+
+for (const change of ['brief', 'model', 'missing-provider', 'invalid-effort', 'mixed-model']) {
+  test(`${change} cannot silently change an authorized profile or brief`, async () => {
+    const f = pickupFixture(); await arm(f);
+    if (change === 'brief') f.live.a.description = 'Different executable work';
+    if (change === 'model') f.catalog[0].models[0].resolved = 'new-model';
+    if (change === 'missing-provider') f.catalog[0].available = false;
+    if (change === 'invalid-effort') f.catalog[0].models[0].efforts = ['high'];
+    if (change === 'mixed-model') f.catalog[0].models[0].resolved = null;
+    await run(f); assert.equal(f.spawned.length, 0);
+  });
+}
+
+test('disarm after reservation refuses queued native startup', async () => {
+  const f = pickupFixture(); await arm(f);
+  const original = f.host.sessions.spawn;
+  f.host.sessions.spawn = async opts => { f.live.a.metadata.hive_pickup.armed = false; f.bump('a'); return original(opts); };
+  await run(f); assert.equal(f.live.a.assignee || null, null);
+});
+
+test('an arming receipt failure never replays the native write', async () => {
+  const f = pickupFixture(); let writes = 0;
+  const update = f.rt.beads.update;
+  f.rt.beads.update = async (...args) => { writes += 1; await update(...args); throw new Error('lost native receipt'); };
+  await assert.rejects(arm(f), /receipt/);
+  await run(f); await run(f);
+  assert.equal(f.spawned.length, 0); assert.equal(writes, 1);
+});
+
+test('a failed metadata reservation cannot cross the host boundary', async () => {
+  const f = pickupFixture(); await arm(f);
+  const mutate = f.rt.metadata.mutate;
+  f.rt.metadata.mutate = fn => mutate(d => { const result = fn(d); if (Object.values(d.workerLaunches).some(l => l.state === 'reserved')) throw new Error('metadata disk full'); return result; });
+  await run(f); assert.equal(f.spawned.length, 0);
+});
+
+test('changing a brief and changing it back cannot revive an old readiness mark', async () => {
+  const f = pickupFixture(); await arm(f);
+  const original = f.live.a.description;
+  await updateBead(f.rt, f.actor(), { bead_id: 'a', goal: 'Changed executable brief' });
+  await updateBead(f.rt, f.actor(), { bead_id: 'a', goal: original });
+  await run(f); assert.equal(f.spawned.length, 0);
+});
