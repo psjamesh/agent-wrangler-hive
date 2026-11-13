@@ -30,7 +30,8 @@ for (const terminal of ['approved', 'changes_requested', 'cancelled']) test(`pro
   assert.doesNotMatch(tileFor(hive).title, /\bOpen\b/);
   for (const c of [model.cellCounts(hive, f.cell), model.workCounts(hive, model.childrenMap(hive.beads), 'ws')]) {
     assert.equal(c.in_review, 1);
-    assert.equal(c.open + c.in_progress + c.in_review + c.blocked + c.closed, c.total);
+    assert.equal(c.open + c.in_progress + c.in_review + c.blocked + c.closed + c.not_active, c.total);
+    assert.equal(c.in_progress, 0);
     assert.match(model.countsSentence(c), /1 in review/);
   }
   f.doc.reviews.review = { ...f.doc.reviews.review, state: terminal };
@@ -38,6 +39,7 @@ for (const terminal of ['approved', 'changes_requested', 'cancelled']) test(`pro
   hive = f.project();
   const tile = tileFor(hive);
   assert.equal(model.cellCounts(hive, f.cell).in_review, 0);
+  assert.equal(model.cellCounts(hive, f.cell).in_progress, 0);
   assert.equal(tile.marks.length, 0);
   assert.match(tile.title, /Open/);
   assert.doesNotMatch(tile.ariaLabel, /Outside fix|In review/);

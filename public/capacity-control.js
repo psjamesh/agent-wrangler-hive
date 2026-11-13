@@ -32,6 +32,7 @@ export function capacityControl({ hive, ui, api }) {
       title: `${detail} Open Hive Settings.`, 'aria-label': `${usage.used}${limit ? ` of ${limit}` : ''} in progress. ${detail} Open Hive Settings.`,
       onclick: () => openHiveSettings(ui, 'capacity-toggle'),
     }, `${usage.used}${limit ? ` of ${limit}` : ''} in progress`),
+    usage.outside > 0 ? h('span', { class: 'hive-capacity-note' }, `· ${usage.outside} outside a hive`) : null,
     limit > 0 && usage.used > limit ? h('span', { class: 'hive-capacity-note', role: 'status' }, 'Over limit. Current work continues; new work waits for room.') : null);
 }
 

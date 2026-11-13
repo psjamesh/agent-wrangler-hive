@@ -304,6 +304,7 @@ function workstreamProgress(c) {
   const parts = [`${c.closed} of ${c.total} closed`];
   if (c.in_progress) parts.push(`${c.in_progress} in progress`);
   if (c.in_review) parts.push(`${c.in_review} in review`);
+  if (c.not_active) parts.push(`${c.not_active} not active`);
   if (c.blocked) parts.push(`${c.blocked} blocked`);
   if (c.open) parts.push(`${c.open} open`);
   const fill = h('span', {});

@@ -23,7 +23,7 @@ export function hiveWorkIds(rt, graph) {
   return ids;
 }
 
-export function capacity(rt, graph = rt.snapshots.graph, { reserve = [], breakdown = false } = {}) {
+export function capacitySlots(rt, graph, reserve = []) {
   const scope = hiveWorkIds(rt, graph);
   const charge = (id) => id;
   const claimed = new Set([...scope].filter((id) => graph.beads[id].status === 'in_progress' && graph.beads[id].assignee).map(charge));
@@ -37,6 +37,11 @@ export function capacity(rt, graph = rt.snapshots.graph, { reserve = [], breakdo
   const reviews = new Set(Object.values(rt.metadata.read().reviews || {}).filter((r) => OPEN_REVIEW_STATES.has(r.state) && counts(r.workBeadId)).map((r) => r.workBeadId));
   for (const id of reviews) reserved.add(id);
   for (const id of reserve) if (counts(id)) reserved.add(charge(id));
+  return { claimed, reserved, reviews };
+}
+
+export function capacity(rt, graph = rt.snapshots.graph, { reserve = [], breakdown = false, slots = capacitySlots(rt, graph, reserve) } = {}) {
+  const { claimed, reserved, reviews } = slots;
   const used = new Set([...claimed, ...reserved]).size;
   const limit = workLimit(rt);
   return { limit, unlimited: limit === 0, claimed: claimed.size, reserved: [...reserved].filter((id) => !claimed.has(id)).length, used, available: limit === 0 ? null : Math.max(0, limit - used),

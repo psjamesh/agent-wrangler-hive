@@ -67,11 +67,11 @@ function cellTile(ctx, cell) {
   const toRead = cell.inbox?.human?.count || 0;
   const toAnswer = cell.inbox?.queen?.count || 0;
   const needs = cell.requestCounts?.human || 0;
-  const counters = cell.retired ? [] : [
-    { kind: 'inbox', count: toRead, label: 'Inbox' },
-    { kind: 'queen', count: toAnswer, label: 'Waiting for queen' },
-    { kind: 'needs', count: needs, label: 'Needs you' },
-    { kind: 'progress', count: counts.in_progress, label: 'In progress' },
+  const counters = [
+    { kind: 'inbox', count: cell.retired ? 0 : toRead, label: 'Inbox' },
+    { kind: 'queen', count: cell.retired ? 0 : toAnswer, label: 'Waiting for queen' },
+    { kind: 'needs', count: cell.retired ? 0 : needs, label: 'Needs you' },
+    { kind: 'progress', count: cell.occupiedCount || 0, label: 'In progress' },
   ];
   const owed = [needs ? `${needs} need your input` : '', toRead ? `${toRead} from the queen to read` : '', toAnswer ? `${toAnswer} awaiting the queen` : ''].filter(Boolean).join(', ');
   const pos = { q: cell.position?.q ?? 0, r: cell.position?.r ?? 0 };
@@ -691,10 +691,10 @@ const automaticPlacements = new WeakMap();
 
 export function renderHive(ctx) {
   const { hive, ui, graph } = ctx;
-  const allCells = Object.values(hive.cells).filter((c) => c.snapshot || (graph?.tasks?.tasks?.some((t) => t.id === c.taskId && !t.archivedAt && !t.archived) ?? true));
-  const retiredCount = allCells.filter((c) => c.retired).length;
+  const allCells = Object.values(hive.cells).filter((c) => c.occupiedCount > 0 || c.snapshot || (graph?.tasks?.tasks?.some((t) => t.id === c.taskId && !t.archivedAt && !t.archived) ?? true));
+  const retiredCount = allCells.filter((c) => c.retired && !c.occupiedCount).length;
   const showRetired = ui.showRetired?.() === true;
-  const cells = showRetired ? allCells : allCells.filter((c) => !c.retired);
+  const cells = showRetired ? allCells : allCells.filter((c) => !c.retired || c.occupiedCount > 0);
   const focusedId = ui.cellId();
   const cell = focusedId ? hive.cells[focusedId] : null;
   if (focusedId || cells.length === 0 || !ui.dockOpen()) ui.cancelGlobalInboxSearch?.();

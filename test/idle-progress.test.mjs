@@ -77,7 +77,7 @@ test('blocking prerequisite is named in tile tooltip and accessible mark', () =>
 test('workstream tooltip counts nested in-progress work', () => {
   const f = fixture({ kind: 'workstream' });
   f.tile.layout.groupHeads = ['work'];
-  f.hive.beads.child = { id: 'child', parentId: 'work', status: 'in_progress' };
+  f.hive.beads.child = { id: 'child', parentId: 'work', status: 'in_progress', occupiesCapacity: true };
   f.hive.beads.done = { id: 'done', parentId: 'work', status: 'closed' };
   assert.match(f.render().title, /1 in progress/);
   assert.match(f.render().ariaLabel, /1 in progress/);

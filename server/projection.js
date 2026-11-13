@@ -1,4 +1,4 @@
-import { capacity } from './admission.js';
+import { capacity, capacitySlots } from './admission.js';
 import { needsHuman } from './requests.js';
 import { waitingProjection } from './waiting.js';
 import { slimBead } from './bead-detail.js';
@@ -118,8 +118,26 @@ export function projectForGraph({ runtime, snapshot }) {
     };
   }
   const roots = new Set(Object.values(cells).map((c) => c.rootBeadId));
+  const slots = capacitySlots(runtime, snapshot.graph);
+  const occupied = new Set([...slots.claimed, ...slots.reserved]);
+  const cellRoots = new Map(Object.values(cells).filter(c => !c.snapshot).map(c => [c.rootBeadId, c.id]));
+  for (const cell of Object.values(cells)) cell.occupiedCount = 0;
+  let outside = 0;
+  for (const id of occupied) {
+    let bead = beads[id];
+    const seen = new Set();
+    let cellId;
+    while (bead && !seen.has(bead.id)) {
+      seen.add(bead.id);
+      cellId = cellRoots.get(bead.id);
+      if (cellId) break;
+      bead = beads[bead.parentId];
+    }
+    if (cellId) cells[cellId].occupiedCount += 1;
+    else outside += 1;
+  }
   const visibleBeads = {};
-  for (const id of included) visibleBeads[id] = slimBead(runtime, snapshot.graph, id, { root: roots.has(id) });
+  for (const id of included) visibleBeads[id] = { ...slimBead(runtime, snapshot.graph, id, { root: roots.has(id) }), occupiesCapacity: occupied.has(id) };
   const visibleEdges = edges.filter((e) => included.has(e.dependent) || included.has(e.prerequisite));
   // Only cell creation is the human's to settle (it can leave a task with no
   // cell). Every other unfinished write is settled by Hive or the cell's
@@ -151,7 +169,7 @@ export function projectForGraph({ runtime, snapshot }) {
     metaVersion: runtime.metadata.version,
     metaEpoch: runtime.metadata.epoch,
     cells,
-    capacity: capacity(runtime, snapshot.graph, { breakdown: true }),
+    capacity: { ...capacity(runtime, snapshot.graph, { breakdown: true, slots }), outside },
     beads: visibleBeads,
     edges: visibleEdges,
     operations,
