@@ -70,6 +70,21 @@ function fixture(t, extra = 0, preferences = []) {
   return { values, ui, ctx, beads, top, dock: () => dock, draw, canvas, search, tile: id => canvas().querySelector(`[data-tile-id="${id}"]`) };
 }
 
+test('map search uses shared fields in a labelled search region', t => {
+  const f = fixture(t);
+  const bar = f.canvas().querySelector('.hive-map-search');
+  assert.equal(bar.getAttribute('role'), 'search');
+  assert.equal(bar.getAttribute('aria-label'), 'Search beads');
+  const row = bar.querySelector('.hive-search-row');
+  assert.equal(row.querySelector('input').classList.contains('hive-input'), true);
+  assert.equal(row.querySelector('select').classList.contains('hive-input'), true);
+  assert.equal(row.querySelector('button').classList.contains('hive-quiet-btn'), true);
+  assert.equal(f.canvas().querySelector('.hive-search-open').classList.contains('hive-quiet-btn'), true);
+  f.ui.closeCell();
+  f.draw();
+  assert.equal(f.dock().querySelector('.hive-inbox-search-input').classList.contains('hive-input'), true);
+});
+
 test('real render opens only on map focus, highlights, navigates and clears without rebuilding', t => {
   const f = fixture(t);
   const canvas = f.canvas();

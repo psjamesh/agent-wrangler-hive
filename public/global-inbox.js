@@ -175,7 +175,7 @@ export function globalInbox(ctx, cells) {
           r.repair ? h('span', { class: 'hive-warning' }, r.repair) : null)),
       rowSessionLinks(ctx, r))) : h('li', { class: 'hive-muted' }, empty));
   const input = h('input', {
-    type: 'search', class: 'hive-inbox-search-input', autocomplete: 'off', spellcheck: 'false', value: query, maxlength: '200',
+    type: 'search', class: 'hive-input hive-inbox-search-input', autocomplete: 'off', spellcheck: 'false', value: query, maxlength: '200',
     placeholder: 'Search topics, messages and bead ids', 'aria-label': 'Search the inbox', 'data-focus-key': 'global-inbox-search',
     oninput: (e) => { if (!e.isComposing) ui.setGlobalInboxQuery(input.value); },
     onkeydown: (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); ui.setGlobalInboxQuery(''); } },

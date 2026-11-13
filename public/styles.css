@@ -200,6 +200,7 @@
   color: var(--fg-muted, var(--fg));
 }
 
+.hive-input,
 .hive-bd-setting input,
 .hive-capacity-editor input[type="number"],
 .hive-field input,
@@ -1643,12 +1644,13 @@ dialog.hive-confirm:not([open]) { display: none; }
 body.light .hive-hex.is-search-match .hive-conversation-ring { stroke: #186879; }
 .hive-hex.is-search-dim { opacity: 0.22; }
 .hive-hex.is-search-current .hive-hex-ring { stroke: var(--fg); stroke-width: 2; }
-.hive-search-open { position: absolute; top: 10px; left: 56px; }
-.hive-map-search { position: absolute; top: 10px; left: 56px; max-width: calc(100% - 72px); padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+.hive-search-open { position: absolute; top: 10px; left: 10px; }
+.hive-map-search { position: absolute; top: 10px; left: 10px; box-sizing: border-box; max-width: calc(100% - 20px); padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 12.5px; overflow-wrap: anywhere; }
 .hive-map-search[hidden], .hive-search-open[hidden] { display: none; }
-.hive-search-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
-.hive-search-row input { width: 14em; min-width: 0; }
-.hive-search-row select { max-width: 12em; }
+.hive-search-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.hive-search-row .hive-input { width: auto; height: 30px; min-width: 0; max-width: 100%; padding: 0 9px; }
+.hive-search-row input { flex: 1 1 14em; }
+.hive-search-row select { flex: 0 1 12em; }
 .hive-search-field, .hive-map-search > .hive-muted { display: block; margin-top: 5px; }
 
 .hive-counter { color: var(--fg-muted, var(--fg)); }
@@ -1696,7 +1698,7 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 
 .hive-inbox-search { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .hive-inbox-search-field { position: relative; flex: 1 1 16em; min-width: 0; max-width: 28em; }
-.hive-inbox-search-input { box-sizing: border-box; width: 100%; height: 30px; padding: 0 30px 0 10px; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; -webkit-appearance: none; appearance: none; }
+.hive-inbox-search-input { height: 30px; padding: 0 30px 0 9px; -webkit-appearance: none; appearance: none; }
 .hive-inbox-search-input::-webkit-search-cancel-button { display: none; }
 .hive-inbox-search-clear { position: absolute; top: 3px; right: 3px; width: 24px; height: 24px; padding: 0; font: inherit; line-height: 1; color: var(--fg-muted, var(--fg)); background: none; border: 0; border-radius: 4px; cursor: pointer; visibility: hidden; }
 .hive-inbox-search-input:not(:placeholder-shown) + .hive-inbox-search-clear { visibility: visible; }

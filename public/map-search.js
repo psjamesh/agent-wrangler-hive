@@ -21,11 +21,11 @@ export function searchReveals(ui, cellId) {
 export function bindMapSearch({ ctx, cell, map, ids, hidden, heads }) {
   const state = stateFor(ctx.ui, cell.id);
   let latest = ctx;
-  const input = h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', 'data-focus-key': `map-search:${cell.id}`, 'aria-label': 'Search beads', placeholder: 'Search beads', value: state.query,
+  const input = h('input', { class: 'hive-input', type: 'text', autocomplete: 'off', spellcheck: 'false', 'data-focus-key': `map-search:${cell.id}`, 'aria-label': 'Search beads', placeholder: 'Search beads', value: state.query,
     oninput: () => { state.query = input.value; state.current = null; refresh(); } });
   const count = h('span', { class: 'hive-search-count', role: 'status', 'aria-live': 'polite' });
   const matched = h('span', { class: 'hive-search-field', role: 'status', 'aria-live': 'polite' });
-  const scope = h('select', { 'data-focus-key': `map-search-scope:${cell.id}`, 'aria-label': 'Search scope', onchange: () => { state.scope = scope.value; state.current = null; refresh(); } });
+  const scope = h('select', { class: 'hive-input', 'data-focus-key': `map-search-scope:${cell.id}`, 'aria-label': 'Search scope', onchange: () => { state.scope = scope.value; state.current = null; refresh(); } });
   const reveal = h('button', { type: 'button', 'data-focus-key': `map-search-reveal:${cell.id}`, class: 'hive-quiet-btn', onclick: () => {
     state.reveal = !state.reveal;
     latest.ui.setForm('mapSearchReveal', { cellId: cell.id, reveal: state.reveal });
@@ -43,7 +43,7 @@ export function bindMapSearch({ ctx, cell, map, ids, hidden, heads }) {
       latest.ui.setForm('mapSearchReveal', null);
     }
   };
-  const bar = h('div', { class: 'hive-map-search', onwheel: e => e.stopPropagation() },
+  const bar = h('div', { class: 'hive-map-search', role: 'search', 'aria-label': 'Search beads', onwheel: e => e.stopPropagation() },
     h('div', { class: 'hive-search-row' }, input, scope,
       h('button', { type: 'button', class: 'hive-quiet-btn', onclick: close }, 'Close')),
     count, ' ', reveal, matched,
