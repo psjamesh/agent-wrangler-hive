@@ -1,4 +1,3 @@
-import { testAgents } from './helpers/agents.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -34,7 +33,7 @@ async function fixture(t) {
   rt.beads.loadSnapshot = async () => graph;
   rt.snapshots = { graph, current: { error: null }, refresh: async () => ({}), invalidate() {} };
   rt.recheck = async () => ({});
-  const host = { agents: { list: async () => testAgents() }, version: '1.70.0', stores: { hive: rt }, tasks: { forSession: () => ({ taskId: 'task' }) }, sessions: { list: () => [{ sessionId: queen }], get: sid => ({ sessionId: sid, taskId: 'task', archived: sid === worker }) }, links: { get: () => [{ type: 'pr', url: pr }] } };
+  const host = { version: '1.70.0', stores: { hive: rt }, tasks: { forSession: () => ({ taskId: 'task' }) }, sessions: { list: () => [{ sessionId: queen }], get: sid => ({ sessionId: sid, taskId: 'task', archived: sid === worker }) }, links: { get: () => [{ type: 'pr', url: pr }] } };
   rt.attach(host);
   await Promise.resolve();
   await rt.recover();

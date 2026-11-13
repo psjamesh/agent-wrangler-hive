@@ -1,4 +1,3 @@
-import { pickupDetails } from './pickup.js';
 import { watchdogSettingsForm } from './watchdog-settings.js';
 import { reviewPolicyForm } from './review-policy.js';
 import { confirmHive, promptHive } from './confirm-dialog.js';
@@ -39,13 +38,11 @@ export function primaryKind(bead, waits, agentDots, humanWaits = 0, ownerDot = n
   if (bead.status === 'deferred') return 'deferred';
   if (bead.status === 'in_progress' && ownerDot === 'idle') return 'in-progress';
   if (bead.kind === 'external') return 'external';
-  if (bead.pickup?.armed && ['ready', 'queued'].includes(bead.pickup.state)) return 'pickup';
   return null;
 }
 
 const MARK_WORDS = {
   person: 'An agent is waiting for input',
-  pickup: 'Ready for pickup; awaiting automatic worker start',
   'review-working': 'In review: reviewer working',
   'review-pending': 'In review: review pending',
   done: 'Done',
@@ -198,7 +195,7 @@ export function legend(snapshot = false) {
       title: snapshot
         ? 'One mark per item, from its recorded work status. Captured sessions describe the capture, not now, so this hive never shows an agent working or waiting for input; their states are in each tooltip.'
         : 'One person icon for every human wait: agent input, an unacknowledged Hive message, a Needs You request or a PR explicitly waiting on you. Several waits get a count badge. Worker-handled failing checks stay quiet. One mark per item, most urgent first. Waiting for input means an attached agent is asking someone something; the cross means the work itself is blocked or waits on a prerequisite. In review and recorded wait marks remain visible alongside them. The outlined progress arc means in-progress work with an idle live owner. Items with no mark have no activity or recorded wait. Each tooltip names every agent and its state.',
-    }, [...(snapshot ? [] : [['person', 'waiting for you (count when several)'], ['busy', 'agent working'], ['review-working', 'in review: reviewer working'], ['review-pending', 'in review: review pending'], ['in-progress', 'in progress; agent idle']]), ['pickup', 'ready for automatic pickup'], ['recorded-wait', 'recorded wait (reason in tooltip and details)'], ['untracked', 'untracked work'], ['waiting', 'blocked or waiting'], ['deferred', 'deferred'], ['done', 'done'], ['closed', 'closed otherwise']].map(([k, label]) => h('span', { class: 'hive-legend-st' },
+    }, [...(snapshot ? [] : [['person', 'waiting for you (count when several)'], ['busy', 'agent working'], ['review-working', 'in review: reviewer working'], ['review-pending', 'in review: review pending'], ['in-progress', 'in progress; agent idle']]), ['recorded-wait', 'recorded wait (reason in tooltip and details)'], ['untracked', 'untracked work'], ['waiting', 'blocked or waiting'], ['deferred', 'deferred'], ['done', 'done'], ['closed', 'closed otherwise']].map(([k, label]) => h('span', { class: 'hive-legend-st' },
       h('svg:svg', { viewBox: '-8 -8 16 16', width: '14', height: '14', 'aria-hidden': 'true' }, primaryMark(k, label)), label))),
     h('span', { class: 'hive-legend-item hive-legend-note' }, 'No mark: no activity or recorded wait'),
     swatch('is-done', 'Closed work'),
@@ -255,7 +252,6 @@ function beadDetails(ctx, cell) {
       h('h3', {}, bead.title),
       h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => ui.selectBead(null), title: 'Show the hive goal' }, 'Hive goal')),
     waitingSection(ctx, bead),
-    cell.snapshot ? null : pickupDetails(ctx, cell, { ...bead, pickup: detail.bead?.pickup || bead.pickup }),
     h('p', { class: 'hive-meta' },
       h('span', { class: `hive-status-pill hive-status-${displayStatus(bead)}` }, STATUS_LABEL[displayStatus(bead)] || bead.status),
       h('span', {}, bead.kind),
@@ -589,7 +585,6 @@ function infoDrawer(ctx, cell, root) {
     h('section', {}, h('h4', {}, 'Queen'), queen),
     cell.snapshot || isRetired(cell) ? null : queenInstructions(ctx, cell),
     cell.snapshot || isRetired(cell) ? null : watchdogSettingsForm(ctx, cell),
-    cell.snapshot || isRetired(cell) ? null : h('p', { class: 'hive-muted' }, 'Automatic pickup starts ready-marked work whenever global work capacity is available. Each mark carries its worker profile. Maximum active workers controls concurrency; starts are limited to one per hive and two overall per minute.'),
     cell.snapshot || isRetired(cell) ? null : reviewPolicyForm(ctx, cell),
     cell.snapshot ? null : h('section', {},
       h('h4', {}, 'Hive'),

@@ -1,21 +1,17 @@
-import { assertAllowedModel } from './review-policy.js';
 import { safeDeliver } from './sessions.js';
 import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
-import { assertPickupAuthorization, assertPickupClaimed, consumePickup, catalogHold } from './pickup.js';
-import { reservePickupStart } from './launch-budget.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 import { holdsBead } from './bead-sessions.js';
 import { assertCurrent } from './lifetime.js';
 import { newId } from './metadata-store.js';
 import { actorFor, descendantIds, GROUP_KINDS } from './bead-model.js';
 import { COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller } from './access.js';
-import { HiveError, ensureWritable, text, withLock, withLocks, claimBead, bindIfMissing } from './ops.js';
+import { HiveError, ensureWritable, text, withLock, claimBead, bindIfMissing } from './ops.js';
 import { applyLaunchPolicy, launchRestriction } from './launch-policy.js';
-import { ADMISSION_LOCK, capacity, checkAdmission, exportedGraph, RESERVED_LAUNCH_STATES } from './admission.js';
+import { ADMISSION_LOCK, capacity, checkAdmission, RESERVED_LAUNCH_STATES } from './admission.js';
 
 const inFlight = new Set();
-export function workerLaunchInFlight(id) { return inFlight.has(id); }
 const RETIRED_LAUNCH_STATES = new Set(['archived', 'cancelled', 'abandoned', 'refused', 'review-ended']);
 
 function launchOptions(input) {
@@ -71,10 +67,6 @@ function gateAuthority(rt, host, launchId, { sid, task, ext, initial }, expected
   const requester = initial ? coordinator(rt, host, { sessionId: launch.requestedBy, cell: { id: launch.cellId } }, { attach: launch.role !== 'worker', beadId: launch.beadId }) : resolveCaller(rt, host, sid, launch.cellId);
   ensureWritable(rt);
   reviewForLaunch(rt, launch, { sid, initial });
-  if (initial && launch.source === 'automatic') {
-    const cell = rt.metadata.cell(launch.cellId);
-    if (cell?.queenSessionId !== launch.authorizedBy || (cell.queenGeneration || 0) !== launch.queenGeneration) throw new HiveError('Pickup queen authority changed.');
-  }
   return { launch, requester };
 }
 
@@ -103,7 +95,6 @@ function recordLaunchFailure(rt, launchId, error, dispatched = true) {
       if (review && !OPEN_REVIEW_STATES.has(review.state)) launch.state = review.state === 'cancelled' ? 'cancelled' : 'review-ended';
       else launch.state = dispatched ? 'uncertain' : 'refused';
     }
-    if (!dispatched && launch.source === 'automatic' && d.pickupRates?.starts) d.pickupRates.starts = d.pickupRates.starts.filter(s => s.launchId !== launchId);
     launch.error = String(error.message).slice(0, 1000);
     launch.updatedAt = Date.now();
     return launch.state;
@@ -171,7 +162,6 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
         const graph = await rt.beads.loadSnapshot({ all: true });
         current = gateAuthority(rt, host, launchId, context, current.launch);
         const { launch: l, requester } = current;
-        if (initial && l.source === 'automatic') assertPickupAuthorization(rt, host, l, graph);
         held = initial || l.role !== 'worker' ? null : heldOpenBead(rt, graph, sid, l);
         target = held || l.beadId;
         closedTarget = !initial && graph.beads[target]?.status === 'closed';
@@ -193,7 +183,6 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
         reserved = true;
       });
       if (launch.role === 'worker') await claimBead(rt, actor, { bead_id: target }, { launchId: held ? null : launchId, validate: (context) => {
-        if (initial && launch.source === 'automatic') assertPickupAuthorization(rt, host, launch, exportedGraph(context), { ownOperationId: context.pickupOperationId });
         if (initial) coordinator(rt, host, { sessionId: launch.requestedBy, cell: { id: launch.cellId } }, { attach: launch.role !== 'worker', beadId: launch.beadId });
         else resolveCaller(rt, host, sid, launch.cellId);
         if (host.sessions.get(sid)?.archived) throw new HiveError('The worker was archived before claiming.');
@@ -202,11 +191,6 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
           if (!fresh || fresh.status === 'closed' || fresh.assignee !== `aw:${sid}`) throw new HiveError(`Bead ${held} is no longer held by this worker.`, 'conflict');
         }
       } });
-      if (initial && launch.source === 'automatic') {
-        assertCurrent(rt, host);
-        const claimedGraph = await rt.beads.loadSnapshot({ all: true });
-        assertPickupClaimed(rt, host, launch, claimedGraph, sid);
-      }
       gateAuthority(rt, host, launchId, { sid, task, ext, initial }, launch);
       rt.metadata.mutate((d) => {
         const rec = d.workerLaunches[launchId];
@@ -238,30 +222,13 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
   });
 }
 
-export async function spawnWorker(rt, host, actor, input, { reviewId = null, role = reviewId ? 'reviewer' : 'worker', pickup = null, now = Date.now } = {}) {
+export async function spawnWorker(rt, host, actor, input, { reviewId = null, role = reviewId ? 'reviewer' : 'worker' } = {}) {
   if (role === 'investigator') throw new HiveError('A helper needs its own bead: create an investigation bead and launch it with hive_spawn_worker (role work). Helpers cannot share a builder\'s bead or slot.', 'refused');
   const opts = launchOptions(input);
   const launchId = newId('worker');
   const as = { attach: role !== 'worker', beadId: input.bead_id };
   const attach = role !== 'worker';
-  actor = coordinator(rt, host, actor, as);
-  assertAllowedModel(opts);
-  let catalog;
-  try { catalog = await host.agents?.list?.(); }
-  catch {
-    assertCurrent(rt, host);
-    if (pickup) throw catalogHold('Worker model catalog could not be read.');
-  }
-  assertCurrent(rt, host);
-  if (pickup && !Array.isArray(catalog)) throw catalogHold('Worker model catalog is unavailable.');
-  const provider = Array.isArray(catalog) ? catalog.find(a => a.id === (opts.agent || 'claude')) : null;
-  const model = provider?.models?.find(m => opts.model ? m.value === opts.model : m.default);
-  assertAllowedModel({ ...opts, resolvedModel: model?.resolved });
-  if (pickup) {
-    if (!provider?.available || !model || typeof model.resolved !== 'string' || !model.resolved) throw catalogHold('Worker model resolution cannot be checked in the current catalog.', 'model-unavailable');
-    if (model.resolved !== input.resolvedModel) throw new HiveError('Worker model resolution changed; reconcile and rearm.', 'refused');
-  }
-  await withLocks([ADMISSION_LOCK, `bead:${input.bead_id}`], async () => {
+  await withLock(ADMISSION_LOCK, async () => {
     if (attach) await rt.snapshots.refresh();
     actor = coordinator(rt, host, actor, as);
     await rt.snapshots.refresh();
@@ -273,15 +240,8 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     requireLaunchScope(actor, graph, bead.id);
     reviewForLaunch(rt, { reviewId, beadId: bead.id, cellId: cell.id });
     checkAdmission(rt, graph, bead.id, { sessionId: null, review: attach });
-    const automatic = pickup ? { ...pickup, source: 'automatic', profile: structuredClone(graph.beads[bead.id].pickup.profile), briefDigest: graph.beads[bead.id].pickup.briefDigest } : {};
-    if (pickup) {
-      assertPickupAuthorization(rt, host, { ...automatic, id: launchId, cellId: cell.id, beadId: bead.id }, graph);
-      if (now() - pickup.observedAt > 60000) throw new HiveError('Pickup profile observation is stale.', 'refused');
-    }
     rt.metadata.mutate((d) => {
-      if (pickup) reservePickupStart(d, cell.id, launchId, now());
-      consumePickup(d, graph.beads[bead.id], { launchId, source: pickup ? 'automatic' : 'manual' });
-      d.workerLaunches[launchId] = { id: launchId, cellId: cell.id, taskId: cell.taskId, beadId: bead.id, requestedBy: actor.sessionId, ...automatic, role, reviewId, sessionId: null, state: 'reserved', restriction: launchRestriction(opts.agent), createdAt: Date.now(), updatedAt: Date.now() };
+      d.workerLaunches[launchId] = { id: launchId, cellId: cell.id, taskId: cell.taskId, beadId: bead.id, requestedBy: actor.sessionId, role, reviewId, sessionId: null, state: 'reserved', restriction: launchRestriction(opts.agent), createdAt: Date.now(), updatedAt: Date.now() };
       if (reviewId) d.reviews[reviewId].launchId = launchId;
     });
   });
@@ -293,12 +253,6 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     actor = coordinator(rt, host, actor, as);
     if (l.state !== 'reserved') throw new HiveError('This launch was cancelled or changed before dispatch.', 'conflict');
     reviewForLaunch(rt, l, { initial: true });
-    if (pickup) {
-      const fresh = await rt.beads.loadSnapshot({ all: true });
-      assertPickupAuthorization(rt, host, l, fresh);
-    }
-    assertCurrent(rt, host);
-    rt.metadata.mutate(d => { d.workerLaunches[launchId].submittedAt = now(); });
     const baseIntent = l.reviewId ? `You are the reviewer of Hive bead ${l.beadId} in cell ${l.cellId}; its builder keeps the claim. Your reviewer binding is made before your first action. Report to session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}` : `You own Hive bead ${l.beadId} in cell ${l.cellId}. Its claim and binding are made before your first action. Use hive_context and the hive-worker skill. Report to queen/coordinator session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}`;
     const delegation = 'Delegate only through Hive (hive_spawn_worker where your role allows it, or ask the queen); do not use spawn_session, spawn_workflow or schedule_session; they leave the session untracked. ';
     const intent = `${baseIntent}\n\nUse the hive-worker skill. Start with hive_context({ scope: "bead", bead_id: "${l.beadId}", cell_id: "${l.cellId}" }) for your bounded work context.\n\nHive task: ${l.taskId}. When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Worker/reviewer requests go to this hive's queen and remain out of human views until forwarded; human step-in is not supported. Recover with hive_list_my_requests and withdraw with hive_withdraw_request when answered elsewhere. ${delegation}Launch helpers into this same resolved task; ancestry alone does not enroll them. Missing native tools require a membership check or refreshed agent terminal.`;

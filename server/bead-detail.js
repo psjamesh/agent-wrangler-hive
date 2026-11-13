@@ -1,4 +1,3 @@
-import { pickupState, pickupCell } from './pickup.js';
 import { reviewFields } from './review-state.js';
 import { isUntracked } from './tracking.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
@@ -22,7 +21,7 @@ function slimReview(review) {
 
 export function fullBead(runtime, graph, id) {
   const bead = { ...graph.beads[id], ...reviewFields(runtime, id) };
-  return { ...bead, pickup: pickupState(runtime, runtime.host, pickupCell(runtime, graph, id), bead, graph), untracked: isUntracked(runtime.host, graph, bead) };
+  return { ...bead, untracked: isUntracked(runtime.host, graph, bead) };
 }
 
 // The fields the map, lists, badges and the waiting views read for every bead.
@@ -35,10 +34,6 @@ export function slimBead(runtime, graph, id, { root = false } = {}) {
   for (const key of ['reviewState', 'reviewWorking']) if (key in full) out[key] = full[key];
   if (full.review) out.review = slimReview(full.review);
   out.untracked = full.untracked;
-  if (full.pickup.armed || full.pickup.armToken) {
-    const { profile, ...pickup } = full.pickup;
-    out.pickup = pickup;
-  }
   out.summaryLine = firstLine(full.summary);
   if (root) {
     out.goal = full.goal;
