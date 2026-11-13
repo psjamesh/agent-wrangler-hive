@@ -15,7 +15,8 @@ import { workstreamClasses } from './cell-layout.js';
 import { retireDrawer, openRetire, openReopen } from './retire-view.js';
 import { retireKey, isRetired } from './retired.js';
 import { closedButton, closedKey, completeKey, workstreamDrawer } from './workstream-view.js';
-import { attentionEl, launchFields, instructionsField, noticesEl } from './widgets.js';
+import { attentionEl, launchFields, instructionsField, noticesEl, errorNote } from './widgets.js';
+import { submitForm } from './form-submit.js';
 
 const BEAD_SIZE = 60;
 // Titles come first: 9.5px semibold (the readable floor), wrapped by the
@@ -313,8 +314,10 @@ function workstreamProgress(c) {
     parts.join(', '));
 }
 
-function queenInstructions(ctx, cell) {
-  const { ui, send, api } = ctx;
+const SAVE_FAILED = 'Could not save the instructions.';
+
+export function queenInstructions(ctx, cell) {
+  const { ui, api } = ctx;
   const key = `instructions:${cell.id}`;
   const editing = ui.form(key);
   const saved = cell.queenInstructions || '';
@@ -329,21 +332,13 @@ function queenInstructions(ctx, cell) {
     class: 'hive-form hive-instructions',
     onsubmit: (e) => {
       e.preventDefault();
-      const cur = ui.form(key);
-      if (!cur || cur.pending) return;
-      const reqId = `${cur.id}:${Date.now().toString(36)}`;
-      ui.setForm(key, { ...cur, error: null, pending: reqId });
-      // Only the editor that sent this save may close or show its error; a
-      // reply after Cancel or a newer edit becomes a notice instead.
-      send({ type: 'hive-cell-instructions', cellId: cell.id, instructions: cur.text || '' }, {
-        onReply: (frame) => {
-          const mine = ui.form(key)?.pending === reqId;
-          if (!frame.ok) {
-            const error = frame.error || 'Could not save the instructions.';
-            if (mine) ui.setForm(key, { ...ui.form(key), error, pending: null });
-            else ctx.notice(`Queen instructions were not saved: ${error}`, { severity: 'error' });
-            return;
-          }
+      submitForm({
+        ctx, key,
+        newId: (cur) => `${cur.id}:${Date.now().toString(36)}`,
+        message: (cur) => ({ type: 'hive-cell-instructions', cellId: cell.id, instructions: cur.text || '' }),
+        failed: SAVE_FAILED,
+        lateFailure: (frame) => ctx.notice(`Queen instructions were not saved: ${frame.error || SAVE_FAILED}`, { severity: 'error' }),
+        succeeded: (frame, mine) => {
           if (mine) ui.setForm(key, null);
           else ctx.notice('Earlier queen instructions were saved after you closed the editor; reopen it to see the current text.');
         },
@@ -352,7 +347,7 @@ function queenInstructions(ctx, cell) {
   },
   instructionsField(editing.text, (text) => ui.patchForm(key, { text }), `instructions:${cell.id}`),
   h('p', { class: 'hive-muted' }, cell.queenSessionId ? 'The current queen sees the change the next time it reads hive_context; use Send brief to tell it now.' : 'The next queen launched or nominated for this hive receives them.'),
-  editing.error ? h('p', { class: 'hive-dialog-error', role: 'alert' }, editing.error) : null,
+  errorNote(editing.error),
   h('div', { class: 'hive-actions' },
     h('button', { type: 'submit', class: 'hive-btn hive-btn-primary', disabled: Boolean(editing.pending) }, editing.pending ? 'Saving…' : 'Save'),
     h('button', { type: 'button', class: 'hive-btn', onclick: () => ui.setForm(key, null) }, 'Cancel')));

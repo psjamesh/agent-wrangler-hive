@@ -1,4 +1,6 @@
 import { h, relativeTime } from './dom.js';
+import { field, errorNote } from './widgets.js';
+import { submitForm } from './form-submit.js';
 import { activeKids, under, archiveHidden } from './archive-layout.js';
 
 const OUTCOMES = [
@@ -121,8 +123,7 @@ function entry(ctx, cell, id, rec, form, hidden) {
     h('p', {}, ancestors.length
       ? `Reopening it also reopens the closed workstream${ancestors.length === 1 ? '' : 's'} around it: ${ancestors.map((a) => hive.beads[a]?.title || a).join(', ')}. Work already finished under it stays finished.`
       : 'Work already finished under it stays finished. Its summary and evidence are kept.'),
-    h('label', { class: 'hive-field' }, h('span', {}, 'Why reopen it'),
-      h('input', { type: 'text', value: form.reason || '', maxlength: '2000', oninput: (e) => ui.patchForm(k, { reason: e.target.value }), 'data-focus-key': `reopen-reason:${id}` })),
+    field('Why reopen it', h('input', { type: 'text', value: form.reason || '', maxlength: '2000', oninput: (e) => ui.patchForm(k, { reason: e.target.value }), 'data-focus-key': `reopen-reason:${id}` })),
     h('div', { class: 'hive-actions' },
       h('button', { type: 'submit', class: 'hive-btn hive-btn-primary', disabled: busy }, busy ? 'Reopening…' : 'Reopen'),
       h('button', { type: 'button', class: 'hive-btn', onclick: () => ui.setForm(k, {}) }, 'Cancel')))
@@ -157,7 +158,7 @@ function closedDrawer(ctx, cell) {
     h('button', { type: 'button', class: 'hive-quiet-btn', onclick: close, 'data-focus-key': `closed-close:${cell.id}` }, 'Close')),
   h('div', { class: 'hive-info-body', dataset: { scrollKey: `closed:${cell.id}` } },
     h('p', { class: 'hive-muted' }, 'Archived workstreams keep their items, evidence, links, conversations and sessions. Showing one puts it back on the map while it stays closed.'),
-    form.error ? h('p', { class: 'hive-dialog-error', role: 'alert' }, form.error) : null,
+    errorNote(form.error),
     list.length
       ? h('ul', { class: 'hive-closed-list' }, list.map(([id, rec]) => entry(ctx, cell, id, rec, form, hidden)))
       : h('p', { class: 'hive-muted' }, 'No closed workstreams are archived in this hive.')));
@@ -180,7 +181,7 @@ export function openComplete(ctx, cell, headId) {
 }
 
 function completeDrawer(ctx, cell) {
-  const { ui, hive, send } = ctx;
+  const { ui, hive } = ctx;
   const k = completeKey(cell.id);
   const form = ui.form(k);
   if (!form) return null;
@@ -204,22 +205,14 @@ function completeDrawer(ctx, cell) {
     class: 'hive-info-body hive-form',
     onsubmit: (e) => {
       e.preventDefault();
-      const cur = ui.form(k);
-      if (!cur || cur.pending || !cur.check || cur.check.problems?.length) return;
-      if (!cur.summary?.trim()) {
-        ui.setForm(k, { ...cur, error: 'Write a summary of what it achieved, or why it ended.' });
-        return;
-      }
-      const reqId = `${Date.now().toString(36)}`;
-      ui.setForm(k, { ...cur, pending: reqId, error: null });
-      send({ type: 'hive-ws-complete', cellId: cell.id, headId: cur.headId, outcome: cur.outcome, summary: cur.summary, archive: cur.archive !== false }, {
-        onReply: (frame) => {
-          const mine = ui.form(k)?.pending === reqId;
-          if (!frame.ok) {
-            if (mine) ui.setForm(k, { ...ui.form(k), pending: null, error: frame.error || 'The workstream was not completed.' });
-            else ctx.notice(`The workstream was not completed: ${frame.error || ''}`, { severity: 'error' });
-            return;
-          }
+      submitForm({
+        ctx, key: k,
+        allow: (cur) => cur.check && !cur.check.problems?.length,
+        invalid: (cur) => !cur.summary?.trim() && 'Write a summary of what it achieved, or why it ended.',
+        message: (cur) => ({ type: 'hive-ws-complete', cellId: cell.id, headId: cur.headId, outcome: cur.outcome, summary: cur.summary, archive: cur.archive !== false }),
+        failed: 'The workstream was not completed.',
+        lateFailure: (frame) => ctx.notice(`The workstream was not completed: ${frame.error || ''}`, { severity: 'error' }),
+        succeeded: (frame, mine) => {
           if (mine) ui.setForm(k, null);
           if (frame.archiveError) ctx.notice(frame.archiveError, { severity: 'error' });
         },
@@ -230,13 +223,11 @@ function completeDrawer(ctx, cell) {
   check ? null : h('p', { class: 'hive-muted', role: 'status' }, 'Checking everything under it…'),
   problems.length ? h('div', { class: 'hive-dialog-error', role: 'alert' }, h('p', {}, 'It cannot be completed yet:'), h('ul', {}, problems.map((p) => h('li', {}, p)))) : null,
   check?.waitingMessages ? h('p', { class: 'hive-warning' }, `${check.waitingMessages} message${check.waitingMessages === 1 ? '' : 's'} about this work still wait${check.waitingMessages === 1 ? 's' : ''} for an answer or acknowledgement. Completing does not answer or dismiss ${check.waitingMessages === 1 ? 'it' : 'them'}; ${check.waitingMessages === 1 ? 'it stays' : 'they stay'} in the conversation and inbox.`) : null,
-  h('label', { class: 'hive-field' }, h('span', {}, 'Outcome'),
-    h('select', { onchange: (e) => ui.patchForm(k, { outcome: e.target.value }), 'data-focus-key': `complete-outcome:${cell.id}` },
-      OUTCOMES.map(([v, label]) => h('option', { value: v, selected: v === form.outcome }, label)))),
-  h('label', { class: 'hive-field' }, h('span', {}, 'Summary'),
-    h('textarea', { rows: '4', value: form.summary || '', placeholder: 'What this workstream achieved, or why it ended.', oninput: (e) => ui.patchForm(k, { summary: e.target.value }), 'data-focus-key': `complete-summary:${cell.id}` })),
+  field('Outcome', h('select', { onchange: (e) => ui.patchForm(k, { outcome: e.target.value }), 'data-focus-key': `complete-outcome:${cell.id}` },
+    OUTCOMES.map(([v, label]) => h('option', { value: v, selected: v === form.outcome }, label)))),
+  field('Summary', h('textarea', { rows: '4', value: form.summary || '', placeholder: 'What this workstream achieved, or why it ended.', oninput: (e) => ui.patchForm(k, { summary: e.target.value }), 'data-focus-key': `complete-summary:${cell.id}` })),
   head?.parentId !== cell.rootBeadId ? null : h('label', { class: 'hive-check' }, h('input', { type: 'checkbox', checked: form.archive !== false, onchange: (e) => ui.patchForm(k, { archive: e.target.checked }) }), ' Archive it once complete, freeing its space on the map'),
-  form.error ? h('p', { class: 'hive-dialog-error', role: 'alert' }, form.error) : null,
+  errorNote(form.error),
   h('div', { class: 'hive-actions' },
     h('button', { type: 'submit', class: 'hive-btn hive-btn-primary', disabled: !ready }, form.pending ? 'Completing…' : 'Complete'),
     h('button', { type: 'button', class: 'hive-btn', onclick: close }, 'Cancel'))));
