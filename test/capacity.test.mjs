@@ -6,6 +6,7 @@ import path from 'node:path';
 import { HiveRuntime } from '../server/runtime.js';
 import { buildGraph } from '../server/bead-model.js';
 import { capacity } from '../server/admission.js';
+import { cellCounts, workCounts, childrenMap } from '../public/model.js';
 
 const raw = (id, parent, claimed = false) => ({ id, title: id, status: claimed ? 'in_progress' : 'open', assignee: claimed ? 'aw:worker' : '', metadata: { hive_kind: parent ? 'work' : 'goal' }, dependencies: parent ? [{ issue_id: id, depends_on_id: parent, type: 'parent-child' }] : [] });
 function fixture(t) {
@@ -57,4 +58,35 @@ test('cached projection updates for claims, reviews, launches and limit changes 
   assert.equal(f.rt.projection().capacity.unlimited, true);
   f.setLimit(1);
   assert.equal(f.rt.projection().capacity.limit, 1);
+});
+
+test('per-cell progress and work summaries sum to capacity across mixed hives', t => {
+  const { rt, setGraph } = fixture(t);
+  rt.metadata.mutate(d => {
+    d.cells.three = { id: 'three', rootBeadId: 'third', enabled: true };
+    d.reviews.claimed = { workBeadId: 'a', state: 'requested' };
+    d.reviews.extra = { workBeadId: 'review', state: 'in_review' };
+    d.workerLaunches.shared = { beadId: 'review', state: 'binding' };
+    d.workerLaunches.extra = { beadId: 'launch', state: 'reserved' };
+    d.operations.claim = { kind: 'claim', state: 'pending', intent: { beadId: 'claiming' } };
+  });
+  const heading = (id, parent, kind, claimed = false) => ({ ...raw(id, parent, claimed), status: 'in_progress', metadata: { hive_kind: kind } });
+  setGraph([
+    heading('root', null, 'goal', true), heading('stream', 'root', 'workstream', true),
+    raw('a', 'stream', true), { ...raw('unowned', 'stream'), status: 'in_progress' },
+    { ...raw('blocked', 'root', true), status: 'blocked' },
+    heading('external', 'root', 'external', true),
+    heading('other', null, 'goal'), heading('heading', 'other', 'workstream'),
+    raw('b', 'heading', true), raw('review', 'heading'), raw('launch', 'other'),
+    raw('third'), raw('c', 'third', true), raw('claiming', 'third'),
+  ]);
+  const hive = rt.projection();
+  const cells = Object.values(hive.cells);
+  const counts = cells.map(cell => cellCounts(hive, cell).in_progress);
+  assert.deepEqual(counts, [1, 3, 2]);
+  assert.equal(counts.reduce((sum, count) => sum + count, 0), hive.capacity.used);
+  for (const cell of cells) {
+    assert.equal(workCounts(hive, childrenMap(hive.beads), cell.rootBeadId).in_progress, cellCounts(hive, cell).in_progress);
+  }
+  assert.equal(workCounts(hive, childrenMap(hive.beads), 'stream').in_progress, 1);
 });

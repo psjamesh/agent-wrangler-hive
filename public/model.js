@@ -123,11 +123,11 @@ export function cellCounts(hive, cell) {
     if (id === cell.rootBeadId) continue;
     const b = hive.beads[id];
     counts.total += 1;
+    if (b.occupiesCapacity) counts.in_progress += 1;
     if (displayStatus(b) === 'in_review') counts.in_review += 1;
     else if (b.status === 'closed') counts.closed += 1;
-    else if (b.status === 'in_progress') counts.in_progress += 1;
     else if (b.status === 'blocked') counts.blocked += 1;
-    else counts.open += 1;
+    else if (b.status !== 'in_progress') counts.open += 1;
     if (b.status !== 'closed' && waitingOn(hive, id).length) counts.waiting += 1;
   }
   return counts;
@@ -142,11 +142,11 @@ export function workCounts(hive, kids, beadId) {
     if (seen.has(b.id)) continue;
     seen.add(b.id);
     counts.total += 1;
+    if (b.occupiesCapacity) counts.in_progress += 1;
     if (displayStatus(b) === 'in_review') counts.in_review += 1;
     else if (b.status === 'closed') counts.closed += 1;
-    else if (b.status === 'in_progress') counts.in_progress += 1;
     else if (b.status === 'blocked') counts.blocked += 1;
-    else counts.open += 1;
+    else if (b.status !== 'in_progress') counts.open += 1;
     stack.push(...(kids.get(b.id) || []));
   }
   return counts;

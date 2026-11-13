@@ -1,4 +1,4 @@
-import { capacity } from './admission.js';
+import { capacity, occupiedWorkIds } from './admission.js';
 import { needsHuman } from './requests.js';
 import { waitingProjection } from './waiting.js';
 import { slimBead } from './bead-detail.js';
@@ -118,8 +118,9 @@ export function projectForGraph({ runtime, snapshot }) {
     };
   }
   const roots = new Set(Object.values(cells).map((c) => c.rootBeadId));
+  const occupied = occupiedWorkIds(runtime, snapshot.graph);
   const visibleBeads = {};
-  for (const id of included) visibleBeads[id] = slimBead(runtime, snapshot.graph, id, { root: roots.has(id) });
+  for (const id of included) visibleBeads[id] = { ...slimBead(runtime, snapshot.graph, id, { root: roots.has(id) }), occupiesCapacity: occupied.has(id) };
   const visibleEdges = edges.filter((e) => included.has(e.dependent) || included.has(e.prerequisite));
   // Only cell creation is the human's to settle (it can leave a task with no
   // cell). Every other unfinished write is settled by Hive or the cell's
