@@ -998,7 +998,7 @@ function watchSize(root) {
 
 function setView(root, view) {
   const set = (k, v) => { if (v) root.dataset[k] = v; else delete root.dataset[k]; };
-  set('view', view?.inspecting ? 'cell-inspecting' : view ? 'cell' : null);
+  set('view', view?.overview ? 'overview' : view?.inspecting ? 'cell-inspecting' : view ? 'cell' : null);
   set('panels', view ? (view.panels ? 'open' : 'closed') : null);
   set('pane', view?.pane || null);
 }

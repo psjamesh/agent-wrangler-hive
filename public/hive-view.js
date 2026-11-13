@@ -758,6 +758,7 @@ export function renderHive(ctx) {
       h('h2', { class: 'hive-title' }, 'All hives'),
       capacityControl(ctx),
       h('span', { class: 'hive-counts' }, `${cells.length} hive${cells.length === 1 ? '' : 's'}, ${total} bead${total === 1 ? '' : 's'}`),
+      cells.length ? h('button', { type: 'button', class: 'hive-quiet-btn', 'aria-pressed': ui.dockOpen() ? 'true' : 'false', onclick: () => ui.setDockOpen(!ui.dockOpen()), 'data-focus-key': 'global-inbox-toggle' }, ui.dockOpen() ? 'Hide inbox' : 'Show inbox') : null,
       retiredCount ? h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => ui.setShowRetired(!showRetired), 'aria-pressed': showRetired ? 'true' : 'false', 'data-focus-key': 'show-retired', title: showRetired ? 'Hide retired hives from this map' : 'Show retired hives on this map' }, showRetired ? `Hide retired (${retiredCount})` : `Show retired (${retiredCount})`) : null,
       h('div', { class: 'hive-head-actions' },
         h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openCellDialog(ui, 'new', 'open-new'), 'data-focus-key': 'open-new', 'aria-haspopup': 'dialog' }, 'New hive'),
@@ -767,9 +768,14 @@ export function renderHive(ctx) {
     noticesEl(ctx),
     attentionEl(ctx),
     cached.map,
-    cells.length ? globalInbox(ctx, cells) : null,
     cellDialog(ctx)], ctx.beforeReplace);
-  return { top, bottom: null, inspector: false };
+  const panelsOpen = cells.length > 0 && ui.dockOpen();
+  return {
+    top,
+    bottom: panelsOpen ? globalInbox(ctx, cells) : null,
+    inspector: false,
+    view: { overview: true, panels: panelsOpen, pane: null },
+  };
 }
 
 export function disposeHiveView(ui) { hiveViews.delete(ui); }

@@ -1353,6 +1353,28 @@
   padding: 8px 12px 10px;
 }
 .hive-root[data-layout="small"][data-view^="cell"] .hive-divider { display: none; }
+
+.hive-root[data-view="overview"][data-panels="open"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8px var(--hive-panel-width, 38%);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "main divider rail";
+  gap: 0 12px;
+  padding: 10px 16px 14px;
+  overflow: hidden;
+}
+.hive-root[data-view="overview"][data-panels="open"] .hive-overview { grid-area: main; min-height: 0; padding: 4px 4px 4px 0; }
+.hive-root[data-view="overview"][data-panels="open"] .hive-dock { grid-area: rail; padding: 0; }
+.hive-root[data-view="overview"][data-panels="open"] .hive-divider { display: block; grid-area: divider; cursor: col-resize; touch-action: none; border-radius: 4px; background: var(--border); }
+.hive-root[data-layout="small"][data-view="overview"][data-panels="open"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(220px, 1fr);
+  grid-template-areas: "main" "rail";
+  gap: 10px 0;
+  overflow: auto;
+  padding: 8px 12px 10px;
+}
+.hive-root[data-layout="small"][data-view="overview"] .hive-divider { display: none; }
 .hive-root[data-layout="small"][data-view="cell-inspecting"][data-panels="open"] { grid-template-rows: auto auto minmax(100px, 1fr) auto minmax(180px, 1fr); grid-template-areas: "head" "bar" "slot" "tabs" "rail"; }
 .hive-root[data-compact] .hive-back { font-size: 0; gap: 0; padding: 6px 8px; }
 .hive-root[data-compact] .hive-crumb-sep { display: none; }
@@ -1697,11 +1719,9 @@ body.light .hive-hex.is-search-match .hive-conversation-ring { stroke: #186879; 
 .hive-badge-withdrawn { color: var(--muted, var(--fg)); opacity: .7; }
 .hive-inbox-withdrawn { display: flex; gap: .5em; align-items: baseline; }
 
-.hive-global-inbox { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border-muted, var(--border)); }
-.hive-global-inbox h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.hive-global-inbox { gap: 8px; }
 .hive-global-inbox .hive-inbox-filters { flex: 0 0 auto; }
 a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .hive-overview { overflow-y: auto; }
-.hive-global-inbox { flex: 0 0 auto; }
 .hive-global-inbox .hive-topic-time { flex: 0 0 auto; margin-left: auto; }
 .hive-global-inbox .hive-topic-title { min-width: 0; overflow-wrap: anywhere; }
