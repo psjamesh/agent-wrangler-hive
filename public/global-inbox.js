@@ -84,5 +84,7 @@ export function globalInbox(ctx, cells) {
           h('span', { class: 'hive-chip hive-topic-context' }, r.hive),
           h('span', { class: 'hive-muted hive-topic-preview' }, [r.author, r.preview].filter(Boolean).join(': ')),
           r.repair ? h('span', { class: 'hive-warning' }, r.repair) : null)))) : h('li', { class: 'hive-muted' }, empty));
-  return h('section', { class: 'hive-global-inbox', 'aria-label': 'Inbox across all hives' }, h('h3', {}, 'Inbox'), filters, list);
+  return h('div', { class: 'hive-dock hive-global-dock' },
+    h('section', { class: 'hive-panel hive-conversation hive-global-inbox', tabindex: '-1', 'data-focus-key': 'panel:global-inbox', 'data-scroll-key': 'panel:global-inbox', 'aria-label': 'Inbox across all hives', 'data-pane': 'conversation' },
+      h('h3', {}, 'Inbox'), filters, list));
 }

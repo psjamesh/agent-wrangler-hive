@@ -1,0 +1,86 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { renderHexMap } from '../public/hex-grid.js';
+import { renderHive } from '../public/hive-view.js';
+import client, { createUi } from '../public/client.js';
+import { projectForGraph } from '../server/projection.js';
+
+class Element {
+  constructor(tag) { this.tagName = tag; this.children = []; this.attributes = {}; this.events = {}; this.dataset = {}; this.style = {}; this.value = ''; this.clientWidth = 1000; this.clientHeight = 700; }
+  setAttribute(k, v) { this.attributes[k] = String(v); if (k.startsWith('data-')) this.dataset[k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = String(v); }
+  getAttribute(k) { return this.attributes[k] ?? (k.startsWith('data-') ? this.dataset[k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] : undefined) ?? null; }
+  removeAttribute(k) { delete this.attributes[k]; }
+  get classList() { const el = this; const get = () => new Set((el.attributes.class || '').split(' ').filter(Boolean)); return { contains: n => get().has(n), add(...ns) { const s = get(); ns.forEach(n => s.add(n)); el.attributes.class = [...s].join(' '); }, remove(...ns) { const s = get(); ns.forEach(n => s.delete(n)); el.attributes.class = [...s].join(' '); }, toggle(n, on) { const s = get(); if (on ?? !s.has(n)) s.add(n); else s.delete(n); el.attributes.class = [...s].join(' '); } }; }
+  get childNodes() { return this.children; }
+  get firstChild() { return this.children[0]; }
+  get lastChild() { return this.children.at(-1); }
+  get parentElement() { return this.parentNode; }
+  removeChild(n) { this.children.splice(this.children.indexOf(n), 1); n.parentNode = null; return n; }
+  append(...ns) { for (let n of ns) { if (!(n instanceof Element)) n = Object.assign(new Element('#text'), { text: String(n) }); n.parentNode?.removeChild(n); n.parentNode = this; this.children.push(n); } }
+  insertBefore(n, before) { if (n === before) return; n.parentNode?.removeChild(n); n.parentNode = this; const i = this.children.indexOf(before); this.children.splice(i < 0 ? this.children.length : i, 0, n); }
+  replaceChildren(...ns) { this.children.forEach(n => n.parentNode = null); this.children = []; this.append(...ns); }
+  get textContent() { return this.text ?? this.children.map(n => n.textContent).join(''); }
+  set textContent(v) { this.replaceChildren(); this.text = String(v); }
+  matches(selector) { return selector.split(',').some(part => { const s = part.trim(); if (s.startsWith('.')) return s.slice(1).split('.').every(c => this.classList.contains(c)); const a = s.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/); return a ? this.getAttribute(a[1]) !== null && (a[2] === undefined || this.getAttribute(a[1]) === a[2]) : this.tagName === s; }); }
+  closest(s) { for (let el = this; el; el = el.parentNode) if (el.matches(s)) return el; return null; }
+  querySelectorAll(s) { return this.children.flatMap(n => [...(n.matches(s) ? [n] : []), ...n.querySelectorAll(s)]); }
+  querySelector(s) { return this.querySelectorAll(s)[0] || null; }
+  contains(n) { return n === this || this.children.some(c => c.contains(n)); }
+  focus() { document.activeElement = this; }
+  addEventListener(type, fn, capture = false) { (this.events[type] ||= []).push({ fn, capture: capture === true }); }
+  removeEventListener(type, fn) { this.events[type] = (this.events[type] || []).filter(e => e.fn !== fn); }
+  fire(type, props = {}) { const e = { type, target: this, key: '', preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...props }; const path = []; for (let el = this; el; el = el.parentNode) path.push(el); for (const capture of [true, false]) for (const el of capture ? [...path].reverse() : path) { for (const h of el.events[type] || []) if (h.capture === capture) h.fn(e); if (e.stopped) return e; } return e; }
+  getBoundingClientRect() { return { left: 0, top: 0, right: 1000, bottom: 700, width: 1000, height: 700 }; }
+}
+
+function fixture(t) {
+  const saved = Object.fromEntries(['Node', 'document', 'requestAnimationFrame', 'cancelAnimationFrame', 'CSS'].map(k => [k, globalThis[k]]));
+  Object.assign(globalThis, { Node: Element, document: { createElement: t => new Element(t), createElementNS: (_, t) => new Element(t), createTextNode: t => Object.assign(new Element('#text'), { text: t }), body: new Element('body') }, requestAnimationFrame: () => 1, cancelAnimationFrame() {}, CSS: { escape: s => s } });
+  t.after(() => Object.assign(globalThis, saved));
+  const store = new Map();
+  client.register({ api: { storage: { get: (k) => store.get(k), set: (k, v) => store.set(k, v), remove: (k) => store.delete(k) } }, register() {} });
+  const cells = {
+    live: { id: 'live', taskId: 't1', enabled: true, rootBeadId: 'r1', queenSessionId: 'q', position: { q: 0, r: 0 } },
+  };
+  const beads = { r1: { id: 'r1', title: 'Live', kind: 'goal', status: 'in_progress' } };
+  const doc = { cells, conversation: {}, threads: {}, inbox: {}, bindings: {}, beadLayout: {}, arrangeAspect: {}, restoreNotices: {}, operations: {}, launches: {}, requests: {}, archived: {} };
+  const runtime = { metadata: { read: () => doc, cells: () => Object.values(doc.cells) }, beads: { status: { state: 'missing' } }, paths: {} };
+  const ui = createUi();
+  const sent = [];
+  const hive = () => projectForGraph({ runtime, snapshot: { graph: { beads, edges: [] } } });
+  const draw = () => renderHive({ ui, hive: hive(), graph: { sessions: [] }, api: {}, notices: [], busy: () => false, send: (m) => sent.push(m), notice() {} });
+  return { doc, ui, draw, hive, sent };
+}
+
+test('All hives puts the global inbox in the side dock, not under the map', (t) => {
+  const f = fixture(t);
+  const out = f.draw();
+  assert.deepEqual(out.view, { overview: true, panels: true, pane: null });
+  assert.ok(out.bottom.classList.contains('hive-dock'));
+  const panel = out.bottom.querySelector('.hive-global-inbox');
+  assert.ok(panel.classList.contains('hive-panel'));
+  assert.ok(panel.classList.contains('hive-conversation'));
+  assert.equal(panel.getAttribute('data-pane'), 'conversation');
+  assert.equal(out.top.querySelector('.hive-global-inbox'), null);
+});
+
+test('the side inbox keeps the Needs you default and its filters', (t) => {
+  const f = fixture(t);
+  const out = f.draw();
+  const on = out.bottom.querySelectorAll('.hive-inbox-filter').filter(b => b.getAttribute('aria-pressed') === 'true');
+  assert.equal(on.length, 1);
+  assert.match(on[0].textContent, /Needs you/);
+});
+
+test('hiding the panels collapses the side inbox and the toggle brings it back', (t) => {
+  const f = fixture(t);
+  const toggle = out => out.top.querySelector('[data-focus-key="global-inbox-toggle"]');
+  assert.match(toggle(f.draw()).textContent, /Hide inbox/);
+  f.ui.setDockOpen(false);
+  const closed = f.draw();
+  assert.equal(closed.bottom, null);
+  assert.deepEqual(closed.view, { overview: true, panels: false, pane: null });
+  assert.match(toggle(closed).textContent, /Show inbox/);
+  f.ui.setDockOpen(true);
+  assert.ok(f.draw().bottom);
+});
