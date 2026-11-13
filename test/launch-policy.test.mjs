@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fixture } from './ownership.test.mjs';
-import { CLAUDE_SPAWN_DENIES, applyLaunchPolicy, launchRestriction } from '../server/launch-policy.js';
+import { applyLaunchPolicy, launchRestriction } from '../server/launch-policy.js';
 import * as workers from '../server/workers.js';
 import { handoffQueen } from '../server/queen-handoff.js';
 import { createManifest } from '../server/manifest.js';
@@ -10,22 +10,13 @@ import { spawnRestriction, workTools } from '../server/tools.js';
 import { ungovernedDescendants } from '../server/tracking.js';
 import { reconcileLaunch } from '../server/sessions.js';
 
-const DENIES = ['mcp__agent-wrangler__spawn_session', 'mcp__agent-wrangler__spawn_workflow', 'mcp__agent-wrangler__schedule_session', 'mcp__agent-wrangler__update_schedule'];
-
-test('the exact AW MCP deny names are applied to Claude and cannot be overridden', () => {
-  assert.deepEqual([...CLAUDE_SPAWN_DENIES], DENIES);
-  assert.deepEqual(applyLaunchPolicy({ intent: 'x' }).disallowedTools, DENIES);
-  assert.deepEqual(applyLaunchPolicy({ agent: 'claude', disallowedTools: [] }).disallowedTools, DENIES);
-  assert.deepEqual(applyLaunchPolicy({ agent: 'Claude', disallowedTools: ['Bash'] }).disallowedTools, DENIES);
-});
-
-test('Codex and Gemini launches carry no deny list and are labelled unrestricted', () => {
-  for (const agent of ['codex', 'gemini']) {
-    const out = applyLaunchPolicy({ agent, disallowedTools: DENIES });
-    assert.equal('disallowedTools' in out, false);
+test('Hive launches carry no deny list and are labelled unrestricted for every provider', () => {
+  for (const agent of [undefined, 'claude', 'Claude', 'codex', 'gemini']) {
+    assert.equal('disallowedTools' in applyLaunchPolicy({ agent, intent: 'x' }), false);
+    const out = applyLaunchPolicy({ agent, disallowedTools: ['Bash'], intent: 'x' });
+    assert.deepEqual(out, { agent, intent: 'x' });
     assert.equal(launchRestriction(agent), 'unrestricted');
   }
-  assert.equal(launchRestriction(undefined), 'denied');
 });
 
 function recordSpawns(f) {
@@ -45,13 +36,13 @@ function recordSpawns(f) {
   return { calls, manifest };
 }
 
-test('worker launches deny the AW spawn tools; Codex workers do not and record it', async () => {
+test('Claude and Codex worker launches add no denied tools and record unrestricted launches', async () => {
   const f = fixture(0);
   const { calls } = recordSpawns(f);
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build' });
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'b', intent: 'advise' });
-  assert.deepEqual(calls.map((c) => c.disallowedTools), [DENIES, DENIES]);
-  assert.match(calls[0].intent, /schedule_session and update_schedule are denied/);
+  assert(calls.every((c) => !('disallowedTools' in c)));
+  assert.doesNotMatch(calls[0].intent, /are denied/);
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'again', agent: 'codex' }).catch(() => {});
   f.live.a.assignee = null; f.live.a.status = 'open';
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'codex build', agent: 'codex' });
@@ -60,14 +51,13 @@ test('worker launches deny the AW spawn tools; Codex workers do not and record i
   assert.match(codex.intent, /cannot restrict for this provider/);
   const launches = Object.values(f.doc().workerLaunches);
   assert.equal(launches.at(-1).restriction, 'unrestricted');
-  assert.equal(spawnRestriction(f.doc(), launches[0].sessionId), 'denied');
+  assert.equal(spawnRestriction(f.doc(), launches[0].sessionId), 'unrestricted for this provider');
   assert.equal(spawnRestriction(f.doc(), launches.at(-1).sessionId), 'unrestricted for this provider');
   assert.equal(spawnRestriction(f.doc(), 'nominated'), 'launch restrictions not applied');
 });
 
-test('Hive tools are not among the denied names and the handoff tool exists', () => {
+test('the handoff tool exists', () => {
   assert(workTools.some((t) => t.name === 'hive_handoff_queen'));
-  assert(workTools.every((t) => !DENIES.includes(`mcp__agent-wrangler__${t.name}`)));
 });
 
 function queenFixture() {
@@ -83,7 +73,7 @@ test('queen handoff launches a top-level fenced successor with the policy and no
   const claim = f.live.a.assignee;
   const out = await handoffQueen(f.rt, f.host, f.actor(), { summary: 'Finish the API work' });
   const call = calls.at(-1);
-  assert.deepEqual(call.disallowedTools, DENIES);
+  assert.equal('disallowedTools' in call, false);
   assert.equal('parentSession' in call, false);
   assert.equal(call.taskId, 'task');
   assert.match(call.intent, /Finish the API work/);
@@ -176,10 +166,6 @@ test('every host.sessions.spawn call in the server goes through the launch polic
     .flatMap((n) => fs.readFileSync(new URL(`../server/${n}`, import.meta.url), 'utf8').split('\n').filter((l) => /sessions\.spawn\(/.test(l)).map((l) => [n, l]));
   assert.deepEqual(hits.map(([n]) => n).sort(), ['sessions.js', 'workers.js']);
   assert(hits.every(([, l]) => l.includes('applyLaunchPolicy(')));
-});
-
-test('the denies cover scheduled dispatch', () => {
-  assert(DENIES.includes('mcp__agent-wrangler__schedule_session') && DENIES.includes('mcp__agent-wrangler__update_schedule'));
 });
 
 test('a swallowed dispatch-hook failure cannot let a stale successor start, even with no ext at launch context', async () => {
