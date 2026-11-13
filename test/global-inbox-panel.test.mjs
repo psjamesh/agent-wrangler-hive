@@ -71,7 +71,7 @@ test('the side inbox defaults to the merged Inbox with separate header totals', 
   assert.equal(on.length, 1);
   assert.equal(out.bottom.querySelectorAll('.hive-inbox-filter').length, 2);
   assert.equal(out.bottom.querySelector('.hive-inbox-totals').textContent, '0 messages');
-  assert.equal(out.bottom.querySelector('.hive-needs-hex'), null);
+  assert.equal(out.bottom.querySelector('.hive-needs-count'), null);
   assert.match(on[0].textContent, /Inbox/);
 });
 
@@ -100,7 +100,7 @@ test('merged Inbox session actions stay outside the thread anchor and disable un
   assert.equal(actions.querySelector('a').getAttribute('href'), '#session=worker');
   assert.match(actions.textContent, /Archived worker/);
   assert.equal(actions.querySelectorAll('a').length, 1);
-  assert.equal(row.querySelector('.hive-needs-hex').textContent, '1');
+  assert.equal(row.querySelector('.hive-needs-count').textContent, '1');
 });
 
 
@@ -120,11 +120,11 @@ test('Inbox filter counts merged rows and message chips appear only above one', 
   f.doc.inbox = { live: { rev: 1 } };
   let panel = f.draw().bottom;
   assert.match(panel.querySelector('.hive-inbox-totals').textContent, /1 needs you.*1 message$/);
-  assert.equal(panel.querySelector('.hive-inbox-count').textContent, '2');
+  assert.equal(panel.querySelector('.hive-inbox-filter').querySelector('.hive-inbox-count').textContent, '2');
   assert.equal(panel.querySelectorAll('.hive-unread').length, 0);
   f.doc.conversation.live.push({ ...f.doc.conversation.live[0], id: 'm2', at: 3 });
   panel = f.draw().bottom;
-  assert.equal(panel.querySelector('.hive-inbox-count').textContent, '2');
+  assert.equal(panel.querySelector('.hive-inbox-filter').querySelector('.hive-inbox-count').textContent, '2');
   assert.equal(panel.querySelector('.hive-unread').textContent, '2');
   assert.equal(panel.querySelector('.hive-unread').getAttribute('aria-label'), '2 messages');
 });
