@@ -398,3 +398,30 @@ for (const overview of [false, true]) {
     canvas.hiveDisposeView();
   });
 }
+
+
+for (const enabled of [false, true]) {
+  test(`a first-time map fits immediately with auto-fit ${enabled ? 'on' : 'off'}`, async t => {
+    fixture(t);
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { renderHexMap } = await import('../public/hex-grid.js');
+    const options = {
+      viewKey: `fresh-mount-${enabled}`, size: 60, items: [],
+      bounds: { x: 600, y: 400, w: 500, h: 400 },
+      storage: { get: () => JSON.stringify(enabled) },
+    };
+    const first = renderHexMap(options).el;
+    first.hiveViewMounted();
+    const fitted = first.hiveCaptureView();
+    assert.notEqual(fitted.tx, 0, 'mount fits before any debounce time passes');
+    assert.notEqual(fitted.ty, 0);
+    first.hiveDisposeView();
+    const next = renderHexMap({ ...options, bounds: { x: 0, y: 0, w: 100, h: 100 } }).el;
+    next.hiveViewMounted();
+    assert.deepEqual(next.hiveCaptureView(), fitted, 'existing viewport is preserved on rebuild');
+    t.mock.timers.tick(200);
+    if (enabled) assert.notDeepEqual(next.hiveCaptureView(), fitted, 'later board updates debounce');
+    else assert.deepEqual(next.hiveCaptureView(), fitted, 'disabled auto-fit leaves an existing view alone');
+    next.hiveDisposeView();
+  });
+}

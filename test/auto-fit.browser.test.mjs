@@ -26,8 +26,12 @@ try {
   await wait(600);
   check(view().auto && toggle().textContent === 'Auto-fit', 'toggle resumes');
   const before = view();
-  canvas().style.width = '65%';
+  const stage = document.querySelector('.hive-stage');
+  const width = canvas().clientWidth;
+  stage.style.flex = 'none';
+  stage.style.width = '65%';
   await wait(500);
+  check(canvas().clientWidth !== width, 'stage resize changes canvas width');
   check(view().tx !== before.tx || view().k !== before.k, 'resize refits');
   toggle().click();
   check(toggle().getAttribute('aria-pressed') === 'false', 'toggle off');
@@ -35,21 +39,21 @@ try {
 } catch (error) { document.body.dataset.autoFitTest = error.message; }
 </script>`;
 
-test('isolated Chrome verifies auto-fit controls in overview and cell views', { skip: process.env.HIVE_AUTO_FIT_BROWSER !== '1' }, async t => {
-  const fixture = await readFile(new URL('./fixtures/ui-polish.html', import.meta.url), 'utf8');
-  const server = http.createServer(async (req, res) => {
-    const path = new URL(req.url, 'http://localhost').pathname;
-    if (path === '/') { res.setHeader('Content-Type', 'text/html'); res.end(fixture + browserScript); return; }
-    if (!/^\/public\/[\w.-]+$/.test(path)) { res.writeHead(404).end(); return; }
-    try {
-      res.setHeader('Content-Type', path.endsWith('.css') ? 'text/css' : 'text/javascript');
-      res.end(await readFile(new URL(`..${path}`, import.meta.url)));
-    } catch { res.writeHead(404).end(); }
-  });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => server.close());
-  assert.notEqual(server.address().port, 7777);
-  for (const view of ['overview', 'cell']) {
+for (const view of ['overview', 'cell']) {
+  test(`isolated Chrome verifies auto-fit controls in ${view}`, { skip: process.env.HIVE_AUTO_FIT_BROWSER !== '1' }, async t => {
+    const fixture = await readFile(new URL('./fixtures/ui-polish.html', import.meta.url), 'utf8');
+    const server = http.createServer(async (req, res) => {
+      const path = new URL(req.url, 'http://localhost').pathname;
+      if (path === '/') { res.setHeader('Content-Type', 'text/html'); res.end(fixture + browserScript); return; }
+      if (!/^\/public\/[\w.-]+$/.test(path)) { res.writeHead(404).end(); return; }
+      try {
+        res.setHeader('Content-Type', path.endsWith('.css') ? 'text/css' : 'text/javascript');
+        res.end(await readFile(new URL(`..${path}`, import.meta.url)));
+      } catch { res.writeHead(404).end(); }
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    t.after(() => server.close());
+    assert.notEqual(server.address().port, 7777);
     const profile = await mkdtemp(join(tmpdir(), 'hive-kyl3-chrome-'));
     const child = spawn(process.env.HIVE_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
       '--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--no-first-run', '--no-default-browser-check',
@@ -64,5 +68,5 @@ test('isolated Chrome verifies auto-fit controls in overview and cell views', { 
     await rm(profile, { recursive: true, force: true });
     if (code !== 0) { t.skip(`Browser checks not run: isolated Chrome could not start (exit ${code}). ${errors.slice(-600)}. Run HIVE_AUTO_FIT_BROWSER=1 npm test`); return; }
     assert.match(output, /data-auto-fit-test="passed"/, `${view}: ${output.slice(-1500)}`);
-  }
-});
+  });
+}

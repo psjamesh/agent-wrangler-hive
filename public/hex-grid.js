@@ -359,7 +359,8 @@ export function renderHexMap({
   const ghostLayer = h('svg:g', { class: 'hive-comb', 'aria-hidden': 'true' });
   world.append(ghostLayer);
 
-  const view = views.get(viewKey) || readMapView(viewKey) || { k: 1, tx: 0, ty: 0, auto: true };
+  const savedView = views.get(viewKey) || readMapView(viewKey);
+  const view = savedView || { k: 1, tx: 0, ty: 0, auto: true };
   views.set(viewKey, view);
   const status = relations ? h('p', { class: 'hive-sr-only', 'aria-live': 'polite' }) : null;
   const el = h('div', { class: 'hive-canvas', tabindex: '-1', dataset: { viewKey } }, svg, status, overlay);
@@ -711,8 +712,8 @@ export function renderHexMap({
 
   let observer = null;
   el.hiveViewMounted = () => {
-    apply();
-    autoFit.schedule();
+    if (!savedView) fit(false);
+    else { apply(); autoFit.schedule(); }
     if (observer || typeof ResizeObserver !== 'function') return;
     observer = new ResizeObserver(() => {
       if (!el.isConnected) { el.hiveDisposeView(); return; }
