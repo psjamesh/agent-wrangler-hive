@@ -1,4 +1,3 @@
-import { createPickupDispatcher } from './pickup.js';
 import { createWatchdog } from './watchdog.js';
 import { workLimit } from './admission.js';
 import { reconcileRequests, notifyQueen, notifyResolution } from './requests.js';
@@ -75,11 +74,6 @@ export class HiveRuntime {
     try { reconcileRequests(this, host, { startup: true }); } catch (err) { this.log(`hive: requests unavailable: ${err.message}`); }
     this.recheck()
       .then(() => (this.metadata.lifetime.isCurrent(host) ? recover(this, host) : null))
-      .then((recovered) => {
-        if (recovered !== true || !this.metadata.lifetime.isCurrent(host)) return;
-        this.pickup ||= createPickupDispatcher({ runtime: this, host });
-        this.pickup.schedule();
-      })
       .catch((err) => this.log(`hive: initial check failed: ${err.message}`));
   }
 
@@ -91,19 +85,14 @@ export class HiveRuntime {
         await notifyResolution(this, this.host, r.id);
       }
     }
-    const recovered = await recover(this, this.host);
-    if (recovered !== true || !this.metadata.lifetime.isCurrent()) return;
-    this.pickup ||= createPickupDispatcher({ runtime: this, host: this.host });
-    return this.pickup.run();
+    return recover(this, this.host);
   }
 
   afterWrite(beadIds) {
     afterWrite(this, beadIds);
-    this.pickup?.schedule();
   }
 
   detach() {
-    this.pickup?.stop();
     this.metadata.lifetime.stop();
     this.prLabels?.stop();
     this.watchdog?.stop();

@@ -1,4 +1,3 @@
-import { testAgents } from './helpers/agents.mjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { beadTile, primaryKind, markWords } from '../public/cell-view.js';
@@ -23,7 +22,7 @@ function fixture(limit = 1) {
       claim: async (id, who, check) => { check?.({ issues: Object.values(live), errors: [] }); if (live[id].assignee === who) return { already: true }; if (live[id].assignee) throw Object.assign(new Error('already claimed'), { code: 'conflict' }); live[id].assignee = who; live[id].status = 'in_progress'; return { already: false }; },
     },
   };
-  const host = { agents: { list: async () => testAgents() }, stores: { hive: rt }, settings: rt.settings, sessions: { get: (id) => board.get(id), forTask: (id) => [...board.values()].filter((s) => s.taskId === id) }, tasks: { get: (id) => ({ taskId: id, name: id }), forSession: (id) => board.get(id) ? { taskId: board.get(id).taskId } : null } };
+  const host = { stores: { hive: rt }, settings: rt.settings, sessions: { get: (id) => board.get(id), forTask: (id) => [...board.values()].filter((s) => s.taskId === id) }, tasks: { get: (id) => ({ taskId: id, name: id }), forSession: (id) => board.get(id) ? { taskId: board.get(id).taskId } : null } };
   rt.host = host;
   const actor = (sessionId = 'queen', cellId = 'cell') => ({ sessionId, cell: doc.cells[cellId], role: 'queen', cells: [{ cell: doc.cells[cellId], role: 'queen' }] });
   return { rt, host, live, board, actor, doc: () => doc, setLimit: (n) => { limit = n; } };

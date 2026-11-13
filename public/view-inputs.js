@@ -21,7 +21,7 @@ export function mapInputs(ctx, cell) {
       cell.layoutWarning, cell.bindings, cell.snapshot, cell.workstreamColours, cell.workstreamShades] : Object.values(hive.cells).map(c => [c.id, c.taskId, c.enabled, c.retired, c.rootBeadId, c.queenSessionId, c.bindings,
       c.position, c.snapshot, c.inbox?.human?.count, c.inbox?.queen?.count, c.requestCounts?.human, c.launch, c.occupiedCount]),
     Object.values(hive.beads).map(b => [b.id, b.parentId, b.title, b.kind, b.status, b.ownerSessionId,
-      b.createdAt, b.pickup?.state, b.pickup?.armToken, b.pickup?.reason, b.outcome, b.assignee, b.untracked, b.waitingFor, b.reviewState, b.reviewWorking, b.closeReason, b.closedReason, cell ? null : b.goal]),
+      b.createdAt, b.outcome, b.assignee, b.untracked, b.waitingFor, b.reviewState, b.reviewWorking, b.closeReason, b.closedReason, cell ? null : b.goal]),
     hive.edges, cell ? null : hive.launches, hive.backend?.snapshotComplete, hive.backend?.snapshotError, hive.backend?.snapshotBeadIds,
     (ctx.graph?.sessions || []).map(s => [s.sessionId, s.status, s.exitOutput ? true : false, s.archived, s.name, s.label, s.lastLabel]),
     ctx.graph?.tasks, cell ? ui.selectedBeadId() : ui.highlightedCell?.(), ui.placements(),

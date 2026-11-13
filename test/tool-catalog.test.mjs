@@ -5,7 +5,7 @@ import { workTools, publishTool } from '../server/tools.js';
 const catalog = Object.fromEntries(workTools.map((t) => [t.name, t.inputSchema._zod.toJSONSchema()]));
 
 test('every tool publishes a self-contained JSON Schema for hosts with an older Zod converter', () => {
-  assert.equal(workTools.length, 27);
+  assert.equal(workTools.length, 26);
   for (const [name, schema] of Object.entries(catalog)) {
     assert.equal(schema.type, 'object', name);
     assert.equal(schema.additionalProperties, false, name);

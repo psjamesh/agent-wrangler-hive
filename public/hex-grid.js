@@ -240,7 +240,6 @@ const PRIMARY_SHAPES = {
   'review-working': [['circle', { cx: '-1', cy: '-1', r: '2.8', class: 'hive-pm-line' }], ['path', { d: 'M1,1 L4.4,4.4 M-2,-1 L-1,0 L0.5,-1.8', class: 'hive-pm-line' }]],
   'review-pending': [['circle', { cx: '-1', cy: '-1', r: '2.8', class: 'hive-pm-line' }], ['path', { d: 'M1,1 L4.4,4.4', class: 'hive-pm-line' }]],
   'recorded-wait': [['path', { d: 'M-3.2,-4 L3.2,-4 L3.2,-2.5 L-3.2,2.5 L-3.2,4 L3.2,4 L3.2,2.5 L-3.2,-2.5 Z', class: 'hive-pm-line' }]],
-  pickup: [['path', { d: 'M-3.5,0 L-0.5,3 L4,-3 M-4,-4 L-4,-1 M1,4 L4,4 L4,1', class: 'hive-pm-line' }]],
   untracked: [['path', { d: 'M0,-4 L4.5,4 L-4.5,4 Z M0,-1.5 L0,1 M0,2.4 L0,2.5', class: 'hive-pm-line' }]],
   done: [['path', { d: 'M-3.6,0.2 L-1.1,2.8 L3.8,-2.6', class: 'hive-pm-line' }]],
   closed: [['path', { d: 'M-3.4,0 L3.4,0', class: 'hive-pm-line' }]],

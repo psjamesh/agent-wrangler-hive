@@ -1,4 +1,3 @@
-import { consumePickup, managedPickupReceipt, pickupState } from './pickup.js';
 import { storedRole, apiRole, holdsBead } from './bead-sessions.js';
 import { REGION_LAYOUT_VERSION } from './region-migration.js';
 import crypto from 'node:crypto';
@@ -988,12 +987,10 @@ export async function updateBead(rt, actor, input) {
         if (next.length > LIMITS.evidence) throw new HiveError(`A bead holds at most ${LIMITS.evidence} evidence entries; remove some first.`);
         patch.evidence = next;
       }
-      let pickupBefore = null;
-      const written = await rt.beads.update(id, patch, actorFor(actor.sessionId), affectsCapacity || expectedUpdatedAt || bead.pickup?.armed ? (context) => {
+      await rt.beads.update(id, patch, actorFor(actor.sessionId), affectsCapacity || expectedUpdatedAt ? (context) => {
         const graph = exportedGraph(context);
         const current = graph.beads[id];
         if (!current) throw new HiveError(`Bead ${id} no longer exists.`, 'conflict');
-        pickupBefore = current;
         if (expectedUpdatedAt && current.updatedAt !== expectedUpdatedAt) throw new HiveError(`Bead ${id} changed since ${expectedUpdatedAt} (now ${current.updatedAt}); nothing was applied. Re-read it with hive_context and resend against the current version.`, 'conflict');
         if (!affectsCapacity) return;
         const nextBead = { ...current, ...patch };
@@ -1014,7 +1011,6 @@ export async function updateBead(rt, actor, input) {
         if (startsWork) return { assignee: current.assignee, status: current.status };
       } : undefined);
       phase.applied = true;
-      if (written) managedPickupReceipt(rt, pickupBefore, normalizeIssue(written));
       try {
         const current = await rt.beads.show(id);
         if (current) applied = normalizeIssue(current);
@@ -1077,7 +1073,6 @@ export async function claimBead(rt, actor, { bead_id }, { launchId = null, valid
   const who = actorFor(actor.sessionId);
   const out = await withLocks([ADMISSION_LOCK, `bead:${id}`], () => journaled(rt, { kind: 'claim', cellId: cell.id, actor: who, summary: `Claim ${id}`, beadIds: [id], intent: { beadId: id, assignee: who } }, async (opId, phase) => {
     const res = await rt.beads.claim(id, who, (context) => {
-      context.pickupOperationId = opId;
       validate(context);
       if (launchId) {
         const launch = rt.metadata.read().workerLaunches[launchId];
@@ -1086,7 +1081,6 @@ export async function claimBead(rt, actor, { bead_id }, { launchId = null, valid
       const graph = exportedGraph(context);
       if (!descendantIds(graph.beads, cell.rootBeadId).has(id)) throw new HiveError(`Bead ${id} moved outside this cell.`, 'conflict');
       checkAdmission(rt, graph, id, { sessionId: actor.sessionId, launchId, ownOperationId: opId });
-      if (graph.beads[id]?.pickup?.armToken) rt.metadata.mutate(d => consumePickup(d, graph.beads[id], { source: 'claim', operationId: opId }));
     });
     phase.applied = true;
     return { already: res.already, journal: { already: res.already } };
@@ -1307,9 +1301,7 @@ export async function finishBead(rt, actor, input) {
     if (fresh.assignee && fresh.assignee !== who) {
       throw new HiveError(`Bead ${id} is claimed by ${fresh.assignee}, so only that session can finish it. Nothing was changed. Ask the holder to finish it with hive_finish_bead; if it cannot, a queen or coordinator can check with it and then release the claim with hive_release_bead (force: true and a reason) before finishing.`, 'conflict');
     }
-    const normalized = normalizeIssue(fresh);
-    if (normalized.pickup?.armToken) rt.metadata.mutate(d => consumePickup(d, normalized, { source: 'finish', operationId: opId }));
-    const { evidence } = normalized;
+    const { evidence } = normalizeIssue(fresh);
     const next = [...evidence, ...add].slice(-LIMITS.evidence);
     await rt.beads.update(id, { summary, evidence: next }, who);
     phase.applied = true;
@@ -1343,16 +1335,15 @@ export function readyBeads(rt, actor, { under_bead_id, limit }) {
     if (c.id !== cell.id) throw new HiveError(`Bead ${under_bead_id} is in another cell.`);
     scope = descendantIds(beads, under_bead_id);
   }
-  const hasOpenChildren = new Set(Object.values(beads).filter(b => b.parentId && OPEN_STATUSES.includes(b.status)).map(b => b.parentId));
-  const waiting = id => edges.some(e => e.dependent === id && e.blocking && beads[e.prerequisite]?.status !== 'closed');
+  const hasOpenChildren = new Set(Object.values(beads).filter((b) => b.parentId && OPEN_STATUSES.includes(b.status)).map((b) => b.parentId));
+  const waiting = (id) => edges.filter((e) => e.dependent === id && e.blocking && beads[e.prerequisite] && beads[e.prerequisite].status !== 'closed').map((e) => e.prerequisite);
   const ready = [...scope]
     .map((id) => beads[id])
-    .filter((b) => b && b.kind !== 'external' && b.id !== cell.rootBeadId && b.status === 'open' && !openReview(rt, b.id) && !b.assignee && !hasOpenChildren.has(b.id) && !waiting(b.id))
+    .filter((b) => b && b.kind !== 'external' && b.id !== cell.rootBeadId && b.status === 'open' && !openReview(rt, b.id) && !b.assignee && !hasOpenChildren.has(b.id) && waiting(b.id).length === 0)
     .sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || String(a.createdAt).localeCompare(String(b.createdAt)))
     .slice(0, Math.min(Math.max(Number(limit) || 20, 1), 100))
-    .map((b) => ({ bead_id: b.id, title: b.title, kind: b.kind, parent_id: b.parentId, next_action: b.nextAction, acceptance: b.acceptance, pickup: pickupState(rt, rt.host, cell, b) }));
-  const pickup = [...scope].map(id => beads[id]).filter(b => b?.pickup?.armed).map(b => ({ bead_id: b.id, ...pickupState(rt, rt.host, cell, b) }));
-  return { cell_id: cell.id, ready, pickup, refreshed_at: rt.snapshots.current.loadedAt };
+    .map((b) => ({ bead_id: b.id, title: b.title, kind: b.kind, parent_id: b.parentId, next_action: b.nextAction, acceptance: b.acceptance }));
+  return { cell_id: cell.id, ready, refreshed_at: rt.snapshots.current.loadedAt };
 }
 
 // A workstream heading closes only if, in the store as read at the moment of

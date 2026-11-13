@@ -45,7 +45,7 @@ export function createManifest({ dir }) {
     author: 'Agent Wrangler Hive contributors',
     defaultEnabled: false,
     engines: { wranglerApi: '^1.71.0' },
-    requires: ['tasks:read', 'tasks:write', 'sessions:read', 'sessions:spawn', 'sessions:archive', 'deliver', 'board:rebuild', 'links:read', 'agents:read'],
+    requires: ['tasks:read', 'tasks:write', 'sessions:read', 'sessions:spawn', 'sessions:archive', 'deliver', 'board:rebuild', 'links:read'],
     settings: [{
       key: BD_PATH_SETTING,
       hidden: true,

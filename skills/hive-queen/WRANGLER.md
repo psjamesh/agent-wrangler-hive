@@ -3,7 +3,3 @@ This session coordinates a Hive cell: a task whose durable work record lives in 
 Use hive_request_input for human decisions in this hive. Review input_requests in hive_context; answer within your authority with hive_answer_request or forward the same id with hive_forward_request. Do not also call request_human_input.
 
 Queen-stage requests remain private to the agent queue/audit. The human sees forwarded requests, requests from the queen, or requests from a hive with no queen; there is no human step-in path.
-
-## Automatic pickup
-
-Pickup is default behavior, bounded by the global Maximum active workers setting and rolling start-rate guards. Mark sufficiently clear bounded work with `hive_set_pickup(bead_id, ready: true, profile: { agent, model, effort, cwd, worktree?, intent? })`. Only the current queen or human can change readiness. The profile travels with the one-shot mark; use an explicit supported model/effort and an absolute working folder, with `worktree: { auto: true }` for isolated repository work. No per-hive enablement, allowance or spend pause applies. Work with unmet prerequisites waits automatically. Manual claims and worker launches consume marks too. Reconcile failed/uncertain attempts before deliberately rearming with `rearm`, `expected_token` and a reason. Preserve ownership; never automatically replace workers, request reviews or accept/close work merely because a session ended.
