@@ -1,0 +1,46 @@
+export function planHiveReveal({ layout, kids, rootId, saved = {}, aspect, back, hidden = new Set(), yieldIds = new Set() }) {
+  const pending = new Set(back), positions = {}, stack = new Set();
+  const before = attachmentState(layout, kids, { ...layout.positions, ...layout.carried }, hidden);
+  const visibleBefore = attachmentState(layout, kids, layout.positions, new Set([...hidden, ...back]));
+  const heads = [...layout.groupHeads, rootId];
+  let current = layout, stalled = 0;
+  while (heads.length) {
+    const headId = heads.shift();
+    const group = membersOf(current, kids, headId);
+    if (headId !== rootId && pending.has(headId)) {
+      for (const id of subtreeMembers(current, kids, headId)) group.add(id);
+    }
+    const ready = new Set([...pending].filter((id) => group.has(id)));
+    if (!ready.size) continue;
+    const after = new Set([...hidden, ...[...pending].filter((id) => !ready.has(id))]);
+    let plan;
+    if (headId === rootId) {
+      const moves = Object.fromEntries([...ready].filter((id) => !valid(saved[id]) || key(saved[id]) !== key(current.positions[id])).map((id) => [id, current.positions[id]]));
+      const pinned = pinBatch({ layout: current, kids, rootId, saved: { ...saved, ...positions }, aspect, moves, hidden: after, yieldIds });
+      plan = pinned ? { ok: true, positions: pinned.batch, stack: pinned.stack } : fail('The reveal could not preserve other positions, so closed work remains hidden.');
+    } else {
+      const baseline = attachmentState(current, kids, { ...current.positions, ...current.carried }, after);
+      if (pending.has(headId) && before.attachments[headId] && before.attachments[headId].status !== 'detached'
+          && baseline.attachments[headId]?.status === 'detached' && stalled < heads.length) {
+        heads.push(headId);
+        stalled += 1;
+        continue;
+      }
+      for (const [id, attachment] of Object.entries(before.attachments)) {
+        if (!after.has(id)) baseline.attachments[id] = attachment;
+      }
+      for (const [id, attachment] of Object.entries(visibleBefore.attachments)) {
+        if (!after.has(id) && attachment.status !== 'detached') baseline.attachments[id] = attachment;
+      }
+      plan = planReveal({ layout: current, kids, rootId, saved: { ...saved, ...positions }, aspect, headId, back: ready, hidden: after, yieldIds, baseline });
+    }
+    if (!plan.ok) return plan;
+    stalled = 0;
+    Object.assign(positions, plan.positions);
+    for (const id of plan.stack || []) stack.add(id);
+    for (const id of ready) pending.delete(id);
+    current = layoutCell({ kids, rootId, saved: { ...saved, ...positions }, aspect, hidden: after, yieldIds, detachedPinned: current.detachedPinned, snapshotComplete: layout.snapshotComplete, fallback: layout.fallback });
+  }
+  if (pending.size) return fail('Some closed work is no longer on the map. Try showing it again after the next refresh.');
+  return { ok: true, same: !Object.keys(positions).length, positions, stack: [...stack], detachedPinned: current.detachedPinned };
+}

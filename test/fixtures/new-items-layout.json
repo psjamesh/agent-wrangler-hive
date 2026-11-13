@@ -1,0 +1,562 @@
+{
+  "source": "Synthetic regression scenario with invented identifiers and daily creation times; preserves layout geometry and hierarchy.",
+  "rootId": "demo-bead-026",
+  "aspect": 1.2,
+  "saved": {
+    "demo-bead-030": {
+      "q": 4,
+      "r": -2
+    },
+    "demo-bead-007": {
+      "q": 5,
+      "r": -2
+    },
+    "demo-bead-001": {
+      "q": 4,
+      "r": 0
+    },
+    "demo-bead-011": {
+      "q": 0,
+      "r": 0
+    },
+    "demo-bead-024": {
+      "q": -1,
+      "r": 1
+    },
+    "demo-bead-034": {
+      "q": -1,
+      "r": 2
+    },
+    "demo-bead-036": {
+      "q": -1,
+      "r": 0
+    },
+    "demo-bead-043": {
+      "q": -2,
+      "r": 2
+    },
+    "demo-bead-014": {
+      "q": 0,
+      "r": -1
+    },
+    "demo-bead-028": {
+      "q": -2,
+      "r": 1
+    },
+    "demo-bead-018": {
+      "q": -2,
+      "r": 3
+    },
+    "demo-bead-027": {
+      "q": 1,
+      "r": -2
+    },
+    "demo-bead-015": {
+      "q": -1,
+      "r": -1
+    },
+    "demo-bead-042": {
+      "q": -2,
+      "r": 0
+    },
+    "demo-bead-010": {
+      "q": -3,
+      "r": 2
+    },
+    "demo-bead-021": {
+      "q": 1,
+      "r": 0
+    },
+    "demo-bead-025": {
+      "q": 1,
+      "r": 1
+    },
+    "demo-bead-038": {
+      "q": -3,
+      "r": 3
+    },
+    "demo-bead-013": {
+      "q": -1,
+      "r": 3
+    },
+    "demo-bead-008": {
+      "q": 0,
+      "r": -2
+    },
+    "demo-bead-032": {
+      "q": 0,
+      "r": 2
+    },
+    "demo-bead-012": {
+      "q": -3,
+      "r": 1
+    },
+    "demo-bead-039": {
+      "q": 1,
+      "r": -1
+    },
+    "demo-bead-009": {
+      "q": 0,
+      "r": 1
+    },
+    "demo-bead-022": {
+      "q": 2,
+      "r": -2
+    },
+    "demo-bead-017": {
+      "q": 2,
+      "r": -1
+    },
+    "demo-bead-040": {
+      "q": -3,
+      "r": 0
+    },
+    "demo-bead-033": {
+      "q": -1,
+      "r": -2
+    },
+    "demo-bead-002": {
+      "q": -2,
+      "r": -1
+    },
+    "demo-bead-005": {
+      "q": -2,
+      "r": -2
+    },
+    "demo-bead-041": {
+      "q": -4,
+      "r": -1
+    },
+    "demo-bead-037": {
+      "q": -3,
+      "r": -1
+    },
+    "demo-bead-035": {
+      "q": -4,
+      "r": -2
+    },
+    "demo-bead-029": {
+      "q": -3,
+      "r": -2
+    },
+    "demo-bead-016": {
+      "q": -4,
+      "r": 0
+    },
+    "demo-bead-019": {
+      "q": -5,
+      "r": 0
+    },
+    "demo-bead-020": {
+      "q": -5,
+      "r": -1
+    }
+  },
+  "beads": [
+    {
+      "id": "demo-bead-026",
+      "parentId": null,
+      "kind": "goal",
+      "status": "in_progress",
+      "outcome": null,
+      "createdAt": "2020-01-01T00:00:00Z",
+      "title": "Example goal 026"
+    },
+    {
+      "id": "demo-bead-030",
+      "parentId": "demo-bead-026",
+      "kind": "workstream",
+      "status": "open",
+      "outcome": null,
+      "createdAt": "2020-01-02T00:00:00Z",
+      "title": "Example workstream 030"
+    },
+    {
+      "id": "demo-bead-009",
+      "parentId": "demo-bead-026",
+      "kind": "workstream",
+      "status": "in_progress",
+      "outcome": null,
+      "createdAt": "2020-01-03T00:00:00Z",
+      "title": "Example workstream 009"
+    },
+    {
+      "id": "demo-bead-032",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "in_progress",
+      "outcome": null,
+      "createdAt": "2020-01-23T00:00:00Z",
+      "title": "Example work 032"
+    },
+    {
+      "id": "demo-bead-033",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "in_progress",
+      "outcome": null,
+      "createdAt": "2020-01-28T00:00:00Z",
+      "title": "Example work 033"
+    },
+    {
+      "id": "demo-bead-005",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "open",
+      "outcome": null,
+      "createdAt": "2020-02-05T00:00:00Z",
+      "title": "Example work 005"
+    },
+    {
+      "id": "demo-bead-044",
+      "parentId": "demo-bead-009",
+      "kind": "idea",
+      "status": "deferred",
+      "outcome": null,
+      "createdAt": "2020-02-09T00:00:00Z",
+      "title": "Example idea 044"
+    },
+    {
+      "id": "demo-bead-000",
+      "parentId": "demo-bead-009",
+      "kind": "review",
+      "status": "in_progress",
+      "outcome": null,
+      "createdAt": "2020-02-09T00:00:00Z",
+      "title": "Example review 000"
+    },
+    {
+      "id": "demo-bead-031",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "in_progress",
+      "outcome": null,
+      "createdAt": "2020-02-10T00:00:00Z",
+      "title": "Example work 031"
+    },
+    {
+      "id": "demo-bead-004",
+      "parentId": "demo-bead-009",
+      "kind": "review",
+      "status": "in_progress",
+      "outcome": null,
+      "createdAt": "2020-02-11T00:00:00Z",
+      "title": "Example review 004"
+    },
+    {
+      "id": "demo-bead-023",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "in_progress",
+      "outcome": null,
+      "createdAt": "2020-02-12T00:00:00Z",
+      "title": "Example fix 023"
+    },
+    {
+      "id": "demo-bead-003",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "in_progress",
+      "outcome": null,
+      "createdAt": "2020-01-04T00:00:00Z",
+      "title": "Example fix 003"
+    },
+    {
+      "id": "demo-bead-001",
+      "parentId": "demo-bead-026",
+      "kind": "workstream",
+      "status": "in_progress",
+      "outcome": null,
+      "createdAt": "2020-01-05T00:00:00Z",
+      "title": "Example workstream 001"
+    },
+    {
+      "id": "demo-bead-006",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-02-08T00:00:00Z",
+      "title": "Example fix 006"
+    },
+    {
+      "id": "demo-bead-035",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-02-07T00:00:00Z",
+      "title": "Example work 035"
+    },
+    {
+      "id": "demo-bead-040",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-30T00:00:00Z",
+      "title": "Example work 040"
+    },
+    {
+      "id": "demo-bead-020",
+      "parentId": "demo-bead-040",
+      "kind": "review",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-02-06T00:00:00Z",
+      "title": "Example review 020"
+    },
+    {
+      "id": "demo-bead-019",
+      "parentId": "demo-bead-040",
+      "kind": "review",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-02-04T00:00:00Z",
+      "title": "Example review 019"
+    },
+    {
+      "id": "demo-bead-017",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-27T00:00:00Z",
+      "title": "Example fix 017"
+    },
+    {
+      "id": "demo-bead-022",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-26T00:00:00Z",
+      "title": "Example work 022"
+    },
+    {
+      "id": "demo-bead-002",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-29T00:00:00Z",
+      "title": "Example fix 002"
+    },
+    {
+      "id": "demo-bead-016",
+      "parentId": "demo-bead-040",
+      "kind": "review",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-02-03T00:00:00Z",
+      "title": "Example review 016"
+    },
+    {
+      "id": "demo-bead-037",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-02-02T00:00:00Z",
+      "title": "Example work 037"
+    },
+    {
+      "id": "demo-bead-041",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-31T00:00:00Z",
+      "title": "Example fix 041"
+    },
+    {
+      "id": "demo-bead-029",
+      "parentId": "demo-bead-040",
+      "kind": "review",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-02-01T00:00:00Z",
+      "title": "Example review 029"
+    },
+    {
+      "id": "demo-bead-025",
+      "parentId": "demo-bead-009",
+      "kind": "investigation",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-19T00:00:00Z",
+      "title": "Example investigation 025"
+    },
+    {
+      "id": "demo-bead-021",
+      "parentId": "demo-bead-009",
+      "kind": "investigation",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-19T00:00:00Z",
+      "title": "Example investigation 021"
+    },
+    {
+      "id": "demo-bead-039",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-25T00:00:00Z",
+      "title": "Example fix 039"
+    },
+    {
+      "id": "demo-bead-012",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-24T00:00:00Z",
+      "title": "Example work 012"
+    },
+    {
+      "id": "demo-bead-008",
+      "parentId": "demo-bead-009",
+      "kind": "design",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-22T00:00:00Z",
+      "title": "Example design 008"
+    },
+    {
+      "id": "demo-bead-038",
+      "parentId": "demo-bead-009",
+      "kind": "design",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-20T00:00:00Z",
+      "title": "Example design 038"
+    },
+    {
+      "id": "demo-bead-013",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-21T00:00:00Z",
+      "title": "Example work 013"
+    },
+    {
+      "id": "demo-bead-010",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-18T00:00:00Z",
+      "title": "Example fix 010"
+    },
+    {
+      "id": "demo-bead-042",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-06T00:00:00Z",
+      "title": "Example work 042"
+    },
+    {
+      "id": "demo-bead-015",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-07T00:00:00Z",
+      "title": "Example fix 015"
+    },
+    {
+      "id": "demo-bead-027",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-08T00:00:00Z",
+      "title": "Example fix 027"
+    },
+    {
+      "id": "demo-bead-018",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-09T00:00:00Z",
+      "title": "Example fix 018"
+    },
+    {
+      "id": "demo-bead-014",
+      "parentId": "demo-bead-009",
+      "kind": "investigation",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-10T00:00:00Z",
+      "title": "Example investigation 014"
+    },
+    {
+      "id": "demo-bead-028",
+      "parentId": "demo-bead-009",
+      "kind": "fix",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-11T00:00:00Z",
+      "title": "Example fix 028"
+    },
+    {
+      "id": "demo-bead-036",
+      "parentId": "demo-bead-009",
+      "kind": "review",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-12T00:00:00Z",
+      "title": "Example review 036"
+    },
+    {
+      "id": "demo-bead-034",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-13T00:00:00Z",
+      "title": "Example work 034"
+    },
+    {
+      "id": "demo-bead-024",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-14T00:00:00Z",
+      "title": "Example work 024"
+    },
+    {
+      "id": "demo-bead-043",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-15T00:00:00Z",
+      "title": "Example work 043"
+    },
+    {
+      "id": "demo-bead-007",
+      "parentId": "demo-bead-030",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-16T00:00:00Z",
+      "title": "Example work 007"
+    },
+    {
+      "id": "demo-bead-011",
+      "parentId": "demo-bead-009",
+      "kind": "work",
+      "status": "closed",
+      "outcome": "done",
+      "createdAt": "2020-01-17T00:00:00Z",
+      "title": "Example work 011"
+    }
+  ]
+}

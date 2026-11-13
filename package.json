@@ -1,0 +1,37 @@
+{
+  "name": "agent-wrangler-hive",
+  "version": "0.1.85",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Agent Wrangler extension: tasks as hexagonal cells, each with a queen-maintained Beads work graph and a deliberate conversation.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.mjs public/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "wranglerExtension": {
+    "id": "hive",
+    "label": "Hive",
+    "description": "Opt tasks into Hive cells: a nominated queen and its workers keep a Beads work graph that the human can steer from a hexagonal view.",
+    "author": "James Hargreaves",
+    "requires": [
+      "tasks:read",
+      "tasks:write",
+      "sessions:read",
+      "sessions:spawn",
+      "sessions:archive",
+      "deliver",
+      "board:rebuild",
+      "links:read"
+    ],
+    "engines": {
+      "wranglerApi": "^1.71.0"
+    }
+  }
+}
