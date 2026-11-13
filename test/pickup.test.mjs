@@ -313,14 +313,13 @@ test('an armed alias later resolving to Terra cannot launch', async () => {
   assert.match(pickup.pickupState(f.rt, f.host, f.doc().cells.cell, f.graph().beads.a, f.graph()).reason, /Terra/i);
 });
 
-for (const field of ['agent', 'model', 'resolved', 'missing-catalog']) {
-  test(`shared manual worker launch rejects ${field} Terra or unverifiable catalog`, async () => {
+for (const field of ['agent', 'model', 'resolved']) {
+  test(`shared manual worker launch rejects ${field} Terra models`, async () => {
     const f = pickupFixture(); const input = { bead_id: 'a', ...f.profile };
     if (field === 'agent') { input.agent = 'Terra-provider'; f.catalog[0].id = input.agent; }
     if (field === 'model') { input.model = 'gpt-6-terra'; f.catalog[0].models[0].value = input.model; }
     if (field === 'resolved') f.catalog[0].models[0].resolved = 'gpt-6-terra';
-    if (field === 'missing-catalog') delete f.host.agents;
-    await assert.rejects(spawnWorker(f.rt, f.host, f.actor(), input), field === 'missing-catalog' ? /catalog|agents:read/i : /Terra/i);
+    await assert.rejects(spawnWorker(f.rt, f.host, f.actor(), input), /Terra/i);
     assert.equal(f.spawned.length, 0);
     assert.equal(Object.keys(f.doc().workerLaunches).length, 0);
   });
@@ -387,3 +386,47 @@ for (const gap of ['empty', 'read-error']) {
     f.host.agents.list = original; f.advance(120000); await run(f); assert.equal(f.spawned.length, 1);
   });
 }
+
+for (const held of ['catalog', 'Terra', 'changed-resolution']) {
+ test(`a ${held} front bead does not starve another model in the same hive`, async () => {
+  const f = pickupFixture();
+  f.catalog[0].models.push({ value: 'opus', resolved: 'claude-opus-fixed', efforts: ['medium'] });
+  await arm(f, 'a'); await arm(f, 'b', { profile: { ...f.profile, model: 'opus' } });
+  f.catalog[0].models[0].resolved = held === 'catalog' ? null : held === 'Terra' ? 'gpt-6-terra' : 'changed-model';
+  await run(f);
+  assert.equal(f.spawned.length, 1);
+  assert.equal(f.spawned[0].model, 'opus');
+  assert.equal(Object.values(f.doc().pickupAttempts).some(a => a.token === f.graph().beads.a.pickup.armToken), held !== 'catalog');
+  if (held === 'catalog') {
+    f.catalog[0].models[0].resolved = 'claude-sonnet-fixed';
+    f.advance(120000); await run(f);
+    assert.equal(f.spawned.length, 2);
+  }
+ });
+}
+
+for (const role of ['worker', 'reviewer']) for (const mode of ['null', 'default', 'full-id', 'missing-catalog', 'catalog-error']) {
+  test(`explicit ${role} launch preserves ${mode} model compatibility`, async () => {
+    const f = pickupFixture(); const input = { bead_id: 'a', ...f.profile };
+    if (mode === 'null') { input.model = 'opusplan'; f.catalog[0].models.push({ value: 'opusplan', resolved: null }); }
+    if (mode === 'default') { input.agent = 'gemini'; delete input.model; f.catalog.push({ id: 'gemini', available: true, models: [{ value: 'auto', default: true, resolved: null }] }); }
+    if (mode === 'full-id') input.model = 'claude-opus-5-5';
+    if (mode === 'missing-catalog') delete f.host.agents;
+    if (mode === 'catalog-error') f.host.agents.list = async () => { throw new Error('temporary outage'); };
+    await spawnWorker(f.rt, f.host, f.actor(), input, { role });
+    assert.equal(f.spawned.length, 1);
+    assert.equal(f.spawned[0].model, input.model);
+  });
+}
+
+test('a rearmed token gets a fresh catalog hold notice', async () => {
+  const f = pickupFixture(); const first = await arm(f);
+  f.catalog[0].available = false; await run(f);
+  assert.equal(f.delivered.length, 1);
+  f.catalog[0].available = true;
+  await pickup.setPickup(f.rt, f.host, f.actor(), { bead_id: 'a', ready: false });
+  const next = await arm(f, 'a', { rearm: true, expected_token: first.pickup.armToken, reason: 'Reassessed readiness' });
+  assert.notEqual(first.pickup.armToken, next.pickup.armToken);
+  f.catalog[0].available = false; await run(f);
+  assert.equal(f.delivered.length, 2);
+});

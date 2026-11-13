@@ -293,33 +293,34 @@ export function createPickupDispatcher({ runtime: rt, host, now = Date.now }) {
       if (cellReasons(rt, host, cell).length) continue;
       const beads = [...descendantIds(graph.beads, cell.rootBeadId)].map(id => graph.beads[id]).filter(b => b && pickupState(rt, host, cell, b, graph, { now: now(), ignoreProfileHold: true }).eligible)
         .sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || a.pickup.armedAt - b.pickup.armedAt || a.id.localeCompare(b.id));
-      const bead = beads[0];
-      if (!bead) continue;
-      const authorization = { armToken: bead.pickup.armToken, profileRevision: bead.pickup.profileRevision, authorizedBy: cell.queenSessionId, queenGeneration: cell.queenGeneration || 0, observedAt: now(), profileObservedAt: Date.now() };
-      try {
-        const profile = await validatePickupProfile(rt, host, bead.pickup.profile);
-        if (!active()) return;
-        if (JSON.stringify(profile) !== JSON.stringify(bead.pickup.profile)) throw new HiveError('Worker model resolution changed; reconcile and rearm.', 'refused');
-        if (rt.metadata.read().pickupHolds?.[bead.id]?.reason) rt.metadata.mutate(d => { Object.assign(d.pickupHolds[bead.id], { reason: '', cause: '' }); });
-        const actor = resolveCaller(rt, host, cell.queenSessionId, cell.id);
-        await spawnWorker(rt, host, actor, { bead_id: bead.id, ...profile }, { pickup: authorization, now });
-        starts += 1;
-      } catch (err) {
-        if (!active()) return;
-        rt.log(`hive: automatic pickup ${bead.id}: ${err.message}`);
-        if (err.pickupCause) {
-          rt.metadata.mutate(d => {
-            const holds = d.pickupHolds ||= {};
-            holds[bead.id] = { ...holds[bead.id], beadId: bead.id, cellId: cell.id, token: bead.pickup.armToken, reason: err.message, cause: err.pickupCause };
-          });
-        } else if (err.code !== 'busy') {
-          rt.metadata.mutate(d => {
-            if (!d.pickupAttempts?.[bead.pickup.armToken]) {
-              const id = newId('worker');
-              d.workerLaunches[id] = { id, cellId: cell.id, beadId: bead.id, state: 'refused', error: err.message, source: 'automatic' };
-              consumePickup(d, bead, { launchId: id, source: 'automatic' });
-            }
-          });
+      for (const bead of beads) {
+        const authorization = { armToken: bead.pickup.armToken, profileRevision: bead.pickup.profileRevision, authorizedBy: cell.queenSessionId, queenGeneration: cell.queenGeneration || 0, observedAt: now(), profileObservedAt: Date.now() };
+        try {
+          const profile = await validatePickupProfile(rt, host, bead.pickup.profile);
+          if (!active()) return;
+          if (JSON.stringify(profile) !== JSON.stringify(bead.pickup.profile)) throw new HiveError('Worker model resolution changed; reconcile and rearm.', 'refused');
+          if (rt.metadata.read().pickupHolds?.[bead.id]?.reason) rt.metadata.mutate(d => { Object.assign(d.pickupHolds[bead.id], { reason: '', cause: '' }); });
+          const actor = resolveCaller(rt, host, cell.queenSessionId, cell.id);
+          await spawnWorker(rt, host, actor, { bead_id: bead.id, ...profile }, { pickup: authorization, now });
+          starts += 1;
+          break;
+        } catch (err) {
+          if (!active()) return;
+          rt.log(`hive: automatic pickup ${bead.id}: ${err.message}`);
+          if (err.pickupCause) {
+            rt.metadata.mutate(d => {
+              const holds = d.pickupHolds ||= {};
+              holds[bead.id] = { ...(holds[bead.id]?.token === bead.pickup.armToken ? holds[bead.id] : {}), beadId: bead.id, cellId: cell.id, token: bead.pickup.armToken, reason: err.message, cause: err.pickupCause };
+            });
+          } else if (err.code !== 'busy') {
+            rt.metadata.mutate(d => {
+              if (!d.pickupAttempts?.[bead.pickup.armToken]) {
+                const id = newId('worker');
+                d.workerLaunches[id] = { id, cellId: cell.id, beadId: bead.id, state: 'refused', error: err.message, source: 'automatic' };
+                consumePickup(d, bead, { launchId: id, source: 'automatic' });
+              }
+            });
+          }
         }
       }
     }
