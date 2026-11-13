@@ -7,10 +7,16 @@ import { liveClaimant, sleepingReason } from './tracking.js';
 import { GROUP_KINDS, descendantIds } from './bead-model.js';
 import { humanWaitText } from './human-wait.js';
 
-export const WATCHDOG_DEFAULTS = Object.freeze({ workerMinutes: 30, reviewMinutes: 60, messageMinutes: 30, waitHours: 24, deferredDays: 7, untrackedMinutes: 30, waitGraceMinutes: 30, humanWaitMinutes: 10 });
+export const WATCHDOG_DEFAULTS = Object.freeze({ workerMinutes: 30, idleMinutes: 30, reviewMinutes: 60, messageMinutes: 30, waitHours: 24, deferredDays: 7, untrackedMinutes: 30, waitGraceMinutes: 30, humanWaitMinutes: 10 });
 const DAY_MS = 86400000;
 const stamp = value => typeof value === 'number' && Number.isFinite(value) ? value : typeof value === 'string' ? Date.parse(value) || 0 : 0;
-export const watchdogSettings = cell => Object.fromEntries(Object.entries(WATCHDOG_DEFAULTS).map(([key, fallback]) => [key, Number.isFinite(cell?.watchdogSettings?.[key]) && cell.watchdogSettings[key] > 0 ? cell.watchdogSettings[key] : fallback]));
+export const watchdogSettings = cell => {
+  const saved = cell?.watchdogSettings || {};
+  return Object.fromEntries(Object.entries(WATCHDOG_DEFAULTS).map(([key, fallback]) => {
+    const value = key === 'idleMinutes' && !Object.hasOwn(saved, key) ? saved.workerMinutes : saved[key];
+    return [key, Number.isFinite(value) && value > 0 ? value : fallback];
+  }));
+};
 
 const QUEEN_ASKED = [
   /\b(?:queen|coordinator)\s+(?:should|must|to|please|needs? to|can now)\s+(?:reconcile\/)?(?:close|reconcile|finish)\b/i,
@@ -55,7 +61,7 @@ export function setWatchdogSettings(rt, { cellId, settings }) {
   refuseSnapshot(cell);
   if (!settings || typeof settings !== 'object' || Array.isArray(settings) || !Object.keys(settings).length
     || Object.entries(settings).some(([key, value]) => !Object.hasOwn(WATCHDOG_DEFAULTS, key) || !Number.isFinite(value) || value <= 0 || value > 525600)) {
-    throw new HiveError('Watchdog thresholds must be positive numbers up to 525600, using workerMinutes, reviewMinutes, messageMinutes, waitHours, deferredDays, untrackedMinutes, waitGraceMinutes and humanWaitMinutes.');
+    throw new HiveError('Watchdog thresholds must be positive numbers up to 525600, using workerMinutes, idleMinutes, reviewMinutes, messageMinutes, waitHours, deferredDays, untrackedMinutes, waitGraceMinutes and humanWaitMinutes.');
   }
   rt.metadata.mutate(d => { d.cells[cellId].watchdogSettings = { ...watchdogSettings(cell), ...settings }; });
   return { cellId, settings: watchdogSettings(rt.metadata.cell(cellId)) };
@@ -163,6 +169,13 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       add('stalled_worker', bead.id, [sid, session.status], activity || now, `Claimed worker ${session.status}.`, { bead_id: bead.id, session_id: sid });
       continue;
     }
+    const handedOff = reviewOpen || index.requesters.get(cell.id)?.has(sid)
+      || recordsCompletion(bead, [...QUEEN_ASKED, ...WORK_DONE]);
+    if (bead.status === 'in_progress' && !session.archived && !handedOff && !bead.waitingFor
+      && ['api-error', 'api-error-blocking'].includes(session.waitingReason) && session.status !== 'working') {
+      add('stalled_worker', bead.id, [sid, 'api-error'], activity || now, 'Claimed worker ended its turn with an API error.', { bead_id: bead.id, session_id: sid });
+      continue;
+    }
     const sleeping = sleepingReason(session);
     if (sleeping && !GROUP_KINDS.has(bead.kind) && !reviewOpen && !(session.hasBackgroundShell)) {
       const since = activity;
@@ -173,11 +186,10 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       continue;
     }
     if (session.status !== 'idle' || session.hasBackgroundShell || session.archived || ['blocked', 'deferred'].includes(bead.status) || bead.waitingFor) continue;
-    if (index.requesters.get(cell.id)?.has(sid)) continue;
-    if (reviewOpen) continue;
+    if (handedOff) continue;
     const latest = history.toSorted((a, b) => stamp(b.createdAt) - stamp(a.createdAt)).at(0);
     const since = Math.max(activity, latest?.state === 'approved' ? stamp(latest.completedAt || latest.verdict?.at || latest.updatedAt) : 0);
-    if (since && now - since >= settings.workerMinutes * 60000) {
+    if (since && now - since >= settings.idleMinutes * 60000) {
       add('stalled_worker', bead.id, [sid, 'idle', since], since, 'Claimed worker is idle without a recorded handoff.', { bead_id: bead.id, session_id: sid });
     }
   }

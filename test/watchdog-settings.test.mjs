@@ -13,12 +13,16 @@ test('per-hive watchdog form shows defaults, saves all values and reports server
   const cell = { id: 'one' };
   let tree = draw(ctx, cell);
   let inputs = walk(tree).filter(el => el.tag === 'input');
-  assert.deepEqual(Array.from(inputs, i => i.attrs.value), [30, 60, 30, 24, 7, 30, 30, 10]);
+  assert.deepEqual(Array.from(inputs, i => i.attrs.value), [30, 30, 60, 30, 24, 7, 30, 30, 10]);
   inputs[0].attrs.oninput({ target: { value: '15' } });
+  inputs[1].attrs.oninput({ target: { value: '5' } });
   tree = draw(ctx, cell); tree.attrs.onsubmit({ preventDefault() {} });
   assert.equal(sent[0].msg.type, 'hive-watchdog-settings'); assert.equal(sent[0].msg.cellId, 'one'); assert.equal(sent[0].msg.settings.workerMinutes, 15);
+  assert.equal(sent[0].msg.settings.idleMinutes, 5);
   sent[0].options.onReply({ ok: false, error: 'Invalid threshold' });
   assert.ok(walk(draw(ctx, cell)).some(el => el.children.includes('Invalid threshold')));
   draw(ctx, { id: 'two', watchdogSettings: { waitHours: 2 } });
   assert.equal(forms.get('watchdog:two').waitHours, 2); assert.equal(forms.get('watchdog:one').workerMinutes, '15');
+  draw(ctx, { id: 'legacy', watchdogSettings: { workerMinutes: 10 } });
+  assert.equal(forms.get('watchdog:legacy').idleMinutes, 10);
 });

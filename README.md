@@ -6,7 +6,7 @@ Expect changes to workflows and compatibility. Try a throwaway task first and ba
 
 ## Requirements
 
-- Hive 0.1.93 with Agent Wrangler host API **>=1.71.0 <2.0.0** (`^1.71.0`). Follow the host repository's installation instructions; the API version is separate from its application version.
+- Hive 0.1.94 with Agent Wrangler host API **>=1.71.0 <2.0.0** (`^1.71.0`). Follow the host repository's installation instructions; the API version is separate from its application version.
 - **Node.js >=20** and Git.
 - [Beads (`bd`)](https://github.com/gastownhall/beads) **>=1.3.4 <1.4.0**, JSON schema 1, with the embedded Dolt engine. Install a compatible release using its installation guide; no separate Dolt server is needed. Check `bd --version` rather than assuming the latest release is compatible.
 - Optional: authenticated [GitHub CLI](https://cli.github.com/) for PR tracking and labels. On macOS, `sips` produces conversation image thumbnails; other platforms use a placeholder that opens the original.
@@ -36,7 +36,7 @@ Drag the background to pan, zoom to inspect the map, and use **Fit** to see ever
 ## Features
 
 - **Waiting for you.** A person icon on a bead shows everything waiting on you: live agent input, an unacknowledged Hive message, a Needs You request, or a PR ready for your review. Click it for the actions, and Details lists each wait.
-- **Watchdog.** Hive flags stalled workers, stuck reviews, unanswered messages, stale waits, deferred beads that are due and abandoned claims, and sends the queen one digest. Active flags appear in `hive_context`.
+- **Watchdog.** Hive flags stalled workers, stuck reviews, unanswered messages, stale waits, deferred beads that are due and abandoned claims, and sends the queen one digest. Active flags appear in `hive_context`. An in-progress holder with an exposed API error flags on the next check. `watchdog_settings.idleMinutes` (default 30, configured in the cell's watchdog settings) controls how long an idle holder can go without a recorded handoff or terminal report; `workerMinutes` controls dormant claims. Open reviews, open input requests from the holder, recorded waits and completion reports in the bead summary, next action or latest evidence suppress idle attention. Recorded waits, open reviews, open input requests and completion reports also suppress API-error attention. Completion reports do not suppress dormant-claim attention. Cells with saved `workerMinutes` inherit that idle threshold until `idleMinutes` is set. Provider failures that the host leaves as plain idle use the idle timeout; see the [host contract](docs/host-contract.md#watchdog-session-signals).
 - **Withdraw.** Take one of your own messages out of the queen's waiting list without asking for a reply. A withdrawn message is shown as such, and Undo restores it.
 - **Retire.** Retire a finished hive with an outcome and summary. You can optionally archive its live sessions, and you can reopen it later.
 - **Reviews and PRs.** A queen or worker can request a bound review on a bead. Hive tracks associated PRs and can label them.

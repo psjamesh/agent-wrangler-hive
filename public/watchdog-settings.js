@@ -1,7 +1,8 @@
 import { h } from './dom.js';
 
 const fields = [
-  ['workerMinutes', 'Idle worker (minutes)', 30],
+  ['workerMinutes', 'Dormant claim (minutes)', 30],
+  ['idleMinutes', 'Idle holder without a terminal report (minutes)', 30],
   ['reviewMinutes', 'Review without verdict (minutes)', 60],
   ['messageMinutes', 'Unanswered message (minutes)', 30],
   ['waitHours', 'Untouched blocked or waiting work (hours)', 24],
@@ -15,7 +16,8 @@ export function watchdogSettingsForm({ ui, send }, cell) {
   const key = `watchdog:${cell.id}`;
   let draft = ui.form(key);
   if (!draft) {
-    draft = Object.fromEntries(fields.map(([name, , fallback]) => [name, cell.watchdogSettings?.[name] ?? fallback]));
+    draft = Object.fromEntries(fields.map(([name, , fallback]) => [name, cell.watchdogSettings?.[name]
+      ?? (name === 'idleMinutes' ? cell.watchdogSettings?.workerMinutes : null) ?? fallback]));
     ui.setForm(key, draft);
   }
   return h('form', {

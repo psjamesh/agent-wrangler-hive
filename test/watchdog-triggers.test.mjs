@@ -279,3 +279,146 @@ test('open requests are indexed once per collection, not rescanned per bead', t 
   f.rt.metadata.read = original;
   assert.ok(reads <= 20, `request reads: ${reads}`);
 });
+
+for (const agent of ['codex', 'claude']) {
+  test(`${agent}: exposed API errors flag on the next tick and clear on recovery`, async t => {
+    const f = fixture(t);
+    f.bead('work', { status: 'in_progress', ownerSessionId: 'worker' });
+    Object.assign(f.sessions.worker, { agent, status: 'idle', waitingReason: 'api-error' });
+    await f.watchdog.run();
+    assert.equal(f.sent.length, 1);
+    assert.equal(f.flags()[0]?.kind, 'stalled_worker');
+    assert.match(f.flags()[0].reason, /API error/i);
+    await f.watchdog.run(); assert.equal(f.sent.length, 1);
+    f.sessions.worker.waitingReason = 'api-error-blocking';
+    f.sessions.worker.status = 'needs-you';
+    assert.equal(f.flags()[0]?.kind, 'stalled_worker');
+    f.sessions.worker.waitingReason = null;
+    f.sessions.worker.status = 'working';
+    await f.watchdog.run(); assert.deepEqual(f.flags(), []);
+    f.sessions.worker.waitingReason = 'api-error';
+    assert.deepEqual(f.flags(), []);
+    f.sessions.worker.status = 'idle'; f.sessions.worker.archived = true;
+    assert.deepEqual(f.flags(), []);
+    f.sessions.worker.archived = false; f.beads.work.status = 'closed';
+    assert.deepEqual(f.flags(), []);
+  });
+
+  test(`${agent}: completion in next action or latest evidence suppresses idle attention`, t => {
+    const f = fixture(t);
+    f.bead('work', { status: 'in_progress', ownerSessionId: 'worker', nextAction: 'Work is complete. Holding for the queen.' });
+    Object.assign(f.sessions.worker, { agent, status: 'idle' });
+    f.advance(31 * MIN); assert.deepEqual(f.flags(), []);
+    f.beads.work.nextAction = '';
+    f.beads.work.evidence = [{ label: 'Implementation is complete', detail: 'Holding the claim as requested.' }];
+    assert.deepEqual(f.flags(), []);
+    f.beads.work.evidence.push({ label: 'Work resumed', detail: 'More tests required.' });
+    assert.equal(f.flags()[0]?.kind, 'stalled_worker');
+  });
+
+  test(`${agent}: plain idle without a report uses the configurable idle threshold`, t => {
+    const f = fixture(t);
+    f.bead('work', { status: 'in_progress', ownerSessionId: 'worker' });
+    Object.assign(f.sessions.worker, { agent, status: 'idle' });
+    assert.equal(WATCHDOG_DEFAULTS.idleMinutes, 30);
+    setWatchdogSettings(f.rt, { cellId: 'cell', settings: { idleMinutes: 5 } });
+    f.advance(5 * MIN - 1); assert.deepEqual(f.flags(), []);
+    f.advance(1); assert.equal(f.flags()[0]?.kind, 'stalled_worker');
+    f.sessions.worker.lastActivity = f.now(); assert.deepEqual(f.flags(), []);
+    f.advance(5 * MIN); assert.equal(f.flags().length, 1);
+    f.beads.work.status = 'closed'; assert.deepEqual(f.flags(), []);
+    assert.throws(() => setWatchdogSettings(f.rt, { cellId: 'cell', settings: { idleMinutes: 0 } }));
+  });
+
+  for (const signal of ['idle', 'api-error', 'api-error-blocking']) {
+    for (const exclusion of ['review', 'request', 'report']) {
+      test(`${agent}: ${signal} respects an open ${exclusion}`, t => {
+        const f = fixture(t);
+        f.bead('work', { status: 'in_progress', ownerSessionId: 'worker' });
+        Object.assign(f.sessions.worker, { agent, status: 'idle', waitingReason: signal === 'idle' ? null : signal });
+        if (exclusion === 'review') f.rt.metadata.mutate(d => {
+          d.reviews.r = { id: 'r', state: 'in_review', cellId: 'cell', workBeadId: 'work', createdAt: f.now() };
+        });
+        if (exclusion === 'request') f.rt.metadata.mutate(d => {
+          d.requests.r = { state: 'open', cellId: 'cell', beadId: 'work', requesterSessionId: 'worker' };
+        });
+        if (exclusion === 'report') f.beads.work.summary = 'Implementation is complete. Holding the claim as the queen requested.';
+        f.advance(31 * MIN);
+        assert.deepEqual(f.flags(), []);
+        if (exclusion === 'review') f.rt.metadata.mutate(d => { d.reviews.r.state = 'cancelled'; });
+        if (exclusion === 'request') f.rt.metadata.mutate(d => { d.requests.r.state = 'answered'; });
+        if (exclusion === 'report') f.beads.work.summary = 'Implementation is not complete; tests remain.';
+        assert.equal(f.flags()[0]?.kind, 'stalled_worker');
+      });
+    }
+  }
+}
+
+for (const agent of ['codex', 'claude']) {
+  test(`${agent}: one API-error episode wakes once across reason and activity changes, then rearms after recovery`, async t => {
+    const f = fixture(t);
+    f.bead('work', { status: 'in_progress', ownerSessionId: 'worker' });
+    Object.assign(f.sessions.worker, { agent, status: 'idle', waitingReason: 'api-error' });
+    await f.watchdog.run(); assert.equal(f.sent.length, 1);
+    const original = f.flags()[0];
+    Object.assign(f.sessions.worker, { status: 'needs-you', waitingReason: 'api-error-blocking' });
+    await f.watchdog.run(); assert.equal(f.sent.length, 1);
+    f.advance(MIN); f.sessions.worker.lastActivity = f.now();
+    await f.watchdog.run(); assert.equal(f.sent.length, 1);
+    assert.equal(f.flags()[0].id, original.id);
+    assert.equal(f.flags()[0].since, original.since);
+    f.sessions.worker.status = 'working'; f.sessions.worker.waitingReason = null;
+    await f.watchdog.run(); assert.deepEqual(f.flags(), []);
+    f.sessions.worker.status = 'idle'; f.sessions.worker.waitingReason = 'api-error';
+    await f.watchdog.run(); assert.equal(f.sent.length, 2);
+  });
+
+  test(`${agent}: API-error attention respects a recorded wait`, async t => {
+    const f = fixture(t);
+    f.bead('work', { status: 'in_progress', ownerSessionId: 'worker', waitingFor: 'PR checks' });
+    Object.assign(f.sessions.worker, { agent, status: 'idle', waitingReason: 'api-error' });
+    await f.watchdog.run(); assert.deepEqual(f.flags(), []); assert.equal(f.sent.length, 0);
+    f.beads.work.waitingFor = '';
+    await f.watchdog.run(); assert.equal(f.sent.length, 1);
+  });
+}
+
+test('saved workerMinutes remains the idle threshold until idleMinutes is configured', t => {
+  const f = fixture(t);
+  f.bead('work', { status: 'in_progress', ownerSessionId: 'worker' });
+  f.sessions.worker.status = 'idle';
+  f.rt.metadata.mutate(d => { d.cells.cell.watchdogSettings = { workerMinutes: 10 }; });
+  f.advance(10 * MIN - 1); assert.deepEqual(f.flags(), []);
+  f.advance(1); assert.equal(f.flags()[0]?.kind, 'stalled_worker');
+  setWatchdogSettings(f.rt, { cellId: 'cell', settings: { idleMinutes: 20 } });
+  assert.deepEqual(f.flags(), []);
+  f.advance(10 * MIN); assert.equal(f.flags()[0]?.kind, 'stalled_worker');
+});
+
+for (const agent of ['codex', 'claude']) {
+  test(`${agent}: completion does not hide dormant claims and workerMinutes controls their threshold`, t => {
+    const f = fixture(t);
+    f.bead('work', { status: 'in_progress', ownerSessionId: 'worker', summary: 'Implementation is complete.' });
+    Object.assign(f.sessions.worker, { agent, status: 'idle', dormant: true });
+    setWatchdogSettings(f.rt, { cellId: 'cell', settings: { workerMinutes: 5, idleMinutes: 60 } });
+    f.advance(5 * MIN - 1); assert.deepEqual(f.flags(), []);
+    f.advance(1); assert.equal(f.flags()[0]?.kind, 'dormant_claim');
+    f.sessions.worker.dormant = false; assert.deepEqual(f.flags(), []);
+  });
+
+  for (const waitingReason of [null, 'api-error']) {
+    test(`${agent}: a PR attention report requires an explicit bead wait to suppress ${waitingReason || 'idle'} stalls`, t => {
+      const f = fixture(t);
+      f.bead('work', { status: 'in_progress', ownerSessionId: 'worker' });
+      Object.assign(f.sessions.worker, { agent, status: 'idle', waitingReason });
+      f.rt.metadata.mutate(d => {
+        d.prLabels = { 'https://github.com/example/repo/pull/1': {
+          state: 'OPEN', headSha: 'a'.repeat(40), associations: [{ cellId: 'cell', beadId: 'work' }],
+          humanAttention: { state: 'ready', headSha: 'a'.repeat(40), beadId: 'work', actor: 'worker', at: f.now() },
+        } };
+      });
+      f.advance(31 * MIN); assert.equal(f.flags()[0]?.kind, 'stalled_worker');
+      f.beads.work.waitingFor = 'PR checks'; assert.deepEqual(f.flags(), []);
+    });
+  }
+}
