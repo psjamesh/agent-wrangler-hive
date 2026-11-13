@@ -17,6 +17,7 @@ The manifest declares `engines.wranglerApi: ^1.71.0`. Hive needs the read-only `
 | `sessions:archive` | `host.sessions.archive(id, { cascade: false })`: only when the human ticks Archive these sessions too while retiring a hive. Each session is archived on its own and failures are reported without blocking the retirement. |
 | `deliver` | `host.deliver`: human messages and activation briefs for the queen. |
 | `board:rebuild` | `host.rebuild`: republishing the Hive projection after a change. |
+| `agents:read` | `host.agents.list()`: installed provider, resolved model identity and supported effort validation for automatic pickup readiness profiles. |
 | `links:read` | `host.links.get(sessionId)`: reading independent copies of session links, including PRs. Unknown sessions return `[]`. No `attach` method is granted. |
 
 ### Manifest surfaces
@@ -46,7 +47,7 @@ The manifest declares `engines.wranglerApi: ^1.71.0`. Hive needs the read-only `
 - `api.storage`: the selected cell, bead and link mode.
 - `api.mountSession`: embeds AW's own session panel, with its native Chat and Terminal controls, in the cell view. Falls back to `api.openSession`.
 - `api.claimDrag`: holds board re-rendering while a tile is being dragged.
-- `api.agents`: agent, model and effort choices for launching a queen.
+- `api.agents`: agent, model and effort choices for queen launches and per-bead pickup profiles.
 - `api.ui.markdownPreview`: sanitised Markdown for messages and bead text.
 
 Hive uses no task-pane or task-body replacement API and no task-selection API. It needs no core change.
@@ -178,3 +179,7 @@ Human numbering counts visible messages with a preserved public pruning offset, 
 ## Attached sessions and review policy
 
 A bead's attached sessions are its active bindings (`worker`, `reviewer`, `investigator`, exposed as work, review, helper) plus the claim holder. `hive_spawn_worker` takes a `role`; the queen/coordinator may launch any role, the claim holder only review and helper for its own bead. Reviews use the cell's `reviewPolicy` (`primary` and `secondary`, defaults claude/opus/medium and codex/gpt-6.1-sol/medium; Terra models are refused on save and on override), choosing the config whose agent differs from the builder session's `agent`, else the primary with `sameProvider: true`. Departing from it requires `override_reason`, stored on the review's `policy`. `hive_bind_session` with role review joins a session started elsewhere and creates its review record. Work, in-review and idle are derived from attached sessions (`server/bead-sessions.js`) and add no stored status. The queen is delivered a notice when a review session starts or joins and when a verdict lands. Host fields used: `host.sessions.get(id).agent`, `.model`, `.effort`, `.status`, `.lastActivity`.
+
+### Automatic pickup contract
+
+Readiness uses `hive_pickup` Beads metadata and a confirmed native `updated_at` receipt. Durable pickup attempts, rolling start debits and the fairness cursor live beside ordinary worker launch reservations. Admission and startup recheck strict exports, queen generation, task state, token/profile identity and the executable brief. Profile validation reads `host.agents.list()` outside admission and pins the advertised model resolution. Unknown host outcomes are observed without another spawn submission. See [automatic pickup](automatic-pickup.md).

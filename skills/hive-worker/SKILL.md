@@ -52,3 +52,7 @@ Follow the review and merge instructions you have: your brief, the repository an
 ## Coordinators
 
 If the queen bound you as `coordinator` for a workstream, you may also delegate within that workstream's goal. Follow the hive-queen skill for your scope.
+
+## Automatically picked-up work
+
+A readiness mark authorizes one worker launch through Hive's ordinary claim-before-action path. Read the assigned bead context and follow its bounded brief. Ask the current queen to change readiness or reconcile a failed/uncertain pickup; workers do not arm or rearm work. Finishing, releasing or reopening a bead never authorizes a replacement worker automatically.

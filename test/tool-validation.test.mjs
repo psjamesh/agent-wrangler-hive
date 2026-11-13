@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { workTools } from '../server/tools.js';
 
 const valid = {
+  hive_set_pickup: { bead_id: 'a', ready: true, profile: { agent: 'claude', model: 'sonnet', effort: 'medium', cwd: '/tmp/fake-repo' } },
   hive_request_input: { title: 'Choose an option', body: 'Which option?', kind: 'decision', bead_id: 'a', thread_id: 'thread', blocking: true, dedupe_key: 'choice', expires_at: 2000000000000 },
   hive_list_my_requests: {},
   hive_withdraw_request: { request_id: 'hreq_123456789abc', reason: 'Answered in chat' },
