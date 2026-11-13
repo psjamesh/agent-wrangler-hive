@@ -1704,3 +1704,47 @@ test('hive_update_bead warns from the applied state when updates race', async ()
   assert.match(second.warning, /hive_request_input/);
   assert.ok(first);
 });
+
+test('refused closed-bead wakes tell the current queen once with the linked PR and session', async () => {
+  const f = fixture(2);
+  await dormantWorker(f);
+  const sent = [];
+  const url = 'https://github.com/example/repo/pull/42';
+  f.host.links = { get: () => [{ type: 'pr', url }] };
+  f.host.deliver = async (id, text) => { sent.push({ id, text }); return { mode: 'live' }; };
+  f.live.a.status = 'closed'; f.live.a.assignee = null;
+  for (let i = 0; i < 2; i++) assert.match((await restore(f))?.refuse || '', /missing or closed/);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].id, 'queen');
+  assert.ok(sent[0].text.includes(url));
+  assert.match(sent[0].text, /closed.*a|a.*closed/);
+  assert.match(sent[0].text, /#session=worker-1/);
+  f.doc().cells.cell.queenSessionId = 'queen2';
+  await restore(f);
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].id, 'queen2');
+});
+
+test('uncertain refused-wake delivery is recorded once and does not mask the refusal', async () => {
+  const f = fixture(2); const out = await dormantWorker(f); let attempts = 0;
+  f.host.links = { get: () => [{ type: 'pr', url: 'https://github.com/example/repo/pull/42' }] };
+  f.host.deliver = async () => { attempts++; throw new Error('delivery uncertain'); };
+  f.live.a.status = 'closed'; f.live.a.assignee = null;
+  assert.match((await restore(f))?.refuse || '', /missing or closed/);
+  assert.match((await restore(f))?.refuse || '', /missing or closed/);
+  assert.equal(attempts, 1);
+  const receipts = Object.values(f.doc().workerLaunches[out.launch_id].closedBeadWakeNotices);
+  assert.equal(receipts[0].state, 'uncertain');
+});
+
+test('closed-bead refusal without PR links does not send; another held open claim resumes without notice', async () => {
+  const f = fixture(2); await dormantWorker(f); const sent = [];
+  f.host.deliver = async (...args) => { sent.push(args); return { mode: 'live' }; };
+  f.live.a.status = 'closed'; f.live.a.assignee = null;
+  assert.match((await restore(f))?.refuse || '', /missing or closed/);
+  assert.equal(sent.length, 0);
+  f.host.links = { get: () => [{ type: 'pr', url: 'https://github.com/example/repo/pull/42' }] };
+  f.live.b.status = 'in_progress'; f.live.b.assignee = 'aw:worker-1';
+  assert.equal((await restore(f))?.refuse, undefined);
+  assert.equal(sent.length, 0);
+});

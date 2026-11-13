@@ -1,3 +1,4 @@
+import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
 import { awaitingQueen } from './conversation.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
@@ -192,6 +193,25 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     const since = Math.max(activity, latest?.state === 'approved' ? stamp(latest.completedAt || latest.verdict?.at || latest.updatedAt) : 0);
     if (since && now - since >= settings.idleMinutes * 60000) {
       add('stalled_worker', bead.id, [sid, 'idle', since], since, 'Claimed worker is idle without a recorded handoff.', { bead_id: bead.id, session_id: sid });
+    }
+  }
+  const linkedSessions = new Map();
+  for (const binding of doc.bindings?.[cell.id] || []) {
+    if (!binding.active || !ids.has(binding.beadId) || beads[binding.beadId]?.status !== 'closed') continue;
+    const session = host?.sessions?.get?.(binding.sessionId);
+    if (!session || session.archived) continue;
+    if (!linkedSessions.has(binding.sessionId)) linkedSessions.set(binding.sessionId, new Set());
+    linkedSessions.get(binding.sessionId).add(binding.beadId);
+  }
+  for (const [sid, closedIds] of linkedSessions) {
+    for (const link of host.links?.get?.(sid) || []) {
+      if (link.type !== 'pr' || !prRepository(link.url) || doc.prLabels?.[link.url]?.state !== 'OPEN') continue;
+      for (const beadId of closedIds) {
+        const bead = beads[beadId];
+        add('closed_bead_pr', [sid, beadId, link.url], 'OPEN', stamp(bead.closedAt) || stamp(bead.updatedAt) || now,
+          `Open PR ${link.url} is still linked to a session bound to closed bead ${beadId}. Relink it to its current owner or remove the stale session link.`,
+          { bead_id: beadId, session_id: sid, pr_url: link.url });
+      }
     }
   }
   for (const review of reviews) {

@@ -1667,7 +1667,7 @@ dialog.hive-confirm:not([open]) { display: none; }
 .hive-request-option:hover:not(:disabled) { border-color: var(--hive-honey); background: var(--hive-wax); }
 .hive-request-option:focus-visible { outline: 2px solid var(--hive-honey); outline-offset: 2px; }
 .hive-request-option:disabled { opacity: .55; cursor: default; }
-.hive-request-option-num { display: grid; place-items: center; flex: 0 0 25px; height: 28px; background: var(--border); clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); font-size: 12px; }
+.hive-request-option-num { display: grid; place-items: center; flex: 0 0 25px; height: 25px; background: var(--border); border-radius: 50%; font-size: 12px; line-height: 1; }
 .hive-request-option-text { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
 .hive-request-option-label { font-weight: 600; }
 .hive-request-option-description { color: var(--fg-muted, var(--fg)); font-size: 12px; }
