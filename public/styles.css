@@ -1048,14 +1048,14 @@
 
 .hive-messages {
   list-style: none;
-  margin: 0;
-  padding: 0;
+  margin: 0 0 0 -12px;
+  padding: 0 0 0 12px;
   flex: 1 1 auto;
   min-height: 4.5em;
   overflow: auto;
 }
 
-.hive-message { padding: 8px 0; border-bottom: 1px solid var(--border-muted, var(--border)); }
+.hive-message { position: relative; padding: 8px 0; border-bottom: 1px solid var(--border-muted, var(--border)); }
 .hive-message:last-child { border-bottom: none; }
 .hive-message-human { border-left: 3px solid var(--hive-comb); padding-left: 10px; }
 .hive-message-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
@@ -1573,8 +1573,20 @@
 .hive-conversation-ring { fill: none; stroke: none; pointer-events: none; }
 .hive-hex.is-conversation-related .hive-conversation-ring { stroke: #70c7d4; stroke-width: 2.5; stroke-dasharray: 5 4; }
 body.light .hive-hex.is-conversation-related .hive-conversation-ring { stroke: #186879; }
-.hive-message.is-conversation-selected { box-shadow: inset 3px 0 #70c7d4; }
-body.light .hive-message.is-conversation-selected { box-shadow: inset 3px 0 #186879; }
+.hive-message.is-conversation-selected::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 50%;
+  width: 5px;
+  height: min(60%, 3.5em);
+  min-height: 1.4em;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: #70c7d4;
+  pointer-events: none;
+}
+body.light .hive-message.is-conversation-selected::before { background: #186879; }
 .hive-conversation-relations { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; width: 100%; }
 .hive-related-chip { border-color: #70c7d4; }
 body.light .hive-related-chip { border-color: #186879; }

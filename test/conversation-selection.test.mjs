@@ -62,3 +62,14 @@ for (const failure of [{ ok: false }, { ok: false, timeout: true }, { ok: true, 
     assert.equal(ui.askRelations('cell', 'topic', 'epoch:current', 1), null);
   });
 }
+
+test('selected message is a rounded gutter marker, not a full-height edge rule', () => {
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(css, /\.is-conversation-selected\s*\{[^}]*box-shadow/);
+  const marker = css.match(/\.hive-message\.is-conversation-selected::before\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(marker, /border-radius:\s*999px/);
+  assert.match(marker, /left:\s*-\d+px/);
+  assert.doesNotMatch(marker, /height:\s*100%/);
+  assert.match(css, /body\.light \.hive-message\.is-conversation-selected::before\s*\{[^}]*background/);
+  assert.match(css, /\.hive-messages\s*\{[^}]*padding:\s*0 0 0 12px/);
+});
