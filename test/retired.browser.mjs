@@ -8,7 +8,7 @@ import client, { createUi } from '/public/client.js';
 import { renderHive } from '/public/hive-view.js';
 const store = new Map();
 client.register({ api: { storage: { get: k => store.get(k), set: (k, v) => store.set(k, v), remove: k => store.delete(k) } }, register() {} });
-const base = { launches: [], bindings: [], beadLayout: {}, arrangeAspect: null, workstreamColours: {}, workstreamShades: {}, archived: {}, restoreNotices: [], regionAttachments: {}, detachedWorkstreams: [], threads: [], messages: [], threadsTruncated: false, threadsAfter: null, inbox: { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } }, requests: {}, requestCounts: {} };
+const base = { launches: [], bindings: [], beadLayout: {}, arrangeAspect: null, workstreamColours: {}, workstreamShades: {}, archived: {}, restoreNotices: [], regionAttachments: {}, detachedWorkstreams: [], threads: [], messages: [], threadsTruncated: false, threadsAfter: null, inbox: { human: { ids: [], count: 0, more: false, after: null }, queen: { ids: [], count: 0, more: false, after: null } }, requests: {}, requestCounts: {} };
 const cells = {
   live: { ...base, id: 'live', taskId: 't1', enabled: true, rootBeadId: 'r1', queenSessionId: 'q', position: { q: 0, r: 0 }, beadCount: 1 },
   gone: { ...base, id: 'gone', taskId: 't2', enabled: false, rootBeadId: 'r2', position: { q: 2, r: 0 }, beadCount: 2, retired: { outcome: 'done', summary: 'shipped it', at: Date.now(), by: 'aw:human', position: { q: 2, r: 0 } } },

@@ -6,7 +6,7 @@ Expect changes to workflows and compatibility. Try a throwaway task first and ba
 
 ## Requirements
 
-- Hive 0.1.97 with Agent Wrangler host API **>=1.71.0 <2.0.0** (`^1.71.0`). Follow the host repository's installation instructions; the API version is separate from its application version.
+- Hive 0.1.100 with Agent Wrangler host API **>=1.71.0 <2.0.0** (`^1.71.0`). Follow the host repository's installation instructions; the API version is separate from its application version.
 - **Node.js >=20** and Git.
 - [Beads (`bd`)](https://github.com/gastownhall/beads) **>=1.3.4 <1.4.0**, JSON schema 1, with the embedded Dolt engine. Install a compatible release using its installation guide; no separate Dolt server is needed. Check `bd --version` rather than assuming the latest release is compatible.
 - Optional: authenticated [GitHub CLI](https://cli.github.com/) for PR tracking and labels. On macOS, `sips` produces conversation image thumbnails; other platforms use a placeholder that opens the original.
@@ -50,6 +50,8 @@ Drag the background to pan, zoom to inspect the map, and use **Fit** to see ever
 - **Worker and claim:** a session responsible for a bounded bead. A session stopping or going idle does not finish its work.
 - **Link:** an explicit dependency or association. Blocking links make work wait; neighbouring hexagons do not imply dependencies.
 - **Request:** a tracked question needing a decision or action. Worker requests go privately to the queen until forwarded; a missing or archived queen routes requests to the human.
+- **Delegation.** Tracked delegation uses Hive's tools, which claim a bead before launching a session. Hive adds no tool deny list to Claude, Codex or Gemini launches. Sessions they start outside Hive appear under `attention.untracked_descendants` in `hive_context`. A helper, advisor or investigation is its own claimed bead launched with `hive_spawn_worker`; a code review uses `role: "review"` on the work bead.
+- **Queen handoff.** The current queen calls `hive_handoff_queen` to hand the cell to one Hive-launched successor at a time. The handoff is generation-fenced: if the queen changes meanwhile, the successor is refused before it acts. Workers keep their claims and reviews; the old queen loses queen and coordinator authority, and claims it holds personally are not transferred. The human can launch or nominate a replacement queen at any time.
 
 ## Data and evaluation
 

@@ -805,13 +805,6 @@
   stroke-width: 1;
 }
 
-/* Empty hive slots on the overview are only a faint dotted guide for dropping. */
-.hive-hexmap.is-hives .hive-ghost {
-  fill: none;
-  stroke-opacity: 0.55;
-  stroke-dasharray: 1.5 5;
-  stroke-linecap: round;
-}
 .hive-hexmap.is-hives .hive-hex-rim,
 .hive-hexmap.is-hives .hive-hex-ring { stroke-linejoin: round; }
 /* Each hive is its hexagon seen as a box from above: a lit top and a shaded
@@ -1341,10 +1334,10 @@
   position: absolute;
   inset: 0 auto;
   left: 50%;
-  width: 1px;
+  width: 0;
   transform: translateX(-50%);
   border-radius: 2px;
-  background: var(--border);
+  background: transparent;
   transition: width 0.12s, background 0.12s;
 }
 .hive-root[data-panels="open"] .hive-divider::after { content: ""; position: absolute; inset: 0 -4px; }
@@ -1378,7 +1371,7 @@
   padding: 10px 16px 14px;
   overflow: hidden;
 }
-.hive-root[data-view="overview"][data-panels="open"] .hive-overview { grid-area: main; min-height: 0; padding: 4px 4px 4px 0; }
+.hive-root[data-view="overview"][data-panels="open"] .hive-overview { grid-area: main; min-height: 0; padding: 4px 0; }
 .hive-root[data-view="overview"][data-panels="open"] .hive-dock { grid-area: rail; padding: 0; }
 .hive-root[data-view="overview"][data-panels="open"] .hive-divider { display: block; grid-area: divider; position: relative; cursor: col-resize; touch-action: none; }
 .hive-root[data-layout="small"][data-view="overview"][data-panels="open"] {
@@ -1674,7 +1667,7 @@ dialog.hive-confirm:not([open]) { display: none; }
 .hive-request-option:hover:not(:disabled) { border-color: var(--hive-honey); background: var(--hive-wax); }
 .hive-request-option:focus-visible { outline: 2px solid var(--hive-honey); outline-offset: 2px; }
 .hive-request-option:disabled { opacity: .55; cursor: default; }
-.hive-request-option-num { display: grid; place-items: center; flex: 0 0 25px; height: 28px; background: var(--border); clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); font-size: 12px; }
+.hive-request-option-num { display: grid; place-items: center; flex: 0 0 25px; height: 25px; background: var(--border); border-radius: 50%; font-size: 12px; line-height: 1; }
 .hive-request-option-text { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
 .hive-request-option-label { font-weight: 600; }
 .hive-request-option-description { color: var(--fg-muted, var(--fg)); font-size: 12px; }

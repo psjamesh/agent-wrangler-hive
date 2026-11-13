@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/public/styles.css"><style>*{box-sizing:border-box}body{margin:0}:root{--bg:#f4f5f7;--surface:#fff;--surface-2:#e9ecf0;--fg:#202631;--fg-muted:#555f70;--border:#b7bfcc;--border-muted:#c9ced8;--green:#22864a;--red:#c33;--font:system-ui,sans-serif}body.dark{--bg:#181b20;--surface:#22262d;--surface-2:#2c323b;--fg:#e4e7ec;--fg-muted:#a0aaba;--border:#525e70;--border-muted:#414b5b;--green:#63bc80;--red:#ef7777}*,*::before,*::after{transition:none!important;animation:none!important}</style></head><body><div class="hive-root" id="root" style="width:100vw;height:100vh"></div><script type="module">
+import client from '/public/client.js';
+const store = new Map();
+const params = new URLSearchParams(location.search);
+document.body.className = params.get('theme') || 'light';
+if (params.get('view') === 'cell') store.set('cell', JSON.stringify('alpha'));
+let view;
+client.register({ api: { storage: { get: k => store.get(k), set: (k, v) => store.set(k, v), remove: k => store.delete(k) } }, register(kind, v) { view = v; } });
+const base = { launches: [], bindings: [], beadLayout: {}, arrangeAspect: null, workstreamColours: {}, workstreamShades: {}, archived: {}, restoreNotices: [], regionAttachments: {}, detachedWorkstreams: [], threads: [], messages: [], threadsTruncated: false, threadsAfter: null, inbox: { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } }, requestCounts: {} };
+const req = (id, title, body, at, extra = {}) => ({ id, audience: 'human', state: 'open', title, body, createdAt: at, threadId: 't_' + id, messageId: 'm_' + id, requesterSessionId: 's1', ...extra });
+const cells = {
+  alpha: { ...base, id: 'alpha', taskId: 't1', enabled: true, rootBeadId: 'r1', queenSessionId: 's1', position: { q: 0, r: 0 }, beadCount: 4, requests: { a: req('a', 'Which database should the importer use?', 'Postgres or SQLite for the local cache?', Date.now() - 600000, { blocking: true }), b: req('b', 'Approve the retry policy', 'Three retries with backoff.', Date.now() - 3600000) } },
+  beta: { ...base, id: 'beta', taskId: 't2', enabled: true, rootBeadId: 'r2', queenSessionId: 's1', position: { q: 2, r: 0 }, beadCount: 1, requests: { c: req('c', 'Rename the export flag?', 'It clashes with the new option.', Date.now() - 7200000) } },
+};
+const beads = { r1: { id: 'r1', title: 'Importer rewrite', kind: 'goal', status: 'in_progress', evidence: [] }, r2: { id: 'r2', title: 'Export cleanup', kind: 'goal', status: 'in_progress', evidence: [] } };
+beads.w1 = { id: 'w1', parentId: 'r1', title: 'Import pipeline', kind: 'workstream', status: 'in_progress', evidence: [] };
+beads.w2 = { id: 'w2', parentId: 'w1', title: 'Validate input files', kind: 'work', status: 'in_progress', evidence: [] };
+beads.w3 = { id: 'w3', parentId: 'w1', title: 'Handle retries', kind: 'work', status: 'open', evidence: [] };
+const hive = { cells, beads, edges: [], launches: [], operations: [], backend: { state: 'ready', snapshotComplete: true, snapshotBeadIds: Object.keys(beads) }, capacity: { limit: 8, used: 0, claimed: 0, reserved: 0, available: 8 }, metaEpoch: 'e', metaVersion: 1 };
+const graph = { hive, sessions: [{ sessionId: 's1', name: 'Importer queen' }], tasks: { tasks: [{ id: 't1', name: 'Importer hive' }, { id: 't2', name: 'Export hive' }] } };
+const root = document.getElementById('root');
+window.t = { client, root, graph, redraw: () => { view.update(root, null, { ...graph }); } };
+view.mount(root, null);
+view.update(root, null, graph);
+</script></body></html>
