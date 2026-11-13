@@ -1,5 +1,5 @@
 import { beadReferenceMatches } from './bead-references.js';
-import { hiveLink } from './deep-links.js';
+import { hiveLink, parseHiveLink } from './deep-links.js';
 import { sessionLinkId, bareSessionLinks } from './session-links.js';
 
 let sessionLinkGuard = null;
@@ -49,6 +49,7 @@ export function markdown(api, text, references = null) {
       });
       continue;
     }
+    if (parseHiveLink(a.getAttribute('href'))) continue;
     if (!/^https?:\/\//i.test(a.getAttribute('href') || '')) a.removeAttribute('href');
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
