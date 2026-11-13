@@ -6,7 +6,7 @@ Expect changes to workflows and compatibility. Try a throwaway task first and ba
 
 ## Requirements
 
-- Hive 0.1.94 with Agent Wrangler host API **>=1.71.0 <2.0.0** (`^1.71.0`). Follow the host repository's installation instructions; the API version is separate from its application version.
+- Hive 0.1.95 with Agent Wrangler host API **>=1.71.0 <2.0.0** (`^1.71.0`). Follow the host repository's installation instructions; the API version is separate from its application version.
 - **Node.js >=20** and Git.
 - [Beads (`bd`)](https://github.com/gastownhall/beads) **>=1.3.4 <1.4.0**, JSON schema 1, with the embedded Dolt engine. Install a compatible release using its installation guide; no separate Dolt server is needed. Check `bd --version` rather than assuming the latest release is compatible.
 - Optional: authenticated [GitHub CLI](https://cli.github.com/) for PR tracking and labels. On macOS, `sips` produces conversation image thumbnails; other platforms use a placeholder that opens the original.

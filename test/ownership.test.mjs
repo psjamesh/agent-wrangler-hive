@@ -56,6 +56,7 @@ async function dispatchFixture(f, mode = 'ok') {
   f.host.sessions.spawn = async (opts) => {
     const sessionId = `worker-${++n}`;
     const ext = opts.ext.hive;
+    assert.ok(opts.intent.includes(`hive_context({ scope: "bead", bead_id: "${ext.beadId}", cell_id: "${f.rt.metadata.cellForTask(opts.taskId).id}" })`));
     manifest.hooks['session.prepare']({ sessionId, taskId: opts.taskId, spawnedBy: null, host: f.host });
     await manifest.session.onBeforeDispatch({ sessionId, ext, host: f.host });
     const out = await manifest.hooks['session.launchContext']({ sid: sessionId, task: { id: opts.taskId }, reason: 'spawn', host: f.host });
