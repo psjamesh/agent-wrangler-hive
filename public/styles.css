@@ -1336,7 +1336,7 @@
   cursor: col-resize;
   touch-action: none;
 }
-.hive-divider::before {
+.hive-root[data-panels="open"] .hive-divider::before {
   content: "";
   position: absolute;
   inset: 0 auto;
@@ -1347,12 +1347,12 @@
   background: var(--border);
   transition: width 0.12s, background 0.12s;
 }
-.hive-divider::after { content: ""; position: absolute; inset: 0 -4px; }
-.hive-divider:hover::before, .hive-divider:focus-visible::before, .hive-divider[data-dragging]::before { width: 3px; background: var(--hive-comb-strong); }
-.hive-divider:focus-visible { outline: none; }
+.hive-root[data-panels="open"] .hive-divider::after { content: ""; position: absolute; inset: 0 -4px; }
+.hive-root[data-panels="open"] .hive-divider:hover::before, .hive-root[data-panels="open"] .hive-divider:focus-visible::before, .hive-root[data-panels="open"] .hive-divider[data-dragging]::before { width: 3px; background: var(--hive-comb-strong); }
+.hive-root[data-panels="open"] .hive-divider:focus-visible { outline: none; }
 @media (forced-colors: active) {
-  .hive-divider::before { background: CanvasText; }
-  .hive-divider:hover::before, .hive-divider:focus-visible::before, .hive-divider[data-dragging]::before { background: Highlight; }
+  .hive-root[data-panels="open"] .hive-divider::before { background: CanvasText; }
+  .hive-root[data-panels="open"] .hive-divider:hover::before, .hive-root[data-panels="open"] .hive-divider:focus-visible::before, .hive-root[data-panels="open"] .hive-divider[data-dragging]::before { background: Highlight; }
 }
 .hive-root[data-view="cell-inspecting"] { grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "head head head" "bar divider tabs" "slot divider rail"; }
 .hive-root[data-view="cell-inspecting"] .hive-inspectbar { grid-area: bar; }
@@ -1371,16 +1371,16 @@
 
 .hive-root[data-view="overview"][data-panels="open"] {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 8px var(--hive-panel-width, 38%);
+  grid-template-columns: minmax(0, 1fr) 12px var(--hive-panel-width, 38%);
   grid-template-rows: minmax(0, 1fr);
   grid-template-areas: "main divider rail";
-  gap: 0 12px;
+  gap: 0;
   padding: 10px 16px 14px;
   overflow: hidden;
 }
 .hive-root[data-view="overview"][data-panels="open"] .hive-overview { grid-area: main; min-height: 0; padding: 4px 4px 4px 0; }
 .hive-root[data-view="overview"][data-panels="open"] .hive-dock { grid-area: rail; padding: 0; }
-.hive-root[data-view="overview"][data-panels="open"] .hive-divider { display: block; grid-area: divider; cursor: col-resize; touch-action: none; border-radius: 4px; background: var(--border); }
+.hive-root[data-view="overview"][data-panels="open"] .hive-divider { display: block; grid-area: divider; position: relative; cursor: col-resize; touch-action: none; }
 .hive-root[data-layout="small"][data-view="overview"][data-panels="open"] {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) minmax(220px, 1fr);

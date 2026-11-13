@@ -73,9 +73,13 @@ test('splitter is a 12px hairline column with no grid gap and a widened hit area
   const grid = css.match(/\.hive-root\[data-view\^="cell"\] \{[^}]*\}/)[0];
   assert.match(grid, /grid-template-columns: minmax\(0, 1fr\) 12px var\(--hive-panel-width/);
   assert.match(grid, /gap: 10px 0;/);
-  assert.match(css, /\.hive-divider::before \{[^}]*width: 1px;/);
-  assert.match(css, /\.hive-divider::after \{[^}]*inset: 0 -4px;/);
-  assert.match(css, /\.hive-divider:hover::before[^{]*\[data-dragging\]::before[^{]*\{ width: 3px;/);
-  assert.match(css, /\.hive-divider:focus-visible::before/);
-  assert.match(css, /@media \(forced-colors: active\) \{[^@]*\.hive-divider::before \{ background: CanvasText; \}[^@]*\.hive-divider:focus-visible::before[^{]*\{ background: Highlight; \}/);
+  const open = '\\.hive-root\\[data-panels="open"\\] ';
+  assert.match(css, new RegExp(open + '\\.hive-divider::before \\{[^}]*width: 1px;'));
+  assert.match(css, new RegExp(open + '\\.hive-divider::after \\{[^}]*inset: 0 -4px;'));
+  assert.match(css, new RegExp(open + '\\.hive-divider\\[data-dragging\\]::before \\{ width: 3px;'));
+  assert.match(css, new RegExp(open + '\\.hive-divider:focus-visible::before'));
+  assert.match(css, new RegExp('@media \\(forced-colors: active\\) \\{[^@]*' + open + '\\.hive-divider::before \\{ background: CanvasText; \\}[^@]*' + open + '\\.hive-divider:hover::before[^{]*\\{ background: Highlight; \\}'));
+  assert.equal(/(^|\n)\s*\.hive-divider(:[\w-]+)*::(before|after)/.test(css), false);
+  assert.match(css, /\.hive-root\[data-view="overview"\]\[data-panels="open"\] \{[^}]*minmax\(0, 1fr\) 12px var\(--hive-panel-width[^}]*gap: 0;/);
+  assert.match(css, /\.hive-root\[data-view="overview"\]\[data-panels="open"\] \.hive-divider \{[^}]*position: relative;/);
 });

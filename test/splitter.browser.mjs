@@ -13,16 +13,16 @@ import { installPanelSplit } from '/public/panel-split.js';
 const root = document.getElementById('root');
 root.innerHTML = '<div class="hive-cellhead" style="grid-area:head">head</div><div class="hive-stage" style="grid-area:map">map</div><div class="hive-tabs" style="grid-area:tabs">tabs</div><div class="hive-dock" style="grid-area:rail">rail</div><div class="hive-divider" role="separator" tabindex="0"></div>';
 const store = new Map();
-const divider = root.querySelector('.hive-divider');
+let divider = root.querySelector('.hive-divider');
 installPanelSplit(root, divider, { getItem: k => store.get(k), setItem: (k, v) => store.set(k, v) });
 const rect = s => root.querySelector(s).getBoundingClientRect();
 const line = () => { const c = getComputedStyle(divider, '::before'); return { width: c.width, background: c.backgroundColor }; };
 window.t = {
   snapshot: () => ({
-    gap: rect('.hive-tabs').left - rect('.hive-stage').right,
+    gap: root.querySelector('.hive-stage') ? rect('.hive-tabs').left - rect('.hive-stage').right : null,
     dividerWidth: rect('.hive-divider').width,
     hit: getComputedStyle(divider, '::after').width,
-    panelWidth: rect('.hive-tabs').width,
+    panelWidth: (root.querySelector('.hive-tabs') ?? root.querySelector('.hive-dock')).getBoundingClientRect().width,
     line: line(),
     dragging: divider.hasAttribute('data-dragging'),
     focused: document.activeElement === divider,
@@ -30,7 +30,23 @@ window.t = {
     captured: divider.hasPointerCapture(1),
     hovered: divider.matches(':hover'),
     bounds: (r => ({ x: r.left, y: r.top, width: r.width, height: r.height }))(divider.getBoundingClientRect())
-  })
+  }),
+  overview: () => {
+    root.dataset.view = 'overview';
+    root.innerHTML = '<div class="hive-overview"><button id="inbox-item" style="display:block;width:100%;height:100%">inbox item</button></div><div class="hive-dock">rail</div><div class="hive-divider" role="separator" tabindex="0"></div>';
+    divider = root.querySelector('.hive-divider');
+    installPanelSplit(root, divider, { getItem: k => store.get(k), setItem: (k, v) => store.set(k, v) });
+    const box = e => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; };
+    const after = divider.getBoundingClientRect();
+    return {
+      gap: rect('.hive-dock').left - rect('.hive-overview').right,
+      position: getComputedStyle(divider).position,
+      before: getComputedStyle(divider, '::before').width,
+      after: getComputedStyle(divider, '::after').width,
+      divider: box(divider),
+      item: box(document.getElementById('inbox-item'))
+    };
+  }
 };
 </script></body></html>`;
 
@@ -46,18 +62,22 @@ test('splitter is a 12px hairline; real keyboard and mouse input resize it, and 
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const profile = await mkdtemp(join(tmpdir(), 'hive-splitter-'));
   const child = spawn(chrome, ['--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--remote-debugging-port=0', '--window-size=1000,600', 'about:blank'], { stdio: 'ignore' });
+  const exited = new Promise(resolve => {
+    if (child.exitCode !== null || child.signalCode !== null) resolve();
+    else child.once('exit', resolve);
+    child.once('error', resolve);
+  });
   t.after(async () => {
-    const exited = new Promise(resolve => child.once('exit', resolve));
-    child.kill();
-    await exited;
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 5000))]);
     server.close();
     await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   let port;
-  for (let i = 0; i < 200 && !port; i++) {
+  for (let i = 0; i < 200 && !port && child.exitCode === null && child.signalCode === null; i++) {
     try { port = Number((await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); } catch { await new Promise(r => setTimeout(r, 100)); }
   }
-  assert.ok(Number.isInteger(port) && port > 0 && port !== 7777, 'isolated Chrome exposed a debugging port');
+  assert.ok(Number.isInteger(port) && port > 0 && port !== 7777, `isolated Chrome exposed a debugging port (exit ${child.exitCode ?? child.signalCode ?? 'running'})`);
   const target = await (await fetch(`http://127.0.0.1:${port}/json/new?http://127.0.0.1:${server.address().port}/`, { method: 'PUT' })).json();
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   t.after(() => socket.close());
@@ -124,15 +144,41 @@ test('splitter is a 12px hairline; real keyboard and mouse input resize it, and 
   assert.equal(during.dragging, true);
   assert.equal(during.captured, true);
   await mouse('mouseMoved', cx - 60, cy);
-  await mouse('mouseMoved', cx - 150, cy + 80);
+  const outY = y + height + 60;
+  await mouse('mouseMoved', cx - 150, outY);
   const outside = await snapshot();
+  assert.ok(outY > outside.bounds.y + outside.bounds.height + 4, 'pointer is below the divider and its hit overlay');
   assert.equal(outside.dragging, true);
   assert.equal(outside.panelWidth, rest.panelWidth + 150);
-  await mouse('mouseReleased', cx - 150, cy + 80);
+  await mouse('mouseReleased', cx - 150, outY);
   const released = await snapshot();
   assert.equal(released.dragging, false);
   assert.equal(released.captured, false);
   assert.equal(released.panelWidth, rest.panelWidth + 150);
   await mouse('mouseMoved', cx - 300, cy, { buttons: 0 });
   assert.equal((await snapshot()).panelWidth, rest.panelWidth + 150);
+
+  const overview = (await call('Runtime.evaluate', { expression: 'window.t.overview()', returnByValue: true })).result.value;
+  assert.equal(overview.position, 'relative');
+  assert.equal(overview.before, '1px');
+  assert.equal(overview.after, '20px');
+  assert.equal(overview.gap, 12);
+  const ox = overview.item.x + overview.item.width / 2, oy = overview.item.y + overview.item.height / 2;
+  assert.ok(ox < overview.divider.x - 4, 'inbox content is outside the divider hit area');
+  const dockBefore = (await snapshot()).panelWidth;
+  await mouse('mousePressed', ox, oy);
+  await mouse('mouseMoved', ox - 120, oy);
+  const onContent = await snapshot();
+  assert.equal(onContent.dragging, false);
+  assert.equal(onContent.panelWidth, dockBefore);
+  await mouse('mouseReleased', ox - 120, oy);
+  const dock = await snapshot();
+  const dx = overview.divider.x + overview.divider.width / 2, dy = overview.divider.y + overview.divider.height / 2;
+  await mouse('mousePressed', dx, dy);
+  await mouse('mouseMoved', dx - 70, dy);
+  const overviewDrag = await snapshot();
+  assert.equal(overviewDrag.dragging, true);
+  assert.equal(overviewDrag.panelWidth, dock.panelWidth + 70);
+  await mouse('mouseReleased', dx - 70, dy);
+  assert.equal((await snapshot()).dragging, false);
 });
