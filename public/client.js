@@ -1,3 +1,4 @@
+import { createDrafts, DRAFT_PREFIX, DRAFT_TEXT_MAX } from './ui-drafts.js';
 import { capacityLimit } from './capacity-control.js';
 import { createRequestNotifications, answerRequestOption } from './requests.js';
 import { installPanelSplit } from './panel-split.js';
@@ -77,79 +78,18 @@ function save(key, value) {
 }
 
 const READ_KEEP = 500;
-const DRAFT_PREFIX = 'draft:';
-const DRAFT_TEXT_MAX = 20000;
-const DRAFT_KEEP_MAX = 2 * DRAFT_TEXT_MAX;
-const EMPTY_DRAFT = Object.freeze({ text: '', title: '', reply: null, about: null, aboutAuto: false, detach: null, rev: '' });
-const newRev = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-
-const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
-const id = (v) => (typeof v === 'string' && v && v.length <= 80 ? v : null);
-
-function readDraft(key) {
-  const got = load(`${DRAFT_PREFIX}${key}`, null);
-  if (!got || typeof got !== 'object') return null;
-  const about = got.aboutAuto === true ? null : got.about === '' ? '' : id(got.about);
-  return {
-    text: str(got.text, DRAFT_KEEP_MAX),
-    title: str(got.title, 200),
-    reply: id(got.reply),
-    about,
-    aboutAuto: false,
-    detach: id(got.detach),
-    rev: str(got.rev, 40),
-  };
-}
-
-// The first read of a composer comes from storage. A new-topic composer with
-// nothing saved takes over text kept by the single-stream composer.
-function draftOf(mem, key) {
-  if (mem.drafts.has(key)) return mem.drafts.get(key);
-  let d = readDraft(key);
-  if (!d && key.endsWith(':new')) {
-    const old = readDraft(key.slice(0, -4));
-    if (old?.text) {
-      d = { ...EMPTY_DRAFT, text: old.text };
-      saveDraft(key, d);
-      saveDraft(key.slice(0, -4), null);
-    }
-  }
-  d ||= EMPTY_DRAFT;
-  mem.drafts.set(key, d);
-  return d;
-}
-
-function saveDraft(key, d) {
-  const empty = !d || (!d.text && !d.title && !d.reply && d.about === null && d.detach === null);
-  if (!empty) save(`${DRAFT_PREFIX}${key}`, d);
-  else if (state.api?.storage?.remove) state.api.storage.remove(`${DRAFT_PREFIX}${key}`);
-  else save(`${DRAFT_PREFIX}${key}`, null);
-}
-
-function putDraft(mem, key, d) {
-  mem.drafts.set(key, d);
-  saveDraft(key, d);
-}
-
-function editDraft(mem, key, patch) {
-  const d = draftOf(mem, key);
-  const next = { ...d, ...patch, rev: newRev() };
-  putDraft(mem, key, next);
-}
-
+const { draftOf, putDraft, editDraft, sameRev, newRev } = createDrafts({
+  load,
+  save,
+  get remove() {
+    const storage = state.api?.storage;
+    return storage?.remove ? (key) => storage.remove(key) : null;
+  },
+});
 const joinRuns = (a, b) => {
   const byId = new Map([...a, ...b].map((m) => [m.id, m]));
   return [...byId.values()].sort((x, y) => x.n - y.n);
 };
-
-// The stored draft is the authority: another tab may have saved a newer one
-// that this tab has not heard about yet.
-function sameRev(mem, key, rev) {
-  if (!rev || draftOf(mem, key).rev !== rev) return false;
-  const stored = readDraft(key);
-  return !stored || stored.rev === rev;
-}
-
 
 function cancelDeepLink() {
   state.linkRequest = null;
