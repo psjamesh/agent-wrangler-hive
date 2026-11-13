@@ -1,5 +1,7 @@
+import { inboxRows, needsRows, mergeRows, inboxRow, inboxFilters, inboxTotals, searchedInbox, inboxSearchBox } from './global-inbox.js';
+import { searchTerms } from './inbox-search.js';
 import { beadReferences } from './bead-references.js';
-import { requestCard, requestList } from './requests.js';
+import { requestCard } from './requests.js';
 import { conversationEpoch } from './view-state.js';
 import { confirmHive } from './confirm-dialog.js';
 import { imageDraft, imageComposer, messageImages } from './attachments.js';
@@ -511,8 +513,10 @@ function renderTopics({ cell, hive, graph, api, ui, ctx }) {
   const open = openId && known.has(openId) && (all || inbox || inScope(known.get(openId), scope)) ? known.get(openId) : null;
   if (open) return threadView({ cell, hive, beads, graph, api, ui, ctx, t: open, window: cell.messages.filter(m => m.threadId === open.id), epoch });
   const out = listView({ cell, hive, beads, graph, ui, ctx, topics, byThread, counted, snapshot, scope, all, selected, epoch });
-  if (inbox === 'needs') { out.list = requestList({ cell, kind: 'needs', scope, all, graph, api, ui, ctx }); out.scrollKey = `requests:${cell.id}:needs`; }
-  else if (inbox) Object.assign(out, inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot, scope, all, epoch, kind: inbox }));
+  if (inbox) {
+    Object.assign(out, inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot, epoch, kind: inbox }));
+    out.head.insertBefore(out.search, out.head.querySelector('.hive-inbox-filters'));
+  }
   return out;
 }
 
@@ -558,40 +562,20 @@ function inboxSig(cell, kind) {
   return s && Number.isInteger(s.rev) ? String(s.rev) : '';
 }
 
-// The two inbox filters, with counts for the whole hive whatever is
-// selected, and a note when many messages are waiting.
-function inboxHead(cell, ui, counted, snapshot) {
+function inboxHead(cell, hive, graph, ui) {
   if (!cell.inbox) return null;
+  const context = { hive, graph, ui };
   const view = ui.inboxView(cell.id);
-  const native = cell.requestCounts || {};
-  const human = Math.max(0, (cell.inbox.human?.count || 0) + ackDelta(counted, m => ui.ackOf(cell.id, m), snapshot));
-  const filter = (kind) => {
-    const n = kind === 'needs' ? native.human || 0 : kind === 'human' ? human : (cell.inbox[kind]?.count || 0);
-    return h('button', {
-      type: 'button',
-      class: `hive-inbox-filter${view === kind ? ' is-on' : ''}${n ? ' has-items' : ''}`,
-      'aria-pressed': view === kind ? 'true' : 'false',
-      'data-focus-key': `inbox:${cell.id}:${kind}`,
-      onclick: () => ui.setInboxView(cell.id, view === kind ? null : kind),
-    }, `${kind === 'needs' ? 'Needs you' : INBOX_NAME[kind]} `, kind === 'needs' && !n ? null : h('span', { class: 'hive-inbox-count', 'aria-label': `${n} waiting` }, String(n)));
-  };
-  return h('div', { class: 'hive-inbox-filters' },
-    filter('needs'),
-    filter('human'),
-    filter('queen'),
-    view ? h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setInboxView(cell.id, null) }, 'Show topics') : null,
-    cell.inbox.backlog ? h('span', { class: 'hive-muted hive-inbox-backlog', role: 'note' }, 'More than 100 messages are waiting. Older ones stay until they are answered or acknowledged.') : null);
+  const filters = inboxFilters(view, {
+    human: inboxRows(context, [cell], 'human').length,
+    queen: waitingCount(cell, hive, ui, 'queen'),
+  }, kind => ui.setInboxView(cell.id, view === kind ? null : kind), `inbox:${cell.id}`);
+  if (view) filters.append(h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setInboxView(cell.id, null) }, 'Show topics'));
+  if (cell.inbox.backlog) filters.append(h('span', { class: 'hive-muted hive-inbox-backlog', role: 'note' }, 'More than 100 messages are waiting. Older ones stay until they are answered or acknowledged.'));
+  return filters;
 }
 
-// Outstanding messages of one kind for the selected item and the items
-// beneath it by what each message is about; the whole hive, or All topics,
-// shows every one. Each topic is one row, longest waiting first, with how
-// many of its messages wait and the newest of them, both for the whole topic
-// as the server counts them, adjusted for what was settled or undone here
-// since.
-// Opening a row opens its topic at its earliest waiting message. Nothing
-// here acknowledges a message by being shown.
-function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot, scope, all, epoch, kind }) {
+function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot, epoch, kind }) {
   const first = cell.inbox[kind] || { ids: [], more: false, after: null };
   const sig = inboxSig(cell, kind);
   const later = ui.inboxPages(cell.id, kind, epoch, sig);
@@ -604,7 +588,6 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
     .filter((m) => m && pending(m))
     .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
   const members = beneath(hive, cell.rootBeadId);
-  const inView = (m) => all || !scope || (contextOf(m)?.beadId && scope.has(contextOf(m).beadId));
   const topicsOf = (msgs) => {
     const by = new Map();
     for (const m of msgs) {
@@ -614,8 +597,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
     }
     return [...by.values()];
   };
-  const groups = topicsOf(items.filter(inView));
-  const hidden = topicsOf(items).length - groups.length;
+  const groups = topicsOf(items);
   const list = h('ol', { class: 'hive-topics hive-inbox', 'aria-label': INBOX_NAME[kind] });
   const lately = kind === 'queen' ? ui.form?.(`withdrawn:${cell.id}`) : null;
   const settled = lately && byId.get(lately.id)?.response;
@@ -624,6 +606,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
       h('span', { class: 'hive-muted' }, `Withdrawn: ${lately.text}`),
       withdrawButton({ id: lately.id }, cell, ctx, 'hive-withdraw-undo', 'Undo', 'inbox', ui)));
   }
+  const rows = [];
   for (const group of groups) {
     const t = known.get(group[0].threadId);
     const s = t?.awaiting?.[kind];
@@ -633,28 +616,32 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
     if (s) {
       n = kind === 'human' ? unreadIn(t, [...byId.values()].filter(x => x.threadId === t.id), x => ui.ackOf(cell.id, x), snapshot) : Math.max(n, s.count);
     }
-    const target = m.replyTo ? byId.get(m.replyTo) : null;
-    list.append(h('li', { class: 'hive-topic hive-inbox-item', dataset: { id: m.id } },
-      h('button', {
-        type: 'button',
-        class: 'hive-topic-btn',
-        'data-focus-key': `inbox-item:${cell.id}:${m.id}`,
-        disabled: !t,
-        onclick: () => t && openTopic(ui, ctx, cell, t, cell.threads.some((x) => x.id === t.id), epoch),
-      },
-      h('span', { class: 'hive-topic-line' },
-        h('strong', { class: 'hive-topic-title' }, t?.title || 'Topic no longer kept'),
-        h('span', { class: 'hive-unread', 'aria-label': `${n} waiting` }, String(n)),
-        h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(m.at))),
-      h('span', { class: 'hive-topic-line' },
-        h('span', { class: 'hive-chip hive-topic-context' }, messageContextLabel(m, cell, beads, members)),
-        h('span', { class: 'hive-muted hive-topic-preview' }, `${authorName(graph, cell, m)}: ${m.text.replace(/\s+/g, ' ').slice(0, 200)}`)),
-      target ? h('span', { class: 'hive-muted hive-topic-preview' }, `↪ ${target.text.replace(/\s+/g, ' ').slice(0, 120)}`) : null),
-    kind === 'queen' && !cell.snapshot ? withdrawButton(m, cell, ctx, 'hive-withdraw', 'Withdraw', 'inbox', ui) : null));
+    rows.push({
+      key: `message:${cell.id}:${group[0].id}`, cellId: cell.id, threadId: m.threadId,
+      title: t?.title || 'Topic no longer kept', at: group[0].at, count: n, id: m.id,
+      author: authorName(graph, cell, m), preview: m.text.replace(/\s+/g, ' ').slice(0, 200),
+      texts: group.map(x => x.text), sessionLinks: group.map(x => x.sessionLink).filter(Boolean),
+      hive: messageContextLabel(m, cell, beads, members), link: hiveLink(cell.id, m.threadId, group[0].id),
+    });
   }
-  if (!groups.length) {
+  const context = { ...ctx, hive, graph, ui };
+  const merged = kind === 'human' ? mergeRows(rows, needsRows(context, [cell])) : rows;
+  const query = ui.globalInboxQuery?.(cell.id) || '';
+  const searching = searchTerms(query).length > 0;
+  const found = searching ? searchedInbox(context, [cell], query, ui.askGlobalInboxSearch?.([cell.id], `${hive.revision}:${hive.metaVersion}`, hive.metaEpoch, cell.id)) : null;
+  const shown = searching ? found.lists[kind] : merged;
+  for (const row of shown) {
+    const t = known.get(row.threadId);
+    const message = byId.get(row.id || rows.find(r => r.threadId === row.threadId)?.id);
+    list.append(inboxRow(context, row, {
+      id: row.id || row.key, showContext: false, query: searching ? query : '',
+      ...(t ? { open: () => openTopic(ui, ctx, cell, t, cell.threads.some(x => x.id === t.id), epoch) } : {}),
+      action: kind === 'queen' && message && !cell.snapshot ? withdrawButton(message, cell, ctx, 'hive-withdraw', 'Withdraw', 'inbox', ui) : null,
+    }));
+  }
+  if (!shown.length) {
     const none = kind === 'human' ? 'Nothing from the queen is waiting for you' : 'None of your messages is waiting for an answer';
-    list.append(h('li', { class: 'hive-muted' }, `${none}${!all && scope && items.length ? ' about this selection' : ''}.`));
+    list.append(h('li', { class: 'hive-muted' }, searching ? `No topics match “${query.trim()}”.` : `${none}.`));
   }
   const more = later ? later.more : first.more;
   const after = later ? later.after : first.after;
@@ -671,10 +658,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
       }),
     }, 'Load more')));
   }
-  if (!all && scope && hidden > 0) {
-    list.append(h('li', {}, h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setAllTopics(cell.id, true) }, `${hidden} more ${hidden === 1 ? 'topic' : 'topics'} about other items`)));
-  }
-  return { list, scrollKey: `inbox:${cell.id}:${kind}` };
+  return { list, search: inboxSearchBox(ui, query, shown, found, cell.id), scrollKey: `inbox:${cell.id}:${kind}` };
 }
 
 function listView({ cell, hive, beads, graph, ui, ctx, topics, byThread, counted, snapshot, scope, all, selected, epoch }) {
@@ -685,10 +669,11 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, byThread, counted
   const toggle = h('button', { type: 'button', class: 'hive-link-btn', 'aria-pressed': all ? 'true' : 'false', onclick: () => ui.setAllTopics(cell.id, !all) }, all ? 'Only this selection' : 'All topics');
   const inbox = cell.inbox ? ui.inboxView(cell.id) : null;
   const what = inbox ? (inbox === 'human' ? 'Waiting for you' : 'Waiting for the queen') : 'Topics';
-  const head = h('div', { class: 'hive-topics-head' },
-    inboxHead(cell, ui, counted, snapshot),
-    h('span', { class: 'hive-muted' }, all || !scope ? `${inbox ? what : 'All topics'} in this hive` : [`${what} about `, h('strong', {}, scopeName), ' (and its items)']),
-    scope ? toggle : null,
+  const head = h('div', { class: `hive-topics-head${inbox ? ' hive-inbox-head' : ''}` },
+    cell.inbox ? h('div', { class: 'hive-inbox-totals' }, inboxTotals({ needs: needsRows({ hive, graph, ui }, [cell]).length, human: waitingCount(cell, hive, ui, 'human') })) : null,
+    inboxHead(cell, hive, graph, ui),
+    h('span', { class: 'hive-muted' }, inbox || all || !scope ? `${inbox ? what : 'All topics'} in this hive` : [`${what} about `, h('strong', {}, scopeName), ' (and its items)']),
+    scope && !inbox ? toggle : null,
     elsewhere && !inbox ? h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setAllTopics(cell.id, true) }, `${elsewhere} unread in other topics`) : null);
   const list = h('ol', { class: 'hive-topics', 'aria-label': 'Topics' });
   for (const t of shown) {

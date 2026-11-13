@@ -119,3 +119,25 @@ test('replies from an old epoch are ignored once a new epoch is seen, even befor
     Object.assign(globalThis, saved);
   }
 });
+
+test('each cell search keeps its query and remote replies separate from All hives', async () => {
+  const { sent, ui, answer } = setup();
+  ui.setGlobalInboxQuery('global');
+  ui.setGlobalInboxQuery('alpha', 'a');
+  ui.setGlobalInboxQuery('beta', 'b');
+  assert.equal(ui.globalInboxQuery(), 'global');
+  assert.equal(ui.globalInboxQuery('a'), 'alpha');
+  assert.equal(ui.globalInboxQuery('b'), 'beta');
+  assert.equal(ui.globalInboxQuery('c'), '');
+  ui.askGlobalInboxSearch(['a', 'b'], '1', 'e');
+  ui.askGlobalInboxSearch(['a'], '1', 'e', 'a');
+  await wait(260);
+  assert.deepEqual(sent.map(s => s.query), ['global', 'alpha']);
+  answer(1, { human: [{ key: 'alpha-result' }] });
+  answer(0, { human: [{ key: 'global-result' }] });
+  assert.equal(ui.askGlobalInboxSearch(['a', 'b'], '1', 'e').remote.human[0].key, 'global-result');
+  assert.equal(ui.askGlobalInboxSearch(['a'], '1', 'e', 'a').remote.human[0].key, 'alpha-result');
+  ui.setGlobalInboxQuery('', 'a');
+  assert.equal(ui.globalInboxQuery(), 'global');
+  assert.equal(ui.globalInboxQuery('b'), 'beta');
+});

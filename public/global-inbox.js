@@ -58,7 +58,7 @@ export function messageRows(ctx, cells, kind) {
 const rowOrder = (a, b) => Number(Boolean(b.needsCount)) - Number(Boolean(a.needsCount)) || a.at - b.at || a.key.localeCompare(b.key);
 const threadKey = r => `${r.cellId}:${r.threadId || r.key}`;
 
-function mergeRows(messages, requests) {
+export function mergeRows(messages, requests) {
   const rows = new Map(messages.map(r => [threadKey(r), { ...r, needsCount: 0 }]));
   for (const request of requests) {
     const key = threadKey(request);
@@ -150,46 +150,63 @@ export function globalInbox(ctx, cells) {
   const found = searching ? searchedInbox(ctx, cells, query, ui.askGlobalInboxSearch?.(cells.map(c => c.id), `${hive.revision}:${hive.metaVersion}`, hive.metaEpoch)) : null;
   const rows = searching ? found.lists[view] : lists[view];
   const filterCounts = { human: lists.human.length, queen: counts.queen };
-  const filters = h('div', { class: 'hive-inbox-filters', role: 'group', 'aria-label': 'Inbox filter' },
-    GLOBAL_FILTERS.map(([kind, label]) => h('button', {
-      type: 'button',
-      class: `hive-inbox-filter${view === kind ? ' is-on' : ''}${filterCounts[kind] ? ' has-items' : ''}`,
-      'aria-pressed': view === kind ? 'true' : 'false',
-      'data-focus-key': `global-inbox:${kind}`,
-      onclick: () => ui.setGlobalInboxView(kind),
-    }, `${label} `, h('span', { class: 'hive-inbox-count', 'aria-label': kind === 'human' ? `${filterCounts.human} topic${filterCounts.human === 1 ? '' : 's'}` : `${counts.queen} waiting` }, String(filterCounts[kind])))));
+  const filters = inboxFilters(view, filterCounts, kind => ui.setGlobalInboxView(kind));
   const label = GLOBAL_FILTERS.find(f => f[0] === view)[1];
   const elsewhere = searching ? GLOBAL_FILTERS.filter(([k]) => k !== view && found.lists[k].length).map(([k, l]) => `${found.lists[k].length} in ${l}`) : [];
   const empty = searching ? `No topics match “${query.trim()}” in ${label}.${elsewhere.length ? ` ${elsewhere.join(', ')}.` : ''}` : view === 'human' ? 'Nothing is waiting for you in any hive.' : 'None of your messages is waiting for an answer.';
   const list = h('ol', { class: 'hive-topics hive-inbox hive-global-inbox-list', 'aria-label': GLOBAL_FILTERS.find(f => f[0] === view)[1] },
-    rows.length ? rows.map(r => h('li', { class: 'hive-topic hive-inbox-item', dataset: { id: r.key } },
-      h('a', { class: 'hive-topic-btn', href: r.link, 'data-focus-key': `global-inbox-item:${r.key}` },
-        h('span', { class: 'hive-topic-line' },
-          h('strong', { class: 'hive-topic-title' }, searching ? marked(r.title, query) : r.title),
-          r.count > 1 ? h('span', { class: 'hive-unread', 'aria-label': messageCount(r.count) }, String(r.count)) : null,
-          r.needsCount ? needsBadge(r.needsCount) : null,
-          h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(r.at))),
-        h('span', { class: 'hive-topic-line' },
-          h('span', { class: 'hive-chip hive-topic-context' }, r.hive),
-          h('span', { class: 'hive-muted hive-topic-preview' }, searching ? [r.author ? `${r.author}: ` : '', marked(r.snippet || r.preview || '', query)] : [r.author, r.preview].filter(Boolean).join(': ')),
-          r.repair ? h('span', { class: 'hive-warning' }, r.repair) : null)),
-      rowSessionLinks(ctx, r))) : h('li', { class: 'hive-muted' }, empty));
+    rows.length ? rows.map(r => inboxRow(ctx, r, { query: searching ? query : '' })) : h('li', { class: 'hive-muted' }, empty));
+  const box = inboxSearchBox(ui, query, rows, found);
+  return h('div', { class: 'hive-dock hive-global-dock' },
+    h('section', { class: 'hive-panel hive-conversation hive-global-inbox', tabindex: '-1', 'data-focus-key': 'panel:global-inbox', 'data-scroll-key': 'panel:global-inbox', 'aria-label': 'Inbox across all hives', 'data-pane': 'conversation' },
+      h('h3', {}, 'Inbox'), h('div', { class: 'hive-inbox-totals' }, inboxTotals(counts)), box, filters, list));
+}
+
+
+export function inboxTotals(counts) {
+  return [counts.needs ? [needsBadge(counts.needs), ' needs you · '] : null, messageCount(counts.human)].filter(Boolean);
+}
+
+export function inboxFilters(view, counts, select, key = 'global-inbox') {
+  return h('div', { class: 'hive-inbox-filters', role: 'group', 'aria-label': 'Inbox filter' },
+    GLOBAL_FILTERS.map(([kind, label]) => h('button', {
+      type: 'button', class: `hive-inbox-filter${view === kind ? ' is-on' : ''}${counts[kind] ? ' has-items' : ''}`,
+      'aria-pressed': String(view === kind), 'data-focus-key': `${key}:${kind}`, onclick: () => select(kind),
+    }, label, counts[kind] ? [' ', h('span', { class: 'hive-inbox-count', 'aria-label': `${counts[kind]} ${kind === 'human' ? 'topics' : 'waiting'}` }, String(counts[kind]))] : null)));
+}
+
+export function inboxRow(ctx, r, { query = '', open, id = r.key, action, showContext = true } = {}) {
+  const props = open ? { type: 'button', onclick: () => open(r) } : { href: r.link };
+  return h('li', { class: 'hive-topic hive-inbox-item', dataset: { id } },
+    h(open ? 'button' : 'a', { ...props, class: 'hive-topic-btn', 'data-focus-key': `global-inbox-item:${r.key}` },
+      h('span', { class: 'hive-topic-line' },
+        h('strong', { class: 'hive-topic-title' }, query ? marked(r.title, query) : r.title),
+        r.count > 1 ? h('span', { class: 'hive-unread', 'aria-label': messageCount(r.count) }, String(r.count)) : null,
+        r.needsCount ? needsBadge(r.needsCount) : null,
+        h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(r.at))),
+      h('span', { class: 'hive-topic-line' },
+        showContext ? h('span', { class: 'hive-chip hive-topic-context' }, r.hive) : null,
+        h('span', { class: 'hive-muted hive-topic-preview' }, query ? [r.author ? `${r.author}: ` : '', marked(r.snippet || r.preview || '', query)] : [r.author, r.preview].filter(Boolean).join(': ')),
+        r.repair ? h('span', { class: 'hive-warning' }, r.repair) : null)),
+    rowSessionLinks(ctx, r), action);
+}
+
+export function inboxSearchBox(ui, query, rows, found, cellId) {
+  const searching = searchTerms(query).length > 0;
   const input = h('input', {
     type: 'search', class: 'hive-input hive-inbox-search-input', autocomplete: 'off', spellcheck: 'false', value: query, maxlength: '200',
     placeholder: 'Search topics, messages and bead ids', 'aria-label': 'Search the inbox', 'data-focus-key': 'global-inbox-search',
-    oninput: (e) => { if (!e.isComposing) ui.setGlobalInboxQuery(input.value); },
-    onkeydown: (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); ui.setGlobalInboxQuery(''); } },
+    oninput: (e) => { if (!e.isComposing) ui.setGlobalInboxQuery(input.value, cellId); },
+    onkeydown: (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); ui.setGlobalInboxQuery('', cellId); } },
   });
   const clear = h('button', {
     type: 'button', class: 'hive-inbox-search-clear', 'aria-label': 'Clear search', title: 'Clear search (Esc)', 'data-focus-key': 'global-inbox-search-clear',
-    tabindex: searching ? null : '-1', 'aria-hidden': searching ? null : 'true', onclick: () => { ui.setGlobalInboxQuery(''); },
+    tabindex: searching ? null : '-1', 'aria-hidden': searching ? null : 'true', onclick: () => { ui.setGlobalInboxQuery('', cellId); },
   }, '×');
   const status = !searching ? '' : found.failed ? 'Searching loaded messages only: the full search failed.'
     : `${rows.length} topic${rows.length === 1 ? '' : 's'} match${rows.length === 1 ? 'es' : ''}${found.pending ? ' · searching all messages…' : ''}${found.truncated ? ' · first matches only' : ''}`;
   const box = h('div', { class: 'hive-inbox-search', role: 'search' },
     h('div', { class: 'hive-inbox-search-field' }, input, clear),
     h('span', { class: 'hive-muted hive-inbox-search-status', role: 'status', 'aria-live': 'polite' }, status));
-  return h('div', { class: 'hive-dock hive-global-dock' },
-    h('section', { class: 'hive-panel hive-conversation hive-global-inbox', tabindex: '-1', 'data-focus-key': 'panel:global-inbox', 'data-scroll-key': 'panel:global-inbox', 'aria-label': 'Inbox across all hives', 'data-pane': 'conversation' },
-      h('h3', {}, 'Inbox'), h('div', { class: 'hive-inbox-totals' }, counts.needs ? [needsBadge(counts.needs), ' needs you · '] : null, messageCount(counts.human)), box, filters, list));
+  return box;
 }
