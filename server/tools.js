@@ -307,7 +307,7 @@ export const bindSessionTool = hiveTool({
 
 export const finishBeadTool = hiveTool({
   name: 'hive_finish_bead',
-  description: 'Close a bead with an explicit outcome (done, dropped, superseded, duplicate), a summary of what was achieved or why it stopped, and evidence. Evidence records what happened; closing a bead does not claim a review took place unless your evidence says so. Refused while anything under it is still open; a heading with work under it is also refused while it waits on an open prerequisite, another session holds it, or a Hive write about any of it is unsettled.',
+  description: 'Close a bead with an explicit outcome (done, dropped, superseded, duplicate), a summary of what was achieved or why it stopped, and evidence. Close only when the whole goal of the bead is done, not after one step of several. Evidence records what happened; closing a bead does not claim a review took place unless your evidence says so. Refused while anything under it is still open; a heading with work under it is also refused while it waits on an open prerequisite, another session holds it, or a Hive write about any of it is unsettled.',
   inputSchema: {
     bead_id: beadId,
     outcome: z.enum(OUTCOMES),
