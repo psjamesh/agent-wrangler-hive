@@ -306,3 +306,45 @@ test('watchdog attention and digest carry available session links and omit dead 
   delete f.sessions.reviewer;
   assert.equal(f.flags().find(x => x.kind === 'stuck_review').session_link, null);
 });
+
+test('open PR linked to a closed-bead session flags and notifies until the link is removed', async t => {
+  const f = fixture(t), url = 'https://github.com/example/repo/pull/42';
+  let links = [{ type: 'pr', url }];
+  f.host.links = { get: () => links };
+  f.rt.metadata.mutate(d => {
+    d.bindings.cell = [{ sessionId: 'worker', beadId: 'work', active: true }];
+    d.prLabels[url] = { url, state: 'OPEN' };
+  });
+  f.beads.work.status = 'closed';
+  const flag = f.flags().find(x => x.kind === 'closed_bead_pr');
+  assert.ok(flag);
+  assert.equal(flag.bead_id, 'work'); assert.equal(flag.session_id, 'worker'); assert.equal(flag.pr_url, url);
+  await f.watchdog.run(); await f.watchdog.run();
+  assert.equal(f.sent.length, 1);
+  assert.ok(f.sent[0].text.includes(url));
+  links = []; await f.watchdog.run(); assert.deepEqual(f.flags(), []);
+  links = [{ type: 'pr', url }];
+  for (const state of ['MERGED', 'CLOSED', null]) {
+    f.rt.metadata.mutate(d => { d.prLabels[url].state = state; });
+    assert.deepEqual(f.flags(), []);
+  }
+});
+
+test('closed-bead PR flags require a current binding, live card, actual link and matching cell', t => {
+  const f = fixture(t), url = 'https://github.com/example/repo/pull/42';
+  f.beads.work.status = 'closed';
+  f.host.links = { get: () => [{ type: 'pr', url }] };
+  f.rt.metadata.mutate(d => {
+    d.bindings.cell = [{ sessionId: 'worker', beadId: 'work', active: true }];
+    d.prLabels[url] = { url, state: 'OPEN' };
+    d.cells.other = { id: 'other', enabled: true, rootBeadId: 'other-root' };
+  });
+  f.beads['other-root'] = { id: 'other-root', status: 'open' };
+  assert.equal(f.flags().length, 1);
+  assert.deepEqual(collectWatchdog(f.rt, f.host, f.rt.metadata.cell('other'), f.now()), []);
+  f.sessions.worker.archived = true; assert.deepEqual(f.flags(), []);
+  f.sessions.worker.archived = false;
+  f.rt.metadata.mutate(d => { d.bindings.cell[0].active = false; }); assert.deepEqual(f.flags(), []);
+  f.rt.metadata.mutate(d => { d.bindings.cell[0].active = true; });
+  f.host.links.get = () => [{ type: 'jira', url }]; assert.deepEqual(f.flags(), []);
+});
