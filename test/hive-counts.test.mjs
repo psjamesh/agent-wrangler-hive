@@ -161,3 +161,25 @@ test('occupied counters remain on disabled and retired cards, nested work counts
   f.draw();
   assert.doesNotMatch(f.top.textContent, /outside a hive/);
 });
+
+test('metadata-only launch and claim reservations refresh the cached card counter', t => {
+  const f = fixture(t);
+  f.beads.pending = { id: 'pending', parentId: 'root', kind: 'work', status: 'open' };
+  const progress = () => Number(counter(f.draw(), 'progress').querySelector('text').textContent);
+  assert.equal(progress(), 1);
+  const unchanged = JSON.stringify(f.beads);
+  const reservations = [
+    ['workerLaunches', { beadId: 'pending', state: 'reserved' }],
+    ['workerLaunches', { beadId: 'pending', state: 'uncertain' }],
+    ['operations', { kind: 'claim', state: 'partial', intent: { beadId: 'pending' } }],
+  ];
+  for (const [collection, reservation] of reservations) {
+    (f.doc[collection] ||= {}).pending = reservation;
+    assert.equal(progress(), 2, `${collection}: ${reservation.state}`);
+    assert.equal(f.hive.capacity.used, 2);
+    assert.equal(JSON.stringify(f.beads), unchanged);
+    delete f.doc[collection].pending;
+    assert.equal(progress(), 1, `${collection}: removed`);
+    assert.equal(f.hive.capacity.used, 1);
+  }
+});
