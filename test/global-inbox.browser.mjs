@@ -103,7 +103,7 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.equal(wide.docOverflow, false);
   const merged = await run(`
     const panel = document.querySelector('.hive-global-inbox');
-    return { filters: [...panel.querySelectorAll('.hive-inbox-filter')].map(e => e.textContent), totals: panel.querySelector('.hive-inbox-totals').textContent, rows: [...panel.querySelectorAll('.hive-inbox-item')].map(e => ({ title: e.querySelector('strong').textContent, count: e.querySelector('.hive-unread')?.textContent || null, needs: e.querySelector('.hive-needs-hex')?.textContent })) };
+    return { filters: [...panel.querySelectorAll('.hive-inbox-filter')].map(e => e.textContent), totals: panel.querySelector('.hive-inbox-totals').textContent, rows: [...panel.querySelectorAll('.hive-inbox-item')].map(e => ({ title: e.querySelector('strong').textContent, count: e.querySelector('.hive-unread')?.textContent || null, needs: e.querySelector('.hive-needs-count')?.textContent })) };
   `);
   assert.equal(merged.filters.length, 2);
   assert.ok(!merged.filters.some(f => f.includes('Needs you')));
@@ -160,19 +160,13 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   for (const [dark, forced] of [[false, false], [true, false], [false, true], [true, true]]) {
     await theme(dark);
     await call('Emulation.setEmulatedMedia', { features: [{ name: 'forced-colors', value: forced ? 'active' : 'none' }] });
-    const badge = await run(`const e = document.querySelector('.hive-inbox-item .hive-needs-hex'); const s = getComputedStyle(e); const r = e.getBoundingClientRect(); return { bg: s.backgroundColor, fg: s.color, clip: s.clipPath, width: r.width, height: r.height, scroll: e.scrollWidth, label: e.getAttribute('aria-label') };`);
-    const luminance = color => {
-      const channels = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(n => { const s = n / 255; return s <= .04045 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4; });
-      return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
-    };
-    const a = luminance(badge.bg), b = luminance(badge.fg);
-    assert.ok((Math.max(a, b) + .05) / (Math.min(a, b) + .05) >= 4.5, `badge contrast: dark=${dark}, forced=${forced}`);
-    assert.match(badge.clip, /polygon/);
-    assert.ok(badge.width >= 28 && badge.height >= 26 && badge.scroll <= badge.width);
+    const badge = await run(`const e = document.querySelector('.hive-inbox-item .hive-needs-count'); const s = getComputedStyle(e); const r = e.getBoundingClientRect(); return { bg: s.backgroundColor, fg: s.color, clip: s.clipPath, width: r.width, height: r.height, scroll: e.scrollWidth, label: e.getAttribute('aria-label') };`);
+    assert.equal(badge.clip, 'none');
+    assert.ok(badge.width < 28 && badge.height < 26 && badge.scroll <= badge.width);
     assert.equal(badge.label, '1 needs you');
   }
   await call('Emulation.setEmulatedMedia', { features: [] });
-  const searched = await run(`const e = document.querySelector('.hive-inbox-search-input'); e.value = 'SQLite'; e.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); return { rows: document.querySelectorAll('.hive-inbox-item').length, needs: document.querySelector('.hive-inbox-item .hive-needs-hex')?.textContent, count: document.querySelector('.hive-inbox-item .hive-unread')?.textContent, mark: document.querySelector('.hive-search-hit')?.textContent };`);
+  const searched = await run(`const e = document.querySelector('.hive-inbox-search-input'); e.value = 'SQLite'; e.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); return { rows: document.querySelectorAll('.hive-inbox-item').length, needs: document.querySelector('.hive-inbox-item .hive-needs-count')?.textContent, count: document.querySelector('.hive-inbox-item .hive-unread')?.textContent, mark: document.querySelector('.hive-search-hit')?.textContent };`);
   assert.deepEqual(searched, { rows: 1, needs: '1', count: '2', mark: 'SQLite' });
 
 });

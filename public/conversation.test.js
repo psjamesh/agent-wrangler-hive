@@ -1492,6 +1492,13 @@ function nativeFixture(t, audience = 'human') {
   f.ui.setAllTopics(f.cell.id, true);
   return { ...f, id };
 }
+test('Needs you count uses the inbox badge and disappears at zero', t => {
+  const f = nativeFixture(t);
+  const needsFilter = () => descendants(f.draw().head).find(el => el.tagName === 'button' && el.textContent.startsWith('Needs you'));
+  assert.equal(needsFilter().querySelector('.hive-inbox-count').textContent, '1');
+  f.cell.requestCounts.human = 0;
+  assert.equal(needsFilter().querySelector('.hive-inbox-count'), null);
+});
 test('Needs you filter shows canonical request with a dedicated answer and preserves draft on revision change', t => {
   const f = nativeFixture(t);
   const filter = descendants(f.draw().head).find(el => el.tagName === 'button' && el.textContent.startsWith('Needs you'));
@@ -1730,7 +1737,7 @@ for (const source of ['manual', 'auto-read']) test(`${source} callbacks keep cou
     f.cell.messages = [other]; f.cell.threads = [otherTopic];
     f.ui.closeThread(f.cell.id); f.ui.setAllTopics(f.cell.id, true);
   };
-  const count = () => Number(f.draw().head.querySelectorAll('.hive-inbox-count')[1].textContent);
+  const count = () => Number(descendants(f.draw().head).find(el => el.dataset.focusKey === `inbox:${f.cell.id}:human`).querySelector('.hive-inbox-count').textContent);
   hideOlder();
   assert.equal(count(), 1);
   f.cell.inbox.human = inbox([original, { ...other, ack: { required: true, state: null, rev: 2 } }]);
