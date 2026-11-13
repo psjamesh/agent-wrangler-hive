@@ -322,6 +322,7 @@ function overviewMap(ctx, shown) {
   const enter = (id) => ui.openCell(id, map?.el.hiveTileRect(id) || null);
   map = renderHexMap({
     viewKey: 'overview',
+    storage: api?.storage,
     size: CELL_SIZE,
     tile: hiveTile(CELL_SIZE),
     className: 'is-hives',
@@ -538,6 +539,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
   const keyOpen = Boolean(ui.form('key'));
   const map = renderHexMap({
     viewKey: `cell:${cell.id}`,
+    storage: api?.storage,
     previousPositions: previous?.hiveTilePositions,
     size: BEAD_SIZE,
     items,
@@ -700,6 +702,7 @@ export function renderHive(ctx) {
   if (cell) {
     let cached = hiveViews.get(ui);
     if (!cached || cached.cellId !== cell.id) {
+      disposeMap(cached?.map);
       cached = { cellId: cell.id, beadReference: {} };
       hiveViews.set(ui, cached);
     }
@@ -714,6 +717,7 @@ export function renderHive(ctx) {
     else {
       const sig = mapInputs(ctx, cell);
       if (cached.sig !== sig || cached.map?.parentNode !== cached.top || ui.form('wsMenu')) {
+        disposeMap(cached.map);
         cached.map = cellMap(cellCtx, cell, panels.related, cached.map?.querySelector('.hive-canvas'));
         cached.sig = mapInputs(ctx, cell);
         cached.related = panels.related;
@@ -735,11 +739,12 @@ export function renderHive(ctx) {
   const total = cells.reduce((n, c) => n + cellCounts(hive, c).total, 0);
   let cached = hiveViews.get(ui);
   if (!cached || cached.cellId !== null) {
+    disposeMap(cached?.map);
     cached = { cellId: null, top: h('div', { class: 'hive-overview' }) };
     hiveViews.set(ui, cached);
   }
   const sig = mapInputs(ctx, null);
-  if (cached.sig !== sig) { cached.map = overviewMap(ctx, cells); cached.sig = sig; }
+  if (cached.sig !== sig) { disposeMap(cached.map); cached.map = overviewMap(ctx, cells); cached.sig = sig; }
   const top = syncChildren(cached.top, [
     h('header', { class: 'hive-overhead' },
       h('span', { class: 'hive-mark', 'aria-hidden': 'true' }),
@@ -766,4 +771,9 @@ export function renderHive(ctx) {
   };
 }
 
-export function disposeHiveView(ui) { hiveViews.delete(ui); }
+function disposeMap(map) { map?.querySelector('.hive-canvas')?.hiveDisposeView?.(); }
+
+export function disposeHiveView(ui) {
+  disposeMap(hiveViews.get(ui)?.map);
+  hiveViews.delete(ui);
+}
