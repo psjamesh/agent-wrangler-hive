@@ -17,7 +17,7 @@ test('unknown and archived sessions give a message, known ones none', () => {
   assert.match(sessionLinkProblem(sessions, history, 'old'), /archived/);
   assert.match(sessionLinkProblem(sessions, history, 'nope'), /not on the board/);
   assert.match(sessionLinkProblem(sessions, undefined, 'old'), /not on the board/);
-  assert.equal(sessionLinkProblem(null, history, 'nope'), null);
+  assert.match(sessionLinkProblem(null, history, 'nope'), /unknown/);
 });
 
 test('bare session fragments are found, URLs are left to the renderer', () => {

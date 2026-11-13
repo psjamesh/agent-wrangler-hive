@@ -366,10 +366,16 @@ export const finishBeadTool = hiveTool({
   },
 }, ({ rt, actor, args }) => ops.finishBead(rt, actor, args));
 
+const sessionLinkArgs = {
+  session_id: z.string().uuid().optional().describe('Board session the human should act on. Adds an in-app Open session link; sends nothing to it. Pass this when asking the human to approve a command or act in a specific session.'),
+  session_label: z.string().min(1).max(200).optional().describe('Optional link label, defaults to Open session. Requires session_id.'),
+};
+
 export const publishTool = hiveTool({
   name: 'hive_publish',
-  description: 'Returns a relative hash link to the posted message. Publish a deliberate message to the human in your cell\'s Hive conversation: an answer, decision, trade-off, concern, question, meaningful milestone or result, a significant change of approach, scope or timing, or a material blocker. It is shown as coming from your session. Answer a [Hive] message from the human here, with reply_to set to its id, or list the human messages this answers in answers: text in your terminal is not shown in Hive. Every human message waits for a visible answer from the queen; only such an answer settles it, and it also acknowledges receipt. The human marks queen messages read, reacts to them or replies; that arrives as state in hive_context, not as messages. Inform the human even when they need not act. Leave routine bookkeeping, unchanged status and worker chatter on the beads, and do not post timed status updates. Messages are grouped into topics: a reply joins its message\'s topic, thread_id posts into a topic, and otherwise a new topic starts, named thread_title or the message\'s first line.',
+  description: 'Returns a relative hash link to the posted message. Pass session_id (and optionally session_label) when the human should act in a specific board session. Publish a deliberate message to the human in your cell\'s Hive conversation: an answer, decision, trade-off, concern, question, meaningful milestone or result, a significant change of approach, scope or timing, or a material blocker. It is shown as coming from your session. Answer a [Hive] message from the human here, with reply_to set to its id, or list the human messages this answers in answers: text in your terminal is not shown in Hive. Every human message waits for a visible answer from the queen; only such an answer settles it, and it also acknowledges receipt. The human marks queen messages read, reacts to them or replies; that arrives as state in hive_context, not as messages. Inform the human even when they need not act. Leave routine bookkeeping, unchanged status and worker chatter on the beads, and do not post timed status updates. Messages are grouped into topics: a reply joins its message\'s topic, thread_id posts into a topic, and otherwise a new topic starts, named thread_title or the message\'s first line.',
   inputSchema: {
+    ...sessionLinkArgs,
     text: z.string().min(1).max(20000).describe('Markdown. Self-contained: enough context to respond without opening a terminal.'),
     bead_id: beadId.optional().describe('The bead this is about, if any. A new topic is anchored to it.'),
     reply_to: z.string().max(80).optional().describe('Message id you are replying to.'),
@@ -499,8 +505,9 @@ const requestRevisionArgs = {
   route_revision: z.number().int().positive().describe('Current route revision from Hive.'),
 };
 const requestTools = [
-  requestTool('hive_request_input', 'Ask for a decision or action inside your active Hive cell. Worker/reviewer/helper requests go to its queen, who answers or forwards the same request to the human. Queens ask the human directly. Do not also call request_human_input. Outside Hive use that standard tool instead. Offer 2-4 options where there is a choice, recommended first with (Recommended) in its label, and explain your recommendation in the body. Caller identity comes from MCP, never arguments.', {
+  requestTool('hive_request_input', 'Ask for a decision or action inside your active Hive cell. Pass session_id (and optionally session_label) when the human should act in a specific board session. Forwarding automatically links the requester too. Worker/reviewer/helper requests go to its queen, who answers or forwards the same request to the human. Queens ask the human directly. Do not also call request_human_input. Outside Hive use that standard tool instead. Offer 2-4 options where there is a choice, recommended first with (Recommended) in its label, and explain your recommendation in the body. Caller identity comes from MCP, never arguments.', {
     cell_id: cellIdArg,
+    ...sessionLinkArgs,
     title: z.string().min(1).max(200), body: z.string().min(1).max(20000),
     options: optionsSchema.optional(),
     allow_free_text: z.boolean().optional().describe('Compatibility parameter; ignored. Standalone text replies and optional notes are always allowed.'),

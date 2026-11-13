@@ -3,6 +3,15 @@ import { hiveLink, parseHiveLink } from './deep-links.js';
 import { sessionLinkId, bareSessionLinks } from './session-links.js';
 
 let sessionLinkGuard = null;
+let sessionLinkAvailable = () => false;
+export function setSessionLinkAvailability(fn) { sessionLinkAvailable = fn; }
+
+export function sessionReference(graph, reference) {
+  if (!reference?.sessionId) return null;
+  const { sessionId, label = 'Open session' } = reference;
+  const available = graph?.sessions?.some(s => s.sessionId === sessionId && !s.archived);
+  return h(available ? 'a' : 'span', { class: available ? 'hive-link-btn' : 'hive-muted', href: available ? `#session=${encodeURIComponent(sessionId)}` : null }, label);
+}
 export function setSessionLinkGuard(fn) { sessionLinkGuard = fn; }
 
 export function h(tag, attrs = {}, ...children) {
@@ -44,6 +53,10 @@ export function markdown(api, text, references = null) {
   for (const a of el.querySelectorAll('a[href]')) {
     const sessionId = sessionLinkId(a.getAttribute('href'));
     if (sessionId) {
+      const available = references?.sessions ? references.sessions.some(s => s.sessionId === sessionId && !s.archived) : sessionLinkAvailable(sessionId);
+      if (!available) { a.replaceWith(document.createTextNode(a.textContent)); continue; }
+      a.removeAttribute('target');
+      a.removeAttribute('rel');
       a.addEventListener('click', (e) => {
         if (sessionLinkGuard && sessionLinkGuard(sessionId) === false) e.preventDefault();
       });
@@ -54,7 +67,7 @@ export function markdown(api, text, references = null) {
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
   }
-  if (references) linkBeads(el, references);
+  if (references?.beadIds) linkBeads(el, references);
   return el;
 }
 

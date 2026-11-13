@@ -1,3 +1,4 @@
+import { sessionReference } from './session-links.js';
 import { requestOptions, requireOptionsForChoices } from './request-options.js';
 import { removeAttachmentBatch } from './attachments.js';
 import { pruneConversation, audienceConversationDoc, preserveRequestAudience, preservePublicSequence } from './conversation.js';
@@ -131,14 +132,16 @@ export async function createRequest(rt, host, id, args) {
   if (args.allow_free_text !== undefined && typeof args.allow_free_text !== 'boolean') fail('allow_free_text must be a boolean.');
   const key = bounded(args.dedupe_key, 'dedupe_key', 120);
   const old = key && values(rt).find(r => r.cellId === actor.cell.id && r.requesterSessionId === id && r.dedupeKey === key && r.state === 'open');
+  const sessionLink = sessionReference(host, args) || old?.sessionLink;
   requireOptionsForChoices({ kind: args.kind || old?.kind || 'question', body }, options);
   if (old) {
     if ((args.bead_id && args.bead_id !== old.beadId) || (args.thread_id && args.thread_id !== old.threadId)) fail('A dedupe update cannot move request context.');
     const nextKind = args.kind || old.kind;
     const expiresAt = args.expires_at === undefined ? old.expiresAt : args.expires_at;
     if (expiresAt && (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now())) fail('expires_at must be a future timestamp in milliseconds.');
-    if (title === old.title && body === old.body && nextKind === old.kind && (args.blocking === undefined || args.blocking === old.blocking) && expiresAt === old.expiresAt && JSON.stringify(options) === JSON.stringify(old.options || [])) return present(old);
+    if (JSON.stringify(sessionLink) === JSON.stringify(old.sessionLink) && title === old.title && body === old.body && nextKind === old.kind && (args.blocking === undefined || args.blocking === old.blocking) && expiresAt === old.expiresAt && JSON.stringify(options) === JSON.stringify(old.options || [])) return present(old);
     update(rt, old.id, x => {
+      if (sessionLink) x.sessionLink = sessionLink;
       x.title = title; x.body = body; x.kind = nextKind; x.expiresAt = expiresAt; x.options = options; x.allowFreeText = true;
       if (args.blocking !== undefined) x.blocking = args.blocking === true;
       x.contentRevision++;
@@ -162,7 +165,7 @@ export async function createRequest(rt, host, id, args) {
   const q = queenRoute(host, actor.cell);
   const at = Date.now(), rid = newId('hreq'), mid = newId('msg'), tid = topic?.id || newId('thr');
   const r = {
-    id: rid, cellId: actor.cell.id, requesterSessionId: id, title, body, kind, options, allowFreeText: true, blocking: args.blocking === true, dedupeKey: key || null,
+    id: rid, cellId: actor.cell.id, requesterSessionId: id, ...(sessionLink ? { sessionLink } : {}), title, body, kind, options, allowFreeText: true, blocking: args.blocking === true, dedupeKey: key || null,
     beadId: bead?.id || topic?.beadId || null, threadId: tid, messageId: mid, createdAt: at, updatedAt: at, expiresAt: args.expires_at || null,
     state: 'open', audience: !q || q === id ? 'human' : 'queen', routeReason: q ? null : 'no-queen', warning: q ? null : 'No queen in this hive',
     queenSessionId: q, queenGeneration: actor.cell.queenGeneration || 0, routeRevision: 1, contentRevision: 1, revision: 1, answer: null,
@@ -227,7 +230,7 @@ export async function forwardRequest(rt, host, id, args) {
     if (actor.role === 'queen' && (actor.cell.queenGeneration || 0) === previous.queenGeneration) return previous;
   }
   const r = queenRequest(rt, host, id, args);
-  return update(rt, r.id, x => { x.audience = 'human'; x.routeRevision++; x.forwarded = { by: id, at: Date.now(), recommendation: note, fromRevision: r.revision, fromRouteRevision: r.routeRevision }; });
+  return update(rt, r.id, x => { x.audience = 'human'; x.requesterSessionLink = { sessionId: x.requesterSessionId, label: 'Open requester session' }; x.routeRevision++; x.forwarded = { by: id, at: Date.now(), recommendation: note, fromRevision: r.revision, fromRouteRevision: r.routeRevision }; });
 }
 async function answer(rt, host, r, args, author, sessionId = null) {
   const optionId = args.option_id === undefined || args.option_id === null || args.option_id === '' ? null : args.option_id;

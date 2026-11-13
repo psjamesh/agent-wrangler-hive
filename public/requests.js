@@ -1,4 +1,4 @@
-import { h, markdown, relativeTime } from './dom.js';
+import { h, markdown, relativeTime, sessionReference } from './dom.js';
 import { hiveLink } from './deep-links.js';
 
 const visibleToHuman = r => r && (r.audience === 'human' || (r.audience === 'route-repair' && Boolean(r.forwarded || r.routeReason === 'no-queen')));
@@ -47,15 +47,19 @@ export function requestCard(r, { cell, graph, api, ui, ctx }) {
   const changed = sig !== form.signature;
   const busy = form.pending || ctx.busy('hive-request-answer') || ctx.busy('hive-request-dismiss') || ctx.busy('hive-request-retry');
   const author = requestAuthor(graph, r);
+  const md = text => markdown(api, text, { sessions: graph?.sessions || [] });
+  const requesterLink = r.requesterSessionLink || (r.forwarded ? { sessionId: r.requesterSessionId, label: 'Open requester session' } : null);
+  const sessionLinks = [r.sessionLink, requesterLink].filter((link, i, all) => link && all.findIndex(other => other?.sessionId === link.sessionId) === i);
   const focusFallback = { focusFallback: `request-card:${r.id}`, focusFinal: `request-list:${cell.id}` };
   const out = h('article', { class: 'hive-request', tabindex: -1, 'data-focus-key': `request-card:${r.id}`, dataset: { requestId: r.id, focusFinal: `request-list:${cell.id}` }, 'aria-label': `Request: ${r.title}` },
     h('h4', {}, r.title),
     h('p', { class: 'hive-muted' }, `${author} · ${relativeTime(r.createdAt)} · ${r.state === 'open' ? r.audience === 'queen' ? 'Worker request · Waiting for queen' : 'Needs you' : r.state}`),
     r.warning ? h('p', { class: 'hive-warning' }, r.warning) : null,
-    markdown(api, r.body),
-    r.forwarded?.recommendation ? h('div', { class: 'hive-quote' }, 'Queen recommendation: ', markdown(api, r.forwarded.recommendation)) : null);
+    md(r.body),
+    sessionLinks.length ? h('p', { class: 'hive-session-links' }, sessionLinks.map((link, i) => [i ? ' · ' : null, sessionReference(graph, link)])) : null,
+    r.forwarded?.recommendation ? h('div', { class: 'hive-quote' }, 'Queen recommendation: ', md(r.forwarded.recommendation)) : null);
   if (r.audience === 'queen' && ['failed', 'uncertain'].includes(r.queenNotification?.state)) out.append(h('p', { class: 'hive-warning' }, `Queen notification ${r.queenNotification.state}: ${r.queenNotification.error || 'Check with the queen.'}`));
-  if (r.answer) out.append(h('div', { class: 'hive-request-answer' }, h('strong', {}, r.answer.author === 'human' ? 'Human answer' : 'Queen answer'), r.answer.optionId ? h('p', {}, `Choice: ${(r.options || []).find(o => o.id === r.answer.optionId)?.label || r.answer.optionId} (${r.answer.optionId})`) : null, r.answer.text ? markdown(api, r.answer.optionId ? `Note: ${r.answer.text}` : r.answer.text) : null, h('p', { class: 'hive-muted' }, `Answer delivery: ${r.delivery?.state || 'pending'}`, r.delivery?.error ? ` — ${r.delivery.error}` : '')));
+  if (r.answer) out.append(h('div', { class: 'hive-request-answer' }, h('strong', {}, r.answer.author === 'human' ? 'Human answer' : 'Queen answer'), r.answer.optionId ? h('p', {}, `Choice: ${(r.options || []).find(o => o.id === r.answer.optionId)?.label || r.answer.optionId} (${r.answer.optionId})`) : null, r.answer.text ? md(r.answer.optionId ? `Note: ${r.answer.text}` : r.answer.text) : null, h('p', { class: 'hive-muted' }, `Answer delivery: ${r.delivery?.state || 'pending'}`, r.delivery?.error ? ` — ${r.delivery.error}` : '')));
   if (r.resolution) out.append(h('p', { class: 'hive-muted' }, `Closed: ${r.resolution.reason} by ${r.resolution.by}`));
   const submit = (type, extra = {}) => submitRequest(ui, r, ctx, type, extra);
   if (r.state === 'open' && r.audience !== 'queen') {

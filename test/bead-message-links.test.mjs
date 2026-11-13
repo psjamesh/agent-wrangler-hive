@@ -132,3 +132,46 @@ test('request-body Hive message links stay navigable in the same tab, other hash
   assert.equal(anchors[0].target, undefined);
   assert.equal(anchors[3].target, '_blank');
 });
+
+for (const available of [true, false]) test(`session Markdown and bare fragments are ${available ? 'in-app links' : 'plain text for unavailable sessions'}`, t => {
+  dom(t);
+  const html = '<p><a href="#session=worker">Open session</a> #session=worker <code>#session=worker</code></p>';
+  const el = markdown({ ui: { markdownPreview: () => html } }, '', { sessions: available ? [{ sessionId: 'worker' }] : [] });
+  const links = el.querySelectorAll('a[href]');
+  assert.equal(links.length, available ? 2 : 0);
+  for (const link of links) {
+    assert.equal(link.getAttribute('href'), '#session=worker');
+    assert.ok(!link.target || link.target === '_self');
+  }
+  assert.match(el.textContent, /Open session/);
+});
+
+test('request cards link explicit target and forwarded requester; archived references are plain text', async t => {
+  dom(t);
+  const { requestCard } = await import('../public/requests.js');
+  const ui = createUi(), ctx = { busy: () => false };
+  const r = { id: 'r', audience: 'human', title: 'Approve command', body: 'Review this command.', state: 'resolved', requesterSessionId: 'worker', sessionLink: { sessionId: 'target', label: 'Command session' }, requesterSessionLink: { sessionId: 'worker', label: 'Open requester session' } };
+  const graph = { sessions: [{ sessionId: 'worker' }, { sessionId: 'target', archived: true }] };
+  const el = requestCard(r, { cell: { id: 'cell' }, graph, api: {}, ui, ctx });
+  assert.deepEqual(el.querySelectorAll('a[href]').map(a => a.getAttribute('href')), ['#session=worker']);
+  assert.match(el.textContent, /Command session/);
+});
+
+for (const target of [{ sessionId: 'target' }, { sessionId: 'target', archived: true }, null]) test(`message references render safely for ${target ? target.archived ? 'archived' : 'available' : 'unknown'} sessions`, t => {
+  dom(t);
+  const ui = createUi();
+  const cell = { id: 'cell', rootBeadId: 'root', enabled: true, messages: [{ id: 'm', author: 'session', sessionId: 'queen', text: 'Approve the build command.', at: 1, sessionLink: { sessionId: 'target', label: 'Build session' } }] };
+  const out = renderConversation({ cell, hive: { beads: { root: { id: 'root' } } }, graph: { sessions: target ? [target] : [] }, api: {}, ui, ctx: { busy: () => false } });
+  assert.equal(out.list.querySelectorAll('a[href]').length, target && !target.archived ? 1 : 0);
+  assert.match(out.list.textContent, /Build session/);
+});
+
+test('request Markdown preserves session fragments and strips archived and unknown destinations', async t => {
+  dom(t);
+  const { requestCard } = await import('../public/requests.js');
+  const api = { ui: { markdownPreview: () => '<p><a href="#session=worker">Worker</a> <a href="#session=old">Archived</a> <a href="#session=missing">Unknown</a></p>' } };
+  const r = { id: 'r', title: 'Approve command', audience: 'human', state: 'resolved', body: 'Links' };
+  const el = requestCard(r, { cell: { id: 'cell' }, graph: { sessions: [{ sessionId: 'worker' }, { sessionId: 'old', archived: true }] }, api, ui: createUi(), ctx: { busy: () => false } });
+  assert.deepEqual(el.querySelectorAll('a[href]').map(a => a.getAttribute('href')), ['#session=worker']);
+  assert.match(el.textContent, /Archived Unknown/);
+});

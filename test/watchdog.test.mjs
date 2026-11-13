@@ -290,3 +290,19 @@ test('queen-owned claims are checked; archived and unknown claimants flag as unt
   f.sessions.queen.archived = true; assert.deepEqual(f.flags().map(x => x.kind), ['untracked_work']);
   delete f.sessions.queen; assert.deepEqual(f.flags().map(x => x.kind), ['untracked_work']);
 });
+
+test('watchdog attention and digest carry available session links and omit dead links', async t => {
+  const f = fixture(t);
+  f.sessions.worker.status = 'exited';
+  assert.equal(f.flags()[0].session_link, '#session=worker');
+  await f.watchdog.run();
+  assert.match(f.sent[0].text, /\[Open session\]\(#session=worker\)/);
+  f.sessions.reviewer = {};
+  f.rt.metadata.mutate(d => { d.reviews.r = { id: 'r', cellId: 'cell', workBeadId: 'work', reviewerSessionId: 'reviewer', state: 'requested', createdAt: f.now() }; });
+  f.advance(240 * MIN);
+  assert.equal(f.flags().find(x => x.kind === 'stuck_review').session_link, '#session=reviewer');
+  f.sessions.reviewer.archived = true;
+  assert.equal(f.flags().find(x => x.kind === 'stuck_review').session_link, null);
+  delete f.sessions.reviewer;
+  assert.equal(f.flags().find(x => x.kind === 'stuck_review').session_link, null);
+});
