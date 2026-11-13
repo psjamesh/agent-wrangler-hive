@@ -77,4 +77,5 @@ test('splitter is a 12px hairline column with no grid gap and a widened hit area
   assert.match(css, /\.hive-divider::after \{[^}]*inset: 0 -4px;/);
   assert.match(css, /\.hive-divider:hover::before[^{]*\[data-dragging\]::before[^{]*\{ width: 3px;/);
   assert.match(css, /\.hive-divider:focus-visible::before/);
+  assert.match(css, /@media \(forced-colors: active\) \{[^@]*\.hive-divider::before \{ background: CanvasText; \}[^@]*\.hive-divider:focus-visible::before[^{]*\{ background: Highlight; \}/);
 });
