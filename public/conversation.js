@@ -413,7 +413,7 @@ const messageLists = new WeakMap();
 
 export function disposeConversation(ui) { conversationViews.delete(ui); composers.delete(ui); messageLists.delete(ui); }
 
-function keepMessageList(ui, key, next, ctx) {
+export function keepMessageList(ui, key, next, ctx) {
   const saved = messageLists.get(ui);
   messageLists.set(ui, { key, list: next });
   if (!saved || saved.key !== key) return next;
