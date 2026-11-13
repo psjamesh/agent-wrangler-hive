@@ -76,12 +76,14 @@ test('a new metadata epoch with identical counters refetches and drops the old e
   assert.equal(sent.length, 3);
 });
 
-test('a scheduled search is cancelled by choosing Needs you or leaving the panel', async () => {
+test('legacy Needs you selection opens Inbox and leaving cancels a scheduled search', async () => {
   const { sent, ui } = setup();
   ui.setGlobalInboxQuery('widget');
   ui.setGlobalInboxView('human');
   ui.askGlobalInboxSearch(['a'], '1', 'e');
   ui.setGlobalInboxView('needs');
+  assert.equal(ui.globalInboxView(), 'human');
+  ui.cancelGlobalInboxSearch();
   await wait(260);
   assert.equal(sent.length, 0);
   ui.setGlobalInboxView('human');

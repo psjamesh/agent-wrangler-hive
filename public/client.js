@@ -100,7 +100,7 @@ function cancelDeepLink() {
 
 export function createUi() {
   const cleanedVisibility = new Set();
-  const mem = { drafts: new Map(), forms: {}, thread: {}, all: {}, history: {}, older: {}, renames: {}, inboxView: {}, globalInbox: 'needs', inboxSearch: { query: '', scheduled: null, inflight: null, remote: null, failedKey: null, epoch: null, timer: null }, inbox: {}, acks: new Map(), acknowledgementMessages: new Map(), acknowledgementTopics: new Map(), opened: {}, readers: new Map(), conversationMessage: {}, relations: null, relationFailure: null, conversationEpoch: {}, detail: new Map() };
+  const mem = { drafts: new Map(), forms: {}, thread: {}, all: {}, history: {}, older: {}, renames: {}, inboxView: {}, globalInbox: 'human', inboxSearch: { query: '', scheduled: null, inflight: null, remote: null, failedKey: null, epoch: null, timer: null }, inbox: {}, acks: new Map(), acknowledgementMessages: new Map(), acknowledgementTopics: new Map(), opened: {}, readers: new Map(), conversationMessage: {}, relations: null, relationFailure: null, conversationEpoch: {}, detail: new Map() };
   const rememberConversation = (cellId, topics, messages) => {
     for (const t of topics) if (t) mem.acknowledgementTopics.set(`${cellId}:${t.id}`, t);
     const previews = topics.filter(t => t?.preview).map(t => ({ ...t.preview, threadId: t.id }));
@@ -465,8 +465,7 @@ export function createUi() {
       return { remote, failed, pending: !failed && (!remote || remote.key !== key) && Boolean(state.api?.send) };
     },
     setGlobalInboxView(kind) {
-      mem.globalInbox = ['needs', 'human', 'queen'].includes(kind) ? kind : 'needs';
-      if (mem.globalInbox === 'needs') this.cancelGlobalInboxSearch();
+      mem.globalInbox = kind === 'queen' ? 'queen' : 'human';
       navigate();
     },
     setInboxView(cellId, kind) { cancelDeepLink(); mem.inboxView[cellId] = ['human', 'queen', 'needs'].includes(kind) ? kind : null; navigate(); },

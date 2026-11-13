@@ -48,7 +48,7 @@ function fixture(t) {
   const ui = createUi();
   const sent = [];
   const hive = () => projectForGraph({ runtime, snapshot: { graph: { beads, edges: [] } } });
-  const draw = () => renderHive({ ui, hive: hive(), graph: { sessions: [] }, api: {}, notices: [], busy: () => false, send: (m) => sent.push(m), notice() {} });
+  const draw = () => renderHive({ ui, hive: hive(), graph: { sessions: [{ sessionId: 'worker' }, { sessionId: 'old', archived: true }] }, api: {}, notices: [], busy: () => false, send: (m) => sent.push(m), notice() {} });
   return { doc, ui, draw, hive, sent };
 }
 
@@ -64,12 +64,15 @@ test('All hives puts the global inbox in the side dock, not under the map', (t) 
   assert.equal(out.top.querySelector('.hive-global-inbox'), null);
 });
 
-test('the side inbox keeps the Needs you default and its filters', (t) => {
+test('the side inbox defaults to the merged Inbox with separate header totals', (t) => {
   const f = fixture(t);
   const out = f.draw();
   const on = out.bottom.querySelectorAll('.hive-inbox-filter').filter(b => b.getAttribute('aria-pressed') === 'true');
   assert.equal(on.length, 1);
-  assert.match(on[0].textContent, /Needs you/);
+  assert.equal(out.bottom.querySelectorAll('.hive-inbox-filter').length, 2);
+  assert.equal(out.bottom.querySelector('.hive-inbox-totals').textContent, '0 messages');
+  assert.equal(out.bottom.querySelector('.hive-needs-hex'), null);
+  assert.match(on[0].textContent, /Inbox/);
 });
 
 test('hiding the panels collapses the side inbox and the toggle brings it back', (t) => {
@@ -83,4 +86,45 @@ test('hiding the panels collapses the side inbox and the toggle brings it back',
   assert.match(toggle(closed).textContent, /Show inbox/);
   f.ui.setDockOpen(true);
   assert.ok(f.draw().bottom);
+});
+
+
+test('merged Inbox session actions stay outside the thread anchor and disable unavailable sessions', t => {
+  const f = fixture(t);
+  f.doc.requests = { r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: 'Choose', threadId: 't', messageId: 'm', requesterSessionId: 'worker', sessionLink: { sessionId: 'old', label: 'Archived worker' } } };
+  const row = f.draw().bottom.querySelector('.hive-inbox-item');
+  assert.ok(row);
+  const topic = row.querySelector('.hive-topic-btn');
+  assert.equal(topic.querySelector('a'), null);
+  const actions = row.querySelector('.hive-inbox-session-links');
+  assert.equal(actions.querySelector('a').getAttribute('href'), '#session=worker');
+  assert.match(actions.textContent, /Archived worker/);
+  assert.equal(actions.querySelectorAll('a').length, 1);
+  assert.equal(row.querySelector('.hive-needs-hex').textContent, '1');
+});
+
+
+test('merged Inbox keeps the first structured label when session links repeat', t => {
+  const f = fixture(t);
+  f.doc.requests = { r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: 'Choose', threadId: 't', messageId: 'm', requesterSessionId: 'worker', sessionLink: { sessionId: 'worker', label: 'Open session' }, requesterSessionLink: { sessionId: 'worker', label: 'Open requester session' } } };
+  const actions = f.draw().bottom.querySelector('.hive-inbox-session-links');
+  assert.equal(actions.querySelectorAll('a').length, 1);
+  assert.equal(actions.querySelector('a').textContent, 'Open session');
+});
+
+
+test('Inbox filter counts merged rows and message chips appear only above one', t => {
+  const f = fixture(t);
+  f.doc.requests = { r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: 'Choose', threadId: 'request', messageId: 'rmsg', requesterSessionId: 'worker' } };
+  f.doc.conversation = { live: [{ id: 'm', threadId: 'topic', author: 'session', sessionId: 'worker', text: 'Update', at: 2, ack: { required: true, rev: 1 } }] };
+  f.doc.inbox = { live: { rev: 1 } };
+  let panel = f.draw().bottom;
+  assert.match(panel.querySelector('.hive-inbox-totals').textContent, /1 needs you.*1 message$/);
+  assert.equal(panel.querySelector('.hive-inbox-count').textContent, '2');
+  assert.equal(panel.querySelectorAll('.hive-unread').length, 0);
+  f.doc.conversation.live.push({ ...f.doc.conversation.live[0], id: 'm2', at: 3 });
+  panel = f.draw().bottom;
+  assert.equal(panel.querySelector('.hive-inbox-count').textContent, '2');
+  assert.equal(panel.querySelector('.hive-unread').textContent, '2');
+  assert.equal(panel.querySelector('.hive-unread').getAttribute('aria-label'), '2 messages');
 });
