@@ -128,3 +128,51 @@ test('Inbox filter counts merged rows and message chips appear only above one', 
   assert.equal(panel.querySelector('.hive-unread').textContent, '2');
   assert.equal(panel.querySelector('.hive-unread').getAttribute('aria-label'), '2 messages');
 });
+
+
+test('cell Inbox merges only its own messages and needs using the shared row presentation', t => {
+  const f = fixture(t);
+  f.doc.cells.other = { ...f.doc.cells.live, id: 'other', taskId: 't2' };
+  f.doc.requests = {
+    r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: '#session=worker', threadId: 'topic', messageId: 'm', requesterSessionId: 'worker', sessionLink: { sessionId: 'old', label: 'Archived worker' } },
+    extra: { cellId: 'live', id: 'extra', audience: 'human', state: 'open', createdAt: 3, title: 'Separate need', body: 'Choose', threadId: 'extra', messageId: 'extra' },
+    elsewhere: { cellId: 'other', id: 'elsewhere', audience: 'human', state: 'open', createdAt: 1, title: 'Other hive need', body: 'Choose', threadId: 'other', messageId: 'other' },
+  };
+  f.doc.conversation = { live: [{ id: 'm', threadId: 'topic', author: 'session', sessionId: 'worker', text: 'Update', at: 2, ack: { required: true, rev: 1 } }] };
+  f.doc.inbox = { live: { rev: 1 } };
+  f.ui.openCell('live');
+  f.ui.setInboxView('live', 'human');
+  let panel = f.draw().bottom;
+  assert.equal(panel.querySelectorAll('.hive-inbox-filter').length, 2);
+  assert.equal(panel.querySelector('.hive-inbox-count').textContent, '2');
+  assert.equal(panel.querySelectorAll('.hive-inbox-item').length, 2);
+  assert.doesNotMatch(panel.querySelector('.hive-inbox').textContent, /Other hive need/);
+  assert.equal(panel.querySelectorAll('.hive-unread').length, 0);
+  assert.equal(panel.querySelectorAll('.hive-inbox-session-links').length, 1);
+  assert.match(panel.querySelector('.hive-inbox-session-links').textContent, /Archived worker/);
+  assert.equal(panel.querySelector('.hive-inbox-session-links').querySelectorAll('a').length, 1);
+  f.doc.conversation.live.push({ ...f.doc.conversation.live[0], id: 'm2', at: 4 });
+  panel = f.draw().bottom;
+  assert.equal(panel.querySelector('.hive-unread').textContent, '2');
+});
+
+
+test('cell Inbox search stays in the cell and zero filter badges are absent', t => {
+  const f = fixture(t);
+  f.doc.cells.other = { ...f.doc.cells.live, id: 'other', taskId: 't2' };
+  f.doc.requests = {
+    r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Database', body: 'SQLite', threadId: 'topic', messageId: 'm' },
+    other: { cellId: 'other', id: 'other', audience: 'human', state: 'open', createdAt: 1, title: 'Other database', body: 'SQLite', threadId: 'other', messageId: 'other' },
+  };
+  f.ui.openCell('live');
+  f.ui.setInboxView('live', 'human');
+  f.ui.setGlobalInboxQuery('SQLite');
+  const panel = f.draw().bottom;
+  assert.equal(panel.querySelectorAll('.hive-inbox-item').length, 1);
+  assert.match(panel.querySelector('.hive-inbox-item').textContent, /Database/);
+  assert.equal(panel.querySelector('.hive-inbox-search-input').value, 'SQLite');
+  assert.equal(panel.querySelector('.hive-search-hit').textContent, 'SQLite');
+  assert.deepEqual(panel.querySelectorAll('.hive-inbox-count').map(e => e.textContent), ['1']);
+  f.ui.setGlobalInboxQuery('does not match');
+  assert.equal(f.draw().bottom.querySelectorAll('.hive-inbox-item').length, 0);
+});

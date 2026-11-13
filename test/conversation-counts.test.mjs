@@ -43,10 +43,12 @@ function fixture(t, messages) {
   };
   const counts = view => {
     const out = draw(view);
-    return { filters: out.head.querySelectorAll('.hive-inbox-filter').map(x => Number(x.querySelector('.hive-inbox-count')?.textContent || 0)), badges: out.list.querySelectorAll('.hive-unread').map(x => Number(x.textContent)) };
+    return { messages: Number(out.head.querySelector('.hive-inbox-totals').textContent.match(/(\d+) messages?/)[1]), badges: out.list.querySelectorAll('.hive-unread').map(x => Number(x.textContent)) };
   };
   return { cell, hive, ui, counts, draw, refresh: messages => { cell.inbox = { ...cell.inbox, human: snapshot(messages) }; } };
 }
+
+const inboxChips = counts => ({ ...counts, badges: counts.badges.filter(n => n > 1) });
 
 const queen = (id, threadId = 'topic') => ({ id, threadId, author: 'session', sessionId: 'queen', role: 'queen', text: id, at: 100, n: 1, ack: { required: true, state: null, rev: 0 } });
 const worker = (id, threadId = 'worker-topic') => ({ id, threadId, author: 'session', sessionId: 'worker', role: 'worker', text: id, at: 200, n: 2 });
@@ -55,16 +57,16 @@ const read = { required: true, state: { kind: 'read' }, rev: 1 };
 for (const window of ['messages', 'previews']) test(`Inbox and topic badges count only queen obligations with ${window}`, t => {
   const f = fixture(t, [queen('q'), ...Array.from({ length: 5 }, (_, i) => worker(`w${i}`, `worker-topic-${i}`))]);
   if (window === 'previews') f.cell.messages = [f.cell.messages[0]];
-  assert.deepEqual(f.counts(null), { filters: [2, 1, 0], badges: [1] });
-  assert.deepEqual(f.counts('human'), { filters: [2, 1, 0], badges: [1] });
+  assert.deepEqual(f.counts(null), { messages: 1, badges: [1] });
+  assert.deepEqual(f.counts('human'), inboxChips({ messages: 1, badges: [1] }));
 });
 
 for (const state of [{ kind: 'read' }, { kind: 'reaction', emoji: '👍' }, { kind: 'reply', replyId: 'human-reply' }]) test(`confirmed ${state.kind} and Undo update Inbox totals, rows and topic badges together`, t => {
   const f = fixture(t, [queen('q1'), { ...queen('q2'), n: 2 }, worker('w', 'topic')]);
   const check = n => {
-    const expected = { filters: [2, n, 0], badges: n ? [n] : [] };
+    const expected = { messages: n, badges: n ? [n] : [] };
     assert.deepEqual(f.counts(null), expected);
-    assert.deepEqual(f.counts('human'), expected);
+    assert.deepEqual(f.counts('human'), inboxChips(expected));
   };
   check(2);
   f.ui.noteAck(f.cell.id, 'q1', { ...read, state });
@@ -84,7 +86,7 @@ test('an acknowledged unprojected queen preview cannot keep an unread badge', t 
   const f = fixture(t, [queen('q')]);
   f.cell.messages = [];
   f.ui.noteAck(f.cell.id, 'q', read);
-  assert.deepEqual(f.counts(null), { filters: [2, 0, 0], badges: [] });
+  assert.deepEqual(f.counts(null), { messages: 0, badges: [] });
 });
 
 test('acknowledging a later Inbox page updates the matching topic badge', t => {
@@ -94,22 +96,22 @@ test('acknowledging a later Inbox page updates the matching topic badge', t => {
   f.cell.inbox.human = { ...f.cell.inbox.human, ids: ['q1'], more: true, after: { id: 'q1', at: 100 } };
   f.ui.addInboxPage(f.cell.id, 'human', 'test', String(f.cell.inbox.human.rev), { ids: ['q2'], messages: [q2], threads: f.cell.threads, more: false });
   f.ui.noteAck(f.cell.id, 'q2', read);
-  assert.deepEqual(f.counts(null), { filters: [2, 1, 0], badges: [1] });
-  assert.deepEqual(f.counts('human'), { filters: [2, 1, 0], badges: [1] });
+  assert.deepEqual(f.counts(null), { messages: 1, badges: [1] });
+  assert.deepEqual(f.counts('human'), inboxChips({ messages: 1, badges: [1] }));
   f.refresh([q1, { ...q2, ack: read }, w]);
   f.cell.threads[0].awaiting.human.count = 1;
-  assert.deepEqual(f.counts(null), { filters: [2, 1, 0], badges: [1] });
-  assert.deepEqual(f.counts('human'), { filters: [2, 1, 0], badges: [1] });
+  assert.deepEqual(f.counts(null), { messages: 1, badges: [1] });
+  assert.deepEqual(f.counts('human'), inboxChips({ messages: 1, badges: [1] }));
 });
 
 for (const window of ['messages', 'previews']) test(`Undo after a refreshed settlement restores an Inbox row from ${window}`, t => {
   const q = { ...queen('q'), ack: read };
   const f = fixture(t, [q]);
   if (window === 'previews') f.cell.messages = [];
-  assert.deepEqual(f.counts('human'), { filters: [2, 0, 0], badges: [] });
+  assert.deepEqual(f.counts('human'), inboxChips({ messages: 0, badges: [] }));
   f.ui.noteAck(f.cell.id, 'q', { required: true, state: null, rev: 2 });
-  assert.deepEqual(f.counts('human'), { filters: [2, 1, 0], badges: [1] });
-  assert.deepEqual(f.counts(null), { filters: [2, 1, 0], badges: [1] });
+  assert.deepEqual(f.counts('human'), inboxChips({ messages: 1, badges: [1] }));
+  assert.deepEqual(f.counts(null), { messages: 1, badges: [1] });
 });
 
 test('settling an older-topic preview updates the header with the badge', t => {
@@ -122,19 +124,19 @@ test('settling an older-topic preview updates the header with the badge', t => {
   f.cell.messages = first;
   assert.equal(f.cell.inbox.human.ids.length, 50);
   assert.equal(f.cell.inbox.human.ids.includes('q'), false);
-  assert.equal(f.counts(null).filters[1], 51);
+  assert.equal(f.counts(null).messages, 51);
   f.ui.noteAck(f.cell.id, 'q', read);
   const got = f.counts(null);
   assert.equal(got.badges.reduce((a, b) => a + b, 0), 50);
-  assert.equal(got.filters[1], 50);
+  assert.equal(got.messages, 50);
   f.refresh([...first, { ...q, ack: read }]);
-  assert.equal(f.counts(null).filters[1], 50);
+  assert.equal(f.counts(null).messages, 50);
   f.ui.noteAck(f.cell.id, 'q', { required: true, state: null, rev: 2 });
-  assert.equal(f.counts(null).filters[1], 51);
+  assert.equal(f.counts(null).messages, 51);
   assert.equal(f.counts(null).badges.reduce((a, b) => a + b, 0), 51);
   assert.ok(f.draw('human').list.children.some(li => li.dataset?.id === 'q'));
   f.refresh([...first, { ...q, ack: { required: true, state: null, rev: 2 } }]);
-  assert.equal(f.counts(null).filters[1], 51);
+  assert.equal(f.counts(null).messages, 51);
   assert.equal(f.counts(null).badges.reduce((a, b) => a + b, 0), 51);
 });
 
@@ -145,17 +147,17 @@ for (const source of ['manual', 'auto-read']) test(`${source} acknowledgement de
   f.ui.addOlderTopics(f.cell.id, 'test', f.cell.threads, false, null);
   f.cell.threads = f.cell.threads.filter(t => t.id === 'current');
   f.cell.messages = f.cell.messages.filter(m => m.id === 'other');
-  assert.equal(f.counts(null).filters[1], 2);
+  assert.equal(f.counts(null).messages, 2);
   const settled = snapshot([other, { ...q, ack: read }]);
   if (source === 'manual') f.ui.noteAck(f.cell.id, 'q', read, [], settled.rev);
   else f.ui.noteReadBatch(f.cell.id, [{ messageId: 'q', ack: read }], settled.rev);
-  assert.equal(f.counts(null).filters[1], 1);
+  assert.equal(f.counts(null).messages, 1);
   const fresh = { ...q, ack: read };
   f.ui.addOlderTopics(f.cell.id, 'test', [threadSummary({ id: q.threadId, title: 'older', count: 1 }, threadIndex([fresh]).get(q.threadId))], false, null);
   f.refresh([{ ...other, ack: { required: true, state: null, rev: 2 } }, q]);
-  assert.equal(f.counts(null).filters[1], 1);
+  assert.equal(f.counts(null).messages, 1);
   f.cell.inbox.human = settled;
-  assert.equal(f.counts(null).filters[1], 1);
+  assert.equal(f.counts(null).messages, 1);
   assert.deepEqual(f.counts(null).badges, [1]);
 });
 
@@ -169,12 +171,12 @@ test('a late acknowledgement reply cannot revert Undo while snapshots catch up',
   const undone = { required: true, state: null, rev: 2 };
   f.ui.noteAck(f.cell.id, 'q', undone, [], snapshot([{ ...q, ack: undone }]).rev);
   f.ui.noteAck(f.cell.id, 'q', read, [], snapshot([{ ...q, ack: read }]).rev);
-  assert.deepEqual(f.counts(null), { filters: [2, 1, 0], badges: [1] });
+  assert.deepEqual(f.counts(null), { messages: 1, badges: [1] });
   f.refresh([{ ...q, ack: read }]);
-  assert.deepEqual(f.counts(null), { filters: [2, 1, 0], badges: [1] });
-  assert.deepEqual(f.counts('human'), { filters: [2, 1, 0], badges: [1] });
+  assert.deepEqual(f.counts(null), { messages: 1, badges: [1] });
+  assert.deepEqual(f.counts('human'), inboxChips({ messages: 1, badges: [1] }));
   f.refresh([{ ...q, ack: undone }]);
-  assert.deepEqual(f.counts(null), { filters: [2, 1, 0], badges: [1] });
+  assert.deepEqual(f.counts(null), { messages: 1, badges: [1] });
 });
 
 
@@ -187,13 +189,13 @@ for (const source of ['manual', 'auto-read']) test(`${source} confirmations use 
  const q = queen('q2');
  const f = fixture(t, [q]);
  f.cell.inbox.human = snapshot([q]);
- assert.equal(f.counts(null).filters[1], 1);
+ assert.equal(f.counts(null).messages, 1);
  const settled = {...q, ack:read};
  const after = snapshot([settled]);
  if(source === 'manual') f.ui.noteAck(f.cell.id, q.id, read, [], after.rev);
  else f.ui.noteReadBatch(f.cell.id, [{messageId:q.id, ack:read}], after.rev);
  const got = f.counts(null);
- assert.deepEqual(got, {filters:[2,0,0],badges:[]});
+ assert.deepEqual(got, {messages:0,badges:[]});
 });
 
 test('multiple older topics stay consistent with production hash snapshots', t => {
@@ -212,17 +214,17 @@ test('multiple older topics stay consistent with production hash snapshots', t =
    f.cell.inbox.human=after;
  }
  const got=f.counts(null);
- assert.equal(got.filters[1],50); assert.equal(got.badges.reduce((a,b)=>a+b,0),50);
+ assert.equal(got.messages,50); assert.equal(got.badges.reduce((a,b)=>a+b,0),50);
  const fresh=fixture(t,all);
  fresh.cell.inbox.human=snapshot(all);
- assert.equal(fresh.counts(null).filters[1],50);
+ assert.equal(fresh.counts(null).messages,50);
  assert.equal(fresh.counts(null).badges.reduce((a,b)=>a+b,0),50);
 });
 
 test('a fresh UI agrees with a settled production snapshot', t => {
  const all = Array.from({length:52}, (_,i)=>({...queen(`reload${i}`,`topic${i}`),ack:i>=50?read:queen('x').ack}));
  const f=fixture(t,all); f.cell.inbox.human=snapshot(all);
- assert.equal(f.counts(null).filters[1],50);
+ assert.equal(f.counts(null).messages,50);
  assert.equal(f.counts(null).badges.reduce((a,b)=>a+b,0),50);
  assert.equal(f.draw('human').list.children.length,50);
 });
@@ -235,7 +237,7 @@ test('Undo racing a late read agrees with production hash snapshots', t => {
  f.ui.noteReadBatch(f.cell.id,[{messageId:q.id,ack:read}],settledRev);
  f.cell.inbox.human=snapshot([{...q,ack:read}]);
  const got=f.counts(null);
- assert.deepEqual(got,{filters:[2,1,0],badges:[1]});
+ assert.deepEqual(got,{messages:1,badges:[1]});
 });
 
 test('a newer server acknowledgement wins over older confirmed reads and Undo', t => {
@@ -243,12 +245,12 @@ test('a newer server acknowledgement wins over older confirmed reads and Undo', 
   const f = fixture(t, [q]);
   f.ui.noteAck(f.cell.id, q.id, read);
   f.refresh([{ ...q, ack: { required: true, state: null, rev: 2 } }]);
-  assert.deepEqual(f.counts(null), { filters: [2, 1, 0], badges: [1] });
-  assert.deepEqual(f.counts('human'), { filters: [2, 1, 0], badges: [1] });
+  assert.deepEqual(f.counts(null), { messages: 1, badges: [1] });
+  assert.deepEqual(f.counts('human'), inboxChips({ messages: 1, badges: [1] }));
   f.ui.noteAck(f.cell.id, q.id, { required: true, state: null, rev: 2 });
   f.refresh([{ ...q, ack: { ...read, rev: 3 } }]);
-  assert.deepEqual(f.counts(null), { filters: [2, 0, 0], badges: [] });
-  assert.deepEqual(f.counts('human'), { filters: [2, 0, 0], badges: [] });
+  assert.deepEqual(f.counts(null), { messages: 0, badges: [] });
+  assert.deepEqual(f.counts('human'), inboxChips({ messages: 0, badges: [] }));
 });
 
 function production(messages) {
@@ -285,9 +287,9 @@ for (const source of ['window', 'history', 'deep-link', 'inbox']) for (const mod
   if (mode === 'manual') f.ui.noteAck(f.cell.id, q.id, read);
   else f.ui.noteReadBatch(f.cell.id, [{ messageId: q.id, ack: read }]);
   f.ui.closeThread(f.cell.id);
-  assert.deepEqual(f.counts(null), { filters: [0, 51, 0], badges: [51] });
+  assert.deepEqual(f.counts(null), { messages: 51, badges: [51] });
   f.refresh(all.map(m => m.id === q.id ? { ...m, ack: read } : m));
-  assert.deepEqual(f.counts(null), { filters: [0, 51, 0], badges: [51] });
+  assert.deepEqual(f.counts(null), { messages: 51, badges: [51] });
 });
 
 for (const source of ['history', 'deep-link']) test(`Undo from ${source} retains the row and clears on an audience change`, t => {
@@ -306,11 +308,11 @@ for (const source of ['history', 'deep-link']) test(`Undo from ${source} retains
   }
   f.ui.noteAck(f.cell.id, q.id, { required: true, state: null, rev: 2 });
   f.ui.closeThread(f.cell.id);
-  assert.deepEqual(f.counts(null), { filters: [0, 1, 0], badges: [1] });
-  assert.deepEqual(f.counts('human'), { filters: [0, 1, 0], badges: [1] });
+  assert.deepEqual(f.counts(null), { messages: 1, badges: [1] });
+  assert.deepEqual(f.counts('human'), inboxChips({ messages: 1, badges: [1] }));
   assert.match(f.draw('human').list.textContent, /History-only canary/);
   Object.assign(f.cell, production([]).cell);
-  assert.deepEqual(f.counts(null), { filters: [0, 0, 0], badges: [] });
+  assert.deepEqual(f.counts(null), { messages: 0, badges: [] });
   assert.doesNotMatch(f.draw('human').list.textContent, /History-only canary/);
 });
 
@@ -334,10 +336,10 @@ test('a newer preview acknowledgement preserves full history metadata for Undo',
   f.ui.closeThread(f.cell.id);
   const row = f.draw('human').list;
   assert.equal(row.querySelector('.hive-topic-context').textContent, 'Work item');
-  assert.deepEqual(f.counts('human'), { filters: [0, 1, 0], badges: [1] });
+  assert.deepEqual(f.counts('human'), inboxChips({ messages: 1, badges: [1] }));
 });
 
-for (const state of ['open', 'answered', 'resolved']) for (const legacy of [false, true]) test(`native ${state} card ${legacy ? 'with legacy ack' : 'without ack'} stays out of Inbox and topic badges`, t => {
+for (const state of ['open', 'answered', 'resolved']) for (const legacy of [false, true]) test(`native ${state} card ${legacy ? 'with legacy ack' : 'without ack'} stays out of message counts and topic badges`, t => {
   const card = { ...queen('card', 'request-topic'), requestId: 'hreq_000000000001' };
   if (!legacy) delete card.ack;
   const request = { id: card.requestId, cellId: 'cell_test', messageId: card.id, threadId: card.threadId, title: 'Approve?', body: 'Approve the change?', audience: 'human', state, delivery: { state: 'delivered' } };
@@ -350,11 +352,11 @@ for (const state of ['open', 'answered', 'resolved']) for (const legacy of [fals
   const f = fixture(t, projected.conversation.cell_test);
   f.cell.requests = projected.requests;
   f.cell.requestCounts.human = state === 'open' ? 1 : 0;
-  const expected = { filters: [state === 'open' ? 1 : 0, 1, 0], badges: [1] };
+  const expected = { messages: 1, badges: [1] };
   assert.deepEqual(f.counts(null), expected);
-  assert.deepEqual(f.counts('human'), expected);
+  assert.deepEqual(f.counts('human'), inboxChips(expected));
   assert.deepEqual(inboxSlice(doc, 'cell_test', 'human').ids, ['ordinary']);
-  assert.equal(f.draw('human').list.children.filter(x => x.dataset?.id).length, 1);
-  assert.equal(f.draw('needs').list.querySelectorAll('.hive-request').length, state === 'open' ? 1 : 0);
+  assert.equal(f.draw('human').list.children.filter(x => x.dataset?.id).length, state === 'open' ? 2 : 1);
+  assert.equal(f.draw('needs').list.querySelectorAll('.hive-needs-count').length, state === 'open' ? 1 : 0);
   assert.equal(doc.conversation.cell_test[1].ack.state, null);
 });

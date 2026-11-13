@@ -11,18 +11,18 @@ const store = new Map();
 let view;
 client.register({ api: { storage: { get: k => store.get(k), set: (k, v) => store.set(k, v), remove: k => store.delete(k) } }, register(kind, v) { view = v; } });
 const base = { launches: [], bindings: [], beadLayout: {}, arrangeAspect: null, workstreamColours: {}, workstreamShades: {}, archived: {}, restoreNotices: [], regionAttachments: {}, detachedWorkstreams: [], threads: [], messages: [], threadsTruncated: false, threadsAfter: null, inbox: { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } }, requestCounts: {} };
-const req = (id, title, body, at, extra = {}) => ({ id, audience: 'human', state: 'open', title, body, createdAt: at, threadId: 't_' + id, messageId: 'm_' + id, requesterSessionId: 's1', ...extra });
+const req = (id, title, body, at, extra = {}) => ({ id, audience: 'human', state: 'open', title, body, createdAt: at, threadId: 't_' + id, messageId: 'm_' + id, requesterSessionId: 's1', sessionLink: { sessionId: 'archived', label: 'Archived worker' }, ...extra });
 const cells = {
   alpha: { ...base, id: 'alpha', taskId: 't1', enabled: true, rootBeadId: 'r1', queenSessionId: 's1', position: { q: 0, r: 0 }, beadCount: 1, requests: { a: req('a', 'Which database should the importer use?', 'Postgres or SQLite for the local cache?', Date.now() - 600000, { blocking: true }), b: req('b', 'Approve the retry policy', 'Three retries with backoff.', Date.now() - 3600000) } },
   beta: { ...base, id: 'beta', taskId: 't2', enabled: true, rootBeadId: 'r2', queenSessionId: 's1', position: { q: 2, r: 0 }, beadCount: 1, requests: { c: req('c', 'Rename the export flag?', 'It clashes with the new option.', Date.now() - 7200000) } },
 };
 const waiting = { required: true, rev: 1, state: null };
 cells.alpha.threads = [{ id: 't_a', title: 'Importer database' }, { id: 'read', title: 'Release summary' }];
-cells.alpha.messages = [{ id: 'm_a', threadId: 't_a', at: Date.now() - 800000, text: 'Choose the cache database.', author: 'session', sessionId: 's1', ack: waiting }, { id: 'm_a2', threadId: 't_a', at: Date.now() - 700000, text: 'The importer is ready for your decision.', author: 'session', sessionId: 's1', ack: waiting }, { id: 'read1', threadId: 'read', at: Date.now() - 86400000, text: 'The release notes are ready.', author: 'session', sessionId: 's1', ack: waiting }];
+cells.alpha.messages = [{ id: 'm_a', threadId: 't_a', at: Date.now() - 800000, text: 'Choose the cache database. #session=s2 #session=unnamed', author: 'session', sessionId: 's1', ack: waiting }, { id: 'm_a2', threadId: 't_a', at: Date.now() - 700000, text: 'The importer is ready for your decision.', author: 'session', sessionId: 's1', ack: waiting }, { id: 'read1', threadId: 'read', at: Date.now() - 86400000, text: 'The release notes are ready.', author: 'session', sessionId: 's1', ack: waiting }];
 cells.alpha.inbox = { human: { ids: ['m_a', 'm_a2', 'read1'], count: 3, rev: 1 }, queen: { ids: [], count: 0 } };
 const beads = { r1: { id: 'r1', title: 'Importer rewrite', kind: 'goal', status: 'in_progress', evidence: [] }, r2: { id: 'r2', title: 'Export cleanup', kind: 'goal', status: 'in_progress', evidence: [] } };
 const hive = { cells, beads, edges: [], launches: [], operations: [], backend: { state: 'ready', snapshotComplete: true, snapshotBeadIds: Object.keys(beads) }, capacity: { limit: 8, used: 0, claimed: 0, reserved: 0, available: 8 }, metaEpoch: 'e', metaVersion: 1 };
-const graph = { hive, sessions: [{ sessionId: 's1', name: 'Importer queen' }], tasks: { tasks: [{ id: 't1', name: 'Importer hive' }, { id: 't2', name: 'Export hive' }] } };
+const graph = { hive, sessions: [{ sessionId: 's1', name: 'Importer queen' }, { sessionId: 's2', name: 'Importer worker' }, { sessionId: 'unnamed' }, { sessionId: 'archived', archived: true }], tasks: { tasks: [{ id: 't1', name: 'Importer hive' }, { id: 't2', name: 'Export hive' }] } };
 const root = document.getElementById('root');
 window.t = { client, root, graph, redraw: () => { view.update(root, null, { ...graph }); } };
 view.mount(root, null);
@@ -168,5 +168,38 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   await call('Emulation.setEmulatedMedia', { features: [] });
   const searched = await run(`const e = document.querySelector('.hive-inbox-search-input'); e.value = 'SQLite'; e.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); return { rows: document.querySelectorAll('.hive-inbox-item').length, needs: document.querySelector('.hive-inbox-item .hive-needs-count')?.textContent, count: document.querySelector('.hive-inbox-item .hive-unread')?.textContent, mark: document.querySelector('.hive-search-hit')?.textContent };`);
   assert.deepEqual(searched, { rows: 1, needs: '1', count: '2', mark: 'SQLite' });
+
+  await run(`document.querySelector('.hive-inbox-search-clear').click(); document.querySelector('[data-tile-id="alpha"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise(r => setTimeout(r, 200)); document.querySelector('[data-focus-key="inbox:alpha:human"]').click();`);
+  const cellInbox = await run(`
+    const panel = document.querySelector('.hive-conversation');
+    return { filters: [...panel.querySelectorAll('.hive-inbox-filter')].map(e => e.textContent), totals: panel.querySelector('.hive-inbox-totals').textContent,
+      rows: [...panel.querySelectorAll('.hive-inbox-item')].map(e => ({ title: e.querySelector('strong').textContent, count: e.querySelector('.hive-unread')?.textContent || null })),
+      labels: [...panel.querySelectorAll('.hive-inbox-session-links a')].map(e => e.textContent),
+      archived: [...panel.querySelectorAll('.hive-inbox-session-links .hive-muted')].map(e => e.textContent),
+      zeros: [...panel.querySelectorAll('.hive-inbox-count,.hive-unread')].some(e => e.textContent === '0') };
+  `);
+  assert.deepEqual(cellInbox.filters, ['Inbox 3', 'Waiting for queen']);
+  assert.match(cellInbox.totals, /2 needs you.*3 messages/);
+  assert.equal(cellInbox.rows.length, 3);
+  assert.ok(!cellInbox.rows.some(r => r.title.includes('Rename the export')));
+  assert.deepEqual(cellInbox.rows.map(r => r.count), [null, '2', null]);
+  assert.ok(cellInbox.labels.includes('Importer worker'));
+  assert.ok(cellInbox.labels.includes('Open session'));
+  assert.ok(cellInbox.archived.includes('Archived worker'));
+  assert.equal(cellInbox.zeros, false);
+  await theme(false);
+  await shot('cell-inbox-phone-light');
+  await theme(true);
+  await shot('cell-inbox-phone-dark');
+  await viewport(1280, 800);
+  await theme(false);
+  await shot('cell-inbox-desktop-light');
+  await theme(true);
+  await shot('cell-inbox-desktop-dark');
+  const opened = await run(`[...document.querySelectorAll('.hive-inbox-item .hive-topic-btn')].find(e => e.textContent.includes('Importer database')).click(); await new Promise(r => setTimeout(r, 150)); return { messages: document.querySelectorAll('.hive-message').length, back: Boolean(document.querySelector('[data-focus-key="topics-back:alpha"]')) };`);
+  assert.equal(opened.messages, 2);
+  assert.equal(opened.back, true);
+  await run(`document.querySelector('[data-focus-key="topics-back:alpha"]').click(); await new Promise(r => setTimeout(r, 100)); [...document.querySelectorAll('.hive-conversation button')].find(e => e.textContent === 'Show topics').click();`);
+  assert.equal(await run(`return Boolean(document.querySelector('[aria-label="Topics"]'));`), true);
 
 });

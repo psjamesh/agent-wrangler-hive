@@ -376,14 +376,14 @@ function busyInbox(t) {
   f.ui.setAllTopics(f.cell.id, true);
   f.rows = (kind) => {
     f.ui.setInboxView(f.cell.id, kind);
-    return f.draw().list.children.filter((li) => li.dataset?.id).map((li) => ({ id: li.dataset.id, title: li.querySelector('.hive-topic-title').textContent, waiting: li.querySelector('.hive-unread').textContent }));
+    return f.draw().list.children.filter((li) => li.dataset?.id).map((li) => ({ id: li.dataset.id, title: li.querySelector('.hive-topic-title').textContent, waiting: li.querySelector('.hive-unread')?.textContent || null }));
   };
   return f;
 }
 
 test('the Inbox lists a topic with several waiting messages once, with how many wait and the newest of them', (t) => {
   const f = busyInbox(t);
-  assert.deepEqual(f.rows('human'), [{ id: 'm3', title: 'Topic', waiting: '3' }, { id: 'm4', title: 'Other', waiting: '1' }]);
+  assert.deepEqual(f.rows('human'), [{ id: 'm3', title: 'Topic', waiting: '3' }, { id: 'm4', title: 'Other', waiting: null }]);
   assert.deepEqual(f.rows('queen'), [{ id: 'h2', title: 'Topic', waiting: '2' }]);
 });
 
@@ -1182,7 +1182,7 @@ test('Inbox follows server membership after a thread acknowledgement and Undo', 
   assert.deepEqual(f.shown(), []);
   f.cell.inbox.human = { count: 1, ids: ['m2'], rev: 3 };
   assert.deepEqual(f.shown(), ['m2']);
-  assert.equal(f.draw().list.querySelector('.hive-unread').textContent, '1');
+  assert.equal(f.draw().list.querySelector('.hive-unread'), null);
 });
 
 for (const recovery of ['sample', 'reopen']) test(`failed auto-read is re-armed for a later ${recovery} without a retry loop`, t => {
@@ -1492,17 +1492,11 @@ function nativeFixture(t, audience = 'human') {
   f.ui.setAllTopics(f.cell.id, true);
   return { ...f, id };
 }
-test('Needs you count uses the inbox badge and disappears at zero', t => {
+test('merged Inbox opens the canonical request topic and preserves its answer draft on revision change', t => {
   const f = nativeFixture(t);
-  const needsFilter = () => descendants(f.draw().head).find(el => el.tagName === 'button' && el.textContent.startsWith('Needs you'));
-  assert.equal(needsFilter().querySelector('.hive-inbox-count').textContent, '1');
-  f.cell.requestCounts.human = 0;
-  assert.equal(needsFilter().querySelector('.hive-inbox-count'), null);
-});
-test('Needs you filter shows canonical request with a dedicated answer and preserves draft on revision change', t => {
-  const f = nativeFixture(t);
-  const filter = descendants(f.draw().head).find(el => el.tagName === 'button' && el.textContent.startsWith('Needs you'));
+  const filter = descendants(f.draw().head).find(el => el.tagName === 'button' && el.textContent.startsWith('Inbox'));
   assert.ok(filter); filter.fire('click');
+  f.draw().list.querySelector('.hive-topic-btn').fire('click');
   let out = f.draw();
   assert.match(out.list.textContent, /Keep compatibility/);
   const text = out.list.querySelector('textarea');
@@ -1526,17 +1520,15 @@ test('Waiting for queen contains only human messages, never native worker reques
   assert.equal(out.list.querySelector('textarea'), null);
 });
 
-test('request filters keep selection scope with an explicit show-all escape and full-cell counts', t => {
+test('merged Inbox includes needs across the cell despite a bead selection', t => {
   const f = nativeFixture(t);
   f.ui.setAllTopics(f.cell.id, false);
   f.cell.requests[f.id].beadId = 'hive-two';
   f.ui.setInboxView(f.cell.id, 'needs');
-  let out = f.draw();
-  assert.doesNotMatch(out.list.textContent, /Keep compatibility/);
-  const all = descendants(out.list).find(el => el.tagName === 'button' && /Show all in this hive/.test(el.textContent));
-  assert.ok(all); all.fire('click');
-  out = f.draw();
-  assert.match(out.list.textContent, /Keep compatibility/);
+  const out = f.draw();
+  assert.equal(f.ui.inboxView(f.cell.id), 'human');
+  assert.match(out.list.textContent, /API decision/);
+  assert.equal(out.head.querySelector('.hive-inbox-count').textContent, '1');
 });
 
 test('rail badge uses host-supported numeric counts even when request metadata is unavailable', t => {
@@ -1737,7 +1729,7 @@ for (const source of ['manual', 'auto-read']) test(`${source} callbacks keep cou
     f.cell.messages = [other]; f.cell.threads = [otherTopic];
     f.ui.closeThread(f.cell.id); f.ui.setAllTopics(f.cell.id, true);
   };
-  const count = () => Number(descendants(f.draw().head).find(el => el.dataset.focusKey === `inbox:${f.cell.id}:human`).querySelector('.hive-inbox-count').textContent);
+  const count = () => Number(f.draw().head.querySelector('.hive-inbox-count')?.textContent || 0);
   hideOlder();
   assert.equal(count(), 1);
   f.cell.inbox.human = inbox([original, { ...other, ack: { required: true, state: null, rev: 2 } }]);

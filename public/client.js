@@ -468,7 +468,7 @@ export function createUi() {
       mem.globalInbox = kind === 'queen' ? 'queen' : 'human';
       navigate();
     },
-    setInboxView(cellId, kind) { cancelDeepLink(); mem.inboxView[cellId] = ['human', 'queen', 'needs'].includes(kind) ? kind : null; navigate(); },
+    setInboxView(cellId, kind) { cancelDeepLink(); mem.inboxView[cellId] = kind === 'needs' ? 'human' : ['human', 'queen'].includes(kind) ? kind : null; navigate(); },
     // The server's acknowledgement revision for a message it names without
     // sending it, which wins over any older copy held here.
     noteServerAck(cellId, messageId, ack) {
