@@ -54,6 +54,7 @@ export function searchInbox(rt, { cellIds, query }) {
         const last = group.at(-1);
         out[kind].push({
           cellId, threadId: group[0].threadId || null, firstId: group[0].id, title, at: group[0].at, count: group.length,
+          sessionLinks: group.map(m => m.sessionLink).filter(Boolean),
           last: { author: last.author, sessionId: last.sessionId || null, role: last.role || null },
           snippet: snippetFor(texts, text),
           preview: String(last.text || '').replace(/\s+/g, ' ').trim().slice(0, 200),
