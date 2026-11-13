@@ -121,3 +121,14 @@ test('paragraphs and line breaks separate words while punctuation preserves form
   const el = markdown({ ui: { markdownPreview: () => html } }, '', { beadIds: new Set(['hive-one']), cellId: 'cell-one' });
   assert.deepEqual(el.querySelectorAll('a').map(a => a.textContent), ['hive-one', 'hive-one', 'hive-one']);
 });
+
+test('request-body Hive message links stay navigable in the same tab, other hash and relative links stay inert', t => {
+  dom(t);
+  const link = '#view=ext:hive:overview&cell=cell_x&topic=thr_other&message=msg_target';
+  const html = `<p><a href="${link}">Open Hive message</a> <a href="#view=search">grid</a> <a href="javascript:alert(1)">js</a> <a href="https://example.com">web</a></p>`;
+  const el = markdown({ ui: { markdownPreview: () => html } }, '');
+  const anchors = el.querySelectorAll('a');
+  assert.deepEqual(anchors.map(a => a.getAttribute('href')), [link, undefined, undefined, 'https://example.com']);
+  assert.equal(anchors[0].target, undefined);
+  assert.equal(anchors[3].target, '_blank');
+});
