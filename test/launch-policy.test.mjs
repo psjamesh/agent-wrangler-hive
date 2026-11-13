@@ -42,18 +42,25 @@ test('Claude and Codex worker launches add no denied tools and record unrestrict
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build' });
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'b', intent: 'advise' });
   assert(calls.every((c) => !('disallowedTools' in c)));
-  assert.doesNotMatch(calls[0].intent, /are denied/);
+  assert.doesNotMatch(calls[0].intent, /are denied|cannot restrict for this provider/);
+  assert.match(calls[0].intent, /do not use spawn_session, spawn_workflow or schedule_session; they leave the session untracked/);
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'again', agent: 'codex' }).catch(() => {});
   f.live.a.assignee = null; f.live.a.status = 'open';
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'codex build', agent: 'codex' });
   const codex = calls.at(-1);
   assert.equal('disallowedTools' in codex, false);
-  assert.match(codex.intent, /cannot restrict for this provider/);
+  assert.match(codex.intent, /do not use spawn_session, spawn_workflow or schedule_session; they leave the session untracked/);
   const launches = Object.values(f.doc().workerLaunches);
   assert.equal(launches.at(-1).restriction, 'unrestricted');
-  assert.equal(spawnRestriction(f.doc(), launches[0].sessionId), 'unrestricted for this provider');
-  assert.equal(spawnRestriction(f.doc(), launches.at(-1).sessionId), 'unrestricted for this provider');
+  assert.equal(spawnRestriction(f.doc(), launches[0].sessionId), 'unrestricted');
+  assert.equal(spawnRestriction(f.doc(), launches.at(-1).sessionId), 'unrestricted');
   assert.equal(spawnRestriction(f.doc(), 'nominated'), 'launch restrictions not applied');
+});
+
+test('persisted denied launch records keep their restriction label', () => {
+  const doc = { workerLaunches: { oldWorker: { sessionId: 'worker', restriction: 'denied' } }, launches: { oldQueen: { sessionId: 'queen', restriction: 'denied' } } };
+  assert.equal(spawnRestriction(doc, 'worker'), 'denied');
+  assert.equal(spawnRestriction(doc, 'queen'), 'denied');
 });
 
 test('the handoff tool exists', () => {
