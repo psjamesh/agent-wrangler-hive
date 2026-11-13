@@ -66,3 +66,11 @@ test('building the visible view reads each message a bounded number of times how
   const small = reads(200), large = reads(2000);
   assert.ok(large <= small * 11, `reads grew ${small} -> ${large}`);
 });
+
+
+test('remote search carries session actions from earlier messages in a topic', () => {
+  const sessionLink = { sessionId: 'worker', label: 'Open worker' };
+  const runtime = rt({ a: [sm('first', 'topic', 'needle', { sessionLink }), sm('last', 'topic', 'later update')] }, {});
+  const out = searchInbox(runtime, { cellIds: ['a'], query: 'needle' });
+  assert.deepEqual(out.human[0].sessionLinks, [sessionLink]);
+});

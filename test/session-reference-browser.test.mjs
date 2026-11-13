@@ -14,6 +14,7 @@ const page = mode => `<!doctype html><html><head><meta charset="utf-8"><link rel
 <script src="/core/markdown-it.min.js"></script></head><body><main class="hive-root"><h1>${mode === 'request' ? 'Build command needs approval' : 'Message from the queen'}</h1><p class="fixture-caption">Isolated fixture · Hive session navigation</p><div id="fixture"></div></main>
 <script type="module">
 import { requestCard } from '/public/requests.js';
+import { globalInbox } from '/public/global-inbox.js';
 import { renderConversation } from '/public/conversation.js';
 import client, { createUi } from '/public/client.js';
 import { createRenderer } from '/core/markdown-preview.js';
@@ -31,12 +32,19 @@ let node;
 if (${JSON.stringify(mode)} === 'request') node = requestCard(r,{cell,graph,api,ui,ctx});
 else {
  cell.messages = [{id:'m',author:'session',role:'queen',sessionId:'${queen}',text:body,at:Date.now(),sessionLink:{sessionId:'${worker}',label:'Open session'}}];
- node = renderConversation({cell,hive:{beads:{root:{id:'root'}}},graph,api,ui,ctx}).list;
+ if (${JSON.stringify(mode)} === 'inbox') {
+   cell.threads = [{id:'topic',title:'Review the build'}];
+   cell.messages[0].threadId = 'topic';
+   cell.messages[0].ack = {required:true,rev:1,state:null};
+   cell.inbox = {human:{ids:['m'],count:1,rev:1},queen:{ids:[],count:0}};
+   cell.requests = {r:{...r,threadId:'topic',messageId:'m'}};
+   node = globalInbox({hive:{cells:{[cell.id]:cell}},graph,api,ui},[cell]);
+ } else node = renderConversation({cell,hive:{beads:{root:{id:'root'}}},graph,api,ui,ctx}).list;
 }
 document.getElementById('fixture').append(node);
-const anchors = [...node.querySelectorAll('a[href]')];
-const valid = anchors.length === 2 && anchors.every(a=>a.getAttribute('href')==='#session=${worker}' && !a.target) && node.textContent.includes('Archived session') && node.textContent.includes('Unknown session');
-anchors.find(a=>a.textContent==='Worker session')?.click();
+const anchors = [...node.querySelectorAll('a[href]')].filter(a=>a.getAttribute('href').startsWith('#session='));
+const valid = anchors.length === (${JSON.stringify(mode)} === 'inbox' ? 1 : 2) && anchors.every(a=>a.getAttribute('href')==='#session=${worker}' && !a.target) && (${JSON.stringify(mode)} === 'inbox' ? !node.querySelector('.hive-topic-btn a') && node.querySelector('.hive-needs-hex').textContent === '1' : node.textContent.includes('Archived session') && node.textContent.includes('Unknown session'));
+anchors[0]?.click();
 const markdownNavigated = location.hash === '#session=${worker}';
 location.hash = '';
 anchors.find(a=>a.textContent==='Open session')?.click();
@@ -65,7 +73,7 @@ test('isolated Chrome renders request and message links and navigates their sess
   t.after(() => new Promise(resolve => server.close(resolve)));
   const port = server.address().port;
   assert.notEqual(port, 7777);
-  for (const mode of ['request', 'message']) {
+  for (const mode of ['request', 'message', 'inbox']) {
     const profile = await fs.mkdtemp('/private/tmp/hive-session-chrome-');
     t.after(() => fs.rm(profile, { recursive: true, force: true }));
     const screenshot = path.join(output, `${mode}.png`);

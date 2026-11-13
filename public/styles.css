@@ -1750,3 +1750,11 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .hive-inbox-search-clear:hover { background: var(--hive-wax); color: var(--fg); }
 .hive-inbox-search-status { flex: 1 1 12em; min-height: 1.4em; font-size: 12px; }
 .hive-search-hit { color: inherit; background: var(--hive-fill); border-bottom: 2px solid var(--hive-comb); border-radius: 2px; }
+
+.hive-inbox-totals { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.hive-needs-hex { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 28px; height: 26px; padding: 0 8px; box-sizing: border-box; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); background: #b42332; color: #fff; font-size: 12px; font-weight: 700; line-height: 1; }
+@media (forced-colors: active) {
+  .hive-needs-hex { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+}
+
+.hive-inbox-session-links { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 8px; }

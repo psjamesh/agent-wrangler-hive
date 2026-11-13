@@ -43,13 +43,13 @@ test('message rows group waiting messages by topic across hives', () => {
   assert.deepEqual(messageRows(ctx([a, b]), [a, b], 'queen'), []);
 });
 
-test('the global inbox defaults to Needs you', () => {
+test('the global inbox defaults to Inbox', () => {
   const ui = createUi();
-  assert.equal(ui.globalInboxView(), 'needs');
+  assert.equal(ui.globalInboxView(), 'human');
   ui.setGlobalInboxView('queen');
   assert.equal(ui.globalInboxView(), 'queen');
   ui.setGlobalInboxView('nonsense');
-  assert.equal(ui.globalInboxView(), 'needs');
+  assert.equal(ui.globalInboxView(), 'human');
 });
 
 test('rows past the first page are reported as more waiting in that hive', () => {
@@ -84,7 +84,7 @@ test('searching spans hives and tabs, uses the server answer once it has arrived
   const c = ctx([a, b]);
   const local = searchedInbox(c, [a, b], 'widget');
   assert.deepEqual(local.lists.human.map(r => [r.cellId, r.snippet]), [['a', 'ship the Widget'], ['b', null]]);
-  assert.equal(local.lists.needs.length, 0);
+  assert.equal(local.lists.human.length, 2);
   assert.equal(local.pending, false);
   const remoteState = { pending: false, failed: false, remote: { query: 'widget', human: [{ cellId: 'b', threadId: 't2', firstId: 'm2', title: 'Old', at: 2, count: 4, last: { author: 'human' }, snippet: 'widget', key: 'message:b:m2' }], queen: [] } };
   const remote = searchedInbox(c, [a, b], 'widget', remoteState);
@@ -93,4 +93,51 @@ test('searching spans hives and tabs, uses the server answer once it has arrived
   const failed = searchedInbox(c, [a, b], 'widget', { remote: null, failed: true });
   assert.equal(failed.failed, true);
   assert.equal(failed.lists.human.length, 2);
+});
+
+
+test('Inbox merges requests by thread with separate counts and needs first, oldest within groups', () => {
+  const waiting = { required: true, rev: 1, state: null };
+  const a = cell('a', {
+    threads: [{ id: 't1', title: 'Topic one' }, { id: 't2', title: 'Topic two' }],
+    messages: [{ id: 'm1', threadId: 't1', at: 5, author: 'session', sessionId: 's1', text: 'message', ack: waiting }, { id: 'm2', threadId: 't2', at: 1, author: 'session', sessionId: 's1', text: 'older message', ack: waiting }],
+    inbox: { human: { ids: ['m1', 'm2'], count: 2, rev: 1 }, queen: { ids: [], count: 0 } },
+    requests: { r1: request('r1', { threadId: 't1', createdAt: 8 }), r2: request('r2', { threadId: 't1', createdAt: 9 }), r3: request('r3', { createdAt: 3 }) },
+  });
+  const rows = inboxRows(ctx([a]), [a], 'human');
+  assert.deepEqual(rows.map(r => [r.threadId, r.count, r.needsCount]), [['t_r3', 0, 1], ['t1', 1, 2], ['t2', 1, 0]]);
+  assert.equal(parseHiveLink(rows[1].link).messageId, 'm1');
+});
+
+test('search by request body keeps its thread message and needs totals with remote search', async () => {
+  const { searchedInbox } = await import('./global-inbox.js');
+  const a = cell('a', { threads: [{ id: 't1', title: 'Topic' }], requests: { r1: request('r1', { threadId: 't1', body: 'unique request term' }), r2: request('r2', { threadId: 't1', body: 'other' }) } });
+  const found = searchedInbox(ctx([a]), [a], 'unique', { remote: { human: [], queen: [] } });
+  assert.equal(found.lists.human.length, 1);
+  assert.equal(found.lists.human[0].needsCount, 2);
+});
+
+
+test('remote message matches retain all needs counts, priority and deep links', async () => {
+  const { searchedInbox } = await import('./global-inbox.js');
+  const a = cell('a', { requests: { r1: request('r1', { threadId: 't1', createdAt: 30 }), r2: request('r2', { threadId: 't1', createdAt: 31 }) } });
+  const b = cell('b');
+  const result = searchedInbox(ctx([a, b]), [a, b], 'needle', { remote: { human: [
+    { key: 'message:b:m2', cellId: 'b', threadId: 't2', firstId: 'm2', at: 1, count: 5, snippet: 'needle', last: {} },
+    { key: 'message:a:m1', cellId: 'a', threadId: 't1', firstId: 'm1', at: 20, count: 7, snippet: 'needle', last: {} },
+  ], queen: [] } });
+  assert.deepEqual(result.lists.human.map(r => [r.cellId, r.count, r.needsCount]), [['a', 7, 2], ['b', 5, 0]]);
+  assert.deepEqual(parseHiveLink(result.lists.human[0].link), { cellId: 'a', threadId: 't1', messageId: 'm1' });
+  a.requests.r1.state = 'dismissed';
+  a.requests.r2.state = 'dismissed';
+  assert.equal(inboxRows(ctx([a]), [a], 'human').length, 0);
+});
+
+
+test('request matches keep their snippet when remote messages do not match', async () => {
+  const { searchedInbox } = await import('./global-inbox.js');
+  const a = cell('a', { requests: { r1: request('r1', { threadId: 't1', blocking: true, body: 'First request' }), r2: request('r2', { threadId: 't1', body: 'Find the second needle' }) } });
+  const result = searchedInbox(ctx([a]), [a], 'needle', { remote: { human: [], queen: [] } });
+  assert.equal(result.lists.human[0].snippet, 'Find the second needle');
+  assert.equal(result.lists.human[0].needsCount, 2);
 });
