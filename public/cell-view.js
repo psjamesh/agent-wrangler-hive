@@ -316,7 +316,7 @@ function workstreamProgress(c) {
 
 const SAVE_FAILED = 'Could not save the instructions.';
 
-function queenInstructions(ctx, cell) {
+export function queenInstructions(ctx, cell) {
   const { ui, api } = ctx;
   const key = `instructions:${cell.id}`;
   const editing = ui.form(key);

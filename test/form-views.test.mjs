@@ -86,3 +86,24 @@ test('a failed complete reply after the form changed is raised as an error notic
   s.sent[0][1]({ ok: false, error: 'Stale.' });
   assert.deepEqual(s.notices, [['The workstream was not completed: Stale.', { severity: 'error' }]]);
 });
+
+test('the queen-instructions form sends the text with an id built from the editor id and handles stale replies', async (t) => {
+  const { queenInstructions } = await import('../public/cell-view.js');
+  const cell = { id: 'c1', queenSessionId: 'q1' };
+  const key = 'instructions:c1';
+  const s = harness(t, { [key]: { id: 'e7', text: 'Be brief' } });
+  submit(queenInstructions(s.ctx, cell));
+  assert.deepEqual(s.sent[0][0], { type: 'hive-cell-instructions', cellId: 'c1', instructions: 'Be brief' });
+  assert.match(s.forms[key].pending, /^e7:[0-9a-z]+$/);
+  s.sent[0][1]({ ok: false, error: 'Denied.' });
+  assert.equal(note(queenInstructions(s.ctx, cell)), 'Denied.');
+  submit(queenInstructions(s.ctx, cell));
+  s.forms[key] = null;
+  s.sent[1][1]({ ok: false });
+  assert.deepEqual(s.notices, [['Queen instructions were not saved: Could not save the instructions.', { severity: 'error' }]]);
+  s.forms[key] = { id: 'e8', text: 'x' };
+  submit(queenInstructions(s.ctx, cell));
+  s.forms[key] = null;
+  s.sent[2][1]({ ok: true });
+  assert.match(s.notices[1][0], /Earlier queen instructions were saved/);
+});
