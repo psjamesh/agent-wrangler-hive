@@ -68,7 +68,7 @@ function mapFixture({contact=false,enclosed=false,hiveHidingStart=true,related=n
       return el;
     },
     bindMapSearch() {}, searchReveals: () => false,
-    ctx, cell, related, BEAD_SIZE: 60, BACK_EDGE: 48, layoutCell, groupOutlines, workstreamClasses,
+    ctx, cell, related, BEAD_SIZE: 60, layoutCell, groupOutlines, workstreamClasses,
     archiveHidden, activeKids, membersOf, subtreeMembers, previewMove, planMove, planGroupArrange, planReveal, createDragPlanner, planHide, planHiveReveal,
     layoutBase, stackable, hiddenWork, toPixel, pixelBounds, key, normalAspect,
     beadTile: (ctx, bead, tile) => ({ id: bead.id, ...tile }), relationsFor, describeRelations,
