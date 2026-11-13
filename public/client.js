@@ -247,6 +247,8 @@ export function createUi() {
     setShowRetired(on) { save('showRetired', Boolean(on)); bump(); },
     detachedRegions: (cellId) => new Set(load(`detachedRegions:${cellId}`, [])),
     setDetachedRegions: (cellId, ids) => save(`detachedRegions:${cellId}`, [...ids]),
+    globalInboxOpen: () => load('globalInboxOpen', false) === true,
+    setGlobalInboxOpen(open) { save('globalInboxOpen', Boolean(open)); navigate(); },
     dockOpen: () => load('dock', true),
     setDockOpen(open) { cancelDeepLink(); save('dock', Boolean(open)); navigate(); },
     pane: () => load('pane', 'conversation'),

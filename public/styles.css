@@ -403,6 +403,8 @@
   min-height: 0;
 }
 
+.hive-overview-head { display: flex; flex-direction: column; gap: 12px; }
+
 .hive-overhead,
 .hive-cellhead-top {
   display: flex;
@@ -1328,19 +1330,21 @@
 .hive-root[data-view="overview"][data-panels="open"] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 12px var(--hive-panel-width, 38%);
-  grid-template-rows: minmax(0, 1fr);
-  grid-template-areas: "main divider rail";
-  gap: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "head head head" "main divider rail";
+  gap: 12px 0;
   padding: 10px 16px 14px;
   overflow: hidden;
 }
-.hive-root[data-view="overview"][data-panels="open"] .hive-overview { grid-area: main; min-height: 0; padding: 4px 0; }
+.hive-root[data-view="overview"][data-panels="open"] .hive-overview { display: contents; }
+.hive-root[data-view="overview"][data-panels="open"] .hive-overview-head { grid-area: head; min-width: 0; }
+.hive-root[data-view="overview"][data-panels="open"] .hive-stage { grid-area: main; min-height: 0; height: auto; }
 .hive-root[data-view="overview"][data-panels="open"] .hive-dock { grid-area: rail; padding: 0; }
 .hive-root[data-view="overview"][data-panels="open"] .hive-divider { display: block; grid-area: divider; position: relative; cursor: col-resize; touch-action: none; }
 .hive-root[data-layout="small"][data-view="overview"][data-panels="open"] {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) minmax(220px, 1fr);
-  grid-template-areas: "main" "rail";
+  grid-template-rows: auto minmax(300px, 1fr) minmax(220px, 1fr);
+  grid-template-areas: "head" "main" "rail";
   gap: 10px 0;
   overflow: auto;
   padding: 8px 12px 10px;
@@ -1694,7 +1698,10 @@ body.light .hive-hex.is-search-match .hive-conversation-ring { stroke: #186879; 
 .hive-badge-withdrawn { color: var(--muted, var(--fg)); opacity: .7; }
 .hive-inbox-withdrawn { display: flex; gap: .5em; align-items: baseline; }
 
-.hive-global-inbox { gap: 8px; }
+.hive-global-dock { min-width: 0; overflow: hidden; }
+.hive-global-inbox { gap: 8px; overflow: hidden; }
+.hive-global-inbox > :not(.hive-global-inbox-list) { flex: 0 0 auto; }
+.hive-global-inbox-list { min-height: 0; }
 .hive-global-inbox .hive-inbox-filters, .hive-inbox-head .hive-inbox-filters { flex: 0 0 auto; }
 a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .hive-overview { overflow-y: auto; }
