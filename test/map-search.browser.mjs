@@ -7,26 +7,26 @@ import { join, resolve } from 'node:path';
 
 const chrome = process.env.HIVE_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const output = resolve(process.env.HIVE_SHOT_DIR || '/private/tmp/hive-f4lh-screenshots');
-const baseline = execFileSync('git', ['show', 'eac81cd:public/styles.css'], { encoding: 'utf8' });
 const page = await readFile(new URL('./fixtures/ui-polish.html', import.meta.url), 'utf8');
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/') {
     res.setHeader('Content-Type', 'text/html');
-    res.end(url.searchParams.get('phase') === 'before' ? page.replace('/public/styles.css', '/baseline.css') : page);
+    res.end(url.searchParams.get('phase') === 'before' ? page.replaceAll('/public/', '/baseline/public/') : page);
     return;
   }
-  if (url.pathname === '/baseline.css') { res.setHeader('Content-Type', 'text/css'); res.end(baseline); return; }
-  if (!/^\/public\/[\w.-]+$/.test(url.pathname)) { res.writeHead(404).end(); return; }
+  if (!/^\/(?:baseline\/)?public\/[\w.-]+$/.test(url.pathname)) { res.writeHead(404).end(); return; }
   try {
     res.setHeader('Content-Type', url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript');
-    res.end(await readFile(new URL(`..${url.pathname}`, import.meta.url)));
+    const baseline = url.pathname.startsWith('/baseline/');
+    const path = baseline ? url.pathname.slice('/baseline'.length) : url.pathname;
+    res.end(baseline ? execFileSync('git', ['show', `eac81cd:${path.slice(1)}`]) : await readFile(new URL(`..${path}`, import.meta.url)));
   } catch { res.writeHead(404).end(); }
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 assert.notEqual(server.address().port, 7777);
 const profile = await mkdtemp(join(tmpdir(), 'hive-f4lh-chrome-'));
-const child = spawn(chrome, ['--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+const child = spawn(chrome, ['--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
 let logs = '';
 child.stderr.on('data', data => { logs += data; });
 let launchError;
@@ -80,11 +80,11 @@ try {
     await shot('');
     if (view === 'cell') {
       const trigger = await run(`(() => {
-        const button = document.querySelector('.hive-search-open').getBoundingClientRect();
-        const map = document.querySelector('.hive-canvas').getBoundingClientRect();
-        return { left: button.left - map.left, top: button.top - map.top };
+        const el = document.querySelector('.hive-search-open'), button = el.getBoundingClientRect(), css = getComputedStyle(el);
+        const canvas = document.querySelector('.hive-canvas'), map = canvas.getBoundingClientRect();
+        return { left: button.left - map.left - canvas.clientLeft, top: button.top - map.top - canvas.clientTop, height: button.height, radius: css.borderRadius, borderStyle: css.borderStyle, borderWidth: css.borderWidth };
       })()`);
-      if (phase === 'after') assert.deepEqual(trigger, { left: 10, top: 10 });
+      if (phase === 'after') assert.deepEqual(trigger, { left: 10, top: 10, height: 30, radius: '8px', borderStyle: 'solid', borderWidth: '1px' });
       await run(`document.querySelector('.hive-search-open').click()`);
     }
     const measure = await run(`(() => {
@@ -93,7 +93,8 @@ try {
       const css = getComputedStyle(field), rect = field.getBoundingClientRect();
       const bar = document.querySelector('.hive-map-search'), map = document.querySelector('.hive-canvas');
       const br = bar?.getBoundingClientRect(), mr = map?.getBoundingClientRect();
-      return { height: rect.height, left: rect.left, right: rect.right, border: css.border, radius: css.borderRadius, font: css.font, background: css.backgroundColor, color: css.color, outline: css.outline, insetLeft: br && br.left - mr.left, insetTop: br && br.top - mr.top, barRight: br?.right, mapRight: mr?.right, overflow: document.documentElement.scrollWidth > innerWidth };
+      const close = bar?.querySelector('.hive-search-row button').getBoundingClientRect();
+      return { closeTop: close?.top, fieldTop: rect.top, height: rect.height, left: rect.left, right: rect.right, border: css.border, radius: css.borderRadius, font: css.font, background: css.backgroundColor, color: css.color, outline: css.outline, insetLeft: br && br.left - mr.left - map.clientLeft, insetTop: br && br.top - mr.top - map.clientTop, barRight: br?.right, mapRight: mr?.right, overflow: document.documentElement.scrollWidth > innerWidth };
     })()`);
     if (phase === 'after') {
       assert.equal(measure.height, 30);
@@ -104,6 +105,7 @@ try {
         assert.equal(measure.insetLeft, 10);
         assert.equal(measure.insetTop, 10);
         assert.ok(measure.barRight <= measure.mapRight - 10);
+        if (width === 1440) assert.ok(Math.abs(measure.closeTop - measure.fieldTop) < 3, 'Close shares the desktop input row');
       }
     }
     measurements.push({ phase, theme, view, width, ...measure });

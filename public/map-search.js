@@ -54,7 +54,7 @@ export function bindMapSearch({ ctx, cell, map, ids, hidden, heads }) {
     if (query !== undefined) { state.query = query; input.value = query; state.current = null; }
     refresh(); input.focus({ preventScroll: true });
   };
-  const trigger = h('button', { type: 'button', class: 'hive-quiet-btn hive-search-open', onclick: () => open(), title: 'Search beads (/ or start typing on the map)' }, 'Search');
+  const trigger = h('button', { type: 'button', class: 'hive-btn hive-search-open', onclick: () => open(), title: 'Search beads (/ or start typing on the map)' }, 'Search');
   let results = [];
   let timer = null;
   function askServer(query) {

@@ -79,7 +79,7 @@ test('map search uses shared fields in a labelled search region', t => {
   assert.equal(row.querySelector('input').classList.contains('hive-input'), true);
   assert.equal(row.querySelector('select').classList.contains('hive-input'), true);
   assert.equal(row.querySelector('button').classList.contains('hive-quiet-btn'), true);
-  assert.equal(f.canvas().querySelector('.hive-search-open').classList.contains('hive-quiet-btn'), true);
+  assert.equal(f.canvas().querySelector('.hive-search-open').classList.contains('hive-btn'), true);
   f.ui.closeCell();
   f.draw();
   assert.equal(f.dock().querySelector('.hive-inbox-search-input').classList.contains('hive-input'), true);
