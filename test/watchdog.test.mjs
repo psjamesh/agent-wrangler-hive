@@ -101,7 +101,7 @@ test('quiet hives never wake, invalid snapshots do not clear receipts, stopped r
 
 test('per-hive thresholds are validated, persisted and affect only that hive', t => {
   const f = fixture(t); f.sessions.worker.status = 'idle'; f.advance(MIN);
-  setWatchdogSettings(f.rt, { cellId: 'cell', settings: { workerMinutes: 1, reviewMinutes: 2, messageMinutes: 3, waitHours: 4 } });
+  setWatchdogSettings(f.rt, { cellId: 'cell', settings: { idleMinutes: 1, reviewMinutes: 2, messageMinutes: 3, waitHours: 4 } });
   assert.equal(f.flags()[0].kind, 'stalled_worker');
   assert.equal(f.rt.metadata.cell('cell').watchdogSettings.waitHours, 4);
   for (const settings of [{ workerMinutes: 0 }, { waitHours: -1 }, { reviewMinutes: NaN }, { messageMinutes: '1' }, { other: 1 }]) {
