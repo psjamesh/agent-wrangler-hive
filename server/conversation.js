@@ -383,11 +383,11 @@ function requestScopes(doc, cellId) {
   };
 }
 
-function publicSequenceBase(doc, cellId, topic) {
+function publicSequenceBase(doc, cellId, topic, firsts = null) {
   if (!topic) return 0;
   if (Number.isInteger(topic.humanSequenceBase)) return topic.humanSequenceBase;
   if (topic.hasRequests || topic.origin === 'request') return 0;
-  const first = (doc.conversation[cellId] || []).find(m => m.threadId === topic.id);
+  const first = firsts ? firsts.get(topic.id) : (doc.conversation[cellId] || []).find(m => m.threadId === topic.id);
   return Math.max(0, (first?.n || 1) - 1);
 }
 
@@ -400,6 +400,8 @@ export function audienceConversationDoc(doc, cellId, viewer = { role: 'human' })
   const raw = doc.conversation[cellId] || [];
   const visibleTopics = new Set([...Object.values(requests).map(r => r.threadId), ...raw.filter(m => m.author === 'human').map(m => m.threadId)]);
   const records = threadRecords(doc, cellId);
+  const firsts = new Map();
+  for (const m of raw) if (!firsts.has(m.threadId)) firsts.set(m.threadId, m);
   const hiddenTopics = new Set(ownThreads(records).filter(t => t.origin === 'request' && !t.publicHistory && !visibleTopics.has(t.id)).map(t => t.id));
   const scopeOf = requestScopes(doc, cellId);
   const list = raw.filter(m => {
@@ -410,19 +412,25 @@ export function audienceConversationDoc(doc, cellId, viewer = { role: 'human' })
   const numbers = new Map();
   for (const m of list) {
     if (m.requestId) delete m.ack;
-    const n = (numbers.get(m.threadId) ?? publicSequenceBase(doc, cellId, records[m.threadId])) + 1;
+    const n = (numbers.get(m.threadId) ?? publicSequenceBase(doc, cellId, records[m.threadId], firsts)) + 1;
     numbers.set(m.threadId, n); m.n = n;
     if (m.replyTo && !visibleIds.has(m.replyTo)) delete m.replyTo;
     if (m.answers) m.answers = m.answers.filter(id => visibleIds.has(id));
     if (m.response?.answers) m.response = { ...m.response, answers: m.response.answers.filter(a => visibleIds.has(a.messageId)) };
     delete m.requestScopeId;
   }
+  const mineBy = new Map(), firstRequest = new Map();
+  for (const m of list) {
+    if (!mineBy.has(m.threadId)) mineBy.set(m.threadId, []);
+    mineBy.get(m.threadId).push(m);
+  }
+  for (const r of Object.values(requests)) if (!firstRequest.has(r.threadId)) firstRequest.set(r.threadId, r);
   const threads = Object.fromEntries(ownThreads(records).filter(t => !hiddenTopics.has(t.id)).map(t => {
-    const first = Object.values(requests).find(r => r.threadId === t.id);
-    const mine = list.filter(m => m.threadId === t.id);
+    const first = firstRequest.get(t.id);
+    const mine = mineBy.get(t.id) || [];
     const titleRequest = doc.requests?.[t.titleScopeId];
     const named = Object.hasOwn(t, 'titleScopeId') && (t.titleScopeId === null || (maySeeRequest(titleRequest, viewer) && titleRequest.contentRevision === t.titleScopeRevision));
-    return [t.id, { ...t, ...(t.origin === 'request' && t.titleBy !== 'human' && !named ? { title: first?.title || t.publicRequestTitle || 'Request', titleBy: first?.requesterSessionId || 'hive' } : {}), count: publicSequenceBase(doc, cellId, t) + mine.length, earlierRemoved: Boolean(t.earlierRemoved), createdAt: t.origin === 'request' ? mine[0]?.at || first?.createdAt || 0 : t.createdAt, lastAt: mine.at(-1)?.at || first?.createdAt || 0, lastMessageId: mine.at(-1)?.id || null }];
+    return [t.id, { ...t, ...(t.origin === 'request' && t.titleBy !== 'human' && !named ? { title: first?.title || t.publicRequestTitle || 'Request', titleBy: first?.requesterSessionId || 'hive' } : {}), count: publicSequenceBase(doc, cellId, t, firsts) + mine.length, earlierRemoved: Boolean(t.earlierRemoved), createdAt: t.origin === 'request' ? mine[0]?.at || first?.createdAt || 0 : t.createdAt, lastAt: mine.at(-1)?.at || first?.createdAt || 0, lastMessageId: mine.at(-1)?.id || null }];
   }));
   const revision = [Object.values(requests).map(r => [r.id, r.contentRevision]).sort(), Object.values(threads).map(t => [t.id, t.humanPruneRevision || 0]).sort()];
   const inboxRevision = list.filter(m => m.ack?.required || m.response?.required).map(m => [m.id, m.ack || null, m.response || null]);

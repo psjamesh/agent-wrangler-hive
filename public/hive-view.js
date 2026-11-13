@@ -697,6 +697,7 @@ export function renderHive(ctx) {
   const cells = showRetired ? allCells : allCells.filter((c) => !c.retired);
   const focusedId = ui.cellId();
   const cell = focusedId ? hive.cells[focusedId] : null;
+  if (focusedId || cells.length === 0 || !ui.dockOpen()) ui.cancelGlobalInboxSearch?.();
   if (focusedId && !cell && ui.pendingCell() === focusedId) {
     return {
       top: h('div', { class: 'hive-cellview' },
