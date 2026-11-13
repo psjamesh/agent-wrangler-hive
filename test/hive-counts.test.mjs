@@ -43,12 +43,13 @@ function fixture(t) {
   const doc = { cells: { [cell.id]: cell }, conversation: {}, threads: {}, inbox: {}, bindings: {}, beadLayout: {}, arrangeAspect: {}, restoreNotices: {}, operations: {}, launches: {}, requests: {} };
   const runtime = { metadata: { read: () => doc, cells: () => Object.values(doc.cells) }, beads: { status: {state:'missing'} }, paths: {} };
   const ui = createUi();
-  let hive;
+  let hive, top;
   const draw = () => {
     hive = projectForGraph({runtime, snapshot:{graph:{beads,edges:[]}}});
-    return renderHive({ui,hive,graph:{sessions:[]},api:{},notices:[],busy:()=>false,send(){},notice(){}}).top.querySelector('[data-tile-id="cell_test"]');
+    top = renderHive({ui,hive,graph:{sessions:[]},api:{},notices:[],busy:()=>false,send(){},notice(){}}).top;
+    return top.querySelector('[data-tile-id="cell_test"]');
   };
-  return {doc,cell,beads,draw,get hive(){return hive;}};
+  return {doc,cell,beads,draw,get hive(){return hive;},get top(){return top;}};
 }
 const counter = (tile, kind) => tile.querySelector(`[data-counter="${kind}"]`);
 
@@ -132,4 +133,31 @@ test('one to four counters form a measured centred row without zero slots', t =>
       assert.ok(Math.abs(starts[i] - starts[i-1] - widths[i-1] - 10) < 0.02, 'even edge spacing');
     }
   }
+});
+
+test('occupied counters remain on disabled and retired cards, nested work counts once, and remainder explains off-card slots', t => {
+  const f = fixture(t);
+  f.cell.enabled = false;
+  f.doc.cells.nested = { id: 'nested', rootBeadId: 'nested', enabled: true, position: { q: 2, r: 0 } };
+  f.doc.cells.retired = { id: 'retired', rootBeadId: 'retired', enabled: false, position: { q: 4, r: 0 }, retired: { outcome: 'done' } };
+  Object.assign(f.beads, {
+    nested: { id: 'nested', parentId: 'root', kind: 'goal', status: 'in_progress' },
+    n: { id: 'n', parentId: 'nested', kind: 'work', status: 'in_progress', assignee: 'aw:builder' },
+    retired: { id: 'retired', kind: 'goal', status: 'closed' },
+    r: { id: 'r', parentId: 'retired', kind: 'work', status: 'in_progress', assignee: 'aw:builder' },
+  });
+  f.doc.workerLaunches = { missing: { beadId: 'missing', state: 'reserved' } };
+  f.draw();
+  for (const id of ['cell_test', 'nested', 'retired']) {
+    const tile = f.top.querySelector(`[data-tile-id="${id}"]`);
+    assert.ok(tile, id);
+    assert.equal(counter(tile, 'progress').querySelector('text').textContent, '1', id);
+  }
+  assert.equal(f.top.querySelector('[data-focus-key="show-retired"]'), null);
+  assert.match(f.top.textContent, /1 outside a hive/);
+  const sum = f.top.querySelectorAll('[data-counter="progress"]').reduce((n, el) => n + Number(el.querySelector('text').textContent), 0);
+  assert.equal(sum + f.hive.capacity.outside, f.hive.capacity.used);
+  delete f.doc.workerLaunches.missing;
+  f.draw();
+  assert.doesNotMatch(f.top.textContent, /outside a hive/);
 });

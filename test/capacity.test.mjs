@@ -6,7 +6,7 @@ import path from 'node:path';
 import { HiveRuntime } from '../server/runtime.js';
 import { buildGraph } from '../server/bead-model.js';
 import { capacity } from '../server/admission.js';
-import { cellCounts, workCounts, childrenMap } from '../public/model.js';
+import { cellCounts, workCounts, childrenMap, countsSentence } from '../public/model.js';
 
 const raw = (id, parent, claimed = false) => ({ id, title: id, status: claimed ? 'in_progress' : 'open', assignee: claimed ? 'aw:worker' : '', metadata: { hive_kind: parent ? 'work' : 'goal' }, dependencies: parent ? [{ issue_id: id, depends_on_id: parent, type: 'parent-child' }] : [] });
 function fixture(t) {
@@ -38,7 +38,8 @@ test('global projection uses admission union and explains shared review/launch s
   });
   const actual = rt.projection().capacity;
   assert.ok(actual, 'capacity is present in the view projection');
-  const { breakdown, ...counts } = actual;
+  const { breakdown, outside, ...counts } = actual;
+  assert.equal(outside, 2);
   assert.deepEqual(counts, capacity(rt));
   assert.deepEqual(breakdown, { claimed: 2, reviews: 1, launching: 2 });
   assert.equal(actual.used, 5);
@@ -60,7 +61,7 @@ test('cached projection updates for claims, reviews, launches and limit changes 
   assert.equal(f.rt.projection().capacity.limit, 1);
 });
 
-test('per-cell progress and work summaries sum to capacity across mixed hives', t => {
+test('per-cell occupied counts sum to capacity and mixed-hive summaries partition work', t => {
   const { rt, setGraph } = fixture(t);
   rt.metadata.mutate(d => {
     d.cells.three = { id: 'three', rootBeadId: 'third', enabled: true };
@@ -82,11 +83,53 @@ test('per-cell progress and work summaries sum to capacity across mixed hives', 
   ]);
   const hive = rt.projection();
   const cells = Object.values(hive.cells);
-  const counts = cells.map(cell => cellCounts(hive, cell).in_progress);
+  const counts = cells.map(cell => cell.occupiedCount);
   assert.deepEqual(counts, [1, 3, 2]);
   assert.equal(counts.reduce((sum, count) => sum + count, 0), hive.capacity.used);
   for (const cell of cells) {
-    assert.equal(workCounts(hive, childrenMap(hive.beads), cell.rootBeadId).in_progress, cellCounts(hive, cell).in_progress);
+    for (const c of [cellCounts(hive, cell), workCounts(hive, childrenMap(hive.beads), cell.rootBeadId)]) {
+      assert.equal(c.open + c.in_progress + c.in_review + c.blocked + c.closed + c.not_active, c.total);
+    }
   }
-  assert.equal(workCounts(hive, childrenMap(hive.beads), 'stream').in_progress, 1);
+  assert.equal(workCounts(hive, childrenMap(hive.beads), 'stream').in_progress, 0);
+});
+
+test('disabled, retired and nested hives attribute occupied work to exactly one nearest cell', t => {
+  const { rt, setGraph } = fixture(t);
+  rt.metadata.mutate(d => {
+    d.cells.two.enabled = false;
+    d.cells.nested = { id: 'nested', rootBeadId: 'nested', enabled: true };
+    d.cells.retired = { id: 'retired', rootBeadId: 'retired', enabled: false, retired: { outcome: 'done' } };
+    d.workerLaunches.missing = { beadId: 'missing', state: 'reserved' };
+    d.operations.orphan = { kind: 'claim', state: 'uncertain', intent: { beadId: 'orphan' } };
+    d.reviews.outside = { workBeadId: 'outside', state: 'requested' };
+  });
+  setGraph([raw('root'), raw('a', 'root', true), raw('other'), raw('b', 'other', true),
+    { ...raw('nested', 'root'), metadata: { hive_kind: 'goal' } }, raw('n', 'nested', true),
+    raw('retired'), raw('r', 'retired', true), { ...raw('orphan'), metadata: { hive_kind: 'work' } }, { ...raw('outside'), metadata: { hive_kind: 'work' } }]);
+  const hive = rt.projection();
+  assert.deepEqual(Object.values(hive.cells).map(c => c.occupiedCount), [1, 1, 1, 1]);
+  assert.equal(hive.capacity.outside, 3);
+  assert.equal(Object.values(hive.cells).reduce((n, c) => n + c.occupiedCount, hive.capacity.outside), hive.capacity.used);
+});
+
+test('summary categories partition reviewed, closed and status-only work without overlap', t => {
+  const { rt, setGraph } = fixture(t);
+  rt.metadata.mutate(d => {
+    d.reviews.claimed = { workBeadId: 'a', state: 'requested' };
+    d.reviews.closed = { workBeadId: 'c', state: 'in_review' };
+  });
+  setGraph([raw('root'), raw('a', 'root', true), { ...raw('c', 'root'), status: 'closed' },
+    { ...raw('h', 'root'), status: 'in_progress', metadata: { hive_kind: 'workstream' } },
+    { ...raw('u', 'h'), status: 'in_progress' }, raw('other')]);
+  const hive = rt.projection();
+  for (const c of [cellCounts(hive, hive.cells.one), workCounts(hive, childrenMap(hive.beads), 'root')]) {
+    assert.equal(c.in_progress, 0);
+    assert.equal(c.in_review, 1);
+    assert.equal(c.closed, 1);
+    assert.equal(c.not_active, 2);
+    assert.equal(c.open + c.in_progress + c.in_review + c.blocked + c.closed + c.not_active, c.total);
+    assert.match(countsSentence(c), /2 not active/);
+  }
+  assert.equal(hive.cells.one.occupiedCount, 2);
 });
