@@ -589,12 +589,13 @@
 .hive-zoom-btn:first-child { border-left: none; }
 .hive-zoom-btn:hover { background: var(--surface-2); }
 .hive-zoom-fit { font-size: 12.5px; }
+.hive-zoom-auto[aria-pressed="true"] { background: var(--surface-2); }
 
 .hive-stage-hint {
   position: absolute;
   left: 12px;
   bottom: 10px;
-  right: 140px;
+  right: 270px;
   margin: 0;
   font-size: 12px;
   color: var(--fg-muted, var(--fg));

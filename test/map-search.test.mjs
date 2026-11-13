@@ -337,3 +337,106 @@ test('a failed search falls back to titles and says so', t => {
   f.search('needle');
   assert.match(f.canvas().querySelector('.hive-search-count').textContent, /titles only/);
 });
+
+for (const overview of [false, true]) {
+  test(`auto-fit follows ${overview ? 'overview' : 'cell'} map replacements and resize, but pauses for gestures`, t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const f = fixture(t);
+    const saved = { ResizeObserver: globalThis.ResizeObserver, matchMedia: globalThis.matchMedia };
+    const observers = [];
+    globalThis.ResizeObserver = class {
+      constructor(callback) { this.callback = callback; observers.push(this); }
+      observe() {}
+      disconnect() { this.disconnected = true; }
+    };
+    globalThis.matchMedia = () => ({ matches: true });
+    t.after(() => Object.assign(globalThis, saved));
+    f.ctx.api.storage = { get: key => f.values.get(key), set: (key, value) => f.values.set(key, value) };
+    let top = f.top;
+    if (overview) { f.ui.closeCell(); top = f.draw(); }
+    const mount = () => {
+      const canvas = top.querySelector('.hive-canvas');
+      canvas.isConnected = true;
+      canvas.hiveViewMounted();
+      return canvas;
+    };
+    let canvas = mount();
+    t.mock.timers.tick(200);
+    const initial = canvas.hiveCaptureView();
+    const world = canvas.querySelector('.hive-world');
+    let writes = 0;
+    const set = world.setAttribute.bind(world);
+    world.setAttribute = (...args) => { writes++; set(...args); };
+    const observer = observers.at(-1);
+    observer.callback();
+    t.mock.timers.tick(200);
+    assert.equal(writes, 1, 'resize redraws once but identical fit does not write the transform again');
+    canvas.clientWidth = 1200;
+    observer.callback();
+    t.mock.timers.tick(100);
+    observer.callback();
+    t.mock.timers.tick(199);
+    assert.equal(canvas.hiveCaptureView().tx, initial.tx);
+    t.mock.timers.tick(1);
+    assert.equal(canvas.hiveCaptureView().tx, initial.tx + 100);
+    canvas.fire('wheel', { deltaMode: 0, deltaX: 40, deltaY: 0 });
+    assert.equal(canvas.hiveCaptureView().auto, false);
+    const paused = canvas.hiveCaptureView();
+    const toggle = canvas.querySelectorAll('button').find(b => b.textContent === 'Auto-fit paused');
+    assert.ok(toggle);
+    assert.equal(toggle.getAttribute('aria-pressed'), 'true');
+    canvas.clientWidth = 1400;
+    observer.callback();
+    t.mock.timers.tick(300);
+    assert.deepEqual(canvas.hiveCaptureView(), paused);
+    if (overview) {
+      f.ctx.hive.cells.other = { ...f.ctx.hive.cells.cell, id: 'other', taskId: 'other', position: { q: 5, r: 0 } };
+    } else {
+      f.beads.new = { id: 'new', parentId: 'root', kind: 'work', status: 'open', title: 'New work' };
+    }
+    top = f.draw();
+    assert.equal(observer.disconnected, true);
+    canvas = mount();
+    t.mock.timers.tick(300);
+    assert.deepEqual(canvas.hiveCaptureView(), paused, 'board updates preserve manual viewport');
+    canvas.querySelectorAll('button').find(b => b.textContent === 'Fit').fire('click');
+    assert.equal(canvas.hiveCaptureView().auto, true);
+    const before = canvas.hiveCaptureView();
+    if (overview) delete f.ctx.hive.cells.other;
+    else delete f.beads.new;
+    top = f.draw();
+    canvas = mount();
+    t.mock.timers.tick(199);
+    assert.deepEqual(canvas.hiveCaptureView(), before);
+    t.mock.timers.tick(1);
+    assert.notDeepEqual(canvas.hiveCaptureView(), before, 'removal refits the changed board');
+    canvas.hiveDisposeView();
+  });
+}
+
+
+for (const enabled of [false, true]) {
+  test(`a first-time map fits immediately with auto-fit ${enabled ? 'on' : 'off'}`, async t => {
+    fixture(t);
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { renderHexMap } = await import('../public/hex-grid.js');
+    const options = {
+      viewKey: `fresh-mount-${enabled}`, size: 60, items: [],
+      bounds: { x: 600, y: 400, w: 500, h: 400 },
+      storage: { get: () => JSON.stringify(enabled) },
+    };
+    const first = renderHexMap(options).el;
+    first.hiveViewMounted();
+    const fitted = first.hiveCaptureView();
+    assert.notEqual(fitted.tx, 0, 'mount fits before any debounce time passes');
+    assert.notEqual(fitted.ty, 0);
+    first.hiveDisposeView();
+    const next = renderHexMap({ ...options, bounds: { x: 0, y: 0, w: 100, h: 100 } }).el;
+    next.hiveViewMounted();
+    assert.deepEqual(next.hiveCaptureView(), fitted, 'existing viewport is preserved on rebuild');
+    t.mock.timers.tick(200);
+    if (enabled) assert.notDeepEqual(next.hiveCaptureView(), fitted, 'later board updates debounce');
+    else assert.deepEqual(next.hiveCaptureView(), fitted, 'disabled auto-fit leaves an existing view alone');
+    next.hiveDisposeView();
+  });
+}
