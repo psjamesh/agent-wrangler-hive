@@ -67,14 +67,14 @@ test('starting a drag focuses the separator for immediate keyboard resizing', ()
   assert.equal(f.attrs['aria-valuenow'], '520');
 });
 
-test('splitter is a 12px hairline column with no grid gap and a widened hit area', async () => {
+test('splitter is a 12px gap with no grid gap and a widened hit area', async () => {
   const { readFile } = await import('node:fs/promises');
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
   const grid = css.match(/\.hive-root\[data-view\^="cell"\] \{[^}]*\}/)[0];
   assert.match(grid, /grid-template-columns: minmax\(0, 1fr\) 12px var\(--hive-panel-width/);
   assert.match(grid, /gap: 10px 0;/);
   const open = '\\.hive-root\\[data-panels="open"\\] ';
-  assert.match(css, new RegExp(open + '\\.hive-divider::before \\{[^}]*width: 1px;'));
+  assert.match(css, new RegExp(open + '\\.hive-divider::before \\{[^}]*width: 0;'));
   assert.match(css, new RegExp(open + '\\.hive-divider::after \\{[^}]*inset: 0 -4px;'));
   assert.match(css, new RegExp(open + '\\.hive-divider\\[data-dragging\\]::before \\{ width: 3px;'));
   assert.match(css, new RegExp(open + '\\.hive-divider:focus-visible::before'));
