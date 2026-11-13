@@ -176,3 +176,120 @@ test('changing a brief and changing it back cannot revive an old readiness mark'
   await updateBead(f.rt, f.actor(), { bead_id: 'a', goal: original });
   await run(f); assert.equal(f.spawned.length, 0);
 });
+
+test('a recovered unconfirmed reservation needs attention and never submits again', async () => {
+  const f = pickupFixture(); await arm(f);
+  const bead = f.graph().beads.a;
+  f.doc().workerLaunches.lost = { id: 'lost', cellId: 'cell', taskId: 'task', beadId: 'a', state: 'reserved', source: 'automatic', requestedBy: 'queen', role: 'worker' };
+  f.doc().pickupAttempts[bead.pickup.armToken] = { token: bead.pickup.armToken, beadId: 'a', cellId: 'cell', launchId: 'lost' };
+  await run(f); await run(f);
+  assert.equal(f.spawned.length, 0);
+  assert.equal(f.doc().workerLaunches.lost.state, 'uncertain');
+  assert.equal(f.delivered.length, 1);
+});
+
+test('recovery observes a claimed worker after a lost host receipt without replay', async () => {
+  const f = pickupFixture(); await arm(f);
+  const original = f.host.sessions.spawn;
+  f.host.sessions.spawn = async opts => { await original(opts); throw new Error('lost receipt after claim'); };
+  await run(f);
+  await run(f);
+  assert.equal(f.spawned.length, 1);
+  assert.equal(Object.values(f.doc().workerLaunches)[0].state, 'launched');
+});
+
+test('untracked descendant sessions suspend automatic pickup', async () => {
+  const f = pickupFixture(); await arm(f);
+  f.board.set('escaped', { sessionId: 'escaped', spawnedBy: 'queen', taskId: 'other-task', status: 'idle' });
+  f.host.sessions.list = () => [...f.board.values()];
+  await run(f); assert.equal(f.spawned.length, 0);
+});
+
+test('a known pre-dispatch refusal refunds the rolling debit, preserving its tombstone', async () => {
+  const f = pickupFixture(); await arm(f);
+  const original = f.rt.beads.loadSnapshot; let n = 0;
+  f.rt.beads.loadSnapshot = async opts => { const graph = await original(opts); if (++n === 3) f.doc().cells.cell.enabled = false; return graph; };
+  await run(f);
+  assert.equal(f.spawned.length, 0);
+  assert.equal(f.doc().pickupRates.starts.length, 0);
+  assert.equal(Object.keys(f.doc().pickupAttempts).length, 1);
+});
+
+test('automatic workers inherit the governed Hive launch policy', async () => {
+  const f = pickupFixture(); await arm(f); await run(f);
+  const { CLAUDE_SPAWN_DENIES } = await import('../server/launch-policy.js');
+  assert.deepEqual(f.spawned[0].disallowedTools, [...CLAUDE_SPAWN_DENIES]);
+});
+
+test('finishing unclaimed ready work retires its authorization durably', async () => {
+  const f = pickupFixture(); await arm(f);
+  f.rt.beads.close = async id => { f.live[id].status = 'closed'; f.bump(id); };
+  const { finishBead } = await import('../server/ops.js');
+  await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'No worker needed' });
+  assert.equal(Object.values(f.doc().pickupAttempts)[0]?.source, 'finish');
+});
+
+test('planning readiness stays separate from pickup authorization and rejects missing prerequisites', async () => {
+  const f = pickupFixture();
+  const { readyBeads } = await import('../server/ops.js');
+  assert.deepEqual(readyBeads(f.rt, f.actor(), {}).ready.map(b => b.bead_id).sort(), ['a', 'b']);
+  assert.equal(readyBeads(f.rt, f.actor(), {}).pickup.length, 0);
+  f.live.a.dependencies.push({ issue_id: 'a', depends_on_id: 'missing', type: 'blocks' });
+  await f.rt.snapshots.refresh();
+  assert.deepEqual(readyBeads(f.rt, f.actor(), {}).ready.map(b => b.bead_id), ['b']);
+});
+
+for (const stage of ['refresh', 'export', 'pre-dispatch', 'queued-claim', 'receipt']) {
+  test(`runtime retirement at ${stage} leaves existing journals intact and starts no further work`, async () => {
+    const f = pickupFixture(); await arm(f);
+    let stoppedDoc;
+    const stop = () => { f.rt.metadata.lifetime.stop(); stoppedDoc = JSON.stringify(f.doc()); };
+    if (stage === 'refresh') { const original = f.rt.snapshots.refresh; f.rt.snapshots.refresh = async () => { const result = await original(); stop(); return result; }; }
+    if (stage === 'export' || stage === 'pre-dispatch') { const original = f.rt.beads.loadSnapshot; let n = 0; f.rt.beads.loadSnapshot = async opts => { const graph = await original(opts); if (++n === (stage === 'export' ? 1 : 3)) stop(); return graph; }; }
+    if (stage === 'queued-claim') { const original = f.rt.beads.claim; f.rt.beads.claim = async (...args) => { stop(); return original(...args); }; }
+    if (stage === 'receipt') { const original = f.host.sessions.spawn; f.host.sessions.spawn = async opts => { const result = await original(opts); stop(); return result; }; }
+    await run(f);
+    assert.ok(stoppedDoc);
+    assert.equal(JSON.stringify(f.doc()), stoppedDoc);
+    if (!['receipt', 'queued-claim'].includes(stage)) assert.equal(f.spawned.length, 0);
+    if (stage !== 'receipt') assert.equal(f.live.a.assignee || null, null);
+  });
+}
+
+test('Unlimited permits more than two concurrent automatic builders after rolling windows', async () => {
+  const f = pickupFixture(0);
+  f.live.c = { ...structuredClone(f.live.a), id: 'c', dependencies: [{ issue_id: 'c', depends_on_id: 'root', type: 'parent-child' }] };
+  await f.rt.snapshots.refresh();
+  for (const id of ['a', 'b', 'c']) await arm(f, id);
+  for (let i = 0; i < 3; i++) { await run(f); f.advance(60000); }
+  assert.equal(f.spawned.length, 3);
+  assert.equal(Object.values(f.live).filter(b => b.assignee).length, 3);
+});
+
+for (const change of ['queen', 'mark', 'task']) {
+  test(`${change} changing during the native claim refuses first agent action`, async () => {
+    const f = pickupFixture(); await arm(f);
+    const original = f.rt.beads.claim;
+    f.rt.beads.claim = async (...args) => {
+      const result = await original(...args);
+      if (change === 'queen') f.doc().cells.cell.queenGeneration += 1;
+      if (change === 'mark') { f.live.a.metadata.hive_pickup.armed = false; f.bump('a'); }
+      if (change === 'task') f.host.tasks.get = () => ({ archived: true });
+      return result;
+    };
+    await run(f);
+    assert.equal(f.actions.length, 0);
+    assert.equal(f.live.a.assignee, 'aw:worker-1');
+  });
+}
+
+test('removing readiness does not hide an uncertain launch from bead details', async () => {
+  const f = pickupFixture(); await arm(f);
+  f.host.sessions.spawn = async opts => { f.spawned.push(opts); throw new Error('unknown receipt'); };
+  await run(f);
+  await pickup.setPickup(f.rt, f.host, f.actor(), { bead_id: 'a', ready: false });
+  const state = pickup.pickupState(f.rt, f.host, f.doc().cells.cell, f.graph().beads.a, f.graph());
+  assert.equal(state.armed, false);
+  assert.equal(state.state, 'attention');
+  assert.match(state.reason, /unknown receipt/);
+});

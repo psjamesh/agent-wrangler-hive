@@ -8,7 +8,8 @@ import { assertCurrent, isCurrent } from './lifetime.js';
 import { newId } from './metadata-store.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 import { launchRate } from './launch-budget.js';
-import { spawnWorker } from './workers.js';
+import { spawnWorker, workerLaunchInFlight } from './workers.js';
+import { ungovernedDescendants } from './tracking.js';
 import { safeDeliver } from './sessions.js';
 
 const UNSETTLED = new Set(['pending', 'partial', 'uncertain']);
@@ -78,13 +79,13 @@ export function managedPickupReceipt(rt, before, after) {
   });
 }
 
-export function structuralPickupReasons(rt, graph, bead, { launchId = null, ownOperationId = null } = {}) {
+export function structuralPickupReasons(rt, graph, bead, { launchId = null, ownOperationId = null, requireBrief = true } = {}) {
   if (!bead) return ['Bead is missing'];
   const reasons = [];
   if (bead.status !== 'open') reasons.push(`Work is ${bead.status}`);
   if (bead.assignee) reasons.push('Work is already assigned');
   if (GROUP_KINDS.has(bead.kind) || ['external', 'decision'].includes(bead.kind)) reasons.push('Only bounded work items can be picked up');
-  if (!bead.goal.trim() || !bead.acceptance.trim()) reasons.push('Work needs a goal and acceptance criteria');
+  if (requireBrief && (!bead.goal?.trim() || !bead.acceptance?.trim())) reasons.push('Work needs a goal and acceptance criteria');
   if (bead.waitingFor || bead.isBlocked) reasons.push(bead.waitingFor || 'Native blocked state needs reconciliation');
   if (openDescendants(graph.beads, bead.id).length) reasons.push('Work has open descendants');
   for (const edge of graph.edges) if (edge.dependent === bead.id && edge.blocking && graph.beads[edge.prerequisite]?.status !== 'closed') reasons.push(`Waiting on prerequisite ${edge.prerequisite}`);
@@ -103,16 +104,19 @@ function cellReasons(rt, host, cell) {
   const queen = host?.sessions?.get?.(cell.queenSessionId);
   if (!queen || queen.archived || queen.status === 'exited') return ['Current queen is missing, archived or exited'];
   if (Object.values(rt.metadata.read().launches || {}).some(l => l.cellId === cell.id && ['pending', 'bound', 'uncertain'].includes(l.state))) return ['Queen transition needs reconciliation'];
+  if (ungovernedDescendants(rt, host, cell, Object.values(rt.snapshots.graph?.beads || {}).filter(b => b.status !== 'closed')).length) return ['Untracked descendant sessions need queen reconciliation'];
   return [];
 }
 
 export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { launchId = null, ownOperationId = null, now = Date.now(), checkVersion = true, rates = true } = {}) {
   const mark = bead?.pickup;
-  if (!mark?.armed) return { ...mark, armed: false, eligible: false, state: 'unmarked', reason: 'Not marked ready for pickup' };
+  const unmarked = { ...mark, armed: false, eligible: false, state: 'unmarked', reason: 'Not marked ready for pickup' };
+  if (!mark?.armToken) return unmarked;
   const attempt = pickupConsumed(rt.metadata.read(), bead);
   const launch = attempt?.launchId && rt.metadata.read().workerLaunches?.[attempt.launchId];
   const base = { ...mark, nativeVersion: receipt(rt, bead)?.nativeVersion, eligible: false, launchId: launch?.id };
-  if (attempt && attempt.launchId !== launchId) return { ...base, state: launch && ['reserved', 'binding', 'claimed'].includes(launch.state) ? 'starting' : launch && ATTENTION.has(launch.state) ? 'attention' : 'consumed', reason: launch?.error || (launch?.state === 'launched' ? 'Worker launched; readiness was consumed' : 'Readiness was consumed; deliberate rearm is required') };
+  if (attempt && attempt.launchId !== launchId) return { ...base, state: launch && ['reserved', 'binding', 'claimed'].includes(launch.state) ? 'starting' : launch && ATTENTION.has(launch.state) ? 'attention' : 'consumed', reason: (launch && ATTENTION.has(launch.state) ? launch.error : '') || (launch?.state === 'launched' ? 'Worker launched; readiness was consumed' : 'Readiness was consumed; deliberate rearm is required') };
+  if (!mark.armed) return unmarked;
   const reasons = cellReasons(rt, host, cell);
   if (receipt(rt, bead)?.heldReason) reasons.push(receipt(rt, bead).heldReason);
   if (rt.snapshots.current?.error || rt.snapshots.hierarchyCurrent === false) reasons.push('Current Beads hierarchy is incomplete');
@@ -134,11 +138,20 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
 
 export function assertPickupAuthorization(rt, host, launch, graph, { ownOperationId = null, checkVersion = true } = {}) {
   const cell = rt.metadata.cell(launch.cellId);
-  if (!cell || cell.queenSessionId !== launch.authorizedBy || (cell.queenGeneration || 0) !== launch.queenGeneration) throw new HiveError('Pickup queen authority changed.', 'refused');
+  if (!cell || (launch.taskId && cell.taskId !== launch.taskId) || cell.queenSessionId !== launch.authorizedBy || (cell.queenGeneration || 0) !== launch.queenGeneration) throw new HiveError('Pickup queen authority changed.', 'refused');
+  if (launch.profileObservedAt && Date.now() - launch.profileObservedAt > 60000) throw new HiveError('Pickup profile observation expired before startup.', 'refused');
   const bead = graph.beads[launch.beadId];
+  if (launch.profile && JSON.stringify(launch.profile) !== JSON.stringify(bead?.pickup?.profile)) throw new HiveError('Pickup profile changed.', 'refused');
   if (bead?.pickup?.armToken !== launch.armToken || bead.pickup.profileRevision !== launch.profileRevision) throw new HiveError('Pickup readiness or profile changed.', 'refused');
   const state = pickupState(rt, host, cell, bead, graph, { launchId: launch.id, ownOperationId, checkVersion, rates: false });
   if (!state.eligible) throw new HiveError(state.reason, 'refused');
+}
+
+export function assertPickupClaimed(rt, host, launch, graph, sid) {
+  const bead = graph.beads[launch.beadId];
+  if (!bead || bead.status !== 'in_progress' || bead.assignee !== actorFor(sid)) throw new HiveError('Pickup ownership changed before first action.', 'refused');
+  const beforeClaim = { ...graph, beads: { ...graph.beads, [bead.id]: { ...bead, status: 'open', assignee: null } } };
+  assertPickupAuthorization(rt, host, launch, beforeClaim, { checkVersion: false });
 }
 
 export async function setPickup(rt, host, actor, input) {
@@ -157,13 +170,14 @@ export async function setPickup(rt, host, actor, input) {
     assertCurrent(rt, host);
     const bead = graph.beads[input.bead_id];
     if (!bead || !descendantIds(graph.beads, cell.rootBeadId).has(bead.id) || bead.id === cell.rootBeadId) throw new HiveError('Mark a work bead below this hive goal.');
+    if (Object.values(rt.metadata.read().operations || {}).some(o => UNSETTLED.has(o.state) && (o.beadIds?.includes(bead.id) || o.intent?.beadId === bead.id))) throw new HiveError('Reconcile the earlier Beads write before changing pickup readiness.', 'conflict');
     const previous = bead.pickup;
     if (input.ready && previous?.armed && !input.rearm && !pickupConsumed(rt.metadata.read(), bead) && receipt(rt, bead)?.nativeVersion === bead.updatedAt && !receipt(rt, bead)?.heldReason && previous.briefDigest === briefDigest(bead, cell.id) && (!profile || JSON.stringify(profile) === JSON.stringify(previous.profile))) return { bead_id: bead.id, pickup: { ...previous, nativeVersion: bead.updatedAt } };
     if (input.ready && previous?.armToken) {
       if (!input.rearm || input.expected_token !== previous.armToken || !text(input.reason, 'reason', 2000)) throw new HiveError('Rearm needs rearm: true, the expected_token and a reason.', 'conflict');
       const old = pickupConsumed(rt.metadata.read(), bead);
       const launch = old?.launchId && rt.metadata.read().workerLaunches[old.launchId];
-      if (bead.assignee || launch && (RESERVED_LAUNCH_STATES.has(launch.state) || host.sessions.get(launch.sessionId) && !host.sessions.get(launch.sessionId).archived)) throw new HiveError('Reconcile the previous launch/session and claim before rearming.', 'conflict');
+      if (bead.assignee || launch && (RESERVED_LAUNCH_STATES.has(launch.state) || launch.sessionId && host.sessions.get(launch.sessionId) && !host.sessions.get(launch.sessionId).archived)) throw new HiveError('Reconcile the previous launch/session and claim before rearming.', 'conflict');
     }
     if (input.ready && (GROUP_KINDS.has(bead.kind) || ['external', 'decision'].includes(bead.kind) || !bead.goal.trim() || !bead.acceptance.trim() || bead.status === 'closed')) throw new HiveError('Readiness needs an open bounded work item with goal and acceptance.');
     const selected = profile || previous?.profile;
@@ -190,6 +204,28 @@ export async function setPickup(rt, host, actor, input) {
   });
 }
 
+async function recoverPickupAttempts(rt, host) {
+  const pending = Object.values(rt.metadata.read().workerLaunches || {}).filter(l => l.source === 'automatic' && RESERVED_LAUNCH_STATES.has(l.state) && !workerLaunchInFlight(l.id));
+  if (!pending.length) return;
+  const graph = await rt.beads.loadSnapshot({ all: true });
+  assertCurrent(rt, host);
+  rt.metadata.mutate(d => {
+    for (const prior of pending) {
+      const l = d.workerLaunches[prior.id];
+      if (!l || !RESERVED_LAUNCH_STATES.has(l.state) || workerLaunchInFlight(l.id)) continue;
+      const session = l.sessionId && host.sessions.get(l.sessionId);
+      const bound = (d.bindings[l.cellId] || []).some(b => b.active && b.sessionId === l.sessionId && b.beadId === l.beadId && b.workerLaunchId === l.id);
+      if (session && !session.archived && bound && graph.beads[l.beadId]?.assignee === actorFor(l.sessionId)) {
+        l.state = 'launched';
+        l.recoveredAt = Date.now();
+      } else {
+        l.state = 'uncertain';
+        l.error ||= 'Pickup startup confirmation is missing; reconcile this launch before rearming';
+      }
+    }
+  });
+}
+
 async function notifyAttempts(rt, host) {
   for (const attempt of Object.values(rt.metadata.read().pickupAttempts || {})) {
     assertCurrent(rt, host);
@@ -211,6 +247,8 @@ export function createPickupDispatcher({ runtime: rt, host, now = Date.now }) {
     if (!active() || rt.metadata.error || rt.beads.status.state !== 'ready') return;
     await rt.snapshots.refresh();
     if (!active() || rt.snapshots.current.error || rt.snapshots.hierarchyCurrent === false) return;
+    await recoverPickupAttempts(rt, host);
+    if (!active()) return;
     await notifyAttempts(rt, host);
     const cells = rt.metadata.cells().sort((a, b) => a.id.localeCompare(b.id));
     const cursor = rt.metadata.read().pickupRates?.cursor;
@@ -227,7 +265,7 @@ export function createPickupDispatcher({ runtime: rt, host, now = Date.now }) {
         .sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || a.pickup.armedAt - b.pickup.armedAt || a.id.localeCompare(b.id));
       const bead = beads[0];
       if (!bead) continue;
-      const authorization = { armToken: bead.pickup.armToken, profileRevision: bead.pickup.profileRevision, authorizedBy: cell.queenSessionId, queenGeneration: cell.queenGeneration || 0, observedAt: now() };
+      const authorization = { armToken: bead.pickup.armToken, profileRevision: bead.pickup.profileRevision, authorizedBy: cell.queenSessionId, queenGeneration: cell.queenGeneration || 0, observedAt: now(), profileObservedAt: Date.now() };
       try {
         const profile = await validatePickupProfile(rt, host, bead.pickup.profile);
         if (!active()) return;

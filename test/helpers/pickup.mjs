@@ -15,7 +15,7 @@ export function pickupFixture(limit = 8) {
   const context = () => ({ issues: structuredClone(Object.values(live)), errors: [] });
   const bump = id => { live[id].updated_at = `v${++version}`; };
   const rt = {
-    metadata: { lifetime: new RuntimeLifetime(), read: () => doc, cell: id => doc.cells[id], cells: () => Object.values(doc.cells), mutate: fn => { const next = structuredClone(doc); const r = fn(next); doc = next; return r; } },
+    metadata: { lifetime: new RuntimeLifetime(), read: () => doc, cell: id => doc.cells[id], cells: () => Object.values(doc.cells), mutate: fn => { rt.metadata.lifetime.assertCurrent(); const next = structuredClone(doc); const r = fn(next); doc = next; return r; } },
     snapshots: { graph: graph(), current: { error: null, loadedAt: 1 }, hierarchyCurrent: true, refresh: async () => { rt.snapshots.graph = graph(); return rt.snapshots.current; }, invalidate() {} },
     settings: { get: () => limit }, pendingParticipants: new Map(), changed() {}, log() {},
     beads: {
@@ -32,7 +32,7 @@ export function pickupFixture(limit = 8) {
       claim: async (id, who, check) => { check?.(context()); if (live[id].assignee && live[id].assignee !== who) throw new Error('claimed'); live[id].assignee = who; live[id].status = 'in_progress'; bump(id); return { already: false }; },
     },
   };
-  const spawned = [], delivered = [];
+  const spawned = [], delivered = [], actions = [];
   const host = { stores: { hive: rt }, settings: rt.settings, agents: { list: async () => structuredClone(catalog) }, tasks: { get: id => ({ id, taskId: id }), forSession: id => board.has(id) ? { taskId: board.get(id).taskId } : null }, sessions: { get: id => board.get(id), forTask: id => [...board.values()].filter(s => s.taskId === id) }, deliver: async (id, message) => { delivered.push({ id, message }); return { mode: 'live' }; } };
   host.sessions.spawn = async opts => {
     spawned.push(opts);
@@ -41,11 +41,12 @@ export function pickupFixture(limit = 8) {
     workerBeforeDispatch({ sessionId: sid, ext: opts.ext.hive, host });
     const out = await workerLaunchContext({ sid, task: { id: opts.taskId }, ext: opts.ext.hive, reason: 'spawn', host });
     if (out?.refuse) throw new Error(out.refuse);
+    actions.push(sid);
     return { sessionId: sid };
   };
   rt.host = host;
   rt.metadata.lifetime.attach(rt, host);
   const actor = (id = 'queen', role = 'queen') => ({ sessionId: id, role, cell: doc.cells.cell, cells: [{ cell: doc.cells.cell, role }] });
   const profile = { agent: 'claude', model: 'sonnet', effort: 'medium', cwd: '/tmp/fake-repo', worktree: { auto: true }, intent: 'Use the mob-worker skill.' };
-  return { rt, host, live, board, catalog, spawned, delivered, actor, profile, doc: () => doc, bump, graph, now: () => now, advance: ms => { now += ms; }, setLimit: n => { limit = n; } };
+  return { rt, host, live, board, catalog, spawned, delivered, actions, actor, profile, doc: () => doc, bump, graph, now: () => now, advance: ms => { now += ms; }, setLimit: n => { limit = n; } };
 }

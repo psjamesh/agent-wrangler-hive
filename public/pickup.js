@@ -4,20 +4,20 @@ const labels = { ready: 'Ready for pickup', queued: 'Ready for pickup · waiting
 
 export function pickupDetails({ api, ui, send }, cell, bead) {
   const mark = bead.pickup || {};
-  const key = `pickup:${bead.id}`;
+  const key = `pickup:${bead.id}:${mark.armToken || 'new'}`;
   const agents = api?.agents?.() || [];
   let draft = ui.form(key);
   const editable = cell.enabled && !cell.snapshot && !cell.retired && bead.status !== 'closed' && !['goal', 'workstream', 'external', 'decision'].includes(bead.kind);
   if (!draft && editable) {
     const agent = agents.find(a => a.id === (mark.profile?.agent || 'claude')) || agents[0];
     const model = agent?.models?.find(m => m.value === mark.profile?.model) || agent?.models?.find(m => m.default) || agent?.models?.[0];
-    draft = { agent: agent?.id || 'claude', model: model?.value || '', effort: model?.autoEffort || model?.efforts?.[0] || agent?.efforts?.[0]?.value || '', cwd: '', intent: '', ...mark.profile, auto: mark.profile?.worktree ? mark.profile.worktree.auto === true : true, reason: '' };
+    draft = { agent: agent?.id || 'claude', model: model?.value || '', effort: model?.autoEffort || model?.efforts?.[0] || agent?.efforts?.[0]?.value || '', cwd: '', intent: '', ...mark.profile, auto: mark.profile?.worktree ? true : !mark.profile, reason: '' };
     ui.setForm(key, draft);
   }
   const sendMark = ready => {
     if (ui.form(key)?.saving) return;
     const current = ui.form(key);
-    const profile = ready ? { agent: current.agent, model: current.model, effort: current.effort, cwd: current.cwd, intent: current.intent || undefined, ...(current.auto ? { worktree: { auto: true } } : {}) } : undefined;
+    const profile = ready ? { agent: current.agent, model: current.model, effort: current.effort, cwd: current.cwd, intent: current.intent || undefined, ...(current.auto ? { worktree: current.worktree || { auto: true } } : {}) } : undefined;
     ui.patchForm(key, { saving: true, error: '' });
     send({ type: 'hive-bead-pickup', cellId: cell.id, beadId: bead.id, ready, ...(profile ? { profile } : {}), ...(ready && mark.armToken ? { rearm: true, expectedToken: mark.armToken, reason: current.reason } : {}) }, {
       onReply: reply => ui.patchForm(key, { saving: false, error: reply.ok ? '' : reply.error || 'Readiness could not be saved.' }),

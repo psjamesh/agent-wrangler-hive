@@ -1,7 +1,7 @@
 import { safeDeliver } from './sessions.js';
 import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
-import { assertPickupAuthorization, consumePickup } from './pickup.js';
+import { assertPickupAuthorization, assertPickupClaimed, consumePickup } from './pickup.js';
 import { reservePickupStart } from './launch-budget.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 import { holdsBead } from './bead-sessions.js';
@@ -14,6 +14,7 @@ import { applyLaunchPolicy, launchRestriction } from './launch-policy.js';
 import { ADMISSION_LOCK, capacity, checkAdmission, exportedGraph, RESERVED_LAUNCH_STATES } from './admission.js';
 
 const inFlight = new Set();
+export function workerLaunchInFlight(id) { return inFlight.has(id); }
 const RETIRED_LAUNCH_STATES = new Set(['archived', 'cancelled', 'abandoned', 'refused', 'review-ended']);
 
 function launchOptions(input) {
@@ -69,7 +70,7 @@ function gateAuthority(rt, host, launchId, { sid, task, ext, initial }, expected
   const requester = initial ? coordinator(rt, host, { sessionId: launch.requestedBy, cell: { id: launch.cellId } }, { attach: launch.role !== 'worker', beadId: launch.beadId }) : resolveCaller(rt, host, sid, launch.cellId);
   ensureWritable(rt);
   reviewForLaunch(rt, launch, { sid, initial });
-  if (initial && launch.source === 'automatic' && !launch.claimStarted) {
+  if (initial && launch.source === 'automatic') {
     const cell = rt.metadata.cell(launch.cellId);
     if (cell?.queenSessionId !== launch.authorizedBy || (cell.queenGeneration || 0) !== launch.queenGeneration) throw new HiveError('Pickup queen authority changed.');
   }
@@ -101,6 +102,7 @@ function recordLaunchFailure(rt, launchId, error, dispatched = true) {
       if (review && !OPEN_REVIEW_STATES.has(review.state)) launch.state = review.state === 'cancelled' ? 'cancelled' : 'review-ended';
       else launch.state = dispatched ? 'uncertain' : 'refused';
     }
+    if (!dispatched && launch.source === 'automatic' && d.pickupRates?.starts) d.pickupRates.starts = d.pickupRates.starts.filter(s => s.launchId !== launchId);
     launch.error = String(error.message).slice(0, 1000);
     launch.updatedAt = Date.now();
     return launch.state;
@@ -199,6 +201,11 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
           if (!fresh || fresh.status === 'closed' || fresh.assignee !== `aw:${sid}`) throw new HiveError(`Bead ${held} is no longer held by this worker.`, 'conflict');
         }
       } });
+      if (initial && launch.source === 'automatic') {
+        assertCurrent(rt, host);
+        const claimedGraph = await rt.beads.loadSnapshot({ all: true });
+        assertPickupClaimed(rt, host, launch, claimedGraph, sid);
+      }
       gateAuthority(rt, host, launchId, { sid, task, ext, initial }, launch);
       rt.metadata.mutate((d) => {
         const rec = d.workerLaunches[launchId];
@@ -248,7 +255,7 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     requireLaunchScope(actor, graph, bead.id);
     reviewForLaunch(rt, { reviewId, beadId: bead.id, cellId: cell.id });
     checkAdmission(rt, graph, bead.id, { sessionId: null, review: attach });
-    const automatic = pickup ? { ...pickup, source: 'automatic' } : {};
+    const automatic = pickup ? { ...pickup, source: 'automatic', profile: structuredClone(graph.beads[bead.id].pickup.profile), briefDigest: graph.beads[bead.id].pickup.briefDigest } : {};
     if (pickup) {
       assertPickupAuthorization(rt, host, { ...automatic, id: launchId, cellId: cell.id, beadId: bead.id }, graph);
       if (now() - pickup.observedAt > 60000) throw new HiveError('Pickup profile observation is stale.', 'refused');

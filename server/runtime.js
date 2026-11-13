@@ -75,9 +75,9 @@ export class HiveRuntime {
     try { reconcileRequests(this, host, { startup: true }); } catch (err) { this.log(`hive: requests unavailable: ${err.message}`); }
     this.recheck()
       .then(() => (this.metadata.lifetime.isCurrent(host) ? recover(this, host) : null))
-      .then(() => {
-        if (!this.metadata.lifetime.isCurrent(host)) return;
-        this.pickup = createPickupDispatcher({ runtime: this, host });
+      .then((recovered) => {
+        if (recovered !== true || !this.metadata.lifetime.isCurrent(host)) return;
+        this.pickup ||= createPickupDispatcher({ runtime: this, host });
         this.pickup.schedule();
       })
       .catch((err) => this.log(`hive: initial check failed: ${err.message}`));
@@ -91,8 +91,10 @@ export class HiveRuntime {
         await notifyResolution(this, this.host, r.id);
       }
     }
-    await recover(this, this.host);
-    return this.pickup?.run();
+    const recovered = await recover(this, this.host);
+    if (recovered !== true || !this.metadata.lifetime.isCurrent()) return;
+    this.pickup ||= createPickupDispatcher({ runtime: this, host: this.host });
+    return this.pickup.run();
   }
 
   afterWrite(beadIds) {

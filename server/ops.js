@@ -1,4 +1,4 @@
-import { consumePickup, managedPickupReceipt, pickupState } from './pickup.js';
+import { consumePickup, managedPickupReceipt, pickupState, structuralPickupReasons } from './pickup.js';
 import { storedRole, apiRole, holdsBead } from './bead-sessions.js';
 import { REGION_LAYOUT_VERSION } from './region-migration.js';
 import crypto from 'node:crypto';
@@ -1086,7 +1086,7 @@ export async function claimBead(rt, actor, { bead_id }, { launchId = null, valid
       const graph = exportedGraph(context);
       if (!descendantIds(graph.beads, cell.rootBeadId).has(id)) throw new HiveError(`Bead ${id} moved outside this cell.`, 'conflict');
       checkAdmission(rt, graph, id, { sessionId: actor.sessionId, launchId, ownOperationId: opId });
-      rt.metadata.mutate(d => consumePickup(d, graph.beads[id], { source: 'claim', operationId: opId }));
+      if (graph.beads[id]?.pickup?.armToken) rt.metadata.mutate(d => consumePickup(d, graph.beads[id], { source: 'claim', operationId: opId }));
     });
     phase.applied = true;
     return { already: res.already, journal: { already: res.already } };
@@ -1307,7 +1307,9 @@ export async function finishBead(rt, actor, input) {
     if (fresh.assignee && fresh.assignee !== who) {
       throw new HiveError(`Bead ${id} is claimed by ${fresh.assignee}, so only that session can finish it. Nothing was changed. Ask the holder to finish it with hive_finish_bead; if it cannot, a queen or coordinator can check with it and then release the claim with hive_release_bead (force: true and a reason) before finishing.`, 'conflict');
     }
-    const { evidence } = normalizeIssue(fresh);
+    const normalized = normalizeIssue(fresh);
+    if (normalized.pickup?.armToken) rt.metadata.mutate(d => consumePickup(d, normalized, { source: 'finish', operationId: opId }));
+    const { evidence } = normalized;
     const next = [...evidence, ...add].slice(-LIMITS.evidence);
     await rt.beads.update(id, { summary, evidence: next }, who);
     phase.applied = true;
@@ -1341,11 +1343,9 @@ export function readyBeads(rt, actor, { under_bead_id, limit }) {
     if (c.id !== cell.id) throw new HiveError(`Bead ${under_bead_id} is in another cell.`);
     scope = descendantIds(beads, under_bead_id);
   }
-  const hasOpenChildren = new Set(Object.values(beads).filter((b) => b.parentId && OPEN_STATUSES.includes(b.status)).map((b) => b.parentId));
-  const waiting = (id) => edges.filter((e) => e.dependent === id && e.blocking && beads[e.prerequisite] && beads[e.prerequisite].status !== 'closed').map((e) => e.prerequisite);
   const ready = [...scope]
     .map((id) => beads[id])
-    .filter((b) => b && b.kind !== 'external' && b.id !== cell.rootBeadId && b.status === 'open' && !openReview(rt, b.id) && !b.assignee && !hasOpenChildren.has(b.id) && waiting(b.id).length === 0)
+    .filter((b) => b && b.id !== cell.rootBeadId && structuralPickupReasons(rt, { beads, edges }, b, { requireBrief: false }).length === 0)
     .sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || String(a.createdAt).localeCompare(String(b.createdAt)))
     .slice(0, Math.min(Math.max(Number(limit) || 20, 1), 100))
     .map((b) => ({ bead_id: b.id, title: b.title, kind: b.kind, parent_id: b.parentId, next_action: b.nextAction, acceptance: b.acceptance, pickup: pickupState(rt, rt.host, cell, b) }));

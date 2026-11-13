@@ -1,6 +1,6 @@
 # Automatic work pickup
 
-Every enabled, fully set-up hive automatically starts work marked ready when there is global work capacity. **Maximum active workers** controls concurrency across hives (default 8, 0 means Unlimited). One work bead occupies one slot, including its reviews. The rolling start guard permits one automatic start per hive and two across all hives in 60 seconds. It remains active with Unlimited capacity.
+Every enabled, fully set-up hive automatically starts work marked ready when there is global work capacity. **Maximum active workers** controls concurrency across hives (default 8, 0 means Unlimited). One work bead occupies one slot, including its reviews. The rolling start guard permits one automatic start per hive and two across all hives in 60 seconds. It remains active with Unlimited capacity. Explicit worker, review and queen-handoff launches retain their existing capacity behavior and do not consume these automatic-start debits.
 
 The queen keeps responsibility for decomposition, priorities, dependencies, sufficiently clear briefs, readiness judgments, reviews, recovery, acceptance and integration. Pickup never closes work, launches a review, replaces a worker or merges code.
 
