@@ -9,7 +9,7 @@ A Hive cell is one Agent Wrangler task with a durable work record: a graph of *b
 
 ## First contact
 
-1. Call `hive_context`. It finds your cell from your task, or from a binding the queen made, and shows the cell goal, the beads and who holds what. If your brief names a bead, pass it as `bead_id` to get it in full. If you take part in several cells, pass `cell_id`.
+1. Call `hive_context` with `scope: "bead"`. It returns your bead, its parent chain and direct links, its visible topics and requests, and your own claims and bindings. Pass your brief's bead as `bead_id`; otherwise it defaults to your single claimed or bound bead. If there are several, supply `bead_id` explicitly. If you take part in several cells, pass `cell_id`. With no assigned bead, omit scope to find work; the full cell read remains the queen's default.
 2. A worker launched with `hive_spawn_worker` already owns its bead; verify it in context. A reviewer launched by `hive_request_review` instead has a reviewer binding on the work bead; verify it and leave the builder's claim in place. Otherwise claim your bead with `hive_claim_bead`. A claim records that your session is doing it. If someone else holds the bead, don't take it over: say so with `hive_publish` and wait for the queen.
 3. If your brief has no bead, use `hive_ready` to see what can start. Claim only what your brief lets you take on.
 

@@ -298,8 +298,8 @@ export async function retryDelivery(rt, host, args) {
   if (['uncertain', 'pending'].includes(r.delivery.state) && !args.confirm_uncertain) fail('Check receipt first; explicitly confirm retry of an uncertain delivery.', 'uncertain');
   return deliverAnswer(rt, host, r);
 }
-export function requestContext(rt, actor) {
-  const all = values(rt).filter(r => r.cellId === actor.cell.id);
+export function requestContext(rt, actor, { bead_id } = {}) {
+  const all = values(rt).filter(r => r.cellId === actor.cell.id && (!bead_id || r.beadId === bead_id || rt.metadata.read().threads?.[actor.cell.id]?.[r.threadId]?.beadId === bead_id));
   const queued = actor.role === 'queen' ? all.filter(r => r.state === 'open' && r.audience === 'queen') : [];
   return { my_requests: all.filter(r => r.requesterSessionId === actor.sessionId).slice(-50).map(r => ({ ...r, link: link(r) })), ...(actor.role === 'queen' ? { input_requests: queued.slice(0, 50).map(r => ({ ...r, link: link(r) })), input_requests_total: queued.length, recent_input_requests: all.filter(r => r.state !== 'open' || r.audience !== 'queen').slice(-50).map(r => ({ ...r, link: link(r) })) } : {}) };
 }

@@ -12,6 +12,7 @@ import { spawnWorker, reconcileWorkerLaunch } from './workers.js';
 import { requestReview, reviewVerdict, cancelReview } from './reviews.js';
 import { resolveCaller, participation } from './access.js';
 import * as ops from './ops.js';
+import { HiveError } from './ops.js';
 import { sessionSummary } from './sessions.js';
 import { descendantIds, openDescendants, LINK_TYPES, OUTCOMES, SETTABLE_STATUSES } from './bead-model.js';
 import { cellContextConversation, publish, acknowledgeInput, updateThread } from './conversation.js';
@@ -116,9 +117,57 @@ function compactBead(rt, b, { full, cell }) {
   return out;
 }
 
-export async function buildContext(rt, host, actor, { include_closed = false, bead_id } = {}) {
+function scopedBeadId(rt, actor, explicit) {
+  const { beads } = rt.snapshots.graph;
+  const ids = descendantIds(beads, actor.cell.rootBeadId);
+  const candidates = new Set([
+    ...[...ids].filter(id => beads[id]?.status !== 'closed' && beads[id]?.ownerSessionId === actor.sessionId),
+    ...(rt.metadata.read().bindings[actor.cell.id] || []).filter(b => b.active && b.sessionId === actor.sessionId && ids.has(b.beadId)).map(b => b.beadId),
+  ]);
+  const id = explicit || (candidates.size === 1 ? [...candidates][0] : null);
+  if (!id) throw new HiveError('Bead scope needs bead_id when you have no claimed or bound bead, or more than one.');
+  if (!ids.has(id) || !beads[id]) throw new HiveError('Unknown bead in this cell.');
+  return id;
+}
+
+function beadContext(rt, host, actor, beadId, conversation) {
+  const cell = actor.cell;
+  const { beads, edges } = rt.snapshots.graph;
+  const ids = descendantIds(beads, cell.rootBeadId);
+  const focus = beads[beadId];
+  const parents = [];
+  const seen = new Set([beadId]);
+  for (let id = focus.parentId; ids.has(id) && beads[id] && !seen.has(id); id = beads[id]?.parentId) {
+    seen.add(id);
+    parents.push(beads[id]);
+  }
+  const brief = b => ({ bead_id: b.id, parent_id: b.parentId, title: b.title, kind: b.kind, status: b.status });
+  const links = edges.filter(e => e.dependent === beadId || e.prerequisite === beadId)
+    .map(e => ({ dependent: e.dependent, prerequisite: e.prerequisite, type: e.type, blocking: e.blocking }));
+  const linked = new Set(links.flatMap(e => [e.dependent, e.prerequisite]));
+  linked.delete(beadId);
+  const bindings = (rt.metadata.read().bindings[cell.id] || []).filter(b => b.active && b.sessionId === actor.sessionId);
+  return {
+    cell: { cell_id: cell.id, task_id: cell.taskId, task_name: host.tasks.get(cell.taskId)?.name || '', root_bead_id: cell.rootBeadId, queen_session_id: cell.queenSessionId, goal: beads[cell.rootBeadId]?.goal || '', acceptance: beads[cell.rootBeadId]?.acceptance || '', setup: cell.setup?.state || null },
+    you: { session_id: actor.sessionId, role: actor.role, claims: [...ids].filter(id => beads[id]?.status !== 'closed' && beads[id]?.ownerSessionId === actor.sessionId), bindings: bindings.map(b => ({ bead_id: b.beadId, role: b.role })) },
+    focus: compactBead(rt, focus, { full: true, cell }),
+    parents: parents.map(brief),
+    links,
+    linked_beads: [...linked].filter(id => ids.has(id) && beads[id]).map(id => brief(beads[id])),
+    ...conversation,
+    ...requests.requestContext(rt, actor, { bead_id: beadId }),
+    snapshot: { loaded_at: rt.snapshots.current.loadedAt, error: rt.snapshots.current.error, backend: rt.beads.status.state },
+  };
+}
+
+export async function buildContext(rt, host, actor, { include_closed = false, bead_id, scope = 'cell' } = {}) {
   await rt.snapshots.refresh();
-  return cellContextConversation(rt, host, actor, {}, (conversation, actor) => {
+  if (scope === 'bead') {
+    actor = resolveCaller(rt, host, actor.sessionId, actor.cell.id);
+    bead_id = scopedBeadId(rt, actor, bead_id);
+  }
+  return cellContextConversation(rt, host, actor, scope === 'bead' ? { bead_id } : {}, (conversation, actor) => {
+    if (scope === 'bead') return beadContext(rt, host, actor, bead_id, conversation);
     const cell = actor.cell;
     const { beads, edges } = rt.snapshots.graph;
     const task = host.tasks.get(cell.taskId);
@@ -202,10 +251,11 @@ const evidenceSchema = strictObject({
 
 export const contextTool = hiveTool({
   name: 'hive_context',
-  description: 'Read your Hive cell: its goal and acceptance, the human\'s queen instructions (how the queen should work), your role, every open bead with goal, acceptance, status, owner, waiting links and evidence, recent closed beads, links, the sessions involved and their AW status, operations that need reconciliation and recent conversation (plus, for the queen, human input not yet taken on board, human messages still awaiting your answer under awaiting_response, messages the human withdrew under withdrawn_by_human (do not answer those), and how many of your messages the human has not yet read, reacted to or replied to). Call it first when you start or resume.',
+  description: 'Read your Hive cell: its goal and acceptance, the human\'s queen instructions (how the queen should work), your role, every open bead with goal, acceptance, status, owner, waiting links and evidence, recent closed beads, links, the sessions involved and their AW status, operations that need reconciliation and recent conversation (plus, for the queen, human input not yet taken on board, human messages still awaiting your answer under awaiting_response, messages the human withdrew under withdrawn_by_human (do not answer those), and how many of your messages the human has not yet read, reacted to or replied to). Call it first when you start or resume. Workers and reviewers: use scope: \'bead\' with your bead_id for only that bead, its parent chain, direct links, visible topics, requests and reviews, and your own claims/bindings. Omit scope for the full cell (the queen default).',
   inputSchema: {
-    include_closed: z.boolean().optional().describe('Include every closed bead, not just the 20 most recent.'),
-    bead_id: beadId.optional().describe('Also return this bead in full as `focus`.'),
+    scope: z.enum(['cell', 'bead']).optional().describe('Default cell returns the full cell. Workers use bead for a bounded read; bead_id defaults to your single claimed or bound bead, otherwise it is required.'),
+    include_closed: z.boolean().optional().describe('Cell scope only: include every closed bead, not just the 20 most recent.'),
+    bead_id: beadId.optional().describe('Bead to focus on. With scope bead, restrict the read to this bead; otherwise also return it in full as focus.'),
   },
 }, ({ rt, host, actor, args }) => buildContext(rt, host, actor, args));
 

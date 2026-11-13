@@ -1152,12 +1152,15 @@ export function markReceived(rt, { cellId, messageId }) {
   return { message_id: messageId, state: 'delivered' };
 }
 
-export async function cellContextConversation(rt, host, actor, { recent = 20 } = {}, render = out => out) {
-  const inbox = actor.role === 'queen' ? await attachmentsInbox(rt, actor.cell.id) : undefined;
+export async function cellContextConversation(rt, host, actor, { recent = 20, bead_id } = {}, render = out => out) {
+  const inbox = actor.role === 'queen' && !bead_id ? await attachmentsInbox(rt, actor.cell.id) : undefined;
   actor = resolveCaller(rt, host, actor.sessionId, actor.cell.id);
   const doc = audienceConversationDoc(rt.metadata.read(), actor.cell.id, actor);
-  const list = doc.conversation[actor.cell.id] || [];
-  const threads = threadRecords(doc, actor.cell.id);
+  const visibleThreads = threadRecords(doc, actor.cell.id);
+  const anchoredIds = new Set(ownThreads(visibleThreads).filter(t => t.beadId === bead_id).map(t => t.id));
+  const list = (doc.conversation[actor.cell.id] || []).filter(m => !bead_id || anchoredIds.has(m.threadId) || m.beadId === bead_id || contextOf(m)?.beadId === bead_id || m.relatedBeadIds?.includes(bead_id));
+  const threadIds = new Set([...anchoredIds, ...list.map(m => m.threadId)]);
+  const threads = bead_id ? Object.fromEntries(Object.entries(visibleThreads).filter(([id]) => threadIds.has(id))) : visibleThreads;
   const shape = (m) => ({
     message_id: m.id,
     link: hiveLink(actor.cell.id, m.threadId, m.id),
@@ -1177,7 +1180,7 @@ export async function cellContextConversation(rt, host, actor, { recent = 20 } =
     at: new Date(m.at).toISOString(),
   });
   const out = {
-    ...(actor.role === 'queen' ? { attachments_inbox: inbox } : {}),
+    ...(actor.role === 'queen' && !bead_id ? { attachments_inbox: inbox } : {}),
     conversation: list.slice(-recent).map(shape),
     threads: ownThreads(threads)
       .sort(byRecent)
