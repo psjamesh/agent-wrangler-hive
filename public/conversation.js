@@ -573,7 +573,7 @@ function inboxHead(cell, ui, counted, snapshot) {
       'aria-pressed': view === kind ? 'true' : 'false',
       'data-focus-key': `inbox:${cell.id}:${kind}`,
       onclick: () => ui.setInboxView(cell.id, view === kind ? null : kind),
-    }, `${kind === 'needs' ? 'Needs you' : INBOX_NAME[kind]} `, h('span', { class: 'hive-inbox-count', 'aria-label': `${n} waiting` }, String(n)));
+    }, `${kind === 'needs' ? 'Needs you' : INBOX_NAME[kind]} `, kind === 'needs' && !n ? null : h('span', { class: 'hive-inbox-count', 'aria-label': `${n} waiting` }, String(n)));
   };
   return h('div', { class: 'hive-inbox-filters' },
     filter('needs'),

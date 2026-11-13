@@ -43,7 +43,7 @@ function fixture(t, messages) {
   };
   const counts = view => {
     const out = draw(view);
-    return { filters: out.head.querySelectorAll('.hive-inbox-count').map(x => Number(x.textContent)), badges: out.list.querySelectorAll('.hive-unread').map(x => Number(x.textContent)) };
+    return { filters: out.head.querySelectorAll('.hive-inbox-filter').map(x => Number(x.querySelector('.hive-inbox-count')?.textContent || 0)), badges: out.list.querySelectorAll('.hive-unread').map(x => Number(x.textContent)) };
   };
   return { cell, hive, ui, counts, draw, refresh: messages => { cell.inbox = { ...cell.inbox, human: snapshot(messages) }; } };
 }

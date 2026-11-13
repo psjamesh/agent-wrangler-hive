@@ -1749,3 +1749,90 @@ test('closed-bead refusal without PR links does not send; another held open clai
   assert.equal((await restore(f))?.refuse, undefined);
   assert.equal(sent.length, 0);
 });
+
+for (const toolName of ['requestReviewTool', 'spawnWorkerTool']) test(`${toolName} lets the queen reopen a retained reviewer, preserving receipts without spawning`, async () => {
+  const tool = (await import('../server/tools.js'))[toolName];
+  const { reviewFields } = await import('../server/review-state.js');
+  const { cellCounts } = await import('../public/model.js');
+  const f = fixture(1); reviewFixture(f); await dispatchFixture(f);
+  const { give, record, out } = await reviewRounds(f);
+  await give('changes_requested', 'c1');
+  const receipt = structuredClone(f.doc().operations[record().verdictOpId]);
+  const earlier = structuredClone(record().verdict);
+  const sent = [];
+  f.host.deliver = async (sid, text) => {
+    sent.push({ sid, text });
+    if (sid === out.session_id) {
+      const resumed = await workers.workerLaunchContext({ sid, task: { id: 'task' }, reason: 'message', host: f.host });
+      assert.equal(resumed?.refuse, undefined);
+    }
+    return { mode: 'live' };
+  };
+  f.host.sessions.spawn = async () => { assert.fail('retained review must not spawn'); };
+  const response = await tool.handler({ host: f.host, caller: 'queen' }, { bead_id: 'a', intent: 'Check the fix', commit: 'c2', reviewer_session_id: out.session_id, ...(toolName === 'spawnWorkerTool' ? { role: 'review' } : {}) });
+  assert.equal(response.isError, undefined, response.content[0].text);
+  const reopened = response.structuredContent;
+  assert.equal(reopened.session_id, out.session_id);
+  assert.equal(reopened.review_id, out.review_id);
+  assert.equal(record().round, 2);
+  assert.equal(attachmentsFor(f.rt, f.host, 'a').find(a => a.session_id === out.session_id).round, 2);
+  assert.equal(record().state, 'in_review');
+  assert.equal(record().verdict, undefined);
+  assert.deepEqual(record().history[0].verdict, earlier);
+  assert.deepEqual(f.doc().operations[receipt.id], receipt);
+  assert(sent.some(m => m.sid === out.session_id && /c2/.test(m.text) && /Check the fix/.test(m.text)));
+  const bead = f.rt.snapshots.graph.beads.a;
+  assert.equal(deriveActivity(f.rt, f.host, f.doc().cells.cell, bead).state, 'in_review');
+  assert.equal(reviewFields(f.rt, 'a').reviewState, 'in_review');
+  const hive = { edges: [], beads: { ...f.rt.snapshots.graph.beads, a: { ...bead, ...reviewFields(f.rt, 'a') } } };
+  assert.equal(cellCounts(hive, f.doc().cells.cell).in_review, 1);
+  await assert.rejects(give('approved', 'c1'), /commit|earlier round/);
+  assert.equal(record().state, 'in_review');
+  await give('approved', 'c2');
+  assert.equal(record().state, 'approved');
+  assert.equal(record().history.length, 1);
+  assert.equal(f.live.a.metadata.hive_evidence.length, 2);
+  assert.deepEqual(f.doc().operations[receipt.id], receipt);
+});
+
+for (const invalid of ['archived', 'other-bead', 'builder', 'same-commit', 'missing-commit', 'unsettled']) test(`retained review refuses ${invalid} without opening a round`, async () => {
+  const f = fixture(1); reviewFixture(f); await dispatchFixture(f);
+  const { give, record, out } = await reviewRounds(f);
+  await give('changes_requested', 'c1');
+  let sid = out.session_id;
+  if (invalid === 'archived') f.board.get(sid).archived = true;
+  if (invalid === 'other-bead') f.doc().bindings.cell.find(b => b.sessionId === sid).beadId = 'b';
+  if (invalid === 'builder') sid = 'queen';
+  if (invalid === 'unsettled') f.doc().operations[record().verdictOpId].state = 'uncertain';
+  f.host.sessions.spawn = async () => { assert.fail('invalid retained review must not spawn'); };
+  await assert.rejects(reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'Check fix', reviewer_session_id: sid, ...(invalid === 'missing-commit' ? {} : { commit: invalid === 'same-commit' ? 'c1' : 'c2' }) }), /archived|bound reviewer|worked on|new commit|requires.*commit|unsettled/i);
+  assert.equal(record().state, 'changes_requested');
+  assert.equal(record().history, undefined);
+});
+
+for (const state of ['failed', 'uncertain']) test(`retained review tells the queen when reviewer mail is ${state}`, async () => {
+  const f = holderFixture(); await launchRecording(f);
+  const out = await reviews.requestReview(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'Review', commit: 'c1' });
+  await reviews.reviewVerdict(f.rt, f.host, f.worker(out.session_id), { bead_id: 'a', verdict: 'changes_requested', summary: 'Fix', commit: 'c1' });
+  f.sent.length = 0;
+  f.host.deliver = async (sid, text) => {
+    if (sid === out.session_id) return { mode: 'error', error: 'Mail unavailable', ...(state === 'uncertain' ? { outcome: 'unknown' } : {}) };
+    f.sent.push({ sid, text }); return { mode: 'live' };
+  };
+  const result = await reviews.requestReview(f.rt, f.host, f.worker('builder'), { bead_id: 'a', reviewer_session_id: out.session_id, intent: 'Review fix', commit: 'c2' });
+  assert.equal(result.delivery.state, state);
+  assert.equal(f.doc().reviews[out.review_id].state, 'in_review');
+  const notice = f.sent.find(m => m.sid === 'queen');
+  assert.ok(notice);
+  assert.ok(notice.text.includes(state), notice.text);
+  assert.match(notice.text, /Mail unavailable/);
+});
+
+for (const field of ['agent', 'model', 'effort', 'override_reason']) test(`retained review refuses ${field} instead of silently ignoring it`, async () => {
+  const f = fixture(1); reviewFixture(f); await dispatchFixture(f);
+  const { give, record, out } = await reviewRounds(f);
+  await give('changes_requested', 'c1');
+  await assert.rejects(reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', reviewer_session_id: out.session_id, intent: 'Review fix', commit: 'c2', [field]: 'different' }), /cannot.*reviewer_session_id/i);
+  assert.equal(record().state, 'changes_requested');
+  assert.equal(record().history, undefined);
+});

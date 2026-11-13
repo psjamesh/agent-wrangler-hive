@@ -448,18 +448,19 @@ const workerArgs = {
 };
 
 const reviewArgs = {
+  reviewer_session_id: z.string().min(1).max(200).optional().describe('Retained reviewer already bound to this bead. With a new commit after changes_requested, opens a fresh round and mails that session without launching another. Cannot be combined with agent, model, effort or override_reason.'),
   commit: z.string().min(1).max(80).optional().describe('SHA to review (role review).'),
   override_reason: z.string().min(1).max(1000).optional().describe('Queen/coordinator only: required to use an agent, model or effort other than the hive review policy for a review. Recorded on the review.'),
 };
 
 export const spawnWorkerTool = hiveTool({
   name: 'hive_spawn_worker',
-  description: 'Launch a tracked session attached to a bead, with a role: work (default) or review. The queen/coordinator may launch either. The session holding the bead\'s claim may launch review sessions for that bead only (never another work session). An advisor, investigation or other helper is its own bead launched with role work; there is no shared-bead helper. work reserves the bead and global capacity and launches a worker already claimed and bound. review launches a reviewer bound to the bead on the hive review policy (cell.review_policy: a primary and a secondary config, chosen so the reviewer\'s provider differs from the builder\'s, else the primary with sameProvider noted); agent/model/effort are ignored for a holder, and the queen/coordinator may differ only with override_reason, which is recorded. A re-review is another review session on the same bead with its own verdict. Review sessions share the bead\'s capacity slot. The queen is told when a review session starts. An uncertain launch keeps its reservation; reconcile it instead of launching again. Launch every helper, advisor or investigation as its own bead here; sessions started with spawn_session, spawn_workflow, schedule_session or update_schedule are untracked.',
+  description: 'Launch a tracked session attached to a bead, with a role: work (default) or review. The queen/coordinator may launch either. The session holding the bead\'s claim may launch review sessions for that bead only (never another work session). An advisor, investigation or other helper is its own bead launched with role work; there is no shared-bead helper. work reserves the bead and global capacity and launches a worker already claimed and bound. review launches a reviewer bound to the bead on the hive review policy (cell.review_policy: a primary and a secondary config, chosen so the reviewer\'s provider differs from the builder\'s, else the primary with sameProvider noted); agent/model/effort are ignored for a holder, and the queen/coordinator may differ only with override_reason, which is recorded. For a retained reviewer, pass reviewer_session_id and a new commit after changes_requested: opens a new round, preserves earlier receipts and mails that reviewer without launching a session. Omit reviewer_session_id to launch a new reviewer. Review sessions share the bead\'s capacity slot. The queen is told when a review session starts. An uncertain launch keeps its reservation; reconcile it instead of launching again. Launch every helper, advisor or investigation as its own bead here; sessions started with spawn_session, spawn_workflow, schedule_session or update_schedule are untracked.',
   inputSchema: { ...workerArgs, ...reviewArgs, role: z.enum(['work', 'review']).optional() },
 }, ({ rt, host, actor, args }) => {
-  const { role = 'work', commit, override_reason, ...rest } = args;
-  if (role !== 'review' && (commit !== undefined || override_reason !== undefined)) throw new ops.HiveError('commit and override_reason apply only to role review.');
-  if (role === 'review') return requestReview(rt, host, actor, { ...rest, commit, override_reason });
+  const { role = 'work', commit, override_reason, reviewer_session_id, ...rest } = args;
+  if (role !== 'review' && (commit !== undefined || override_reason !== undefined || reviewer_session_id !== undefined)) throw new ops.HiveError('commit, override_reason and reviewer_session_id apply only to role review.');
+  if (role === 'review') return requestReview(rt, host, actor, { ...rest, commit, override_reason, reviewer_session_id });
   return spawnWorker(rt, host, actor, rest);
 });
 
@@ -471,13 +472,13 @@ export const reconcileWorkerTool = hiveTool({
 
 export const requestReviewTool = hiveTool({
   name: 'hive_request_review',
-  description: 'Alias of hive_spawn_worker with role review, kept for existing callers. Launches a reviewer on this bead on the hive review policy; see hive_spawn_worker. The claim holder or the queen/coordinator may call it; override_reason is required to depart from the policy.',
+  description: 'Alias of hive_spawn_worker with role review, kept for existing callers. Launches a reviewer on this bead on the hive review policy; pass reviewer_session_id and a new commit after changes_requested to reopen a round with its retained reviewer and notify it by mail without spawning. Earlier rounds and receipts remain intact; archived, foreign-bead and builder sessions are refused. With reviewer_session_id, agent/model/effort/override_reason are refused. See hive_spawn_worker. The claim holder or the queen/coordinator may call it; override_reason is required to depart from the policy.',
   inputSchema: { ...workerArgs, ...reviewArgs },
 }, ({ rt, host, actor, args }) => requestReview(rt, host, actor, args));
 
 export const reviewVerdictTool = hiveTool({
   name: 'hive_review_verdict',
-  description: 'Only the current bound reviewer may give a verdict on this work bead. Records evidence and ends the review wait without closing the work or changing the builder\'s claim. changes_requested returns findings to the builder. Retry only the same verdict if its receipt was interrupted. After changes_requested, the same reviewer may record a new round with a different `commit` (the reviewed SHA); earlier rounds stay in history. The same commit cannot take a conflicting verdict.',
+  description: 'Only the current bound reviewer may give a verdict on this work bead. Records evidence and ends the review wait without closing the work or changing the builder\'s claim. changes_requested returns findings to the builder. Retry only the same verdict if its receipt was interrupted. After changes_requested, the same reviewer may record a new round with a different `commit` (the reviewed SHA); earlier rounds stay in history. While round 2 or later is in review, commit is required and must match that round’s commit. The same commit cannot take a conflicting verdict.',
   inputSchema: { bead_id: beadId, verdict: z.enum(['approved', 'changes_requested']), summary: z.string().min(1).max(20000), commit: z.string().min(1).max(80).optional() },
 }, ({ rt, host, actor, args }) => reviewVerdict(rt, host, actor, args));
 

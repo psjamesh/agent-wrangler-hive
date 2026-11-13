@@ -122,7 +122,7 @@ export function marked(text, query) {
 }
 
 function needsBadge(count) {
-  return h('span', { class: 'hive-needs-hex', 'aria-label': `${count} needs you`, title: `${count} needs you` }, String(count));
+  return h('span', { class: 'hive-inbox-count hive-needs-count', 'aria-label': `${count} needs you`, title: `${count} needs you` }, String(count));
 }
 
 function rowSessionLinks(ctx, row) {

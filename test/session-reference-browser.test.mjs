@@ -48,7 +48,7 @@ else {
 }
 document.getElementById('fixture').append(node);
 const anchors = [...node.querySelectorAll('a[href]')].filter(a=>a.getAttribute('href').startsWith('#session='));
-const valid = anchors.length === (inboxMode ? 1 : 2) && anchors.every(a=>a.getAttribute('href')==='#session=${worker}' && !a.target) && (inboxMode ? !node.querySelector('.hive-topic-btn a') && node.querySelector('.hive-inbox-item .hive-needs-hex').textContent === '1' : node.textContent.includes('Archived session') && node.textContent.includes('Unknown session'));
+const valid = anchors.length === (inboxMode ? 1 : 2) && anchors.every(a=>a.getAttribute('href')==='#session=${worker}' && !a.target) && (inboxMode ? !node.querySelector('.hive-topic-btn a') && node.querySelector('.hive-inbox-item .hive-needs-count').textContent === '1' : node.textContent.includes('Archived session') && node.textContent.includes('Unknown session'));
 anchors[0]?.click();
 const markdownNavigated = location.hash === '#session=${worker}';
 location.hash = '';
