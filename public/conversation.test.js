@@ -1528,7 +1528,7 @@ test('merged Inbox includes needs across the cell despite a bead selection', t =
   const out = f.draw();
   assert.equal(f.ui.inboxView(f.cell.id), 'human');
   assert.match(out.list.textContent, /API decision/);
-  assert.equal(out.head.querySelector('.hive-inbox-count').textContent, '1');
+  assert.equal(out.head.querySelector('.hive-inbox-filters').querySelector('.hive-inbox-count').textContent, '1');
 });
 
 test('rail badge uses host-supported numeric counts even when request metadata is unavailable', t => {
@@ -1729,7 +1729,7 @@ for (const source of ['manual', 'auto-read']) test(`${source} callbacks keep cou
     f.cell.messages = [other]; f.cell.threads = [otherTopic];
     f.ui.closeThread(f.cell.id); f.ui.setAllTopics(f.cell.id, true);
   };
-  const count = () => Number(f.draw().head.querySelector('.hive-inbox-count')?.textContent || 0);
+  const count = () => Number(f.draw().head.querySelector('.hive-inbox-filters').querySelector('.hive-inbox-count')?.textContent || 0);
   hideOlder();
   assert.equal(count(), 1);
   f.cell.inbox.human = inbox([original, { ...other, ack: { required: true, state: null, rev: 2 } }]);

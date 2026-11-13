@@ -9,7 +9,7 @@ const page = `<!doctype html><html><head><meta name="viewport" content="width=de
 import client from '/public/client.js';
 const store = new Map();
 let view;
-client.register({ api: { storage: { get: k => store.get(k), set: (k, v) => store.set(k, v), remove: k => store.delete(k) } }, register(kind, v) { view = v; } });
+client.register({ api: { send: () => {}, storage: { get: k => store.get(k), set: (k, v) => store.set(k, v), remove: k => store.delete(k) } }, register(kind, v) { view = v; } });
 const base = { launches: [], bindings: [], beadLayout: {}, arrangeAspect: null, workstreamColours: {}, workstreamShades: {}, archived: {}, restoreNotices: [], regionAttachments: {}, detachedWorkstreams: [], threads: [], messages: [], threadsTruncated: false, threadsAfter: null, inbox: { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } }, requestCounts: {} };
 const req = (id, title, body, at, extra = {}) => ({ id, audience: 'human', state: 'open', title, body, createdAt: at, threadId: 't_' + id, messageId: 'm_' + id, requesterSessionId: 's1', sessionLink: { sessionId: 'archived', label: 'Archived worker' }, ...extra });
 const cells = {
@@ -169,7 +169,7 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   const searched = await run(`const e = document.querySelector('.hive-inbox-search-input'); e.value = 'SQLite'; e.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); return { rows: document.querySelectorAll('.hive-inbox-item').length, needs: document.querySelector('.hive-inbox-item .hive-needs-count')?.textContent, count: document.querySelector('.hive-inbox-item .hive-unread')?.textContent, mark: document.querySelector('.hive-search-hit')?.textContent };`);
   assert.deepEqual(searched, { rows: 1, needs: '1', count: '2', mark: 'SQLite' });
 
-  await run(`document.querySelector('.hive-inbox-search-clear').click(); document.querySelector('[data-tile-id="alpha"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise(r => setTimeout(r, 200)); document.querySelector('[data-focus-key="inbox:alpha:human"]').click();`);
+  await run(`document.querySelector('[data-tile-id="alpha"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise(r => setTimeout(r, 200)); document.querySelector('[data-focus-key="inbox:alpha:human"]').click();`);
   const cellInbox = await run(`
     const panel = document.querySelector('.hive-conversation');
     return { filters: [...panel.querySelectorAll('.hive-inbox-filter')].map(e => e.textContent), totals: panel.querySelector('.hive-inbox-totals').textContent,
@@ -178,6 +178,7 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
       archived: [...panel.querySelectorAll('.hive-inbox-session-links .hive-muted')].map(e => e.textContent),
       zeros: [...panel.querySelectorAll('.hive-inbox-count,.hive-unread')].some(e => e.textContent === '0') };
   `);
+  assert.equal(await run(`return document.querySelector('.hive-inbox-search-input').value;`), '');
   assert.deepEqual(cellInbox.filters, ['Inbox 3', 'Waiting for queen']);
   assert.match(cellInbox.totals, /2 needs you.*3 messages/);
   assert.equal(cellInbox.rows.length, 3);
@@ -187,12 +188,22 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.ok(cellInbox.labels.includes('Open session'));
   assert.ok(cellInbox.archived.includes('Archived worker'));
   assert.equal(cellInbox.zeros, false);
+  const checkCellLayout = async () => {
+    const layout = await run(`const panel = document.querySelector('.hive-conversation'); const search = panel.querySelector('.hive-inbox-search').getBoundingClientRect(); const filters = panel.querySelector('.hive-inbox-filters').getBoundingClientRect(); const head = panel.querySelector('.hive-inbox-head').getBoundingClientRect(); return { above: search.bottom <= filters.top, width: search.width, input: panel.querySelector('.hive-inbox-search-input').getBoundingClientRect().width, head: head.width, context: panel.querySelectorAll('.hive-inbox .hive-topic-context').length };`);
+    assert.equal(layout.above, true);
+    assert.ok(Math.abs(layout.width - layout.head) < 2);
+    assert.ok(Math.abs(layout.input - layout.width) < 2);
+    assert.equal(layout.context, 0);
+  };
+  await checkCellLayout();
   await theme(false);
   await shot('cell-inbox-phone-light');
   await theme(true);
   await shot('cell-inbox-phone-dark');
   await viewport(1280, 800);
   await theme(false);
+  await run(`await new Promise(r => setTimeout(r, 100));`);
+  await checkCellLayout();
   await shot('cell-inbox-desktop-light');
   await theme(true);
   await shot('cell-inbox-desktop-dark');
@@ -201,5 +212,10 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.equal(opened.back, true);
   await run(`document.querySelector('[data-focus-key="topics-back:alpha"]').click(); await new Promise(r => setTimeout(r, 100)); [...document.querySelectorAll('.hive-conversation button')].find(e => e.textContent === 'Show topics').click();`);
   assert.equal(await run(`return Boolean(document.querySelector('[aria-label="Topics"]'));`), true);
+
+  await run(`[...document.querySelectorAll('.hive-inbox-filter')].find(e => e.textContent.startsWith('Inbox')).click(); const input = document.querySelector('.hive-inbox-search-input'); input.value = 'retry'; input.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); document.querySelector('[aria-label="Back to all hives"]').click(); await new Promise(r => setTimeout(r, 200));`);
+  assert.equal(await run(`return document.querySelector('.hive-inbox-search-input').value;`), 'SQLite');
+  await run(`document.querySelector('[data-tile-id="alpha"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise(r => setTimeout(r, 200));`);
+  assert.equal(await run(`return document.querySelector('.hive-inbox-search-input').value;`), 'retry');
 
 });

@@ -144,7 +144,7 @@ test('cell Inbox merges only its own messages and needs using the shared row pre
   f.ui.setInboxView('live', 'human');
   let panel = f.draw().bottom;
   assert.equal(panel.querySelectorAll('.hive-inbox-filter').length, 2);
-  assert.equal(panel.querySelector('.hive-inbox-count').textContent, '2');
+  assert.equal(panel.querySelector('.hive-inbox-filters').querySelector('.hive-inbox-count').textContent, '2');
   assert.equal(panel.querySelectorAll('.hive-inbox-item').length, 2);
   assert.doesNotMatch(panel.querySelector('.hive-inbox').textContent, /Other hive need/);
   assert.equal(panel.querySelectorAll('.hive-unread').length, 0);
@@ -166,13 +166,16 @@ test('cell Inbox search stays in the cell and zero filter badges are absent', t 
   };
   f.ui.openCell('live');
   f.ui.setInboxView('live', 'human');
-  f.ui.setGlobalInboxQuery('SQLite');
+  f.ui.setGlobalInboxQuery('SQLite', 'live');
   const panel = f.draw().bottom;
   assert.equal(panel.querySelectorAll('.hive-inbox-item').length, 1);
   assert.match(panel.querySelector('.hive-inbox-item').textContent, /Database/);
   assert.equal(panel.querySelector('.hive-inbox-search-input').value, 'SQLite');
+  const head = panel.querySelector('.hive-inbox-head');
+  assert.ok(head.children.indexOf(head.querySelector('.hive-inbox-search')) < head.children.indexOf(head.querySelector('.hive-inbox-filters')));
+  assert.equal(panel.querySelector('.hive-inbox').querySelector('.hive-topic-context'), null);
   assert.equal(panel.querySelector('.hive-search-hit').textContent, 'SQLite');
-  assert.deepEqual(panel.querySelectorAll('.hive-inbox-count').map(e => e.textContent), ['1']);
-  f.ui.setGlobalInboxQuery('does not match');
+  assert.deepEqual(panel.querySelector('.hive-inbox-filters').querySelectorAll('.hive-inbox-count').map(e => e.textContent), ['1']);
+  f.ui.setGlobalInboxQuery('does not match', 'live');
   assert.equal(f.draw().bottom.querySelectorAll('.hive-inbox-item').length, 0);
 });

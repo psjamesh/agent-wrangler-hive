@@ -515,7 +515,7 @@ function renderTopics({ cell, hive, graph, api, ui, ctx }) {
   const out = listView({ cell, hive, beads, graph, ui, ctx, topics, byThread, counted, snapshot, scope, all, selected, epoch });
   if (inbox) {
     Object.assign(out, inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot, epoch, kind: inbox }));
-    out.head.append(out.search);
+    out.head.insertBefore(out.search, out.head.querySelector('.hive-inbox-filters'));
   }
   return out;
 }
@@ -626,15 +626,15 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
   }
   const context = { ...ctx, hive, graph, ui };
   const merged = kind === 'human' ? mergeRows(rows, needsRows(context, [cell])) : rows;
-  const query = ui.globalInboxQuery?.() || '';
+  const query = ui.globalInboxQuery?.(cell.id) || '';
   const searching = searchTerms(query).length > 0;
-  const found = searching ? searchedInbox(context, [cell], query, ui.askGlobalInboxSearch?.([cell.id], `${hive.revision}:${hive.metaVersion}`, hive.metaEpoch)) : null;
+  const found = searching ? searchedInbox(context, [cell], query, ui.askGlobalInboxSearch?.([cell.id], `${hive.revision}:${hive.metaVersion}`, hive.metaEpoch, cell.id)) : null;
   const shown = searching ? found.lists[kind] : merged;
   for (const row of shown) {
     const t = known.get(row.threadId);
     const message = byId.get(row.id || rows.find(r => r.threadId === row.threadId)?.id);
     list.append(inboxRow(context, row, {
-      id: row.id || row.key, query: searching ? query : '',
+      id: row.id || row.key, showContext: false, query: searching ? query : '',
       ...(t ? { open: () => openTopic(ui, ctx, cell, t, cell.threads.some(x => x.id === t.id), epoch) } : {}),
       action: kind === 'queen' && message && !cell.snapshot ? withdrawButton(message, cell, ctx, 'hive-withdraw', 'Withdraw', 'inbox', ui) : null,
     }));
@@ -658,7 +658,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
       }),
     }, 'Load more')));
   }
-  return { list, search: inboxSearchBox(ui, query, shown, found), scrollKey: `inbox:${cell.id}:${kind}` };
+  return { list, search: inboxSearchBox(ui, query, shown, found, cell.id), scrollKey: `inbox:${cell.id}:${kind}` };
 }
 
 function listView({ cell, hive, beads, graph, ui, ctx, topics, byThread, counted, snapshot, scope, all, selected, epoch }) {
@@ -669,7 +669,7 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, byThread, counted
   const toggle = h('button', { type: 'button', class: 'hive-link-btn', 'aria-pressed': all ? 'true' : 'false', onclick: () => ui.setAllTopics(cell.id, !all) }, all ? 'Only this selection' : 'All topics');
   const inbox = cell.inbox ? ui.inboxView(cell.id) : null;
   const what = inbox ? (inbox === 'human' ? 'Waiting for you' : 'Waiting for the queen') : 'Topics';
-  const head = h('div', { class: 'hive-topics-head' },
+  const head = h('div', { class: `hive-topics-head${inbox ? ' hive-inbox-head' : ''}` },
     cell.inbox ? h('div', { class: 'hive-inbox-totals' }, inboxTotals({ needs: needsRows({ hive, graph, ui }, [cell]).length, human: waitingCount(cell, hive, ui, 'human') })) : null,
     inboxHead(cell, hive, graph, ui),
     h('span', { class: 'hive-muted' }, inbox || all || !scope ? `${inbox ? what : 'All topics'} in this hive` : [`${what} about `, h('strong', {}, scopeName), ' (and its items)']),

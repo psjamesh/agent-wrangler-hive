@@ -335,7 +335,8 @@ test('a newer preview acknowledgement preserves full history metadata for Undo',
   f.ui.noteAck(f.cell.id, q.id, { required: true, state: null, rev: 2 });
   f.ui.closeThread(f.cell.id);
   const row = f.draw('human').list;
-  assert.equal(row.querySelector('.hive-topic-context').textContent, 'Work item');
+  assert.equal(row.querySelector('.hive-topic-context'), null);
+  assert.equal(f.ui.acknowledgedConversation(f.cell.id).messages.find(m => m.id === q.id).beadId, 'hive-work');
   assert.deepEqual(f.counts('human'), inboxChips({ messages: 1, badges: [1] }));
 });
 

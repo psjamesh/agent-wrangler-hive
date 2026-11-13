@@ -175,7 +175,7 @@ export function inboxFilters(view, counts, select, key = 'global-inbox') {
     }, label, counts[kind] ? [' ', h('span', { class: 'hive-inbox-count', 'aria-label': `${counts[kind]} ${kind === 'human' ? 'topics' : 'waiting'}` }, String(counts[kind]))] : null)));
 }
 
-export function inboxRow(ctx, r, { query = '', open, id = r.key, action } = {}) {
+export function inboxRow(ctx, r, { query = '', open, id = r.key, action, showContext = true } = {}) {
   const props = open ? { type: 'button', onclick: () => open(r) } : { href: r.link };
   return h('li', { class: 'hive-topic hive-inbox-item', dataset: { id } },
     h(open ? 'button' : 'a', { ...props, class: 'hive-topic-btn', 'data-focus-key': `global-inbox-item:${r.key}` },
@@ -185,23 +185,23 @@ export function inboxRow(ctx, r, { query = '', open, id = r.key, action } = {}) 
         r.needsCount ? needsBadge(r.needsCount) : null,
         h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(r.at))),
       h('span', { class: 'hive-topic-line' },
-        h('span', { class: 'hive-chip hive-topic-context' }, r.hive),
+        showContext ? h('span', { class: 'hive-chip hive-topic-context' }, r.hive) : null,
         h('span', { class: 'hive-muted hive-topic-preview' }, query ? [r.author ? `${r.author}: ` : '', marked(r.snippet || r.preview || '', query)] : [r.author, r.preview].filter(Boolean).join(': ')),
         r.repair ? h('span', { class: 'hive-warning' }, r.repair) : null)),
     rowSessionLinks(ctx, r), action);
 }
 
-export function inboxSearchBox(ui, query, rows, found) {
+export function inboxSearchBox(ui, query, rows, found, cellId) {
   const searching = searchTerms(query).length > 0;
   const input = h('input', {
     type: 'search', class: 'hive-inbox-search-input', autocomplete: 'off', spellcheck: 'false', value: query, maxlength: '200',
     placeholder: 'Search topics, messages and bead ids', 'aria-label': 'Search the inbox', 'data-focus-key': 'global-inbox-search',
-    oninput: (e) => { if (!e.isComposing) ui.setGlobalInboxQuery(input.value); },
-    onkeydown: (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); ui.setGlobalInboxQuery(''); } },
+    oninput: (e) => { if (!e.isComposing) ui.setGlobalInboxQuery(input.value, cellId); },
+    onkeydown: (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); ui.setGlobalInboxQuery('', cellId); } },
   });
   const clear = h('button', {
     type: 'button', class: 'hive-inbox-search-clear', 'aria-label': 'Clear search', title: 'Clear search (Esc)', 'data-focus-key': 'global-inbox-search-clear',
-    tabindex: searching ? null : '-1', 'aria-hidden': searching ? null : 'true', onclick: () => { ui.setGlobalInboxQuery(''); },
+    tabindex: searching ? null : '-1', 'aria-hidden': searching ? null : 'true', onclick: () => { ui.setGlobalInboxQuery('', cellId); },
   }, '×');
   const status = !searching ? '' : found.failed ? 'Searching loaded messages only: the full search failed.'
     : `${rows.length} topic${rows.length === 1 ? '' : 's'} match${rows.length === 1 ? 'es' : ''}${found.pending ? ' · searching all messages…' : ''}${found.truncated ? ' · first matches only' : ''}`;
