@@ -103,13 +103,13 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.equal(wide.docOverflow, false);
   const merged = await run(`
     const panel = document.querySelector('.hive-global-inbox');
-    return { filters: [...panel.querySelectorAll('.hive-inbox-filter')].map(e => e.textContent), totals: panel.querySelector('.hive-inbox-totals').textContent, rows: [...panel.querySelectorAll('.hive-inbox-item')].map(e => ({ title: e.querySelector('strong').textContent, count: e.querySelector('.hive-unread').textContent, needs: e.querySelector('.hive-needs-hex')?.textContent })) };
+    return { filters: [...panel.querySelectorAll('.hive-inbox-filter')].map(e => e.textContent), totals: panel.querySelector('.hive-inbox-totals').textContent, rows: [...panel.querySelectorAll('.hive-inbox-item')].map(e => ({ title: e.querySelector('strong').textContent, count: e.querySelector('.hive-unread')?.textContent || null, needs: e.querySelector('.hive-needs-hex')?.textContent })) };
   `);
   assert.equal(merged.filters.length, 2);
   assert.ok(!merged.filters.some(f => f.includes('Needs you')));
   assert.match(merged.totals, /3 needs you.*3 messages/);
   assert.deepEqual(merged.rows.map(r => r.needs || '0'), ['1', '1', '1', '0']);
-  assert.deepEqual(merged.rows.map(r => r.count), ['0', '0', '2', '1']);
+  assert.deepEqual(merged.rows.map(r => r.count), [null, null, '2', null]);
   const theme = async dark => run(`document.documentElement.style.cssText = ${JSON.stringify(dark ? darkTheme : '')};`);
   await shot('all-hives-desktop-light');
   await theme(true);

@@ -1,12 +1,13 @@
 import { h, relativeTime, markdown, sessionReference } from './dom.js';
 import { hiveLink } from './deep-links.js';
-import { sessionLinkId } from './session-links.js';
 import { needsHuman, requestAuthor } from './requests.js';
 import { cellName } from './model.js';
 import { filterRows, highlightParts, searchTerms, snippetFor } from './inbox-search.js';
 import { waitingMessages, waitingCount, topicTitles, messageAuthor } from './conversation.js';
 
 export const GLOBAL_FILTERS = [['human', 'Inbox'], ['queen', 'Waiting for queen']];
+
+const messageCount = count => `${count} message${count === 1 ? '' : 's'}`;
 
 const oneLine = (text, n) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, n);
 
@@ -125,11 +126,13 @@ function needsBadge(count) {
 }
 
 function rowSessionLinks(ctx, row) {
-  const references = new Map((row.sessionLinks || []).map(link => [link.sessionId, link]));
-  for (const anchor of markdown(ctx.api, (row.texts || []).join('\n'), { sessions: ctx.graph?.sessions || [] }).querySelectorAll('a[href]')) {
-    const sessionId = sessionLinkId(anchor.getAttribute('href'));
-    if (sessionId && !references.has(sessionId)) references.set(sessionId, { sessionId, label: anchor.textContent });
-  }
+  const references = new Map();
+  const remember = link => { if (!references.has(link.sessionId)) references.set(link.sessionId, link); };
+  for (const link of row.sessionLinks || []) remember(link);
+  markdown(ctx.api, (row.texts || []).join('\n'), {
+    sessions: ctx.graph?.sessions || [],
+    onSessionReference: ({ sessionId, label, bare }) => remember({ sessionId, label: bare ? ctx.graph?.sessions?.find(s => s.sessionId === sessionId)?.name || 'Open session' : label }),
+  });
   return references.size ? h('div', { class: 'hive-session-links hive-inbox-session-links' }, [...references.values()].map(link => sessionReference(ctx.graph, link))) : null;
 }
 
@@ -146,14 +149,15 @@ export function globalInbox(ctx, cells) {
   const searching = searchTerms(query).length > 0;
   const found = searching ? searchedInbox(ctx, cells, query, ui.askGlobalInboxSearch?.(cells.map(c => c.id), `${hive.revision}:${hive.metaVersion}`, hive.metaEpoch)) : null;
   const rows = searching ? found.lists[view] : lists[view];
+  const filterCounts = { human: lists.human.length, queen: counts.queen };
   const filters = h('div', { class: 'hive-inbox-filters', role: 'group', 'aria-label': 'Inbox filter' },
     GLOBAL_FILTERS.map(([kind, label]) => h('button', {
       type: 'button',
-      class: `hive-inbox-filter${view === kind ? ' is-on' : ''}${counts[kind] ? ' has-items' : ''}`,
+      class: `hive-inbox-filter${view === kind ? ' is-on' : ''}${filterCounts[kind] ? ' has-items' : ''}`,
       'aria-pressed': view === kind ? 'true' : 'false',
       'data-focus-key': `global-inbox:${kind}`,
       onclick: () => ui.setGlobalInboxView(kind),
-    }, `${label} `, h('span', { class: 'hive-inbox-count', 'aria-label': `${counts[kind]} waiting` }, String(counts[kind])))));
+    }, `${label} `, h('span', { class: 'hive-inbox-count', 'aria-label': kind === 'human' ? `${filterCounts.human} topic${filterCounts.human === 1 ? '' : 's'}` : `${counts.queen} waiting` }, String(filterCounts[kind])))));
   const label = GLOBAL_FILTERS.find(f => f[0] === view)[1];
   const elsewhere = searching ? GLOBAL_FILTERS.filter(([k]) => k !== view && found.lists[k].length).map(([k, l]) => `${found.lists[k].length} in ${l}`) : [];
   const empty = searching ? `No topics match “${query.trim()}” in ${label}.${elsewhere.length ? ` ${elsewhere.join(', ')}.` : ''}` : view === 'human' ? 'Nothing is waiting for you in any hive.' : 'None of your messages is waiting for an answer.';
@@ -162,7 +166,7 @@ export function globalInbox(ctx, cells) {
       h('a', { class: 'hive-topic-btn', href: r.link, 'data-focus-key': `global-inbox-item:${r.key}` },
         h('span', { class: 'hive-topic-line' },
           h('strong', { class: 'hive-topic-title' }, searching ? marked(r.title, query) : r.title),
-          h('span', { class: 'hive-unread', 'aria-label': `${r.count || 0} messages` }, String(r.count || 0)),
+          r.count > 1 ? h('span', { class: 'hive-unread', 'aria-label': messageCount(r.count) }, String(r.count)) : null,
           r.needsCount ? needsBadge(r.needsCount) : null,
           h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(r.at))),
         h('span', { class: 'hive-topic-line' },
@@ -187,5 +191,5 @@ export function globalInbox(ctx, cells) {
     h('span', { class: 'hive-muted hive-inbox-search-status', role: 'status', 'aria-live': 'polite' }, status));
   return h('div', { class: 'hive-dock hive-global-dock' },
     h('section', { class: 'hive-panel hive-conversation hive-global-inbox', tabindex: '-1', 'data-focus-key': 'panel:global-inbox', 'data-scroll-key': 'panel:global-inbox', 'aria-label': 'Inbox across all hives', 'data-pane': 'conversation' },
-      h('h3', {}, 'Inbox'), h('div', { class: 'hive-inbox-totals' }, needsBadge(counts.needs), ` needs you · ${counts.human} messages`), box, filters, list));
+      h('h3', {}, 'Inbox'), h('div', { class: 'hive-inbox-totals' }, counts.needs ? [needsBadge(counts.needs), ' needs you · '] : null, messageCount(counts.human)), box, filters, list));
 }
