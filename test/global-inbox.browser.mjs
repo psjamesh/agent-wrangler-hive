@@ -213,7 +213,7 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   await run(`document.querySelector('[data-focus-key="topics-back:alpha"]').click(); await new Promise(r => setTimeout(r, 100)); [...document.querySelectorAll('.hive-conversation button')].find(e => e.textContent === 'Show topics').click();`);
   assert.equal(await run(`return Boolean(document.querySelector('[aria-label="Topics"]'));`), true);
 
-  await run(`[...document.querySelectorAll('.hive-inbox-filter')].find(e => e.textContent.startsWith('Inbox')).click(); const input = document.querySelector('.hive-inbox-search-input'); input.value = 'retry'; input.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); document.querySelector('[aria-label="Back to all hives"]').click(); await new Promise(r => setTimeout(r, 200));`);
+  await run(`[...document.querySelectorAll('.hive-inbox-filter')].find(e => e.textContent.startsWith('Inbox')).click(); const input = document.querySelector('.hive-inbox-search-input'); input.value = 'retry'; input.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); document.querySelector('[aria-label="Show all hives"]').click(); await new Promise(r => setTimeout(r, 200));`);
   assert.equal(await run(`return document.querySelector('.hive-inbox-search-input').value;`), 'SQLite');
   await run(`document.querySelector('[data-tile-id="alpha"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise(r => setTimeout(r, 200));`);
   assert.equal(await run(`return document.querySelector('.hive-inbox-search-input').value;`), 'retry');
