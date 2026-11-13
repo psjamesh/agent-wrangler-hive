@@ -165,7 +165,7 @@ function beadContext(rt, host, actor, beadId, conversation) {
 export function spawnRestriction(doc, sid) {
   const l = Object.values(doc.workerLaunches || {}).find((x) => x.sessionId === sid) || Object.values(doc.launches || {}).find((x) => x.sessionId === sid);
   if (!l) return 'launch restrictions not applied';
-  return l.restriction === 'denied' ? 'denied' : 'unrestricted for this provider';
+  return l.restriction === 'denied' ? 'denied' : 'unrestricted';
 }
 
 export async function buildContext(rt, host, actor, { include_closed = false, bead_id, scope = 'cell' } = {}) {
@@ -451,7 +451,7 @@ const reviewArgs = {
 
 export const spawnWorkerTool = hiveTool({
   name: 'hive_spawn_worker',
-  description: 'Launch a tracked session attached to a bead, with a role: work (default) or review. The queen/coordinator may launch either. The session holding the bead\'s claim may launch review sessions for that bead only (never another work session). An advisor, investigation or other helper is its own bead launched with role work; there is no shared-bead helper. work reserves the bead and global capacity and launches a worker already claimed and bound. review launches a reviewer bound to the bead on the hive review policy (cell.review_policy: a primary and a secondary config, chosen so the reviewer\'s provider differs from the builder\'s, else the primary with sameProvider noted); agent/model/effort are ignored for a holder, and the queen/coordinator may differ only with override_reason, which is recorded. A re-review is another review session on the same bead with its own verdict. Review sessions share the bead\'s capacity slot. The queen is told when a review session starts. An uncertain launch keeps its reservation; reconcile it instead of launching again. Hive-launched Claude sessions cannot call spawn_session, spawn_workflow, schedule_session or update_schedule; every helper, advisor or investigation needs its own bead, launched here.',
+  description: 'Launch a tracked session attached to a bead, with a role: work (default) or review. The queen/coordinator may launch either. The session holding the bead\'s claim may launch review sessions for that bead only (never another work session). An advisor, investigation or other helper is its own bead launched with role work; there is no shared-bead helper. work reserves the bead and global capacity and launches a worker already claimed and bound. review launches a reviewer bound to the bead on the hive review policy (cell.review_policy: a primary and a secondary config, chosen so the reviewer\'s provider differs from the builder\'s, else the primary with sameProvider noted); agent/model/effort are ignored for a holder, and the queen/coordinator may differ only with override_reason, which is recorded. A re-review is another review session on the same bead with its own verdict. Review sessions share the bead\'s capacity slot. The queen is told when a review session starts. An uncertain launch keeps its reservation; reconcile it instead of launching again. Launch every helper, advisor or investigation as its own bead here; sessions started with spawn_session, spawn_workflow, schedule_session or update_schedule are untracked.',
   inputSchema: { ...workerArgs, ...reviewArgs, role: z.enum(['work', 'review']).optional() },
 }, ({ rt, host, actor, args }) => {
   const { role = 'work', commit, override_reason, ...rest } = args;
