@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { workTools } from '../server/tools.js';
+import { workTools, publishTool } from '../server/tools.js';
 
 const catalog = Object.fromEntries(workTools.map((t) => [t.name, t.inputSchema._zod.toJSONSchema()]));
 
@@ -31,4 +31,12 @@ test('catalog keeps constraints and descriptions agents rely on', () => {
   const link = catalog.hive_link_beads.properties.links.items.properties;
   assert.equal(link.prerequisite.type, 'string');
   assert.equal(link.prerequisite.$ref, undefined);
+});
+
+for (const tool of [publishTool, workTools.find(t => t.name === 'hive_request_input')]) test(`${tool.name} accepts optional session links with bounded labels`, () => {
+  const base = tool.name === 'hive_publish' ? { text: 'Inspect the session.' } : { title: 'Inspect session', body: 'Approve the command there.' };
+  assert.equal(tool.inputSchema.safeParse(base).success, true);
+  assert.equal(tool.inputSchema.safeParse({ ...base, session_id: '22222222-2222-4222-8222-222222222222', session_label: 'Build session' }).success, true);
+  assert.equal(tool.inputSchema.safeParse({ ...base, session_id: 'not-a-session' }).success, false);
+  assert.equal(tool.inputSchema.safeParse({ ...base, session_label: 'x'.repeat(201) }).success, false);
 });

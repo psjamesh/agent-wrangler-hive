@@ -798,3 +798,40 @@ test('the option guard also applies when a dedupe update drops the options', asy
   await assert.rejects(f.create(worker, { kind: 'decision', dedupe_key: 'd' }), /options/i);
   assert.deepEqual((await f.create(worker, { kind: 'decision', dedupe_key: 'd', options: choices })).options, r.options);
 });
+
+test('request session references validate board existence and survive dedupe edits', async t => {
+  const f = fixture(t);
+  const r = await f.create(queen, { session_id: other, session_label: 'Release worker', dedupe_key: 'session-action' });
+  assert.deepEqual(r.sessionLink, { sessionId: other, label: 'Release worker' });
+  const edited = await f.create(queen, { session_id: worker, session_label: 'Builder', dedupe_key: 'session-action' });
+  assert.equal(edited.id, r.id);
+  assert.deepEqual(edited.sessionLink, { sessionId: worker, label: 'Builder' });
+  assert.ok(edited.contentRevision > r.contentRevision);
+  const repeated = await f.create(queen, { dedupe_key: 'session-action' });
+  assert.deepEqual(repeated.sessionLink, edited.sessionLink);
+  await assert.rejects(f.create(queen, { session_id: '44444444-4444-4444-8444-444444444444' }), /session.*board|Unknown session/i);
+  await assert.rejects(f.create(queen, { session_label: 'Without session' }), /session_id/);
+});
+
+for (const role of ['worker', 'reviewer']) test(`forwarded ${role} requests carry the requester session as well as an explicit target`, async t => {
+  const f = fixture(t);
+  f.rt.metadata.mutate(d => { d.bindings.cell = [{ active: true, sessionId: worker, role }]; });
+  const r = await f.create(worker, { session_id: other });
+  const forwarded = await requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(r) });
+  assert.deepEqual(forwarded.requesterSessionLink, { sessionId: worker, label: 'Open requester session' });
+  assert.equal(forwarded.sessionLink.sessionId, other);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].id, queen);
+});
+
+test('published session references are stored separately from author identity and reject unknown targets', async t => {
+  const f = fixture(t);
+  const { publish } = await import('../server/conversation.js');
+  const actor = { sessionId: queen, cell: f.rt.metadata.cell('cell'), role: 'queen' };
+  const out = await publish(f.rt, actor, { text: 'Approve the command in this session.', session_id: worker, session_label: 'Build session' }, f.host);
+  const m = f.rt.metadata.read().conversation.cell.find(m => m.id === out.message_id);
+  assert.equal(m.sessionId, queen);
+  assert.deepEqual(m.sessionLink, { sessionId: worker, label: 'Build session' });
+  await assert.rejects(publish(f.rt, actor, { text: 'Unknown target', session_id: '44444444-4444-4444-8444-444444444444' }, f.host), /session.*board|Unknown session/i);
+  assert.equal(f.sent.length, 0);
+});

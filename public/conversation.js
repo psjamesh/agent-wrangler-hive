@@ -4,7 +4,7 @@ import { conversationEpoch } from './view-state.js';
 import { confirmHive } from './confirm-dialog.js';
 import { imageDraft, imageComposer, messageImages } from './attachments.js';
 import { conversationInputs } from './view-inputs.js';
-import { h, syncChildren, markdown, relativeTime } from './dom.js';
+import { h, syncChildren, markdown, relativeTime, sessionReference } from './dom.js';
 import { hiveLink } from './deep-links.js';
 import { reactionGlyph } from './reaction-glyphs.js';
 
@@ -170,10 +170,12 @@ function messageItem({ m, cell, beads, graph, api, ui, ctx, target, replyKey }) 
       m.beadId ? h('button', { type: 'button', class: 'hive-chip', onclick: () => ui.selectBead(m.beadId) }, beads[m.beadId]?.title || m.beadId) : null),
     target && !reaction ? h('div', { class: 'hive-quote' }, `↪ ${target.text.slice(0, 160)}`) : null,
     m.requestId ? requestCard(cell.requests?.[m.requestId], { cell, graph, api, ui, ctx }) : reaction ? h('a', { class: 'hive-reaction-reply', href: hiveLink(cell.id, m.threadId, m.replyTo), 'aria-label': `${reactionLabel} — view source message`, title: target?.text || 'View source message' }, reactionGlyph(reaction), reactionLabel) : markdown(api, m.text, {
+      sessions: graph?.sessions || [],
       beadIds: beneath({ beads }, cell.rootBeadId), cellId: cell.id,
       onHighlight: (id, source) => ctx.beadReference?.highlight?.(id, source),
       onOpen: id => { ui.setPane('details', { render: false }); ui.selectBead(id); },
     }),
+    !m.requestId && m.sessionLink ? h('p', { class: 'hive-session-links' }, sessionReference(graph, m.sessionLink)) : null,
     messageImages(m, cell, ui, ctx),
     m.author === 'human' ? h('div', { class: 'hive-delivery' }, deliveryControls(m, cell, ctx), answerBadge(m, cell)) : null,
     controls.length ? h('div', { class: 'hive-message-foot' }, controls) : null);

@@ -7,8 +7,8 @@ export function sessionLinkId(href) {
 }
 
 export function sessionLinkProblem(sessions, history, id) {
-  if (!Array.isArray(sessions)) return null;
-  if (sessions.some((x) => x.sessionId === id)) return null;
+  if (!Array.isArray(sessions)) return 'Session availability is unknown.';
+  if (sessions.some((x) => x.sessionId === id && !x.archived)) return null;
   if (Array.isArray(history) && history.some((x) => x.sessionId === id)) return 'That session is archived.';
   return 'That session is not on the board.';
 }

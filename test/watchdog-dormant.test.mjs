@@ -35,6 +35,7 @@ test('a dormant claimant with no wait, request or review flags at the worker thr
   f.advance(30 * MIN - 1); assert.deepEqual(kinds(f), []);
   f.advance(1);
   const [flag] = f.flags();
+  assert.equal(flag.session_link, '#session=worker');
   assert.equal(flag.kind, 'dormant_claim'); assert.equal(flag.bead_id, 'work'); assert.equal(flag.session_id, 'worker');
   assert.match(flag.reason, /no recorded wait/);
   for (const wait of [{ waitingFor: 'Final check later' }, { status: 'blocked' }]) {

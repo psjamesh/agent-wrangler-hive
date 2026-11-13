@@ -1,3 +1,4 @@
+import { sessionReference } from './session-links.js';
 import { beadReferences } from '../public/bead-references.js';
 import { hiveLink } from '../public/deep-links.js';
 import { createHash } from 'node:crypto';
@@ -570,9 +571,10 @@ function publishedBeadMentions(rt, body) {
   return ids;
 }
 
-async function publishMessage(rt, host, actor, { text: body, bead_id, reply_to, thread_id, thread_title, answers, attachments }) {
+async function publishMessage(rt, host, actor, { text: body, bead_id, reply_to, thread_id, thread_title, answers, attachments, session_id, session_label }) {
   if (rt.metadata.error) throw new HiveError(rt.metadata.error, 'metadata-unavailable');
   const cell = actor.cell;
+  const sessionLink = sessionReference(host, { session_id, session_label });
   const clean = text(body, 'text', MESSAGE_MAX, { required: true });
   publishedBeadMentions(rt, clean);
   const beadId = beadRef(rt, cell.id, bead_id, actor);
@@ -606,7 +608,7 @@ async function publishMessage(rt, host, actor, { text: body, bead_id, reply_to, 
       const target = replyTo ? list.find((x) => x.id === replyTo) : null;
       const t = joinThread(d, cell.id, { replyTo, threadId })
         || makeThread(d, cell.id, { title: title || autoTitle(clean), titleBy: title ? actor.sessionId : 'hive', beadId, by: actor.sessionId, origin: 'new', at });
-      const m = { id, cellId: cell.id, author: 'session', sessionId: actor.sessionId, role: actor.role, text: clean, attachments: kept, beadId, replyTo, threadId: t.id, at, context: contextAt(rt, beadId, target, t) };
+      const m = { id, cellId: cell.id, author: 'session', sessionId: actor.sessionId, role: actor.role, ...(sessionLink ? { sessionLink } : {}), text: clean, attachments: kept, beadId, replyTo, threadId: t.id, at, context: contextAt(rt, beadId, target, t) };
       const related = mentions.filter(id => id !== beadId && id !== t.beadId);
       if (related.length) m.relatedBeadIds = related;
       const scope = requestScopes(d, cell.id)(m, true);

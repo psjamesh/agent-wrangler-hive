@@ -1,3 +1,4 @@
+import { availableSessionHref } from './session-links.js';
 import { awaitingQueen } from './conversation.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 import { safeDeliver } from './sessions.js';
@@ -118,7 +119,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
   const add = (kind, subject, state, since, reason, fields) => {
     const id = JSON.stringify([kind, subject, state]);
     since = cell.watchdogFlags?.[id]?.since ?? since;
-    flags.push({ id, kind, ...fields, reason, since, age_ms: Math.max(0, now - since) });
+    flags.push({ id, kind, ...fields, ...(fields?.session_id ? { session_link: availableSessionHref(host, fields.session_id) } : {}), reason, since, age_ms: Math.max(0, now - since) });
   };
   for (const bead of open) {
     const updated = stamp(bead.updatedAt);
@@ -256,7 +257,7 @@ function digestText(items, archive = []) {
   for (const { flag } of items) counts.set(flag.kind, (counts.get(flag.kind) || 0) + 1);
   return [
     `[Hive] Watchdog attention: ${items.length} newly flagged item(s). ${[...counts].map(([kind, count]) => `${kind}: ${count}`).join(', ')}.`,
-    ...items.slice(0, 10).map(({ cellId, flag }) => `- Cell ${cellId}: ${flag.reason} ${flag.bead_id ? `Bead ${flag.bead_id}. ` : ''}${flag.session_id ? `Session ${flag.session_id}. ` : ''}${flag.message_id ? `Message ${flag.message_id}. ` : ''}Age ${Math.floor(flag.age_ms / 60000)} minutes.`),
+    ...items.slice(0, 10).map(({ cellId, flag }) => `- Cell ${cellId}: ${flag.reason} ${flag.bead_id ? `Bead ${flag.bead_id}. ` : ''}${flag.session_id ? `Session ${flag.session_id}${flag.session_link ? ` [Open session](${flag.session_link})` : ''}. ` : ''}${flag.message_id ? `Message ${flag.message_id}. ` : ''}Age ${Math.floor(flag.age_ms / 60000)} minutes.`),
     ...(archive.length ? [`Idle sessions whose last bead is closed; consider archiving: ${archive.slice(0, 10).map(a => `${a.session_id} (${a.last_bead_id})`).join(', ')}${archive.length > 10 ? ` and ${archive.length - 10} more` : ''}.`] : []),
     'Read hive_context attention.watchdog for the full list. Investigate and update the work or answer the message. Do not infer completion or restart a worker automatically.',
   ].join('\n');

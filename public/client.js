@@ -12,7 +12,7 @@ import { disposeConfirm } from './confirm-dialog.js';
 import { disposeConversation } from './conversation.js';
 import { disposePanels } from './cell-view.js';
 import { disposeImages } from './attachments.js';
-import { h, clear, syncChildren, visibleBand, HIVE_ICON, setSessionLinkGuard } from './dom.js';
+import { h, clear, syncChildren, visibleBand, HIVE_ICON, setSessionLinkGuard, setSessionLinkAvailability } from './dom.js';
 import { sessionLinkProblem } from './session-links.js';
 import { renderSetup, setupNeeded } from './setup.js';
 import { renderHive, disposeHiveView, menuRenderStart, menuRenderEnd, disposeMenuWatch } from './hive-view.js';
@@ -694,6 +694,8 @@ const toast = createToaster(() => state.api);
 function notice(text, opts) {
   if (!toast(text, opts)) console.warn('hive: Agent Wrangler could not show a toast:', text);
 }
+
+setSessionLinkAvailability(id => Boolean(state.graph?.sessions?.some(s => s.sessionId === id && !s.archived)));
 
 setSessionLinkGuard((id) => {
   const problem = sessionLinkProblem(state.graph?.sessions, state.history, id);
