@@ -29,7 +29,6 @@ import {
 
 const BEAD_SIZE = 60;
 const CELL_SIZE = 92;
-const BACK_EDGE = 48;
 
 function firstLine(text) {
   return String(text || '').split('\n').find((l) => l.trim())?.trim() || '';
@@ -589,15 +588,12 @@ function cellMap(ctx, cell, related = null, previous = null) {
       if (plan.same) return;
       save(plan);
     },
-    onBackground: ({ x }) => {
-      if (x < BACK_EDGE) ui.closeCell();
-      else if (selected) ui.selectBead(null);
+    onBackground: () => {
+      if (selected) ui.selectBead(null);
     },
     onDragState: (on) => ui.setDragging(on),
     claimDrag: api?.claimDrag ? (el) => api.claimDrag(el) : null,
     overlay: [
-      h('div', { class: 'hive-back-edge', 'aria-hidden': 'true' }),
-      h('button', { type: 'button', class: 'hive-back-tab', onclick: () => ui.closeCell(), 'aria-label': 'Back to all hives', title: 'Back to all hives. Clicking the empty left edge also goes back.' }, '‹'),
       cell.snapshot ? null : h('div', { class: 'hive-stage-tools' },
         h('button', {
           type: 'button',
@@ -672,15 +668,6 @@ function cellMap(ctx, cell, related = null, previous = null) {
   map.el.hiveConnectRelated = connectRelated;
   connectRelated(related);
   if (ctx.beadReference) ctx.beadReference.highlight = map.highlightReference;
-  map.el.classList.add('has-back-edge');
-  const edge = (evt) => {
-    const r = map.el.getBoundingClientRect();
-    const on = evt.clientX - r.left < BACK_EDGE && !map.el.classList.contains('is-panning')
-      && evt.target.closest?.('svg') && !evt.target.closest('[data-tile-id]');
-    map.el.classList.toggle('is-back-edge', !!on);
-  };
-  map.el.addEventListener('pointermove', edge);
-  map.el.addEventListener('pointerleave', () => map.el.classList.remove('is-back-edge'));
   return h('section', { class: 'hive-stage', 'aria-label': 'Work map' }, map.el);
 }
 
