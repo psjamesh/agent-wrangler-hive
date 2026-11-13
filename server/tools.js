@@ -14,6 +14,8 @@ import { resolveCaller, participation } from './access.js';
 import * as ops from './ops.js';
 import { HiveError } from './ops.js';
 import { sessionSummary } from './sessions.js';
+import { handoffQueen } from './queen-handoff.js';
+import { ungovernedDescendants } from './tracking.js';
 import { descendantIds, openDescendants, LINK_TYPES, OUTCOMES, SETTABLE_STATUSES } from './bead-model.js';
 import { cellContextConversation, publish, acknowledgeInput, updateThread } from './conversation.js';
 
@@ -160,6 +162,12 @@ function beadContext(rt, host, actor, beadId, conversation) {
   };
 }
 
+export function spawnRestriction(doc, sid) {
+  const l = Object.values(doc.workerLaunches || {}).find((x) => x.sessionId === sid) || Object.values(doc.launches || {}).find((x) => x.sessionId === sid);
+  if (!l) return 'launch restrictions not applied';
+  return l.restriction === 'denied' ? 'denied' : 'unrestricted for this provider';
+}
+
 export async function buildContext(rt, host, actor, { include_closed = false, bead_id, scope = 'cell' } = {}) {
   await rt.snapshots.refresh();
   if (scope === 'bead') {
@@ -184,6 +192,7 @@ export async function buildContext(rt, host, actor, { include_closed = false, be
       role: sid === cell.queenSessionId ? 'queen' : bindings.find((b) => b.sessionId === sid)?.role || (host.sessions.get(sid)?.taskId === cell.taskId ? 'task member' : 'bound'),
       bound_beads: bindings.filter((b) => b.sessionId === sid && b.beadId).map((b) => b.beadId),
       claims: open.filter((b) => b.ownerSessionId === sid).map((b) => b.id),
+      spawn_tools: spawnRestriction(doc, sid),
     }));
     const stale = [...new Set(open.map((b) => b.ownerSessionId).filter(Boolean))].map((sid) => ({ ...sessionSummary(host, sid), claims: open.filter((b) => b.ownerSessionId === sid).map((b) => b.id) })).filter((s) => !s.known || s.archived || s.status === 'exited' || sleepingReason(s));
     const ops_ = Object.values(doc.operations)
@@ -226,7 +235,8 @@ export async function buildContext(rt, host, actor, { include_closed = false, be
         waiting_beads: open.filter((b) => b.waitingFor).map((b) => ({ bead_id: b.id, title: b.title, status: b.status, owner_session_id: b.ownerSessionId, waiting_for: b.waitingFor })),
         in_progress_without_owner: open.filter((b) => b.status === 'in_progress' && !b.assignee).map((b) => ({ bead_id: b.id, title: b.title, next_action: b.nextAction || undefined })),
         untracked_beads: open.filter((b) => isUntracked(host, rt.snapshots.graph, { ...b, ...reviewFields(rt, b.id) })).map((b) => ({ bead_id: b.id, title: b.title, owner_session_id: b.ownerSessionId })),
-        untracked_sessions: sessions.filter((s) => s.session_id !== cell.queenSessionId && s.known && !s.archived && s.status !== 'exited' && !s.claims.length && !Object.values(doc.reviews || {}).some((r) => OPEN_REVIEW_STATES.has(r.state) && r.reviewerSessionId === s.session_id)).map((s) => ({ session_id: s.session_id, status: s.status, note: 'No claimed open bead; ordinary spawns are untracked until claimed.' })),
+        untracked_sessions: sessions.filter((s) => s.session_id !== cell.queenSessionId && s.known && !s.archived && s.status !== 'exited' && !s.claims.length && !Object.values(doc.reviews || {}).some((r) => OPEN_REVIEW_STATES.has(r.state) && r.reviewerSessionId === s.session_id)).map((s) => ({ session_id: s.session_id, status: s.status, note: 'No claimed open bead; sessions started outside Hive are untracked until claimed.' })),
+        untracked_descendants: ungovernedDescendants(rt, host, cell, open),
         worker_launches_to_reconcile: Object.values(doc.workerLaunches || {}).filter((l) => l.cellId === cell.id && RESERVED_LAUNCH_STATES.has(l.state)),
         reviews_awaiting_verdict: Object.values(doc.reviews || {}).filter((r) => r.cellId === cell.id && OPEN_REVIEW_STATES.has(r.state)),
         operations_to_reconcile: ops_,
@@ -441,13 +451,13 @@ const reviewArgs = {
 
 export const spawnWorkerTool = hiveTool({
   name: 'hive_spawn_worker',
-  description: 'Launch a tracked session attached to a bead, with a role: work (default), review or helper. The queen/coordinator may launch any role. The session holding the bead\'s claim may launch review or helper sessions for that bead only (never another work session). work reserves the bead and global capacity and launches a worker already claimed and bound. review launches a reviewer bound to the bead on the hive review policy (cell.review_policy: a primary and a secondary config, chosen so the reviewer\'s provider differs from the builder\'s, else the primary with sameProvider noted); agent/model/effort are ignored for a holder, and the queen/coordinator may differ only with override_reason, which is recorded. A re-review is another review session on the same bead with its own verdict. helper launches an investigator bound to the bead without taking its claim. Review and helper sessions share the bead\'s capacity slot. The queen is told when a review session starts. An uncertain launch keeps its reservation; reconcile it instead of launching again. Ordinary spawn_session remains possible but is untracked until you join it with hive_bind_session.',
-  inputSchema: { ...workerArgs, ...reviewArgs, role: z.enum(['work', 'review', 'helper']).optional() },
+  description: 'Launch a tracked session attached to a bead, with a role: work (default) or review. The queen/coordinator may launch either. The session holding the bead\'s claim may launch review sessions for that bead only (never another work session). An advisor, investigation or other helper is its own bead launched with role work; there is no shared-bead helper. work reserves the bead and global capacity and launches a worker already claimed and bound. review launches a reviewer bound to the bead on the hive review policy (cell.review_policy: a primary and a secondary config, chosen so the reviewer\'s provider differs from the builder\'s, else the primary with sameProvider noted); agent/model/effort are ignored for a holder, and the queen/coordinator may differ only with override_reason, which is recorded. A re-review is another review session on the same bead with its own verdict. Review sessions share the bead\'s capacity slot. The queen is told when a review session starts. An uncertain launch keeps its reservation; reconcile it instead of launching again. Hive-launched Claude sessions cannot call spawn_session, spawn_workflow, schedule_session or update_schedule; every helper, advisor or investigation needs its own bead, launched here.',
+  inputSchema: { ...workerArgs, ...reviewArgs, role: z.enum(['work', 'review']).optional() },
 }, ({ rt, host, actor, args }) => {
   const { role = 'work', commit, override_reason, ...rest } = args;
   if (role !== 'review' && (commit !== undefined || override_reason !== undefined)) throw new ops.HiveError('commit and override_reason apply only to role review.');
   if (role === 'review') return requestReview(rt, host, actor, { ...rest, commit, override_reason });
-  return spawnWorker(rt, host, actor, rest, role === 'helper' ? { role: 'investigator' } : {});
+  return spawnWorker(rt, host, actor, rest);
 });
 
 export const reconcileWorkerTool = hiveTool({
@@ -520,6 +530,18 @@ const requestTools = [
   requestTool('hive_answer_request', 'Current queen only: answer a request still routed to you, within your own authority. It is attributed as a queen answer, never a human answer. Use current revisions from hive_context.', { ...requestRevisionArgs, option_id: z.string().max(32).optional().describe('Stable id from the current options.'), text: z.string().max(20000).optional().describe('Standalone answer or optional note with an option (up to 4000 characters for requests with options).') }, requests.answerRequest),
   requestTool('hive_forward_request', 'Current queen only: forward your queued native request to the human with an optional recommendation. Preserves the original request and requester. Do not create a second standard request.', { ...requestRevisionArgs, recommendation: z.string().max(4000).optional() }, requests.forwardRequest),
 ];
+export const handoffQueenTool = hiveTool({
+  name: 'hive_handoff_queen',
+  description: 'Current queen only. Hand this cell to one successor queen launched by Hive (never with spawn_session). The successor is a top-level session in the cell\'s task with your summary and a mandatory hive_context first action. One handoff may be in flight at a time and it is fenced to your queen generation: if the queen changes meanwhile, the successor is refused before it acts. Existing workers keep their claims and reviews; claims you hold personally are not transferred. You lose queen authority once the successor is installed. The human can recover or replace the queen at any time.',
+  inputSchema: {
+    summary: z.string().min(1).max(20000).describe('What the successor must know: state of the work, open decisions, what you were about to do.'),
+    cwd: z.string().max(2000).optional(),
+    agent: z.string().max(80).optional(),
+    model: z.string().max(200).optional(),
+    effort: z.string().max(80).optional(),
+  },
+}, ({ rt, host, actor, args }) => handoffQueen(rt, host, actor, args));
+
 export const reportPrWaitTool = hiveTool({
   name: 'hive_report_pr_wait',
   description: 'Report or clear a human wait on a known PR associated with your bead. Claimant, queen or coordinator only. ready means independent review approved this exact head and the human should review it; GitHub checks must also be green. cannot-fix records a concrete human blocker the worker cannot resolve, such as admin workflow approval or an unresolved conflict. Failing checks the worker is handling are not a human wait. Reports expire when the observed head changes. This never merges or changes GitHub.',
@@ -527,4 +549,4 @@ export const reportPrWaitTool = hiveTool({
 }, ({ rt, actor, args }) => reportPrWait(rt, actor, args));
 
 export const workTools = [
-  ...requestTools, reportPrWaitTool, spawnWorkerTool, reconcileWorkerTool, requestReviewTool, reviewVerdictTool, cancelReviewTool, contextTool, readyTool, createBeadsTool, updateBeadTool, linkBeadsTool, claimBeadTool, releaseBeadTool, bindSessionTool, finishBeadTool, deleteBeadsTool, publishTool, acknowledgeInputTool, reconcileOperationTool, updateThreadTool];
+  ...requestTools, handoffQueenTool, reportPrWaitTool, spawnWorkerTool, reconcileWorkerTool, requestReviewTool, reviewVerdictTool, cancelReviewTool, contextTool, readyTool, createBeadsTool, updateBeadTool, linkBeadsTool, claimBeadTool, releaseBeadTool, bindSessionTool, finishBeadTool, deleteBeadsTool, publishTool, acknowledgeInputTool, reconcileOperationTool, updateThreadTool];

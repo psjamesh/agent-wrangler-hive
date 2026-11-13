@@ -1556,7 +1556,7 @@ test('a Claude builder gets the secondary reviewer; when neither differs the pri
 test('non-holders cannot spawn reviews or helpers and a holder cannot spawn another work session', async () => {
   const f = holderFixture(); await launchRecording(f);
   await assert.rejects(reviews.requestReview(f.rt, f.host, f.worker('other'), { bead_id: 'a', intent: 'review' }), /queen|coordinator|attach/);
-  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.worker('other'), { bead_id: 'a', intent: 'help' }, { role: 'investigator' }), /queen|coordinator|attach/);
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.worker('other'), { bead_id: 'a', intent: 'help' }, { role: 'investigator' }), /own bead|queen|coordinator|attach/);
   await assert.rejects(workers.spawnWorker(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'more' }), /queen|coordinator/);
   assert.equal(f.launched.length, 0);
 });
@@ -1572,14 +1572,14 @@ test('queen overrides need an override_reason, recorded on the review; terra is 
   assert.equal(reviewPolicy(f.doc().cells.cell).primary.model, 'opus');
 });
 
-test('a holder spawns a helper that shares the bead slot and takes no claim', async () => {
+test('a claimless helper can no longer share a builder bead or slot through spawn', async () => {
   const f = holderFixture('codex', 1); await launchRecording(f);
   const used = capacity(f.rt).used;
-  const out = await workers.spawnWorker(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'investigate' }, { role: 'investigator' });
+  const before = f.launched.length;
+  for (const who of [f.worker('builder'), f.actor()]) await assert.rejects(workers.spawnWorker(f.rt, f.host, who, { bead_id: 'a', intent: 'investigate' }, { role: 'investigator' }), /own bead/);
   assert.equal(f.live.a.assignee, 'aw:builder');
-  assert(f.doc().bindings.cell.some((b) => b.sessionId === out.session_id && b.role === 'investigator' && b.active));
   assert.equal(capacity(f.rt).used, used);
-  assert.deepEqual(attachmentsFor(f.rt, f.host, 'a').map((x) => x.role).sort(), ['helper', 'work']);
+  assert.equal(f.launched.length, before);
 });
 
 test('a session started elsewhere is nominated as reviewer by the holder or queen and can give its verdict', async () => {
@@ -1605,7 +1605,9 @@ test('no session can make itself a reviewer, and the holder or anyone who worked
   }
   await assert.rejects(bindSession(f.rt, f.host, f.actor(), { bead_id: 'a', session_id: 'builder', role: 'review' }), /own work|worked on/);
   await launchRecording(f);
-  const helper = await workers.spawnWorker(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'help' }, { role: 'investigator' });
+  f.board.set('helper-s', { sessionId: 'helper-s', taskId: 'task', status: 'working', agent: 'claude' });
+  await bindSession(f.rt, f.host, f.worker('builder'), { bead_id: 'a', session_id: 'helper-s', role: 'helper' });
+  const helper = { session_id: 'helper-s' };
   await assert.rejects(bindSession(f.rt, f.host, f.worker(helper.session_id), { bead_id: 'a', session_id: helper.session_id, role: 'review' }), /nominate itself/);
   await assert.rejects(bindSession(f.rt, f.host, f.actor(), { bead_id: 'a', session_id: helper.session_id, role: 'review' }), /worked on/);
   assert.equal(Object.values(f.doc().reviews).length, 0);

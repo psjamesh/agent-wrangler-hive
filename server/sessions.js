@@ -1,5 +1,6 @@
 import { workerBeforeDispatch } from './workers.js';
 import { assertCurrent } from './lifetime.js';
+import { applyLaunchPolicy, launchRestriction } from './launch-policy.js';
 import { newId } from './metadata-store.js';
 import { isSessionId } from './bead-model.js';
 import { participation, SPAWN_GRACE_MS } from './access.js';
@@ -19,7 +20,7 @@ export function instructionsBlock(cell) {
 export function queenBrief({ cell, taskName, extra = '' }) {
   return [
     `You are the queen of the Hive cell for task "${taskName}" (cell ${cell.id}, task ${cell.taskId}).`,
-    'Use the hive-queen skill. Start with hive_context to recover the goal, the work graph and any input from the human, then keep the work record coherent: maintain goals and readiness with the hive_* tools, delegate tracked work with hive_spawn_worker (passing its bead_id) and request reviews with hive_request_review, and reconcile what workers report.',
+    'Use the hive-queen skill. Start with hive_context to recover the goal, the work graph and any input from the human, then keep the work record coherent: maintain goals and readiness with the hive_* tools, delegate tracked work with hive_spawn_worker (passing its bead_id) and request reviews with hive_request_review, and reconcile what workers report. Do not call spawn_session, spawn_workflow or schedule_session; every helper, advisor or investigation is a bead launched with hive_spawn_worker, and a successor queen is requested with hive_handoff_queen.',
     'If the task already has sessions or work, map it before anything else, as the hive-queen skill\'s "Map existing work" section describes: reuse any beads and bindings already there, and do not spawn workers just to represent sessions that exist.',
     'Follow the review and merge instructions the human, the repository and your global skills give you. Answer each [Hive] message from the human with hive_publish and its reply_to: your terminal text is not shown in Hive. Also publish what the human should know even when they need not act: meaningful milestones and results, significant changes of approach, scope or timing, material blockers and how you are handling them, decisions, questions, and completion or verification outcomes. Say in one concise message what changed, why it matters and what comes next. Leave routine bookkeeping, unchanged status and worker chatter on the beads, and post no timed status updates.',
     `When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Review worker/reviewer input_requests in hive_context: answer within your authority with hive_answer_request or forward the same id with hive_forward_request. Queen-stage requests stay out of human views; human step-in is not supported. Helpers must launch into task ${cell.taskId}; ancestry alone does not enroll them. If tools are missing, check membership and refresh the agent terminal.`,
@@ -77,7 +78,7 @@ export async function sendActivationBrief(rt, host, { cellId }) {
   return result;
 }
 
-export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort, autoCompactTokens, intent, instructions }) {
+export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort, autoCompactTokens, intent, instructions, handoff = null }) {
   if (rt.metadata.error) throw new HiveError(rt.metadata.error);
   let cell = rt.metadata.cell(cellId);
   if (!cell) throw new HiveError(`Unknown cell ${cellId}.`);
@@ -87,6 +88,7 @@ export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort,
   if (active) throw new HiveError(`A queen launch for this cell is already ${active.state}. Reconcile it before launching another.`);
   const task = host.tasks.get(cell.taskId);
   if (!task || task.archived) throw new HiveError('The cell\'s task is archived.');
+  if (handoff && ((cell.queenGeneration || 0) !== handoff.expectedGeneration || cell.queenSessionId !== handoff.fromSessionId)) throw new HiveError('The queen changed; this handoff is stale.', 'conflict');
   const extra = text(intent, 'intent', 20000) || '';
   if (autoCompactTokens != null && (!Number.isInteger(autoCompactTokens) || autoCompactTokens <= 0)) throw new HiveError('Auto-compaction threshold must be a whole number of tokens.');
   if (instructions !== undefined) {
@@ -95,7 +97,7 @@ export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort,
   }
   const launchId = newId('launch');
   rt.metadata.mutate((d) => {
-    d.launches[launchId] = { id: launchId, cellId, taskId: cell.taskId, state: 'pending', sessionId: null, generation: d.cells[cellId].queenGeneration || 0, createdAt: Date.now(), updatedAt: Date.now() };
+    d.launches[launchId] = { id: launchId, cellId, taskId: cell.taskId, state: 'pending', sessionId: null, generation: d.cells[cellId].queenGeneration || 0, restriction: launchRestriction(agent), ...(handoff ? { handoff: { fromSessionId: handoff.fromSessionId, summary: handoff.summary.slice(0, 4000) } } : {}), createdAt: Date.now(), updatedAt: Date.now() };
   });
   const opts = { intent: queenBrief({ cell, taskName: task.name, extra }), taskId: cell.taskId, ext: { hive: { launchId } } };
   if (typeof cwd === 'string' && cwd.trim()) opts.cwd = cwd.trim();
@@ -105,7 +107,7 @@ export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort,
   launchesInFlight.add(launchId);
   try {
     assertCurrent(rt, host);
-    result = await host.sessions.spawn(opts);
+    result = await host.sessions.spawn(applyLaunchPolicy(opts));
   } catch (err) {
     const bound = rt.metadata.read().launches[launchId];
     try {
@@ -137,7 +139,7 @@ export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort,
       l.superseded = true;
       return;
     }
-    recordQueen(d, cellId, l.sessionId, Date.now(), 'launched');
+    recordQueen(d, cellId, l.sessionId, Date.now(), 'launched', { revokeFrom: l.handoff?.fromSessionId });
     l.generation = cell.queenGeneration;
   });
   return { launchId, sessionId };
@@ -198,6 +200,7 @@ export function onBeforeDispatch({ sessionId, ext, host }) {
   const launchId = ext && typeof ext === 'object' ? ext.launchId : null;
   if (typeof launchId === 'string' && !rt.metadata.error) {
     const l = rt.metadata.read().launches[launchId];
+    if (l) (rt.queenDispatches ||= new Map()).set(sessionId, launchId);
     if (l && l.state === 'pending') {
       rt.metadata.mutate((d) => {
         const rec = d.launches[launchId];
@@ -208,7 +211,7 @@ export function onBeforeDispatch({ sessionId, ext, host }) {
         const cell = d.cells[rec.cellId];
         if (!cell) return;
         if ((cell.queenGeneration || 0) === rec.generation) {
-          recordQueen(d, rec.cellId, sessionId, rec.boundAt, 'launched');
+          recordQueen(d, rec.cellId, sessionId, rec.boundAt, 'launched', { revokeFrom: rec.handoff?.fromSessionId });
           rec.generation = cell.queenGeneration;
         } else {
           rec.superseded = true;
@@ -216,6 +219,20 @@ export function onBeforeDispatch({ sessionId, ext, host }) {
       });
       return;
     }
+  }
+}
+
+export async function queenLaunchContext({ sid, ext, reason, host }) {
+  if (!['dispatch', 'spawn'].includes(reason)) return;
+  const rt = host?.stores?.hive;
+  if (!rt || rt.metadata.error) return;
+  const launches = Object.values(rt.metadata.read().launches || {});
+  const launch = rt.metadata.read().launches[(typeof ext?.launchId === 'string' && ext.launchId) || rt.queenDispatches?.get(sid)] || launches.find((l) => l.sessionId === sid);
+  if (!launch || (launch.sessionId && launch.sessionId !== sid)) return;
+  try { assertCurrent(rt, host); } catch (err) { return { refuse: `Hive refused queen startup: ${err.message}` }; }
+  const cell = rt.metadata.cell(launch.cellId);
+  if (launch.superseded || launch.state === 'abandoned' || !cell?.enabled || cell.queenSessionId !== sid || (cell.queenGeneration || 0) !== launch.generation) {
+    return { refuse: 'Hive refused queen startup: this queen launch was superseded, abandoned or replaced before it started.' };
   }
 }
 

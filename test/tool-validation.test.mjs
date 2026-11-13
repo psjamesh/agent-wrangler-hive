@@ -26,6 +26,7 @@ const valid = {
   hive_reconcile_worker_launch: { launch_id: 'launch' },
   hive_review_verdict: { bead_id: 'a', verdict: 'approved', summary: 'Clean' },
   hive_cancel_review: { bead_id: 'a', reason: 'Cancel' },
+  hive_handoff_queen: { summary: 'State of work' },
 };
 const schemaFor = (tool) => tool.inputSchema instanceof z.ZodObject ? tool.inputSchema : z.object(tool.inputSchema);
 

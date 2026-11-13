@@ -5,7 +5,7 @@ import { HiveRuntime, BD_PATH_SETTING } from './runtime.js';
 import { setupHandlers, configHandlers } from './handlers.js';
 import { workTools } from './tools.js';
 import { participation } from './access.js';
-import { onBeforeDispatch, prepareSession } from './sessions.js';
+import { onBeforeDispatch, prepareSession, queenLaunchContext } from './sessions.js';
 
 export const HIVE_ID = 'hive';
 export const SKILLS = ['hive-queen', 'hive-worker'];
@@ -98,7 +98,7 @@ export function createManifest({ dir }) {
     skillsFor,
     hideTool,
     session: { onBeforeDispatch, onArchive },
-    hooks: { 'session.prepare': prepareSession, 'session.launchContext': workerLaunchContext },
+    hooks: { 'session.prepare': prepareSession, 'session.launchContext': async (args) => (await workerLaunchContext(args)) ?? queenLaunchContext(args) },
     graph: ({ host }) => ({ hive: host.stores.hive.projection() }),
     sweeps: [{
       id: 'refresh',
