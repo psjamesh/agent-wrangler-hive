@@ -13,39 +13,28 @@ import { installPanelSplit } from '/public/panel-split.js';
 const root = document.getElementById('root');
 root.innerHTML = '<div class="hive-cellhead" style="grid-area:head">head</div><div class="hive-stage" style="grid-area:map">map</div><div class="hive-tabs" style="grid-area:tabs">tabs</div><div class="hive-dock" style="grid-area:rail">rail</div><div class="hive-divider" role="separator" tabindex="0"></div>';
 const store = new Map();
-installPanelSplit(root, root.querySelector('.hive-divider'), { getItem: k => store.get(k), setItem: (k, v) => store.set(k, v) });
-const rect = s => root.querySelector(s).getBoundingClientRect();
-const line = () => { const c = getComputedStyle(root.querySelector('.hive-divider'), '::before'); return { width: c.width, background: c.backgroundColor }; };
-const out = {};
 const divider = root.querySelector('.hive-divider');
-out.gap = rect('.hive-tabs').left - rect('.hive-stage').right;
-out.dividerWidth = rect('.hive-divider').width;
-out.rest = line();
-out.hit = getComputedStyle(divider, '::after').width;
-const before = rect('.hive-tabs').width;
-divider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
-out.keyDelta = rect('.hive-tabs').width - before;
-divider.setPointerCapture = () => {};
-divider.releasePointerCapture = () => {};
-const pointer = (type, x) => divider.dispatchEvent(new PointerEvent(type, { pointerId: 7, button: 0, clientX: x, bubbles: true, cancelable: true }));
-const widthBefore = rect('.hive-tabs').width;
-pointer('pointerdown', 600);
-out.dragging = divider.hasAttribute('data-dragging');
-out.active = line();
-pointer('pointermove', 560);
-out.dragDelta = rect('.hive-tabs').width - widthBefore;
-pointer('pointerup', 560);
-out.released = !divider.hasAttribute('data-dragging');
-divider.blur();
-out.restAfter = line();
-out.blurred = out.restAfter;
-divider.focus();
-out.focusVisible = divider.matches(':focus-visible');
-out.focused = line();
-const el = document.createElement('pre'); el.id = 'result'; el.textContent = JSON.stringify(out); document.body.append(el);
+installPanelSplit(root, divider, { getItem: k => store.get(k), setItem: (k, v) => store.set(k, v) });
+const rect = s => root.querySelector(s).getBoundingClientRect();
+const line = () => { const c = getComputedStyle(divider, '::before'); return { width: c.width, background: c.backgroundColor }; };
+window.t = {
+  snapshot: () => ({
+    gap: rect('.hive-tabs').left - rect('.hive-stage').right,
+    dividerWidth: rect('.hive-divider').width,
+    hit: getComputedStyle(divider, '::after').width,
+    panelWidth: rect('.hive-tabs').width,
+    line: line(),
+    dragging: divider.hasAttribute('data-dragging'),
+    focused: document.activeElement === divider,
+    focusVisible: divider.matches(':focus-visible'),
+    captured: divider.hasPointerCapture(1),
+    hovered: divider.matches(':hover'),
+    bounds: (r => ({ x: r.left, y: r.top, width: r.width, height: r.height }))(divider.getBoundingClientRect())
+  })
+};
 </script></body></html>`;
 
-test('splitter is a 12px hairline that thickens when dragged, and keyboard resize still works', { skip: chrome ? false : 'Set HIVE_TEST_CHROME to a headless-capable Chrome binary' }, async (t) => {
+test('splitter is a 12px hairline; real keyboard and mouse input resize it, and a drag released outside the hit area still ends cleanly', { skip: chrome ? false : 'Set HIVE_TEST_CHROME to a Chrome binary' }, async (t) => {
   const server = http.createServer(async (req, res) => {
     if (req.url === '/') { res.setHeader('Content-Type', 'text/html'); res.end(page); return; }
     if (!/^\/public\/[\w.-]+$/.test(req.url)) { res.writeHead(404).end(); return; }
@@ -56,27 +45,94 @@ test('splitter is a 12px hairline that thickens when dragged, and keyboard resiz
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const profile = await mkdtemp(join(tmpdir(), 'hive-splitter-'));
-  t.after(async () => { server.close(); await rm(profile, { recursive: true, force: true }); });
-  const dom = await new Promise((resolve, reject) => {
-    let out = '';
-    const child = spawn(chrome, ['--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--window-size=1000,500', '--virtual-time-budget=3000', '--dump-dom', `http://127.0.0.1:${server.address().port}/`], { stdio: ['ignore', 'pipe', 'ignore'] });
-    child.stdout.on('data', d => { out += d; });
-    child.on('error', reject);
-    child.on('exit', () => resolve(out));
+  const child = spawn(chrome, ['--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--remote-debugging-port=0', '--window-size=1000,600', 'about:blank'], { stdio: 'ignore' });
+  t.after(async () => {
+    const exited = new Promise(resolve => child.once('exit', resolve));
+    child.kill();
+    await exited;
+    server.close();
+    await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
-  const result = JSON.parse(dom.match(/<pre id="result">(.*?)<\/pre>/s)[1].replace(/&quot;/g, '"'));
-  assert.equal(result.gap, 12);
-  assert.equal(result.dividerWidth, 12);
-  assert.equal(result.rest.width, '1px');
-  assert.equal(result.hit, '20px');
-  assert.equal(result.dragging, true);
-  assert.equal(result.active.width, '3px');
-  assert.notEqual(result.active.background, result.rest.background);
-  assert.equal(result.dragDelta, 40);
-  assert.equal(result.released, true);
-  assert.equal(result.restAfter.width, '1px');
-  assert.equal(result.focusVisible, true);
-  assert.equal(result.focused.width, '3px');
-  assert.notEqual(result.focused.background, result.blurred.background);
-  assert.equal(result.keyDelta, 20);
+  let port;
+  for (let i = 0; i < 200 && !port; i++) {
+    try { port = Number((await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); } catch { await new Promise(r => setTimeout(r, 100)); }
+  }
+  assert.ok(Number.isInteger(port) && port > 0 && port !== 7777, 'isolated Chrome exposed a debugging port');
+  const target = await (await fetch(`http://127.0.0.1:${port}/json/new?http://127.0.0.1:${server.address().port}/`, { method: 'PUT' })).json();
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  t.after(() => socket.close());
+  await new Promise(resolve => socket.addEventListener('open', resolve, { once: true }));
+  let sequence = 0;
+  const pending = new Map();
+  socket.addEventListener('message', event => {
+    const message = JSON.parse(event.data);
+    if (!message.id) return;
+    const promise = pending.get(message.id);
+    pending.delete(message.id);
+    if (message.error) promise.reject(message.error); else promise.resolve(message.result);
+  });
+  const call = (method, params = {}) => new Promise((resolve, reject) => {
+    const id = ++sequence;
+    pending.set(id, { resolve, reject });
+    socket.send(JSON.stringify({ id, method, params }));
+  });
+  const snapshot = async () => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const r = await call('Runtime.evaluate', { expression: `(async()=>{const d=Date.now()+20000;while(!window.t&&Date.now()<d)await new Promise(r=>setTimeout(r,25));return window.t.snapshot()})()`, awaitPromise: true, returnByValue: true });
+        assert.equal(r.exceptionDetails, undefined, JSON.stringify(r.exceptionDetails));
+        return r.result.value;
+      } catch (error) {
+        if (attempt > 40 || !/context was destroyed|Cannot find context/.test(error?.message ?? '')) throw error;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+  };
+  const mouse = (type, x, y, extra = {}) => call('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...extra });
+  const key = async (name, code, vk) => {
+    await call('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: name, code, windowsVirtualKeyCode: vk });
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: name, code, windowsVirtualKeyCode: vk });
+  };
+
+  const rest = await snapshot();
+  assert.equal(rest.gap, 12);
+  assert.equal(rest.dividerWidth, 12);
+  assert.equal(rest.line.width, '1px');
+  assert.equal(rest.hit, '20px');
+
+  await key('Tab', 'Tab', 9);
+  const focused = await snapshot();
+  assert.equal(focused.focused, true);
+  assert.equal(focused.focusVisible, true);
+  assert.equal(focused.line.width, '3px');
+  assert.notEqual(focused.line.background, rest.line.background);
+
+  await key('ArrowLeft', 'ArrowLeft', 37);
+  assert.equal((await snapshot()).panelWidth, focused.panelWidth + 20);
+  await key('ArrowRight', 'ArrowRight', 39);
+  await call('Runtime.evaluate', { expression: 'document.activeElement.blur()' });
+  const blurred = await snapshot();
+  assert.equal(blurred.line.width, '1px');
+  assert.equal(blurred.panelWidth, rest.panelWidth);
+
+  const { x, y, width, height } = blurred.bounds;
+  const cx = x + width / 2, cy = y + height / 2;
+  await mouse('mouseMoved', cx, cy, { buttons: 0 });
+  assert.equal((await snapshot()).line.width, '3px');
+  await mouse('mousePressed', cx, cy);
+  const during = await snapshot();
+  assert.equal(during.dragging, true);
+  assert.equal(during.captured, true);
+  await mouse('mouseMoved', cx - 60, cy);
+  await mouse('mouseMoved', cx - 150, cy + 80);
+  const outside = await snapshot();
+  assert.equal(outside.dragging, true);
+  assert.equal(outside.panelWidth, rest.panelWidth + 150);
+  await mouse('mouseReleased', cx - 150, cy + 80);
+  const released = await snapshot();
+  assert.equal(released.dragging, false);
+  assert.equal(released.captured, false);
+  assert.equal(released.panelWidth, rest.panelWidth + 150);
+  await mouse('mouseMoved', cx - 300, cy, { buttons: 0 });
+  assert.equal((await snapshot()).panelWidth, rest.panelWidth + 150);
 });
