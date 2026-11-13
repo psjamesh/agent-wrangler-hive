@@ -40,7 +40,9 @@ test('pointer drag clamps and saves width; cancellation ends the drag', () => {
   f.listeners.pointerdown({ button: 0, pointerId: 1, clientX: 600, preventDefault() {} });
   f.listeners.pointermove({ pointerId: 1, clientX: 500 });
   assert.equal(f.attrs['aria-valuenow'], '600');
+  assert.equal('dragging' in f.divider.dataset, true);
   f.listeners.pointercancel({ pointerId: 1 });
+  assert.equal('dragging' in f.divider.dataset, false);
   f.listeners.pointermove({ pointerId: 1, clientX: 0 });
   assert.equal(f.attrs['aria-valuenow'], '600');
   assert.deepEqual(f.writes.at(-1), [PANEL_WIDTH_KEY, '600']);
@@ -63,4 +65,16 @@ test('starting a drag focuses the separator for immediate keyboard resizing', ()
   f.listeners.pointerup({ pointerId: 1 });
   f.key('ArrowLeft');
   assert.equal(f.attrs['aria-valuenow'], '520');
+});
+
+test('splitter is a 12px hairline column with no grid gap and a widened hit area', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const grid = css.match(/\.hive-root\[data-view\^="cell"\] \{[^}]*\}/)[0];
+  assert.match(grid, /grid-template-columns: minmax\(0, 1fr\) 12px var\(--hive-panel-width/);
+  assert.match(grid, /gap: 10px 0;/);
+  assert.match(css, /\.hive-divider::before \{[^}]*width: 1px;/);
+  assert.match(css, /\.hive-divider::after \{[^}]*inset: 0 -4px;/);
+  assert.match(css, /\.hive-divider:hover::before[^{]*\[data-dragging\]::before[^{]*\{ width: 3px;/);
+  assert.match(css, /\.hive-divider:focus-visible::before/);
 });

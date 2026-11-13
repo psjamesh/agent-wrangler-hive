@@ -40,6 +40,7 @@ export function installPanelSplit(root, divider, storage) {
     event.preventDefault();
     divider.focus({ preventScroll: true });
     drag = { id: event.pointerId, x: event.clientX, width: current };
+    divider.dataset.dragging = '';
     divider.setPointerCapture(event.pointerId);
   });
   divider.addEventListener('pointermove', event => {
@@ -48,6 +49,7 @@ export function installPanelSplit(root, divider, storage) {
   const finish = event => {
     if (drag?.id !== event.pointerId) return;
     drag = null;
+    delete divider.dataset.dragging;
     if (event.type !== 'lostpointercapture') divider.releasePointerCapture(event.pointerId);
   };
   for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) divider.addEventListener(type, finish);

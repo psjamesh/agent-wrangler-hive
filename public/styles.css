@@ -1313,10 +1313,10 @@
 
 .hive-root[data-view^="cell"] {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 8px var(--hive-panel-width, 38%);
+  grid-template-columns: minmax(0, 1fr) 12px var(--hive-panel-width, 38%);
   grid-template-rows: auto auto minmax(0, 1fr);
   grid-template-areas: "head head head" "map divider tabs" "map divider rail";
-  gap: 10px 12px;
+  gap: 10px 0;
   padding: 10px 16px 14px;
   overflow: hidden;
 }
@@ -1332,13 +1332,24 @@
 .hive-root[data-view^="cell"][data-panels="open"] .hive-divider {
   display: block;
   grid-area: divider;
+  position: relative;
   cursor: col-resize;
   touch-action: none;
-  border-radius: 4px;
-  background: var(--border);
 }
-.hive-divider:hover { background: var(--hive-comb-strong); }
-.hive-divider:focus-visible { outline: 2px solid var(--hive-honey); outline-offset: 2px; }
+.hive-divider::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: var(--border);
+  transition: width 0.12s, background 0.12s;
+}
+.hive-divider::after { content: ""; position: absolute; inset: 0 -4px; }
+.hive-divider:hover::before, .hive-divider:focus-visible::before, .hive-divider[data-dragging]::before { width: 3px; background: var(--hive-comb-strong); }
+.hive-divider:focus-visible { outline: none; }
 .hive-root[data-view="cell-inspecting"] { grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "head head head" "bar divider tabs" "slot divider rail"; }
 .hive-root[data-view="cell-inspecting"] .hive-inspectbar { grid-area: bar; }
 .hive-root[data-view="cell-inspecting"] .hive-inspector-slot { grid-area: slot; display: flex; min-height: 0; padding: 0; }
