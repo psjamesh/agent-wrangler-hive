@@ -963,7 +963,7 @@ test('a batch is discarded if focus is lost before it saves', t => {
   assert.equal(f.sent.length, 1);
 });
 
-test('Undo stays unread in the current viewport and becomes eligible after leaving and re-entering', t => {
+test('Undo stays unread through scrolling until the topic is reopened', t => {
   const f = autoReadFixture(t);
   f.settle();
   assert.equal(f.sent.length, 1);
@@ -974,8 +974,62 @@ test('Undo stays unread in the current viewport and becomes eligible after leavi
   assert.equal(f.ui.ackOf(f.cell.id, f.cell.messages[0]).state, null);
   f.rectangles[0] = { top: -100, bottom: -10 }; f.sample();
   f.rectangles[0] = { top: 10, bottom: 80 }; f.sample();
+  assert.equal(f.sent.length, 1);
+  f.ui.closeThread(f.cell.id);
+  f.ui.openThreadFor(f.cell.id, f.thread.id, f.thread);
+  f.draw(); f.settle();
   assert.equal(f.sent.length, 2);
   assert.deepEqual(f.sent[1].messages, [{ messageId: 'auto_0', rev: 2 }]);
+});
+
+test('Read toggles unread without auto-reading again after a conversation refresh', t => {
+  const f = autoReadFixture(t);
+  f.settle();
+  f.replies[0].onReply({ ok: true, acks: [{ messageId: 'auto_0', ack: { required: true, state: READ, rev: 1 } }] });
+  const out = f.draw();
+  const read = out.list.querySelectorAll('button').find(b => b.attributes['aria-label'] === 'Read');
+  read.fire('click');
+  assert.deepEqual(f.sent[1], { type: 'hive-ack-undo', cellId: f.cell.id, messageId: 'auto_0', rev: 1 });
+  f.replies[1].onReply({ ok: true, ack: { required: true, state: null, rev: 2 } });
+  f.cell.conversationRevision = 'new-request-revision';
+  f.draw(); f.settle();
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.ui.ackOf(f.cell.id, f.cell.messages[0]).state, null);
+  f.ui.openDeepLink({ cellId: f.cell.id, thread: f.thread, messages: f.cell.messages, anchorN: 2, conversationRevision: f.cell.conversationRevision }, f.hive.metaEpoch);
+  f.draw(); f.settle();
+  assert.deepEqual(f.sent[2]?.messages, [{ messageId: 'auto_0', rev: 2 }]);
+});
+
+test('selecting an unread message again makes it eligible for auto-read', t => {
+  const f = autoReadFixture(t);
+  f.settle();
+  f.replies[0].onReply({ ok: true, acks: [{ messageId: 'auto_0', ack: { required: true, state: READ, rev: 1 } }] });
+  f.ui.selectConversationMessage(f.cell.id, f.thread.id, 'auto_0');
+  f.ui.noteAck(f.cell.id, 'auto_0', { required: true, state: null, rev: 2 });
+  f.draw(); f.settle();
+  assert.equal(f.sent.length, 1);
+  f.current().list.children.find(el => el.dataset?.id === 'auto_0').fire('click');
+  f.sample();
+  assert.deepEqual(f.sent[1]?.messages, [{ messageId: 'auto_0', rev: 2 }]);
+});
+
+test('tabbing through reaction controls preserves unread until the message itself receives focus', t => {
+  const f = autoReadFixture(t);
+  f.settle();
+  f.replies[0].onReply({ ok: true, acks: [{ messageId: 'auto_0', ack: { required: true, state: READ, rev: 1 } }] });
+  f.draw().list.querySelectorAll('button').find(b => b.attributes['aria-label'] === 'Read').fire('click');
+  f.replies[1].onReply({ ok: true, ack: { required: true, state: null, rev: 2 } });
+  const out = f.draw();
+  const item = out.list.children.find(el => el.dataset?.id === 'auto_0');
+  for (const label of ['Read', 'Yes', 'No']) {
+    item.querySelectorAll('button').find(b => b.attributes['aria-label'] === label).fire('focusin');
+    f.sample();
+    assert.equal(f.sent.length, 2, label);
+    assert.equal(f.ui.ackOf(f.cell.id, f.cell.messages[0]).state, null);
+  }
+  item.fire('focusin');
+  f.sample();
+  assert.deepEqual(f.sent[2]?.messages, [{ messageId: 'auto_0', rev: 2 }]);
 });
 
 test('observed edges survive a graph redraw while the batch is pending', t => {
