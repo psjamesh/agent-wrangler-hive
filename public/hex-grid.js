@@ -1,3 +1,4 @@
+import { createAutoFit, sameTransform } from './auto-fit.js';
 import { readMapView, saveMapView } from './view-state.js';
 import { h } from './dom.js';
 import { fromPixel, toPixel, neighbour, DIRECTIONS, key } from './hex-layout.js';
@@ -340,7 +341,7 @@ export function renderHexMap({
   onClick, onActivate, onSelect, onMove, onDrop = null, onDragStart = () => {}, onBackground,
   onDragState = () => {}, claimDrag = null, overlay = [], outlines = [],
   dragGroup = null, movePreview = null, onContextMenu = null,
-  tile = null, className = '', previousPositions = null,
+  tile = null, className = '', previousPositions = null, storage = null,
 }) {
   const id = `hive-map-${(uid += 1)}`;
   const radius = size * 0.92;
@@ -420,7 +421,7 @@ export function renderHexMap({
   };
   let tween = 0;
   const moveTo = (next, animate) => {
-    if (!next) return;
+    if (!next || sameTransform(view, next)) return;
     cancelAnimationFrame(tween);
     if (!animate || reducedMotion()) {
       Object.assign(view, next);
@@ -447,13 +448,25 @@ export function renderHexMap({
     tween = requestAnimationFrame(step);
   };
   const fit = (animate = false) => moveTo(viewFor(bounds), animate);
+  let autoButton;
+  const autoFit = createAutoFit({
+    storage, view, fit,
+    changed: ({ enabled, paused }) => {
+      if (!autoButton) return;
+      saveMapView(viewKey, view);
+      autoButton.textContent = paused ? 'Auto-fit paused' : 'Auto-fit';
+      autoButton.setAttribute('aria-pressed', String(enabled));
+      autoButton.title = paused ? 'Auto-fit paused by pan or zoom; click to resume' : enabled ? 'Turn auto-fit off' : 'Turn auto-fit on';
+    },
+  });
+  const suspend = () => { cancelAnimationFrame(tween); autoFit.suspend(); };
   const zoomAt = (factor, cx, cy) => {
     cancelAnimationFrame(tween);
     const k = clampZoom(view.k * factor);
     view.tx = cx - ((cx - view.tx) * k) / view.k;
     view.ty = cy - ((cy - view.ty) * k) / view.k;
     view.k = k;
-    view.auto = false;
+    suspend();
     apply();
   };
   const zoomCentre = (factor) => zoomAt(factor, el.clientWidth / 2, el.clientHeight / 2);
@@ -668,7 +681,7 @@ export function renderHexMap({
     refresh();
   }
 
-  wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, zoomAt });
+  wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, zoomAt, suspend });
   el.addEventListener('focusin', (evt) => {
     const t = evt.target.closest?.('[data-tile-id]');
     if (!t) return;
@@ -677,7 +690,7 @@ export function renderHexMap({
     if (r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom) return;
     view.tx += c.left + c.width / 2 - (r.left + r.width / 2);
     view.ty += c.top + c.height / 2 - (r.top + r.height / 2);
-    view.auto = false;
+    suspend();
     apply();
   });
   el.addEventListener('keydown', (evt) => {
@@ -685,32 +698,41 @@ export function renderHexMap({
     if (evt.key === 'Escape' && !focusTip.hidden) { evt.preventDefault(); hideFocusTip(); }
     else if (evt.key === '+' || evt.key === '=') { evt.preventDefault(); zoomCentre(1.25); }
     else if (evt.key === '-' || evt.key === '_') { evt.preventDefault(); zoomCentre(0.8); }
-    else if (evt.key === '0') { evt.preventDefault(); view.auto = true; fit(true); }
+    else if (evt.key === '0') { evt.preventDefault(); autoFit.resume(); }
   });
 
+  autoButton = h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-fit hive-zoom-auto', onclick: () => autoFit.toggle() }, 'Auto-fit');
+  autoFit.refresh();
   const tools = h('div', { class: 'hive-zoom', role: 'group', 'aria-label': 'Map view' },
     h('button', { type: 'button', class: 'hive-zoom-btn', 'aria-label': 'Zoom out', title: 'Zoom out (−)', onclick: () => zoomCentre(0.8) }, '−'),
     h('button', { type: 'button', class: 'hive-zoom-btn', 'aria-label': 'Zoom in', title: 'Zoom in (+)', onclick: () => zoomCentre(1.25) }, '+'),
-    h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-fit', title: 'Fit everything in view (0)', onclick: () => { view.auto = true; fit(true); } }, 'Fit'));
+    h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-fit', title: 'Fit everything in view (0)', onclick: () => { autoFit.resume(); } }, 'Fit'), autoButton);
   el.append(tools);
 
   let observer = null;
   el.hiveViewMounted = () => {
-    if (view.auto) fit(false);
-    else apply();
+    apply();
+    autoFit.schedule();
     if (observer || typeof ResizeObserver !== 'function') return;
     observer = new ResizeObserver(() => {
-      if (!el.isConnected) { observer.disconnect(); return; }
-      if (view.auto) fit(false);
-      else { ghostKey = ''; apply(); }
+      if (!el.isConnected) { el.hiveDisposeView(); return; }
+      autoFit.schedule();
+      ghostKey = ''; apply();
     });
     observer.observe(el);
+  };
+  el.hiveDisposeView = () => {
+    observer?.disconnect();
+    autoFit.dispose();
+    cancelAnimationFrame(tween);
+    cancelAnimationFrame(ghostFrame);
   };
   el.hiveCaptureView = () => ({ ...view });
   el.hiveRestoreView = saved => {
     if (!saved) return;
     cancelAnimationFrame(tween);
     Object.assign(view, saved);
+    autoFit.refresh();
     apply();
   };
   el.hivePanTo = tileId => {
@@ -720,7 +742,7 @@ export function renderHexMap({
     view.k = Math.max(view.k, 0.8);
     view.tx = el.clientWidth / 2 - item.x * view.k;
     view.ty = el.clientHeight / 2 - item.y * view.k;
-    view.auto = false;
+    suspend();
     apply();
   };
   el.hiveTileRect = (tileId) => el.querySelector(`[data-tile-id="${CSS.escape(tileId)}"]`)?.getBoundingClientRect() || null;
@@ -728,7 +750,7 @@ export function renderHexMap({
   return { el, highlightReference };
 }
 
-function wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, zoomAt }) {
+function wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, zoomAt, suspend }) {
   let start = null;
   let panning = false;
   let unclaim = null;
@@ -758,7 +780,7 @@ function wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, z
     }
     view.tx = start.tx + dx;
     view.ty = start.ty + dy;
-    view.auto = false;
+    suspend();
     apply();
   });
   svg.addEventListener('pointerup', (evt) => {
@@ -780,7 +802,7 @@ function wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, z
     }
     view.tx -= evt.deltaX * unit;
     view.ty -= evt.deltaY * unit;
-    view.auto = false;
+    suspend();
     apply();
   }, { passive: false });
 }
