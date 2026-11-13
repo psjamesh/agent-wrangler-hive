@@ -130,7 +130,7 @@ export function ackControls(m, cell, ui, ctx) {
       type: 'button', class: 'hive-ack-glyph',
       'aria-disabled': busy ? 'true' : 'false', 'aria-pressed': String(selected === name),
       'data-focus-key': `ack:${m.id}:${name}`, 'aria-label': label, title: label,
-      onclick: () => selected === name && ['approve', 'decline'].includes(name) ? send('hive-ack-undo', {}) : send('hive-ack', name === 'seen' ? { kind: 'read' } : { kind: 'reaction', reaction: name }),
+      onclick: () => selected === name ? send('hive-ack-undo', {}) : send('hive-ack', name === 'seen' ? { kind: 'read' } : { kind: 'reaction', reaction: name }),
     }, reactionGlyph(name), label)),
     s?.emoji ? h('span', { class: 'hive-badge', title: 'Earlier reaction' }, `You reacted ${s.emoji}`) : null,
     s?.kind === 'reply' ? h('span', { class: 'hive-badge' }, 'Answered by your reply') : null);
@@ -154,7 +154,7 @@ function messageItem({ m, cell, beads, graph, api, ui, ctx, target, replyKey }) 
     onpointerup: () => { pointerFocus = false; },
     onpointercancel: () => { pointerFocus = false; },
     onclick: select,
-    onfocusin: () => { if (!pointerFocus) select(); },
+    onfocusin: e => { if (e.target === item && !pointerFocus) select(); },
     onkeydown: e => {
       if (e.key === 'Escape') {
         e.preventDefault();

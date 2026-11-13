@@ -61,10 +61,7 @@ export function createReadTracker(ui, cellId, threadId) {
       const item = active.list.querySelector(`[data-id="${CSS.escape(m.id)}"]`);
       const rect = item?.getBoundingClientRect();
       if (!rect) continue;
-      if (rect.bottom < band.top || rect.top > band.bottom) {
-        held.delete(m.id);
-        continue;
-      }
+      if (rect.bottom < band.top || rect.top > band.bottom) continue;
       if (held.has(m.id)) continue;
       const ack = ui.ackOf(cellId, m);
       if (m.author === 'human' || ack?.state) continue;
@@ -84,6 +81,14 @@ export function createReadTracker(ui, cellId, threadId) {
   return {
     attach(list, messages, ctx) { active = { list, messages, ctx }; },
     shown() { if (!frame) { frame = true; afterFrame(sample); } },
+    reset({ reopen = false } = {}) {
+      edges.clear();
+      pending.clear();
+      if (reopen) held.clear();
+    },
+    select(messageId) {
+      if (held.delete(messageId)) edges.delete(messageId);
+    },
     undo(messageId) {
       edges.delete(messageId);
       pending.delete(messageId);

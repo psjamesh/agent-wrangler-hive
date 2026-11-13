@@ -173,6 +173,7 @@ export function createUi() {
         if (frame.beadId) save(`bead:${cellId}`, frame.beadId);
         if (frame.thread) {
           const threadId = frame.thread.id;
+          mem.readers.get(`${cellId}:${threadId}`)?.reset({ reopen: true });
           mem.history[`${cellId}:${threadId}`] = { epoch, messages: frame.messages || [], more: Boolean(frame.more), anchorN: frame.anchorN };
           rememberConversation(cellId, [frame.thread], frame.messages || []);
           const scrollKey = `messages:${cellId}:${threadId}`;
@@ -344,6 +345,7 @@ export function createUi() {
     conversationMessage: (cellId, threadId) => mem.conversationMessage[`${cellId}:${threadId}`] || null,
     selectConversationMessage(cellId, threadId, messageId) {
       const key = `${cellId}:${threadId}`;
+      if (messageId) mem.readers.get(key)?.select(messageId);
       if ((mem.conversationMessage[key] || null) === messageId) return;
       mem.conversationMessage[key] = messageId;
       refreshRelations();
@@ -352,6 +354,7 @@ export function createUi() {
     // The open topic's summary is kept with it, so a topic reached through a
     // later inbox page stays open when that page is dropped.
     openThreadFor(cellId, threadId, summary = null, { atWaiting = false } = {}) { cancelDeepLink();
+      mem.readers.get(`${cellId}:${threadId}`)?.reset({ reopen: true });
       mem.thread[cellId] = threadId;
       mem.conversationMessage = {};
       mem.relations = null;
@@ -386,7 +389,7 @@ export function createUi() {
       if (mem.conversationEpoch[cellId] && mem.conversationEpoch[cellId] !== epoch) {
         for (const key of Object.keys(mem.history)) if (key.startsWith(`${cellId}:`)) delete mem.history[key];
         for (const key of Object.keys(mem.inbox)) if (key.startsWith(`${cellId}:`)) delete mem.inbox[key];
-        for (const key of mem.readers.keys()) if (key.startsWith(`${cellId}:`)) mem.readers.delete(key);
+        for (const [key, reader] of mem.readers) if (key.startsWith(`${cellId}:`)) reader.reset();
         for (const key of state.startAt.keys()) if (key.startsWith(`${cellId}:`)) state.startAt.delete(key);
         delete mem.older[cellId];
         delete mem.opened[cellId];
