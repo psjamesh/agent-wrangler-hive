@@ -3,6 +3,7 @@ import { setReviewPolicy } from './review-policy.js';
 import { humanAnswer, dismissRequest, retryDelivery } from './requests.js';
 import { readAttachment, attachmentThumbnail } from './attachments.js';
 import { beadDetail, searchBeads } from './bead-detail.js';
+import { searchInbox } from './inbox-search.js';
 import * as ops from './ops.js';
 import { checkRetire, retireCell, reopenCell } from './retire.js';
 import { launchQueen, reconcileLaunch, sendActivationBrief } from './sessions.js';
@@ -17,7 +18,7 @@ function runtimeOf(host) {
   return rt;
 }
 
-const READ_ONLY = new Set(['hive-image', 'hive-thread-relations', 'hive-bead-detail', 'hive-bead-search']);
+const READ_ONLY = new Set(['hive-image', 'hive-thread-relations', 'hive-bead-detail', 'hive-bead-search', 'hive-inbox-search']);
 
 export function humanHandler(type, run) {
   return {
@@ -31,7 +32,7 @@ export function humanHandler(type, run) {
         reply?.({ ...base, ok: true, ...(out || {}) });
       } catch (err) {
         const known = err instanceof HumanError || typeof err?.code === 'string';
-        if (type !== 'hive-thread-relations' && type !== 'hive-bead-detail' && type !== 'hive-bead-search') host?.stores?.hive?.changed?.();
+        if (type !== 'hive-thread-relations' && type !== 'hive-bead-detail' && type !== 'hive-bead-search' && type !== 'hive-inbox-search') host?.stores?.hive?.changed?.();
         reply?.({ ...base, ok: false, error: known ? err.message : 'Hive could not complete that action.', code: err?.code || null });
         if (!known) host?.stores?.hive?.log?.(`hive: ${type} failed: ${err?.stack || err}`);
       }
@@ -179,6 +180,8 @@ const detail = humanHandler('hive-bead-detail', ({ msg, rt }) => beadDetail(rt, 
 
 const search = humanHandler('hive-bead-search', ({ msg, rt }) => searchBeads(rt, { cellId: str(msg.cellId, 80), query: str(msg.query, 200) }));
 
+const inboxSearch = humanHandler('hive-inbox-search', ({ msg, rt }) => searchInbox(rt, { cellIds: msg.cellIds, query: str(msg.query, 200) }));
+
 const deepLink = humanHandler('hive-deep-link', ({ msg, rt }) => resolveDeepLink(rt, {
   cellId: str(msg.cellId, 80), threadId: str(msg.threadId, 80), messageId: str(msg.messageId, 80), restore: msg.restore === true,
 }));
@@ -265,4 +268,4 @@ const requestAnswer = humanHandler('hive-request-answer', async ({ rt, host, msg
 const requestDismiss = humanHandler('hive-request-dismiss', async ({ rt, host, msg }) => ({ request: await dismissRequest(rt, host, msg) }));
 const requestRetry = humanHandler('hive-request-retry', async ({ rt, host, msg }) => ({ request: await retryDelivery(rt, host, msg) }));
 
-export const configHandlers = [requestAnswer, requestDismiss, requestRetry, detail, search, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, setInstructions, watchdogSettings, reviewPolicyH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];
+export const configHandlers = [requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, setInstructions, watchdogSettings, reviewPolicyH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];

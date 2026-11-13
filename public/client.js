@@ -100,7 +100,7 @@ function cancelDeepLink() {
 
 export function createUi() {
   const cleanedVisibility = new Set();
-  const mem = { drafts: new Map(), forms: {}, thread: {}, all: {}, history: {}, older: {}, renames: {}, inboxView: {}, globalInbox: 'needs', inbox: {}, acks: new Map(), acknowledgementMessages: new Map(), acknowledgementTopics: new Map(), opened: {}, readers: new Map(), conversationMessage: {}, relations: null, relationFailure: null, conversationEpoch: {}, detail: new Map() };
+  const mem = { drafts: new Map(), forms: {}, thread: {}, all: {}, history: {}, older: {}, renames: {}, inboxView: {}, globalInbox: 'needs', inboxSearch: { query: '', scheduled: null, inflight: null, remote: null, failedKey: null, epoch: null, timer: null }, inbox: {}, acks: new Map(), acknowledgementMessages: new Map(), acknowledgementTopics: new Map(), opened: {}, readers: new Map(), conversationMessage: {}, relations: null, relationFailure: null, conversationEpoch: {}, detail: new Map() };
   const rememberConversation = (cellId, topics, messages) => {
     for (const t of topics) if (t) mem.acknowledgementTopics.set(`${cellId}:${t.id}`, t);
     const previews = topics.filter(t => t?.preview).map(t => ({ ...t.preview, threadId: t.id }));
@@ -426,7 +426,49 @@ export function createUi() {
     // waiting for an answer, or null.
     inboxView: (cellId) => mem.inboxView[cellId] || null,
     globalInboxView: () => mem.globalInbox,
-    setGlobalInboxView(kind) { mem.globalInbox = ['needs', 'human', 'queen'].includes(kind) ? kind : 'needs'; navigate(); },
+    globalInboxQuery: () => mem.inboxSearch.query,
+    setGlobalInboxQuery(query) {
+      const q = mem.inboxSearch;
+      q.query = String(query || '').slice(0, 200);
+      if (!q.query.trim()) { clearTimeout(q.timer); q.timer = null; q.scheduled = null; q.inflight = null; q.remote = null; q.failedKey = null; }
+      navigate();
+    },
+    cancelGlobalInboxSearch() {
+      const q = mem.inboxSearch;
+      clearTimeout(q.timer); q.timer = null; q.scheduled = null;
+    },
+    askGlobalInboxSearch(cellIds, revision, epoch = '') {
+      const q = mem.inboxSearch;
+      const query = q.query.trim();
+      if (!query) return { remote: null, pending: false, failed: false };
+      if (q.epoch !== epoch) { q.epoch = epoch; q.inflight = null; q.remote = null; q.failedKey = null; }
+      const key = `${query}\n${epoch}\n${revision}\n${cellIds.join(',')}`;
+      const remote = q.remote?.query === query && q.remote.epoch === epoch && q.failedKey !== key ? q.remote : null;
+      const failed = q.failedKey === key;
+      if (state.api?.send && q.remote?.key !== key && !failed && q.inflight !== key && q.scheduled !== key) {
+        clearTimeout(q.timer);
+        q.scheduled = key;
+        q.timer = setTimeout(() => {
+          q.scheduled = null; q.timer = null; q.inflight = key;
+          send({ type: 'hive-inbox-search', cellIds, query }, {
+            quiet: true,
+            onReply: (frame) => {
+              if (q.inflight !== key) return;
+              q.inflight = null;
+              if (frame.ok) { q.remote = { key, query, epoch, human: frame.human || [], queen: frame.queen || [], truncated: Boolean(frame.truncated) }; q.failedKey = null; }
+              else q.failedKey = key;
+              navigate();
+            },
+          });
+        }, 150);
+      }
+      return { remote, failed, pending: !failed && (!remote || remote.key !== key) && Boolean(state.api?.send) };
+    },
+    setGlobalInboxView(kind) {
+      mem.globalInbox = ['needs', 'human', 'queen'].includes(kind) ? kind : 'needs';
+      if (mem.globalInbox === 'needs') this.cancelGlobalInboxSearch();
+      navigate();
+    },
     setInboxView(cellId, kind) { cancelDeepLink(); mem.inboxView[cellId] = ['human', 'queen', 'needs'].includes(kind) ? kind : null; navigate(); },
     // The server's acknowledgement revision for a message it names without
     // sending it, which wins over any older copy held here.

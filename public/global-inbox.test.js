@@ -60,3 +60,37 @@ test('rows past the first page are reported as more waiting in that hive', () =>
   assert.equal(rows.at(-1).more, 10);
   assert.equal(parseHiveLink(rows.at(-1).link).cellId, 'e');
 });
+
+test('message and needs rows carry the fields the search reads', () => {
+  const waiting = { required: true, rev: 1, state: null };
+  const a = cell('a', {
+    threads: [{ id: 't1', title: 'Topic' }],
+    messages: [{ id: 'm1', threadId: 't1', at: 5, author: 'session', sessionId: 's1', text: 'Body text', ack: waiting, context: { beadId: 'hive-9', title: null } }],
+    inbox: { human: { ids: ['m1'], count: 1, rev: 1 }, queen: { ids: [], count: 0 } },
+    requests: { r1: request('r1', { beadId: 'hive-7' }) },
+  });
+  const c = ctx([a]);
+  const [row] = messageRows(c, [a], 'human');
+  assert.deepEqual([row.texts, row.beadIds], [['Body text'], ['hive-9']]);
+  assert.deepEqual(needsRows(c, [a])[0].beadIds, ['hive-7']);
+});
+
+test('searching spans hives and tabs, uses the server answer once it has arrived', async () => {
+  const { searchedInbox } = await import('./global-inbox.js');
+  const waiting = { required: true, rev: 1, state: null };
+  const msg = (id, t, text, over = {}) => ({ id, threadId: t, at: 1, author: 'session', sessionId: 's1', text, ack: waiting, ...over });
+  const a = cell('a', { threads: [{ id: 't1', title: 'Alpha' }], messages: [msg('m1', 't1', 'ship the Widget')], inbox: { human: { ids: ['m1'], count: 1, rev: 1 }, queen: { ids: [], count: 0 } } });
+  const b = cell('b', { threads: [{ id: 't2', title: 'WIDGET plan' }], messages: [msg('m2', 't2', 'plan')], inbox: { human: { ids: ['m2'], count: 1, rev: 1 }, queen: { ids: [], count: 0 } }, requests: { r1: request('r1', { title: 'No match', body: 'x' }) } });
+  const c = ctx([a, b]);
+  const local = searchedInbox(c, [a, b], 'widget');
+  assert.deepEqual(local.lists.human.map(r => [r.cellId, r.snippet]), [['a', 'ship the Widget'], ['b', null]]);
+  assert.equal(local.lists.needs.length, 0);
+  assert.equal(local.pending, false);
+  const remoteState = { pending: false, failed: false, remote: { query: 'widget', human: [{ cellId: 'b', threadId: 't2', firstId: 'm2', title: 'Old', at: 2, count: 4, last: { author: 'human' }, snippet: 'widget', key: 'message:b:m2' }], queen: [] } };
+  const remote = searchedInbox(c, [a, b], 'widget', remoteState);
+  assert.deepEqual(remote.lists.human.map(r => [r.cellId, r.count, r.author]), [['b', 4, 'You']]);
+  assert.equal(remote.pending, false);
+  const failed = searchedInbox(c, [a, b], 'widget', { remote: null, failed: true });
+  assert.equal(failed.failed, true);
+  assert.equal(failed.lists.human.length, 2);
+});
