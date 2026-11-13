@@ -52,7 +52,7 @@ export function pickupDetails({ api, ui, send }, cell, bead) {
         select('model', 'Model', agent?.models || []),
         select('effort', 'Effort', efforts.length ? efforts : [{ value: '', label: 'No effort control' }]),
         draft.agent !== 'claude' ? h('p', { class: 'hive-warning' }, 'Spawn tools are unrestricted for this provider. Hive still claims and binds its worker before first action.') : null,
-        field('cwd', 'Working folder', { required: true, placeholder: '/path/to/repository' }),
+        field('cwd', 'Working folder', { required: true, maxlength: 2000, placeholder: '/path/to/repository' }),
         h('label', {}, h('input', { type: 'checkbox', checked: draft.auto, disabled: draft.saving, onchange: e => ui.patchForm(key, { auto: e.target.checked }) }), 'Create an isolated worktree'),
         field('intent', 'Worker instructions (optional)'),
         mark.armToken ? field('reason', 'Reason for rearming', { required: true }) : null,

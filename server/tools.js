@@ -557,7 +557,7 @@ export const pickupTool = hiveTool({
   inputSchema: {
     bead_id: beadId,
     ready: z.boolean(),
-    profile: z.object({ agent: z.string().max(120), model: z.string().max(200), effort: z.string().max(120), cwd: z.string().max(4096), intent: z.string().max(12000).optional(), worktree: z.object({ auto: z.boolean().optional(), branch: z.string().max(2000).optional(), folderName: z.string().max(2000).optional(), base: z.string().max(2000).optional() }).strict().optional() }).strict().optional(),
+    profile: z.object({ agent: z.string().max(120), model: z.string().max(200), effort: z.string().max(120), cwd: z.string().max(2000), intent: z.string().max(12000).optional(), worktree: z.object({ auto: z.boolean().optional(), branch: z.string().max(2000).optional(), folderName: z.string().max(2000).optional(), base: z.string().max(2000).optional() }).strict().optional() }).strict().optional(),
     rearm: z.boolean().optional(),
     expected_token: z.string().max(80).optional(),
     reason: z.string().max(2000).optional(),

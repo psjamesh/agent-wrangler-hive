@@ -25,6 +25,7 @@ function emptyDoc() {
     launches: {},
     workerLaunches: {},
     pickupReceipts: {},
+    pickupHolds: {},
     pickupAttempts: {},
     pickupRates: {},
     reviews: {},

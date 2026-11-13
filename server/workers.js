@@ -1,7 +1,8 @@
+import { assertAllowedModel } from './review-policy.js';
 import { safeDeliver } from './sessions.js';
 import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
-import { assertPickupAuthorization, assertPickupClaimed, consumePickup } from './pickup.js';
+import { assertPickupAuthorization, assertPickupClaimed, consumePickup, catalogHold } from './pickup.js';
 import { reservePickupStart } from './launch-budget.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 import { holdsBead } from './bead-sessions.js';
@@ -243,6 +244,23 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
   const launchId = newId('worker');
   const as = { attach: role !== 'worker', beadId: input.bead_id };
   const attach = role !== 'worker';
+  actor = coordinator(rt, host, actor, as);
+  assertAllowedModel(opts);
+  const unavailable = (message, cause = 'catalog-unavailable') => pickup ? catalogHold(message, cause) : new HiveError(message, 'refused');
+  if (typeof host.agents?.list !== 'function') throw unavailable('Worker model catalog cannot be checked: agents:read is unavailable.');
+  let catalog;
+  try { catalog = await host.agents.list(); }
+  catch {
+    assertCurrent(rt, host);
+    throw unavailable('Worker model catalog could not be read.');
+  }
+  if (!Array.isArray(catalog)) throw unavailable('Worker model catalog is unavailable.');
+  assertCurrent(rt, host);
+  const provider = catalog.find(a => a.id === (opts.agent || 'claude') && a.available === true);
+  const model = provider?.models?.find(m => opts.model ? m.value === opts.model : m.default);
+  if (!model || typeof model.resolved !== 'string' || !model.resolved) throw unavailable('Worker model resolution cannot be checked in the current catalog.', 'model-unavailable');
+  assertAllowedModel({ ...opts, resolvedModel: model.resolved });
+  if (pickup && model.resolved !== input.resolvedModel) throw new HiveError('Worker model resolution changed; reconcile and rearm.', 'refused');
   await withLocks([ADMISSION_LOCK, `bead:${input.bead_id}`], async () => {
     if (attach) await rt.snapshots.refresh();
     actor = coordinator(rt, host, actor, as);

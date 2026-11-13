@@ -1,4 +1,4 @@
-import { consumePickup, managedPickupReceipt, pickupState, structuralPickupReasons } from './pickup.js';
+import { consumePickup, managedPickupReceipt, pickupState } from './pickup.js';
 import { storedRole, apiRole, holdsBead } from './bead-sessions.js';
 import { REGION_LAYOUT_VERSION } from './region-migration.js';
 import crypto from 'node:crypto';
@@ -1343,9 +1343,11 @@ export function readyBeads(rt, actor, { under_bead_id, limit }) {
     if (c.id !== cell.id) throw new HiveError(`Bead ${under_bead_id} is in another cell.`);
     scope = descendantIds(beads, under_bead_id);
   }
+  const hasOpenChildren = new Set(Object.values(beads).filter(b => b.parentId && OPEN_STATUSES.includes(b.status)).map(b => b.parentId));
+  const waiting = id => edges.some(e => e.dependent === id && e.blocking && beads[e.prerequisite]?.status !== 'closed');
   const ready = [...scope]
     .map((id) => beads[id])
-    .filter((b) => b && b.id !== cell.rootBeadId && structuralPickupReasons(rt, { beads, edges }, b, { requireBrief: false }).length === 0)
+    .filter((b) => b && b.kind !== 'external' && b.id !== cell.rootBeadId && b.status === 'open' && !openReview(rt, b.id) && !b.assignee && !hasOpenChildren.has(b.id) && !waiting(b.id))
     .sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || String(a.createdAt).localeCompare(String(b.createdAt)))
     .slice(0, Math.min(Math.max(Number(limit) || 20, 1), 100))
     .map((b) => ({ bead_id: b.id, title: b.title, kind: b.kind, parent_id: b.parentId, next_action: b.nextAction, acceptance: b.acceptance, pickup: pickupState(rt, rt.host, cell, b) }));

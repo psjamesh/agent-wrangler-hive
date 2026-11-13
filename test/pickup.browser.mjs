@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pickupFixture } from './helpers/pickup.mjs';
@@ -40,8 +41,8 @@ document.body.dataset.verification=valid?'passed':'failed';
 </script></body></html>`;
 
 test('pickup UI with real readiness handlers and fake workers in isolated Chrome', async t => {
-  const output = path.resolve(process.env.HIVE_SCREENSHOT_DIR || '/private/tmp/hive-ew7-screenshots');
-  assert.ok(output.startsWith('/private/tmp/'));
+  const output = process.env.HIVE_SCREENSHOT_DIR ? path.resolve(process.env.HIVE_SCREENSHOT_DIR) : await fs.mkdtemp(path.join(os.tmpdir(), 'hive-pickup-shots-'));
+  t.diagnostic(`Screenshots: ${output}`);
   await fs.mkdir(output, { recursive: true });
   let fixture;
   const state = () => ({ cell: fixture.doc().cells.cell, bead: { ...fixture.graph().beads.a, pickup: pickupState(fixture.rt, fixture.host, fixture.doc().cells.cell, fixture.graph().beads.a, fixture.graph(), { now: fixture.now() }) } });
@@ -68,13 +69,13 @@ test('pickup UI with real readiness handlers and fake workers in isolated Chrome
     if (mode === 'waiting') fixture.live.a.dependencies.push({ issue_id: 'a', depends_on_id: 'b', type: 'blocks' });
     if (mode === 'attention') fixture.host.sessions.spawn = async () => { throw new Error('Fake host launch receipt missing; reconcile this worker'); };
     if (['attention', 'launched'].includes(mode)) await createPickupDispatcher({ runtime: fixture.rt, host: fixture.host, now: fixture.now }).run();
-    const profile = await fs.mkdtemp('/private/tmp/hive-ew7-chrome-');
+    const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'hive-pickup-chrome-'));
     t.after(() => fs.rm(profile, { recursive: true, force: true }));
     let stdout;
     try {
-      ({ stdout } = await run(process.env.HIVE_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--window-size=1100,1100', '--virtual-time-budget=6000', `--screenshot=${path.join(output, `${mode}.png`)}`, '--dump-dom', `http://127.0.0.1:${server.address().port}/?mode=${mode}`], { timeout: 25000, maxBuffer: 2 * 1024 * 1024 }));
+      ({ stdout } = await run(process.env.HIVE_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--window-size=1100,1100', '--virtual-time-budget=6000', `--screenshot=${path.join(output, `${mode}.png`)}`, '--dump-dom', `http://127.0.0.1:${server.address().port}/?mode=${mode}`], { timeout: 25000, maxBuffer: 2 * 1024 * 1024 }));
     } catch (err) {
-      if (err.signal || err.code === 'ENOENT' || /[Ss]andbox|[Pp]ermission|[Oo]peration not permitted/.test(err.stderr || '')) { t.skip(`Chrome not run inside sandbox (${err.signal || err.code}); no escalation requested`); return; }
+      if (err.code === 'ENOENT') { t.skip('Chrome is not installed; set HIVE_TEST_CHROME to its executable'); return; }
       throw err;
     }
     assert.match(stdout, /data-verification="passed"/, `${mode}: ${stdout}`);
