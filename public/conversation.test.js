@@ -649,13 +649,12 @@ test('topics and messages omit copy controls while resolving a link opens histor
   f.ui.setAllTopics(f.cell.id, true);
   const topics = f.draw();
   assert.equal(topics.list.querySelector('a'), null);
-  f.ui.setPane('details'); f.ui.setDockOpen(false); f.ui.setInboxView(f.cell.id, 'human');
+  f.ui.setPane('details'); f.ui.setInboxView(f.cell.id, 'human');
   const marks = JSON.stringify(f.ui.readMarks(f.cell.id));
   f.ui.openDeepLink({ cellId: f.cell.id, thread, messageId: m.id, messages: [m], more: false, anchorN: 2 }, f.hive.metaEpoch);
   assert.equal(f.ui.cellId(), f.cell.id);
   assert.equal(f.ui.openThread(f.cell.id), thread.id);
   assert.equal(f.ui.pane(), 'conversation');
-  assert.equal(f.ui.dockOpen(), true);
   assert.equal(f.ui.inboxView(f.cell.id), null);
   assert.equal(f.ui.historyFor(f.cell.id, thread.id, f.hive.metaEpoch).messages[0].id, m.id);
   const out = f.draw();

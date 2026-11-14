@@ -14,8 +14,9 @@ test('all cell sizes share right-hand tabs with only the selected pane visible',
   assert.doesNotMatch(css, /data-layout="wide"|data-layout="narrow-short"/);
 });
 
-test('hidden panels and inspector keep their own grid areas', () => {
-  assert.match(css, /data-panels="closed"/);
+test('cells without panels use one grid column, including the inspector', () => {
+  assert.match(css, /\.hive-root\[data-panels="closed"\] \{[^}]*grid-template-columns: minmax\(0, 1fr\);[^}]*grid-template-areas: "head" "map";/);
+  assert.match(css, /\.hive-root\[data-view="cell-inspecting"\]\[data-panels="closed"\] \{[^}]*grid-template-areas: "head" "bar" "slot";/);
   assert.match(css, /"head head head" "bar divider tabs" "slot divider rail"/);
 });
 
