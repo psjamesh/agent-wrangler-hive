@@ -17,6 +17,7 @@ test('server search finds waiting messages past any loaded page, in every listed
   );
   const out = searchInbox(runtime, { cellIds: ['a', 'b', 'missing'], query: 'needle' });
   assert.deepEqual(out.human.map(r => [r.cellId, r.title, r.count, r.firstId]), [['a', 'Big topic', 80, 'm0']]);
+  assert.deepEqual(out.topics.map(r => r.title), ['Big topic', 'Second', 'Needle answered']);
   assert.equal(out.human[0].snippet, 'the NEEDLE is last');
   assert.equal(out.human[0].preview, 'the NEEDLE is last');
   assert.deepEqual(out.queen.map(r => [r.cellId, r.title, r.last.author]), [['b', 'Second', 'human']]);
@@ -26,7 +27,7 @@ test('server search finds waiting messages past any loaded page, in every listed
 
 test('server search ignores empty queries and unreadable metadata', () => {
   const runtime = rt({ a: [sm('m', 't', 'x')] }, {});
-  assert.deepEqual(searchInbox(runtime, { cellIds: ['a'], query: '  ' }), { query: '  ', human: [], queen: [], truncated: false });
+  assert.deepEqual(searchInbox(runtime, { cellIds: ['a'], query: '  ' }), { query: '  ', human: [], queen: [], topics: [], truncated: false });
   runtime.metadata.error = 'broken';
   assert.equal(searchInbox(runtime, { cellIds: ['a'], query: 'x' }).human.length, 0);
 });

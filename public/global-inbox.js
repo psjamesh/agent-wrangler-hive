@@ -105,20 +105,40 @@ export function remoteRows(ctx, cells, remote, kind) {
     if (!cell) continue;
     rows.push({
       key: r.key, threadId: r.threadId, cellId: cell.id, hive: cellName(graph, cell), title: r.title || 'Topic no longer kept', at: r.at, lastAt: r.lastAt, count: r.count, unreadCount: kind === 'human' ? r.count : 0,
-      texts: [r.last?.text, r.snippet, r.preview].filter(Boolean), sessionLinks: r.sessionLinks || [r.last?.sessionLink].filter(Boolean),
+      beadIds: r.beadIds || [], texts: [r.last?.text, r.snippet, r.preview].filter(Boolean), sessionLinks: r.sessionLinks || [r.last?.sessionLink].filter(Boolean),
       author: messageAuthor(graph, cell, r.last), snippet: r.snippet, preview: r.preview, link: hiveLink(cell.id, r.threadId, r.firstId),
     });
   }
   return rows.sort((a, b) => a.at - b.at || (a.key < b.key ? -1 : 1));
 }
 
+export function conversationRows(ctx, cells) {
+  return cells.flatMap(cell => {
+    const topics = new Map((cell.threads || []).map(t => [t.id, t]));
+    for (const m of cell.messages || []) if (!topics.has(m.threadId)) topics.set(m.threadId, { id: m.threadId, title: 'Topic no longer kept' });
+    const grouped = new Map();
+    for (const m of cell.messages || []) {
+      if (!grouped.has(m.threadId)) grouped.set(m.threadId, []);
+      grouped.get(m.threadId).push(m);
+    }
+    return [...topics.values()].map(t => {
+      const messages = grouped.get(t.id) || [];
+      const last = messages.at(-1) || t.preview;
+      return { key: `topic:${cell.id}:${t.id}`, cellId: cell.id, threadId: t.id, hive: cellName(ctx.graph, cell), title: t.title,
+        at: t.lastAt || last?.at || 0, count: messages.length, texts: [...messages.map(m => m.text), t.preview?.text].filter(Boolean),
+        beadIds: [t.beadId, t.about, ...messages.map(m => m.context?.beadId || m.beadId)].filter(Boolean),
+        preview: last?.text || '', author: last ? messageAuthor(ctx.graph, cell, last) : '', link: hiveLink(cell.id, t.id) };
+    });
+  });
+}
+
 export function searchedInbox(ctx, cells, query, remoteState) {
   const { remote, pending = false, failed = false } = remoteState || {};
   const requests = needsRows(ctx, cells);
-  const local = filterRows(inboxRows(ctx, cells, 'human'), query);
+  const local = filterRows(mergeRows([...messageRows(ctx, cells, 'human'), ...conversationRows(ctx, cells)], requests), query);
   let human = local;
   if (remote) {
-    const messages = remoteRows(ctx, cells, remote, 'human');
+    const messages = remoteRows(ctx, cells, remote, remote.topics ? 'topics' : 'human');
     const requestMatches = new Set(local.filter(r => r.needsCount).map(threadKey));
     const remoteKeys = new Set(messages.map(threadKey));
     messages.push(...messageRows(ctx, cells, 'human').filter(r => requestMatches.has(threadKey(r)) && !remoteKeys.has(threadKey(r))));
@@ -160,7 +180,7 @@ export function globalInbox(ctx, cells) {
     lists[kind] = inboxRows(ctx, cells, kind);
     counts[kind] = cells.reduce((n, c) => n + inboxMessageCount(c, hive, ui, kind), 0);
   }
-  const query = ui.globalInboxQuery?.() || '';
+  const query = ui.searchQuery?.() || '';
   const searching = searchTerms(query).length > 0;
   const found = searching ? searchedInbox(ctx, cells, query, ui.askGlobalInboxSearch?.(cells.map(c => c.id), `${hive.revision}:${hive.metaVersion}`, hive.metaEpoch)) : null;
   const rows = searching ? found.lists[view] : lists[view];
@@ -171,11 +191,11 @@ export function globalInbox(ctx, cells) {
   const empty = searching ? `No topics match “${query.trim()}” in ${label}.${elsewhere.length ? ` ${elsewhere.join(', ')}.` : ''}` : view === 'human' ? 'No unread messages or open requests in any hive.' : 'None of your messages is waiting for an answer.';
   const list = h('ol', { class: 'hive-topics hive-inbox hive-global-inbox-list', 'aria-label': GLOBAL_FILTERS.find(f => f[0] === view)[1] },
     rows.length ? rows.map(r => inboxRow(ctx, r, { query: searching ? query : '' })) : h('li', { class: 'hive-muted' }, empty));
-  const box = inboxSearchBox(ui, query, rows, found);
+
   return h('div', { class: 'hive-dock hive-global-dock' },
     h('section', { class: 'hive-panel hive-conversation hive-global-inbox', tabindex: '-1', 'data-focus-key': 'panel:global-inbox', 'data-scroll-key': 'panel:global-inbox', 'aria-label': 'Inbox across all hives', 'data-pane': 'conversation' },
       h('div', { class: 'hive-inbox-heading' }, h('h3', {}, 'Inbox'), h('div', { class: 'hive-inbox-totals' }, inboxTotals(counts))),
-      h('div', { class: 'hive-inbox-toolbar' }, box, filters), list));
+      h('div', { class: 'hive-inbox-toolbar' }, searchStatus(query, rows, found), filters), list));
 }
 
 
@@ -207,22 +227,25 @@ export function inboxRow(ctx, r, { query = '', open, id = r.key, action, showCon
     rowSessionLinks(ctx, r), action);
 }
 
-export function inboxSearchBox(ui, query, rows, found, cellId) {
+export function globalSearchBox(ui, onKeyDown) {
+  const query = ui.searchQuery?.() || '';
   const searching = searchTerms(query).length > 0;
   const input = h('input', {
     type: 'search', class: 'hive-input hive-inbox-search-input', autocomplete: 'off', spellcheck: 'false', value: query, maxlength: '200',
-    placeholder: 'Search inbox', title: 'Search topics, messages and bead ids', 'aria-label': 'Search the inbox', 'data-focus-key': 'global-inbox-search',
-    oninput: (e) => { if (!e.isComposing) ui.setGlobalInboxQuery(input.value, cellId); },
-    onkeydown: (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); ui.setGlobalInboxQuery('', cellId); } },
+    placeholder: 'Search Hive', title: 'Search beads, topics and messages', 'aria-label': 'Search Hive', 'data-focus-key': 'global-inbox-search',
+    oninput: (e) => { if (!e.isComposing) ui.setSearchQuery(input.value); },
+    onkeydown: (e) => { onKeyDown?.(e); if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); ui.setSearchQuery(''); } },
   });
   const clear = h('button', {
     type: 'button', class: 'hive-inbox-search-clear', 'aria-label': 'Clear search', title: 'Clear search (Esc)', 'data-focus-key': 'global-inbox-search-clear',
-    tabindex: searching ? null : '-1', 'aria-hidden': searching ? null : 'true', onclick: () => { ui.setGlobalInboxQuery('', cellId); },
+    tabindex: searching ? null : '-1', 'aria-hidden': searching ? null : 'true', onclick: () => { ui.setSearchQuery(''); },
   }, '×');
-  const status = !searching ? '' : found.failed ? 'Searching loaded messages only: the full search failed.'
+  return h('div', { class: 'hive-global-search', role: 'search' },
+    h('div', { class: 'hive-inbox-search-field' }, input, clear));
+}
+
+export function searchStatus(query, rows, found) {
+  const status = !searchTerms(query).length || !found ? '' : found.failed ? 'Searching loaded messages only: the full search failed.'
     : `${rows.length} topic${rows.length === 1 ? '' : 's'} match${rows.length === 1 ? 'es' : ''}${found.pending ? ' · searching all messages…' : ''}${found.truncated ? ' · first matches only' : ''}`;
-  const box = h('div', { class: 'hive-inbox-search', role: 'search' },
-    h('div', { class: 'hive-inbox-search-field' }, input, clear),
-    h('span', { class: 'hive-muted hive-inbox-search-status', role: 'status', 'aria-live': 'polite' }, status));
-  return box;
+  return h('span', { class: 'hive-muted hive-inbox-search-status', role: 'status', 'aria-live': 'polite' }, status);
 }

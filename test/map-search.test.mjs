@@ -34,6 +34,7 @@ class Element {
   closest(s) { for (let el = this; el; el = el.parentNode) if (el.matches(s)) return el; return null; }
   querySelectorAll(s) { return this.children.flatMap(n => [...(n.matches(s) ? [n] : []), ...n.querySelectorAll(s)]); }
   querySelector(s) { return this.querySelectorAll(s)[0] || null; }
+  isEqualNode(other) { return this === other; }
   contains(n) { return n === this || this.children.some(c => c.contains(n)); }
   focus() { document.activeElement = this; }
   addEventListener(type, fn, capture = false) { (this.events[type] ||= []).push({ fn, capture: capture === true }); }
@@ -66,24 +67,27 @@ function fixture(t, extra = 0, preferences = []) {
   const top = draw();
   document.body.append(top);
   const canvas = () => top.querySelector('.hive-canvas');
-  const search = query => { canvas().focus(); canvas().fire('keydown', { key: '/' }); const input = canvas().querySelector('input'); input.value = query; input.fire('input'); return input; };
+  const setQuery = ui.setSearchQuery.bind(ui);
+  ui.setSearchQuery = query => { setQuery(query); canvas()?.hiveRefreshSearch?.(ctx); };
+  const search = query => { canvas().focus(); canvas().fire('keydown', { key: '/' }); const input = top.querySelector('input'); input.value = query; input.fire('input'); return input; };
   return { values, ui, ctx, beads, top, dock: () => dock, draw, canvas, search, tile: id => canvas().querySelector(`[data-tile-id="${id}"]`) };
 }
 
 test('map search uses shared fields in a labelled search region', t => {
   const f = fixture(t);
   const bar = f.canvas().querySelector('.hive-map-search');
-  assert.equal(bar.getAttribute('role'), 'search');
-  assert.equal(bar.getAttribute('aria-label'), 'Search beads');
+  assert.equal(bar.getAttribute('role'), 'group');
+  assert.equal(bar.getAttribute('aria-label'), 'Bead matches');
   const row = bar.querySelector('.hive-search-row');
-  assert.equal(row.querySelector('input').classList.contains('hive-input'), true);
+  assert.equal(f.top.querySelectorAll('input').length, 1);
+  assert.equal(row.querySelector('input'), null);
   assert.equal(row.querySelector('select').classList.contains('hive-input'), true);
   assert.equal(row.querySelector('button').classList.contains('hive-quiet-btn'), true);
-  assert.equal(f.canvas().querySelector('.hive-search-open').classList.contains('hive-btn'), true);
+  assert.equal(f.canvas().querySelector('.hive-search-open'), null);
   f.ui.closeCell();
   f.ui.setGlobalInboxOpen(true);
   f.draw();
-  assert.equal(f.dock().querySelector('.hive-inbox-search-input').classList.contains('hive-input'), true);
+  assert.equal(f.draw().querySelector('.hive-inbox-search-input').classList.contains('hive-input'), true);
 });
 
 test('real render opens only on map focus, highlights, navigates and clears without rebuilding', t => {
@@ -100,7 +104,7 @@ test('real render opens only on map focus, highlights, navigates and clears with
   const editable = new Element('div'); editable.setAttribute('contenteditable', ''); canvas.append(editable); editable.fire('keydown', { key: '/' });
   assert.equal(canvas.querySelector('.hive-map-search').hidden, true);
   f.tile('title').fire('keydown', { key: 'n' });
-  const input = canvas.querySelector('input'); assert.equal(input.value, 'n'); assert.equal(document.activeElement, input);
+  const input = f.top.querySelector('input'); assert.equal(input.value, 'n'); assert.equal(document.activeElement, input);
   input.value = 'nEEdle'; input.fire('input');
   assert.equal(canvas.querySelector('.hive-search-count').textContent, '4 matches');
   assert.equal(f.tile('goal').classList.contains('is-search-match'), true);
@@ -112,9 +116,9 @@ test('real render opens only on map focus, highlights, navigates and clears with
   input.fire('keydown', { key: 'Enter' }); assert.match(canvas.querySelector('.hive-search-field').textContent, /Needle in title — title/);
   input.fire('keydown', { key: 'Enter', shiftKey: true }); assert.match(canvas.querySelector('.hive-search-field').textContent, /Needle done — title/);
   input.fire('keydown', { key: 'ArrowUp' }); assert.match(canvas.querySelector('.hive-search-field').textContent, /Outside — evidence/);
-  f.draw(); assert.equal(f.canvas(), canvas); assert.equal(canvas.querySelector('input'), input);
+  f.draw(); assert.equal(f.canvas(), canvas);
   f.beads.goal.goal = 'changed'; f.ctx.hive.revision = 2; f.draw(); assert.equal(f.canvas(), canvas); assert.equal(f.tile('goal').classList.contains('is-search-match'), false);
-  input.fire('keydown', { key: 'Escape' });
+  f.top.querySelector('input').fire('keydown', { key: 'Escape' });
   assert.deepEqual(canvas.hiveCaptureView(), before);
   assert.equal(canvas.querySelector('.hive-map-search').hidden, true);
   assert.equal(canvas.querySelectorAll('.is-search-match').length, 0); assert.equal(canvas.querySelectorAll('.is-search-dim').length, 0);
@@ -128,9 +132,9 @@ test('Hide done counts separately, reveals temporarily and survives retained-map
   assert.equal(f.canvas().querySelector('.hive-search-count').textContent, '3 matches · 1 hidden by Hide done');
   const reveal = f.canvas().querySelector('.hive-map-search').querySelectorAll('button').find(b => b.textContent === 'Reveal hidden matches'); reveal.fire('click'); f.draw();
   assert.equal(f.tile('done').classList.contains('is-search-match'), true);
-  assert.equal(f.canvas().querySelector('input').value, 'needle');
+  assert.equal(f.top.querySelector('input').value, 'needle');
   assert.equal(f.canvas().querySelector('.hive-search-count').textContent, '4 matches · 1 revealed from Hide done');
-  f.canvas().querySelector('input').fire('keydown', { key: 'Escape' }); f.draw();
+  f.top.querySelector('input').fire('keydown', { key: 'Escape' }); f.draw();
   assert.equal(f.tile('done'), null);
   assert.equal(f.ui.hideDoneForHive('cell'), true);
   assert.equal(f.canvas().querySelectorAll('.is-search-dim').length, 0);
@@ -160,17 +164,17 @@ test('all search fields rank through the real render path and never enter unrela
   }
   input.value = 'no results'; input.fire('input');
   assert.equal(f.canvas().querySelector('.hive-search-count').textContent, '0 matches');
-  input.fire('keydown', { key: 'Escape' });
+  f.top.querySelector('input').fire('keydown', { key: 'Escape' });
   for (const props of [{ key: 'a', ctrlKey: true }, { key: 'a', metaKey: true }, { key: 'a', altKey: true }, { key: 'a', isComposing: true }]) {
     f.canvas().fire('keydown', props); assert.equal(f.canvas().querySelector('.hive-map-search').hidden, true);
   }
-  f.canvas().fire('keydown', { key: ' ' }); assert.equal(f.canvas().querySelector('.hive-map-search').hidden, false);
+  f.canvas().fire('keydown', { key: ' ' }); assert.equal(f.ui.searchQuery(), ' ');
   f.canvas().focus(); f.canvas().fire('keydown', { key: 'Escape' });
   assert.equal(f.canvas().querySelector('.hive-map-search').hidden, true);
 });
 
 test('returning to an open search preserves its query and appends typing from the map', t => {
-  const f = fixture(t); const input = f.search('need');
+  const f = fixture(t); let input = f.search('need');
   f.canvas().focus(); f.canvas().fire('keydown', { key: '/' });
   assert.equal(input.value, 'need'); assert.equal(document.activeElement, input);
   f.canvas().focus(); f.canvas().fire('keydown', { key: 'l' });
@@ -209,7 +213,7 @@ test('hive-wide Hide done search includes completed child regions and preserves 
   assert.equal(f.tile('closedHead').classList.contains('is-search-match'), true);
   assert.equal(f.tile('closedKid').classList.contains('is-search-match'), true);
   assert.equal(f.canvas().querySelector('.hive-search-count').textContent, '6 matches · 3 revealed from Hide done');
-  f.canvas().querySelector('input').fire('keydown', { key: 'Escape' }); f.draw();
+  f.top.querySelector('input').fire('keydown', { key: 'Escape' }); f.draw();
   assert.equal(f.tile('closedHead'), null); assert.equal(f.tile('closedKid'), null);
   assert.equal(f.ui.hideDoneForHive('cell'), true);
   assert.equal(f.ui.hideDoneForHive('cell'), true);
@@ -441,3 +445,50 @@ for (const enabled of [false, true]) {
     next.hiveDisposeView();
   });
 }
+
+test('one header query filters topics and messages while highlighting the map, and clearing restores both', t => {
+  const f = fixture(t);
+  const cell = f.ctx.hive.cells.cell;
+  cell.threads = [
+    { id: 'matching', title: 'Needle discussion', beads: [], retained: 2 },
+    { id: 'other', title: 'Other discussion', beads: [], retained: 1 },
+  ];
+  cell.messages = [
+    { id: 'm1', threadId: 'matching', n: 1, author: 'session', text: 'needle message', at: 1 },
+    { id: 'm2', threadId: 'matching', n: 2, author: 'session', text: 'ordinary message', at: 2 },
+    { id: 'm3', threadId: 'other', n: 3, author: 'session', text: 'unrelated', at: 3 },
+  ];
+  f.ui.setSearchQuery('needle'); f.draw();
+  assert.equal(f.top.querySelectorAll('input').filter(e => e.getAttribute('type') === 'search').length, 1);
+  assert.equal(f.canvas().querySelector('input'), null);
+  assert.equal(f.tile('title').classList.contains('is-search-match'), true);
+  assert.equal(f.tile('ws').classList.contains('is-search-dim'), true);
+  assert.equal(f.dock().querySelectorAll('.hive-topic').length, 1);
+  f.ui.openThreadFor('cell', 'matching', cell.threads[0]); f.draw();
+  assert.equal(f.dock().querySelectorAll('.hive-message').length, 1);
+  f.top.querySelector('input').fire('keydown', { key: 'Escape' }); f.draw();
+  assert.equal(f.canvas().querySelectorAll('.is-search-dim').length, 0);
+  assert.equal(f.dock().querySelectorAll('.hive-message').length, 2);
+  f.ui.closeThread('cell'); f.draw();
+  assert.equal(f.dock().querySelectorAll('.hive-topic').length, 2);
+});
+
+test('the same query follows cell and global views and finds read conversations outside the inbox', t => {
+  const f = fixture(t);
+  const cell = f.ctx.hive.cells.cell;
+  cell.threads = [{ id: 'read', title: 'Read discussion', beads: [] }];
+  cell.messages = [{ id: 'read1', threadId: 'read', author: 'session', text: 'needle already read', at: 1 }];
+  cell.inbox = { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } };
+  f.ui.setSearchQuery('needle');
+  f.ui.closeCell(); f.ui.setGlobalInboxOpen(true);
+  const top = f.draw();
+  assert.equal(top.querySelectorAll('input').length, 1);
+  assert.equal(top.querySelector('input').value, 'needle');
+  assert.equal(top.querySelectorAll('.is-search-match').length, 1);
+  assert.equal(f.dock().querySelectorAll('.hive-inbox-item').length, 1);
+  top.querySelector('.hive-inbox-search-clear').fire('click'); f.draw();
+  assert.equal(top.querySelectorAll('.is-search-match').length, 0);
+  assert.equal(f.dock().querySelectorAll('.hive-inbox-item').length, 0);
+  f.ui.openCell('cell');
+  assert.equal(f.draw().querySelector('input').value, '');
+});

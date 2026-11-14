@@ -2005,7 +2005,7 @@ for (const view of ['topics', 'cell', 'global', 'cell-search', 'global-search'])
   const { globalInbox } = await import('./global-inbox.js');
   const f = orderedTopicsFixture(t);
   if (view !== 'topics') f.ui.setInboxView(f.cell.id, 'human');
-  if (view.includes('search')) f.ui.setGlobalInboxQuery('unread', view.startsWith('cell') ? f.cell.id : undefined);
+  if (view.includes('search')) f.ui.setSearchQuery('unread', view.startsWith('cell') ? f.cell.id : undefined);
   const list = () => view.startsWith('global') ? globalInbox({
     hive: f.hive, ui: f.ui, graph: { sessions: [] }, api: {},
   }, [f.cell]).querySelector('.hive-global-inbox-list') : f.draw().list;
@@ -2052,13 +2052,13 @@ for (const view of ['cell', 'global', 'cell-search', 'global-search']) test(`${v
   const { globalInbox } = await import('./global-inbox.js');
   const f = orderedTopicsFixture(t);
   f.ui.setInboxView(f.cell.id, 'human');
-  if (view.includes('search')) f.ui.setGlobalInboxQuery('e', view.startsWith('cell') ? f.cell.id : undefined);
+  if (view.includes('search')) f.ui.setSearchQuery('e', view.startsWith('cell') ? f.cell.id : undefined);
   const list = () => view.startsWith('cell') ? f.draw().list : globalInbox({
     hive: f.hive, ui: f.ui, graph: { sessions: [] }, api: {},
   }, [f.cell]).querySelector('.hive-global-inbox-list');
-  assert.deepEqual(topicTitlesIn(list()), ['needs-old', 'needs-new', 'unread-old', 'unread-new']);
+  assert.deepEqual(topicTitlesIn(list()), ['needs-old', 'needs-new', 'unread-old', 'unread-new', ...(view.includes('search') ? ['read-old', 'read-new'] : [])]);
   f.cell.requests['needs-old'].state = 'withdrawn';
-  assert.deepEqual(topicTitlesIn(list()), ['needs-new', 'unread-old', 'unread-new', 'needs-old']);
+  assert.deepEqual(topicTitlesIn(list()), ['needs-new', 'unread-old', 'unread-new', 'needs-old', ...(view.includes('search') ? ['read-old', 'read-new'] : [])]);
 });
 
 test('scoped topic hint counts unread messages and topics waiting for you independently', t => {

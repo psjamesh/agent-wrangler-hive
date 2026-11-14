@@ -15,11 +15,11 @@ function setup() {
 
 test('whitespace-only edits keep the search scheduled and send it once', async () => {
   const { sent, ui } = setup();
-  ui.setGlobalInboxQuery('widget');
+  ui.setSearchQuery('widget');
   ui.askGlobalInboxSearch(['a'], '1');
-  ui.setGlobalInboxQuery('widget ');
+  ui.setSearchQuery('widget ');
   ui.askGlobalInboxSearch(['a'], '1');
-  ui.setGlobalInboxQuery(' widget ');
+  ui.setSearchQuery(' widget ');
   ui.askGlobalInboxSearch(['a'], '1');
   ui.askGlobalInboxSearch(['a'], '1');
   await wait(260);
@@ -32,7 +32,7 @@ test('whitespace-only edits keep the search scheduled and send it once', async (
 
 test('remote results and failures belong to their own request key', async () => {
   const { sent, ui, answer } = setup();
-  ui.setGlobalInboxQuery('widget');
+  ui.setSearchQuery('widget');
   assert.equal(ui.askGlobalInboxSearch(['a'], '1').pending, true);
   await wait(260);
   answer(0, { human: [{ key: 'k' }] });
@@ -45,7 +45,7 @@ test('remote results and failures belong to their own request key', async () => 
   answer(1, { ok: false });
   st = ui.askGlobalInboxSearch(['a'], '2');
   assert.deepEqual([st.remote, st.pending, st.failed], [null, false, true]);
-  ui.setGlobalInboxQuery('gadget');
+  ui.setSearchQuery('gadget');
   st = ui.askGlobalInboxSearch(['a'], '2');
   assert.deepEqual([st.remote, st.pending, st.failed], [null, true, false]);
   await wait(260);
@@ -54,13 +54,13 @@ test('remote results and failures belong to their own request key', async () => 
   assert.equal(st.remote, null);
   answer(2, { human: [{ key: 'g' }] });
   assert.equal(ui.askGlobalInboxSearch(['a'], '2').remote.human[0].key, 'g');
-  ui.setGlobalInboxQuery('');
+  ui.setSearchQuery('');
   assert.deepEqual(ui.askGlobalInboxSearch(['a'], '2'), { remote: null, pending: false, failed: false });
 });
 
 test('a new metadata epoch with identical counters refetches and drops the old epoch results', async () => {
   const { sent, ui, answer } = setup();
-  ui.setGlobalInboxQuery('widget');
+  ui.setSearchQuery('widget');
   ui.askGlobalInboxSearch(['a'], '1:1', 'e1');
   await wait(260);
   answer(0, { human: [{ key: 'old' }] });
@@ -78,7 +78,7 @@ test('a new metadata epoch with identical counters refetches and drops the old e
 
 test('legacy Needs you selection opens Inbox and leaving cancels a scheduled search', async () => {
   const { sent, ui } = setup();
-  ui.setGlobalInboxQuery('widget');
+  ui.setSearchQuery('widget');
   ui.setGlobalInboxView('human');
   ui.askGlobalInboxSearch(['a'], '1', 'e');
   ui.setGlobalInboxView('needs');
@@ -103,7 +103,7 @@ test('replies from an old epoch are ignored once a new epoch is seen, even befor
     globalThis.window = { location: { hash: '#x' }, addEventListener() {}, removeEventListener() {} };
     globalThis.sessionStorage = { setItem: (k) => writes.push(k), getItem: () => null };
     const { sent, ui, answer } = setup();
-    ui.setGlobalInboxQuery('widget');
+    ui.setSearchQuery('widget');
     assert.ok(writes.length > 0, 'the navigation spy sees a real navigate');
     ui.askGlobalInboxSearch(['a'], '1:1', 'e1');
     await wait(260);
@@ -120,24 +120,21 @@ test('replies from an old epoch are ignored once a new epoch is seen, even befor
   }
 });
 
-test('each cell search keeps its query and remote replies separate from All hives', async () => {
+test('one query is shared across global and cell views while replies stay scoped', async () => {
   const { sent, ui, answer } = setup();
-  ui.setGlobalInboxQuery('global');
-  ui.setGlobalInboxQuery('alpha', 'a');
-  ui.setGlobalInboxQuery('beta', 'b');
-  assert.equal(ui.globalInboxQuery(), 'global');
-  assert.equal(ui.globalInboxQuery('a'), 'alpha');
-  assert.equal(ui.globalInboxQuery('b'), 'beta');
-  assert.equal(ui.globalInboxQuery('c'), '');
+  ui.setSearchQuery('needle');
   ui.askGlobalInboxSearch(['a', 'b'], '1', 'e');
   ui.askGlobalInboxSearch(['a'], '1', 'e', 'a');
   await wait(260);
-  assert.deepEqual(sent.map(s => s.query), ['global', 'alpha']);
+  assert.deepEqual(sent.map(s => s.query), ['needle', 'needle']);
   answer(1, { human: [{ key: 'alpha-result' }] });
   answer(0, { human: [{ key: 'global-result' }] });
   assert.equal(ui.askGlobalInboxSearch(['a', 'b'], '1', 'e').remote.human[0].key, 'global-result');
   assert.equal(ui.askGlobalInboxSearch(['a'], '1', 'e', 'a').remote.human[0].key, 'alpha-result');
-  ui.setGlobalInboxQuery('', 'a');
-  assert.equal(ui.globalInboxQuery(), 'global');
-  assert.equal(ui.globalInboxQuery('b'), 'beta');
+  ui.setSearchQuery('changed');
+  assert.equal(ui.searchQuery(), 'changed');
+  assert.equal(ui.askGlobalInboxSearch(['a'], '1', 'e', 'a').remote, null);
+  ui.setSearchQuery('');
+  assert.equal(ui.askGlobalInboxSearch(['a', 'b'], '1', 'e').pending, false);
+  assert.equal(ui.askGlobalInboxSearch(['a'], '1', 'e', 'a').pending, false);
 });
