@@ -409,7 +409,7 @@ test('context renders one fresh role and conversation snapshot after inbox prepa
   const out = await cellContextConversation(f.rt, f.rt.host, f.actor, {}, (conversation, actor) => ({ conversation, role: actor.role }));
   assert.equal(out.role, 'coordinator');
   assert.equal(out.conversation.conversation[0].text, 'arrived while waiting');
-  assert.equal(out.conversation.attachments_inbox, undefined);
+  assert.equal(out.conversation.attachments_inbox, f.inbox);
   assert.equal(out.conversation.unacknowledged_input, undefined);
 });
 

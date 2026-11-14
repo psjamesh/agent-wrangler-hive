@@ -179,7 +179,7 @@ function messageItem({ m, cell, beads, graph, api, ui, ctx, target, replyKey }) 
       onOpen: id => { ui.setPane('details', { render: false }); ui.selectBead(id); },
     }),
     !m.requestId && m.sessionLink ? h('p', { class: 'hive-session-links' }, sessionReference(graph, m.sessionLink)) : null,
-    messageImages(m, cell, ui, ctx),
+    !m.requestId ? messageImages(m, cell, ui, ctx) : null,
     m.author === 'human' ? h('div', { class: 'hive-delivery' }, deliveryControls(m, cell, ctx), answerBadge(m, cell)) : null,
     controls.length ? h('div', { class: 'hive-message-foot' }, controls) : null);
   for (const tag of ['a', 'button', 'input', 'textarea', 'select', 'summary']) {
