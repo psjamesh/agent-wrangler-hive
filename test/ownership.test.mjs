@@ -1445,6 +1445,34 @@ async function dormantWorker(f) {
 }
 const restore = (f) => workers.workerLaunchContext({ sid: 'worker-1', task: { id: 'task' }, reason: 'resume', host: f.host });
 
+for (const holder of ['aw:worker-1', 'aw:replacement', null]) test(`archived restore refuses with recovery steps (claim holder: ${holder})`, async () => {
+  const f = fixture(2);
+  await dormantWorker(f);
+  f.board.get('worker-1').archived = true;
+  f.live.a.assignee = holder;
+  await f.rt.snapshots.refresh();
+  const before = structuredClone(f.doc());
+  const result = await restore(f);
+  assert.match(result?.refuse || '', /Archived Hive worker worker-1 cannot be restored safely/);
+  assert.ok(result.refuse.includes(`Bead a; last known claim holder: ${holder || 'none'}`));
+  assert.match(result.refuse, /hive_context.*hive_release_bead.*bead_id: a, force: true.*reason.*hive_spawn_worker/);
+  assert.doesNotMatch(result.refuse, /Restore this archived worker before launching it/);
+  assert.equal(f.live.a.assignee, holder);
+  assert.equal(f.board.get('worker-1').archived, true);
+  assert.deepEqual(f.doc(), before);
+});
+
+for (const reason of ['spawn', 'dispatch', 'message', 'snooze-wake', 'headless', 'resume']) test(`archived startup remains refused for ${reason}`, async () => {
+  const f = fixture(2);
+  await dormantWorker(f);
+  f.board.get('worker-1').archived = true;
+  const before = structuredClone(f.doc());
+  const result = await workers.workerLaunchContext({ sid: 'worker-1', task: { id: 'task' }, reason, host: f.host });
+  assert.ok(result?.refuse);
+  assert.equal(f.live.a.assignee, 'aw:worker-1');
+  assert.deepEqual(f.doc(), before);
+});
+
 test('restore accepts a worker whose launch bead is closed but who holds another open claim', async () => {
   const f = fixture(2);
   await dormantWorker(f);

@@ -69,7 +69,10 @@ function gateAuthority(rt, host, launchId, { sid, task, ext, initial }, expected
   if (!launch || !allowed.includes(launch.state) || (launch.sessionId && launch.sessionId !== sid)) throw new HiveError('This worker launch is missing, abandoned, stale or belongs to a different session.');
   if (expected && ['id', 'cellId', 'taskId', 'beadId', 'requestedBy', 'role', 'reviewId'].some((key) => launch[key] !== expected[key])) throw new HiveError('The worker launch identity changed before startup.');
   if (task?.id !== launch.taskId || (ext?.beadId && ext.beadId !== launch.beadId)) throw new HiveError('This worker launch has a different task or bead.');
-  if (host.sessions.get(sid)?.archived) throw new HiveError('Restore this archived worker before launching it.');
+  if (host.sessions.get(sid)?.archived) {
+    const holder = rt.snapshots.graph.beads[launch.beadId]?.assignee || 'none';
+    throw new HiveError(`Archived Hive worker ${sid} cannot be restored safely. Bead ${launch.beadId}; last known claim holder: ${holder}. The queen should check hive_context and, if the claim is stale, release it with hive_release_bead (bead_id: ${launch.beadId}, force: true, and a reason). Then launch a fresh worker with hive_spawn_worker on open, unclaimed work.`);
+  }
   const requester = initial ? coordinator(rt, host, { sessionId: launch.requestedBy, cell: { id: launch.cellId } }, { attach: launch.role !== 'worker', beadId: launch.beadId }) : resolveCaller(rt, host, sid, launch.cellId);
   ensureWritable(rt);
   reviewForLaunch(rt, launch, { sid, initial });
