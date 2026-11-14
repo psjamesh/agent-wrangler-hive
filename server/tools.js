@@ -397,7 +397,7 @@ export const publishTool = hiveTool({
     reply_to: z.string().max(80).optional().describe('Message id you are replying to.'),
     thread_id: z.string().max(80).optional().describe('Topic to post into, from hive_context threads. Not needed with reply_to.'),
     thread_title: z.string().min(1).max(120).optional().describe('Name for the new topic this message starts. Only without reply_to and thread_id.'),
-    attachments: imageAttachments.describe('Queen only. PNG, JPEG, GIF or WebP files saved in attachments_inbox from hive_context. Bare names only, never paths. Up to 4, each at most 5 MB. The inbox is shared staging: use a fresh session-prefixed filename with a random suffix for every image. Never overwrite existing files or attach another session\'s files.'),
+    attachments: imageAttachments.describe('Queen only. PNG, JPEG, GIF or WebP files saved in attachments_inbox from hive_context. Bare names only, never paths. Up to 4, each at most 5 MB. The inbox belongs to your session in this cell; only files staged there can be attached. Other sessions may use the same filenames independently.'),
     answers: z.array(z.string().min(1).max(80)).max(20).optional().describe('Queen only. Ids of human messages in this cell that this message answers, besides reply_to.'),
   },
 }, ({ rt, host, actor, args }) => publish(rt, actor, args, host));
@@ -526,7 +526,7 @@ const requestTools = [
   requestTool('hive_request_input', 'Ask for a decision or action inside your active Hive cell. Pass reply_to when a request answers a human message: it joins the topic of that message, inherits its bead, and a queen request counts as an answer. With thread_id alone, the bead comes from the topic. With bead_id alone, reuse its topic when exactly one is available in the cell; otherwise start a new topic. Pass session_id (and optionally session_label) when the human should act in a specific board session. Forwarding automatically links the requester too. Attach screenshots with attachments; images stay with the request when forwarded. Worker/reviewer/helper requests go to its queen, who answers or forwards the same request to the human. Queens ask the human directly. Do not also call request_human_input. Outside Hive use that standard tool instead. Offer 2-4 options where there is a choice, recommended first with (Recommended) in its label, and explain your recommendation in the body. Caller identity comes from MCP, never arguments.', {
     cell_id: cellIdArg,
     ...sessionLinkArgs,
-    attachments: imageAttachments.describe('PNG, JPEG, GIF or WebP files saved in attachments_inbox from hive_context. Bare names only, never paths. Up to 4, each at most 5 MB. The inbox is shared staging: use a fresh session-prefixed filename with a random suffix for every image. Never overwrite existing files or attach another session\'s files. All requesters may attach; forwarding keeps the images. Dedupe updates retain images; use a new request to change them.'),
+    attachments: imageAttachments.describe('PNG, JPEG, GIF or WebP files saved in attachments_inbox from hive_context. Bare names only, never paths. Up to 4, each at most 5 MB. The inbox belongs to your session in this cell; only files staged there can be attached. Other sessions may use the same filenames independently. All requesters may attach; forwarding keeps the images. Dedupe updates retain images; use a new request to change them.'),
     title: z.string().min(1).max(200), body: z.string().min(1).max(20000),
     options: optionsSchema.optional(),
     allow_free_text: z.boolean().optional().describe('Compatibility parameter; ignored. Standalone text replies and optional notes are always allowed.'),
@@ -560,7 +560,7 @@ export const reportPrWaitTool = hiveTool({
 
 export const pickupTool = hiveTool({
   name: 'hive_set_pickup',
-  description: 'Queen only: mark bounded work ready for one automatic worker launch. Pickup is default behavior; max claimed work controls concurrency. Supply an explicit launch profile (agent, model, effort, cwd, optional worktree and intent). Dependencies may still be pending. Rearming a consumed or held mark requires expected_token and a reason. Failed or uncertain starts never retry automatically.',
+  description: 'Queen only: mark bounded work ready for one automatic worker launch. Pickup is default behavior; max claimed work controls concurrency. Supply an explicit launch profile (agent, model, effort, cwd, optional worktree and intent). Returns current pickup state, eligibility and every hold reason, including blocking session ids. Dependencies may still be pending. Rearming a consumed or held mark requires expected_token and a reason. Failed or uncertain starts never retry automatically.',
   inputSchema: {
     bead_id: beadId,
     ready: z.boolean(),

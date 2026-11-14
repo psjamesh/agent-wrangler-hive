@@ -81,18 +81,18 @@ async function pinned(rt, job, runs = []) {
 }
 const cellParts = cellId => ['attachments', safeId(cellId)];
 export const messageDir = (rt, cellId, messageId) => path.join(rt.paths.root, ...cellParts(cellId), safeId(messageId));
-export async function attachmentsInbox(rt, cellId) {
+export async function attachmentsInbox(rt, cellId, sessionId) {
   await rt.attachmentRecovery;
-  await pinned(rt, { action: 'ensure-inbox', cellId });
-  return path.join(rt.paths.root, ...cellParts(cellId), 'inbox');
+  await pinned(rt, { action: 'ensure-inbox', cellId, sessionId: safeId(sessionId) });
+  return path.join(rt.paths.root, ...cellParts(cellId), 'inbox', safeId(sessionId));
 }
-export async function adoptAttachments(rt, cellId, messageId, attachments = [], { client = false } = {}) {
+export async function adoptAttachments(rt, cellId, messageId, attachments = [], { client = false, sessionId } = {}) {
   if (!Array.isArray(attachments) || attachments.length > MAX_ATTACHMENTS) throw new HiveError('Attach at most 4 images per message.');
   const sources = client ? attachments.filter(a => a && typeof a === 'object' && !Array.isArray(a) && !['path', 'file', 'filePath', 'file_path'].some(k => k in a)) : attachments;
   if (!sources.length) return [];
   await rt.attachmentRecovery;
   try {
-    const out = await pinned(rt, { action: 'adopt', cellId, messageId, attachments: sources, client });
+    const out = await pinned(rt, { action: 'adopt', cellId, messageId, attachments: sources, client, ...(!client ? { sessionId: safeId(sessionId) } : {}) });
     return out.attachments;
   } catch (error) { await removeAttachments(rt, cellId, messageId); throw error; }
 }

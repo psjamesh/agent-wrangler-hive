@@ -4,7 +4,7 @@ import { capacityEditor, openHiveSettings, restoreSettingsFocus } from './capaci
 export function settingsButton({ ui }) {
   return h('button', {
     type: 'button', class: 'hive-quiet-btn',
-    'aria-expanded': String(Boolean(ui.form('settings'))), 'aria-controls': 'hive-all-settings', 'data-focus-key': 'open-settings',
+    title: 'Open Hive settings', 'aria-expanded': String(Boolean(ui.form('settings'))), 'aria-controls': 'hive-all-settings', 'data-focus-key': 'open-settings',
     onclick: () => openHiveSettings(ui),
   }, 'Settings');
 }

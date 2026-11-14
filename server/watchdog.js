@@ -1,3 +1,4 @@
+import { pickupState } from './pickup.js';
 import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
 import { awaitingQueen } from './conversation.js';
@@ -10,7 +11,7 @@ import { GROUP_KINDS, descendantIds } from './bead-model.js';
 import { humanWaitText } from './human-wait.js';
 import { workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
 
-export const WATCHDOG_DEFAULTS = Object.freeze({ workerMinutes: 30, idleMinutes: 30, reviewMinutes: 60, messageMinutes: 30, waitHours: 24, deferredDays: 7, untrackedMinutes: 30, waitGraceMinutes: 30, humanWaitMinutes: 10 });
+export const WATCHDOG_DEFAULTS = Object.freeze({ workerMinutes: 30, idleMinutes: 30, reviewMinutes: 60, messageMinutes: 30, waitHours: 24, deferredDays: 7, untrackedMinutes: 30, waitGraceMinutes: 30, humanWaitMinutes: 10, pickupHeldMinutes: 5 });
 const DAY_MS = 86400000;
 const stamp = value => typeof value === 'number' && Number.isFinite(value) ? value : typeof value === 'string' ? Date.parse(value) || 0 : 0;
 export const watchdogSettings = cell => {
@@ -64,7 +65,7 @@ export function setWatchdogSettings(rt, { cellId, settings }) {
   refuseSnapshot(cell);
   if (!settings || typeof settings !== 'object' || Array.isArray(settings) || !Object.keys(settings).length
     || Object.entries(settings).some(([key, value]) => !Object.hasOwn(WATCHDOG_DEFAULTS, key) || !Number.isFinite(value) || value <= 0 || value > 525600)) {
-    throw new HiveError('Watchdog thresholds must be positive numbers up to 525600, using workerMinutes, idleMinutes, reviewMinutes, messageMinutes, waitHours, deferredDays, untrackedMinutes, waitGraceMinutes and humanWaitMinutes.');
+    throw new HiveError('Watchdog thresholds must be positive numbers up to 525600, using workerMinutes, idleMinutes, reviewMinutes, messageMinutes, waitHours, deferredDays, untrackedMinutes, waitGraceMinutes, humanWaitMinutes and pickupHeldMinutes.');
   }
   rt.metadata.mutate(d => { d.cells[cellId].watchdogSettings = { ...watchdogSettings(cell), ...settings }; });
   return { cellId, settings: watchdogSettings(rt.metadata.cell(cellId)) };
@@ -124,6 +125,15 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     flags.push({ id, kind, ...fields, ...(fields?.session_id ? { session_link: availableSessionHref(host, fields.session_id) } : {}), reason, since, age_ms: Math.max(0, now - since) });
   };
   for (const bead of open) {
+    if (bead.pickup?.armed) {
+      const state = pickupState(rt, host, cell, bead, rt.snapshots.graph, { now });
+      const anchor = cell.pickupHoldAnchors?.[bead.id];
+      if (state.state === 'queued' && state.reconciliation_reasons.length && anchor?.token === bead.pickup.armToken && now - anchor.at >= settings.pickupHeldMinutes * 60000) {
+        add('pickup_held', bead.id, bead.pickup.armToken, anchor.at,
+          `Automatic pickup is held: ${state.reasons.join('; ')}. Reconcile the holds or disarm the mark.`,
+          { bead_id: bead.id, reasons: state.reasons, session_ids: state.blocking_session_ids });
+      }
+    }
     const updated = stamp(bead.updatedAt);
     if ((bead.status === 'blocked' || bead.waitingFor) && updated && now - updated >= settings.waitHours * 3600000) {
       add('stale_wait', bead.id, [updated, bead.status, bead.waitingFor || ''], updated, 'Blocked or waiting work has not been touched.', { bead_id: bead.id, session_id: bead.ownerSessionId || null });
@@ -230,6 +240,25 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
   return flags;
 }
 
+function syncPickupHoldAnchors(rt, host, now) {
+  const beads = rt.snapshots.graph.beads;
+  const edits = [];
+  for (const cell of rt.metadata.cells()) {
+    const next = {};
+    const ids = cell.enabled && !cell.snapshot && cell.rootBeadId && beads[cell.rootBeadId] ? descendantIds(beads, cell.rootBeadId) : new Set();
+    for (const id of ids) {
+      const bead = beads[id];
+      if (bead.status === 'closed' || !bead.pickup?.armed) continue;
+      const state = pickupState(rt, host, cell, bead, rt.snapshots.graph, { now });
+      if (state.state !== 'queued' || !state.reconciliation_reasons.length) continue;
+      const prior = cell.pickupHoldAnchors?.[id];
+      next[id] = prior?.token === bead.pickup.armToken ? prior : { token: bead.pickup.armToken, at: now };
+    }
+    if (JSON.stringify(next) !== JSON.stringify(cell.pickupHoldAnchors || {})) edits.push([cell.id, next]);
+  }
+  if (edits.length) rt.metadata.mutate(d => { for (const [id, anchors] of edits) d.cells[id].pickupHoldAnchors = anchors; });
+}
+
 export function syncWaitAnchors(rt) {
   const beads = rt.snapshots.graph.beads;
   const edits = [];
@@ -302,6 +331,7 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
     const index = watchdogIndex(rt, host);
     saveWorkerActivity(rt, host, index.activity);
     syncWaitAnchors(rt);
+    syncPickupHoldAnchors(rt, host, now());
     const changes = new Map(), groups = new Map();
     for (const cell of rt.metadata.cells()) {
       const flags = collectWatchdog(rt, host, cell, now(), index);

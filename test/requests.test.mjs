@@ -418,7 +418,7 @@ test('peer worker contexts omit private request topics and discussions but prese
 test('hidden request discussions reject image, acknowledgement and native human actions without revealing existence', async t => {
   const f = await privacyFixture(t), secret = await f.create();
   const { attachmentsInbox } = await import('../server/attachments.js');
-  const inbox = await attachmentsInbox(f.rt, 'cell');
+  const inbox = await attachmentsInbox(f.rt, 'cell', queen);
   fs.writeFileSync(path.join(inbox, 'private.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP0cAAAAASUVORK5CYII=', 'base64'));
   const reply = await f.conv.publish(f.rt, f.actor, { text: 'Private discussion', reply_to: secret.messageId, attachments: [{ file: 'private.png' }] }, f.host);
   const { configHandlers } = await import('../server/handlers.js');
@@ -589,7 +589,7 @@ for (const destination of ['reply_to', 'thread_id']) test(`private ${destination
     await requests.forwardRequest(f.rt, f.host, queen, { request_id: publicSibling.id, ...rev(publicSibling) });
   }
   const { attachmentsInbox } = await import('../server/attachments.js');
-  const inbox = await attachmentsInbox(f.rt, 'cell');
+  const inbox = await attachmentsInbox(f.rt, 'cell', queen);
   fs.writeFileSync(path.join(inbox, 'private.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP0cAAAAASUVORK5CYII=', 'base64'));
   const args = { text: 'Private discussion answer', attachments: [{ file: 'private.png' }], [destination]: destination === 'reply_to' ? secret.messageId : secret.threadId };
   const before = structuredClone(f.rt.metadata.read()), version = f.rt.metadata.version;
@@ -598,7 +598,7 @@ for (const destination of ['reply_to', 'thread_id']) test(`private ${destination
   assert.deepEqual(f.rt.metadata.read(), before);
   assert.equal(f.rt.metadata.version, version);
   assert.equal(fs.readFileSync(f.rt.metadata.file, 'utf8'), disk);
-  assert.deepEqual(fs.readdirSync(path.dirname(inbox)), ['inbox'], 'rejected publication leaves no adopted attachment directory');
+  assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(inbox))), ['inbox'], 'rejected publication leaves no adopted attachment directory');
   assert.equal(fs.existsSync(path.join(inbox, 'private.png')), true);
   assert.deepEqual(f.conv.inboxPage(f.rt, { cellId: 'cell', awaiting: 'queen' }).ids.sort(), [first.id, second.id].sort());
   const queenContext = await f.conv.cellContextConversation(f.rt, f.host, f.actor);
@@ -972,8 +972,8 @@ for (const action of ['read', 'reaction', 'reply']) test(`${action} acknowledges
 
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nGQAAAAASUVORK5CYII=', 'base64');
-async function imageFixture(t) {
-  const f = fixture(t), inbox = await attachmentsInbox(f.rt, 'cell');
+async function imageFixture(t, caller = worker) {
+  const f = fixture(t), inbox = await attachmentsInbox(f.rt, 'cell', caller);
   const put = (file, bytes = PNG) => fs.writeFileSync(path.join(inbox, file), bytes);
   put('screen.png');
   return { ...f, inbox, put };
@@ -985,7 +985,7 @@ async function humanImage(f, r) {
 }
 
 for (const role of ['queen', 'worker', 'reviewer', 'helper']) test(`${role} request stores original images, retains them on forwarding and survives restart`, async t => {
-  const f = await imageFixture(t), caller = role === 'queen' ? queen : worker;
+  const caller = role === 'queen' ? queen : worker, f = await imageFixture(t, caller);
   if (role === 'reviewer' || role === 'helper') f.rt.metadata.mutate(d => { d.bindings.cell = [{ sessionId: worker, role, active: true }]; });
   const r = await f.create(caller, { attachments: [{ file: 'screen.png', alt: 'Settings before the change' }] });
   const message = f.rt.metadata.read().conversation.cell.find(m => m.id === r.messageId);
@@ -1020,7 +1020,7 @@ test('request attachments reject invalid files atomically with the shared valida
     await assert.rejects(f.create(worker, { attachments: [{ file: 'screen.png' }, { file }] }), error);
     assert.deepEqual(Object.keys(f.rt.metadata.read().requests), []);
     assert.equal(f.rt.metadata.read().conversation.cell?.length || 0, 0);
-    assert.deepEqual(fs.readdirSync(path.dirname(f.inbox)), ['inbox']);
+    assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(f.inbox))), ['inbox']);
   }
   for (const attachments of [null, {}, Array(5).fill({ file: 'screen.png' })]) await assert.rejects(f.create(worker, { attachments }), /at most 4/);
 });
@@ -1030,7 +1030,7 @@ test('failed request metadata commit removes adopted files and leaves no request
   f.rt.metadata.mutate = fn => mutate(d => { fn(d); throw new Error('disk failed'); });
   await assert.rejects(f.create(worker, { attachments: [{ file: 'screen.png' }] }), /disk failed/);
   assert.deepEqual(Object.keys(f.rt.metadata.read().requests), []);
-  assert.deepEqual(fs.readdirSync(path.dirname(f.inbox)), ['inbox']);
+  assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(f.inbox))), ['inbox']);
 });
 
 test('dedupe retries and text updates preserve request images without reopening inbox files', async t => {
@@ -1056,5 +1056,37 @@ test('request attachment adoption rechecks membership and cleans up if the calle
   f.rt.attachmentHelperStarted = action => { if (action === 'adopt') f.members.get(worker).taskId = 'elsewhere'; };
   await assert.rejects(f.create(worker, { attachments: [{ file: 'screen.png' }] }), /not in that active Hive/);
   assert.deepEqual(Object.keys(f.rt.metadata.read().requests), []);
-  assert.deepEqual(fs.readdirSync(path.dirname(f.inbox)), ['inbox']);
+  assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(f.inbox))), ['inbox']);
+});
+
+
+test('session inboxes isolate identical names for requests and queen publishing', async t => {
+  const f = await imageFixture(t);
+  const queenContext = await cellContextConversation(f.rt, f.host, resolveCaller(f.rt, f.host, queen, 'cell'));
+  const workerContext = await cellContextConversation(f.rt, f.host, resolveCaller(f.rt, f.host, worker, 'cell'), { bead_id: 'work' });
+  assert.equal(workerContext.attachments_inbox, f.inbox);
+  assert.notEqual(queenContext.attachments_inbox, f.inbox);
+  const queenBytes = Buffer.concat([PNG, Buffer.from('queen')]);
+  fs.writeFileSync(path.join(queenContext.attachments_inbox, 'screen.png'), queenBytes);
+  const r = await f.create(worker, { attachments: [{ file: 'screen.png' }] });
+  const { publish } = await import('../server/conversation.js');
+  const q = await publish(f.rt, resolveCaller(f.rt, f.host, queen, 'cell'), { text: 'Queen image', attachments: [{ file: 'screen.png' }] });
+  assert.deepEqual((await readAttachment(f.rt, 'cell', r.messageId, 'screen.png')).bytes, PNG);
+  assert.deepEqual((await readAttachment(f.rt, 'cell', q.message_id, 'screen.png')).bytes, queenBytes);
+});
+
+test('requests cannot adopt another session or legacy shared inbox files', async t => {
+  const f = await imageFixture(t);
+  const queenInbox = await attachmentsInbox(f.rt, 'cell', queen);
+  fs.writeFileSync(path.join(queenInbox, 'queen.png'), PNG);
+  const shared = path.dirname(f.inbox);
+  fs.writeFileSync(path.join(shared, 'legacy.png'), PNG);
+  for (const file of ['queen.png', 'legacy.png', `../${queen}/queen.png`]) {
+    await assert.rejects(f.create(worker, { attachments: [{ file }] }), /could not read|bare/);
+  }
+  const { publish } = await import('../server/conversation.js');
+  await assert.rejects(publish(f.rt, resolveCaller(f.rt, f.host, queen, 'cell'), { text: 'Another session image', attachments: [{ file: 'screen.png' }] }), /could not read/);
+  assert.equal(fs.existsSync(path.join(shared, 'legacy.png')), true);
+  assert.equal(fs.existsSync(path.join(queenInbox, 'queen.png')), true);
+  assert.deepEqual(Object.keys(f.rt.metadata.read().requests), []);
 });

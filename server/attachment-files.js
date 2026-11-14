@@ -56,7 +56,7 @@ try {
     if (!Array.isArray(job.attachments) || job.attachments.length > MAX_ATTACHMENTS) throw new Error('Attach at most 4 images per message.');
     cell(job.cellId, true);
     const parent = process.cwd(), parentId = identity(fs.statSync('.'));
-    if (!job.client) enter('inbox', true);
+    if (!job.client) { enter('inbox', true); enter(safeId(job.sessionId), true); }
     const all = job.attachments.map((a, i) => {
       const file = job.client ? `image-${i + 1}${KINDS.find(k => k.mime === a.mime)?.exts[0] || '.invalid'}` : a?.file;
       try {
@@ -76,7 +76,7 @@ try {
       throw new Error(`${all.map(a => a.file).join(', ')}: ${e.message}`);
     }
     result = { attachments: all.map(({ bytes, ...a }) => a) };
-  } else if (action === 'ensure-inbox') { cell(job.cellId, true); enter('inbox', true); }
+  } else if (action === 'ensure-inbox') { cell(job.cellId, true); enter('inbox', true); enter(safeId(job.sessionId), true); }
   else if (action === 'image-batch') {
     const images = [];
     for (const [index, request] of job.images.entries()) {
