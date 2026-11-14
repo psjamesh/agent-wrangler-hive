@@ -31,7 +31,7 @@ export function capacitySlots(rt, graph, reserve = []) {
     const session = rt.host?.sessions?.get?.(sid);
     return !session || (!session.archived && session.status !== 'exited');
   };
-  const claimed = new Set([...scope].filter((id) => graph.beads[id].status === 'in_progress' && graph.beads[id].assignee && (!rt.host?.sessions?.get || liveClaimant(rt.host, graph.beads[id].ownerSessionId))).map(charge));
+  const claimed = new Set([...scope].filter((id) => graph.beads[id].status === 'in_progress' && graph.beads[id].assignee && (!graph.beads[id].ownerSessionId || !rt.host?.sessions?.get || liveClaimant(rt.host, graph.beads[id].ownerSessionId))).map(charge));
   const roots = new Set(rt.metadata.cells().map((c) => c.rootBeadId));
   const counts = (id) => typeof id === 'string' && !roots.has(id) && graph.beads[id]?.kind !== 'external' && !GROUP_KINDS.has(graph.beads[id]?.kind);
   const reserved = new Set(Object.values(rt.metadata.read().workerLaunches || {})

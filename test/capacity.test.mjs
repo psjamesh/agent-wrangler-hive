@@ -155,7 +155,7 @@ test('capacity drops gone claimants and bound reservations as sessions change', 
   assert.equal(rt.projection().capacity.used, 2);
 });
 
-test('projection cleans existing archived and exited bindings but preserves dormant waiters', t => {
+test('projection durably cleans archives and temporarily hides exited bindings', t => {
   const { rt } = fixture(t);
   const sessions = { worker: { archived: true }, exited: { status: 'exited' }, waiting: { status: 'idle', dormant: true } };
   rt.host = { sessions: { get: id => sessions[id] } };
@@ -165,8 +165,11 @@ test('projection cleans existing archived and exited bindings but preserves dorm
   assert.deepEqual(rt.projection().cells.one.bindings.map(b => b.sessionId), ['waiting']);
   const bindings = rt.metadata.read().bindings.one;
   assert.equal(bindings[0].active, false);
-  assert.equal(bindings[1].active, false);
+  assert.equal(bindings[1].active, true);
   assert.ok(bindings[0].unboundAt);
+  assert.equal(bindings[0].unboundBy, 'aw:hive-recovery');
+  sessions.exited.status = 'idle';
+  assert.deepEqual(rt.projection().cells.one.bindings.map(b => b.sessionId), ['exited', 'waiting']);
   const version = rt.metadata.version;
   rt.projection();
   assert.equal(rt.metadata.version, version);
@@ -192,4 +195,26 @@ test('an uncertain launch keeps its fence until the session is confirmed gone', 
   assert.equal(rt.projection().capacity.used, 1);
   session = { status: 'exited' };
   assert.equal(rt.projection().capacity.used, 0);
+});
+
+
+test('cleanup leaves disabled and snapshot cell bindings intact', t => {
+  const { rt } = fixture(t);
+  rt.host = { sessions: { get: () => ({ archived: true }) } };
+  rt.metadata.mutate(d => {
+    d.cells.one.enabled = false;
+    d.cells.two.snapshot = { capturedAt: 1 };
+    d.bindings.one = [{ sessionId: 'archived', beadId: 'a', role: 'worker', active: true }];
+    d.bindings.two = [{ sessionId: 'archived', beadId: 'c', role: 'worker', active: true }];
+  });
+  rt.projection();
+  assert.equal(rt.metadata.read().bindings.one[0].active, true);
+  assert.equal(rt.metadata.read().bindings.two[0].active, true);
+});
+
+test('non-session assignees retain their existing capacity charge', t => {
+  const { rt, setGraph } = fixture(t);
+  rt.host = { sessions: { get: () => null } };
+  setGraph([raw('root'), { ...raw('a', 'root', true), assignee: 'human' }]);
+  assert.equal(rt.projection().capacity.used, 1);
 });

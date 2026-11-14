@@ -21,6 +21,7 @@ export function isUntracked(host, graph, bead) {
 export function trackingKey(rt) {
   return Object.values(rt.snapshots.current.graph.beads).filter((b) => b.ownerSessionId)
     .map((b) => `${b.ownerSessionId}:${liveClaimant(rt.host, b.ownerSessionId)}`).join('|')
+    + Object.values(rt.metadata.read().bindings || {}).flat().filter(b => b.active).map(b => `|${b.sessionId}:${liveClaimant(rt.host, b.sessionId)}`).join('')
     + Object.values(rt.metadata.read().workerLaunches || {}).map(l => { const s = rt.host?.sessions?.get?.(l.sessionId); return `|${l.id}:${s?.status}:${s?.archived}`; }).join('')
     + Object.values(rt.metadata.read().reviews || {}).map((r) => { const s = rt.host?.sessions?.get?.(r.reviewerSessionId); return `|${r.id}:${s?.status}:${s?.archived}`; }).join('');
 }
@@ -58,17 +59,18 @@ export function ungovernedDescendants(rt, host, cell, openBeads = []) {
 
 export function reconcileInactiveBindings(rt, host) {
   if (!host?.sessions?.get || rt.metadata.error) return;
-  const stale = new Set(Object.values(rt.metadata.read().bindings || {}).flat().filter(b => {
-    const session = host.sessions.get(b.sessionId);
-    return b.active && session && (session.archived || session.status === 'exited');
-  }).map(b => b.sessionId));
-  if (!stale.size) return;
+  const eligible = (cell) => cell?.enabled && !cell.snapshot;
+  const stale = (b) => b.active && host.sessions.get(b.sessionId)?.archived;
+  const doc = rt.metadata.read();
+  const cells = Object.keys(doc.bindings || {}).filter(id => eligible(doc.cells[id]) && doc.bindings[id].some(stale));
+  if (!cells.length) return;
   rt.metadata.mutate(d => {
-    for (const list of Object.values(d.bindings || {})) for (const b of list) {
-      if (b.active && stale.has(b.sessionId)) {
+    for (const id of cells) for (const b of d.bindings[id] || []) {
+      if (stale(b)) {
         b.active = false;
         b.unboundAt = Date.now();
-        b.unboundReason = 'Session archived or exited';
+        b.unboundBy = 'aw:hive-recovery';
+        b.unboundBecause = 'Session archived';
       }
     }
   });
