@@ -355,7 +355,7 @@ for (const state of ['open', 'answered', 'resolved']) for (const legacy of [fals
   f.cell.requestCounts.human = state === 'open' ? 1 : 0;
   const expected = { messages: 1, badges: [1] };
   assert.deepEqual(f.counts(null), { ...expected, badges: state === 'open' ? [1, 1] : [1] });
-  const requestBadges = f.draw(null).list.querySelectorAll('.is-needs-you');
+  const requestBadges = f.draw(null).list.querySelectorAll('.is-human-wait');
   assert.equal(requestBadges.length, state === 'open' ? 1 : 0);
   if (requestBadges.length) assert.equal(requestBadges[0].attributes['aria-label'], '1 request waiting for you');
   assert.deepEqual(f.counts('human'), inboxChips(expected));

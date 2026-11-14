@@ -1927,7 +1927,7 @@ for (const [name, patch, waiting] of [
   if (waiting) {
     assert.equal(badge?.textContent, '1');
     assert.match(list.querySelector('.hive-topic').attributes.class, /is-unread/);
-    assert.match(badge.attributes.class, /is-needs-you/);
+    assert.match(badge.attributes.class, /is-human-wait/);
     assert.equal(badge.attributes['aria-label'], '1 request waiting for you');
   } else assert.equal(badge, null);
 });
@@ -1941,12 +1941,12 @@ for (const state of ['answered', 'withdrawn']) test(`topic badge clears after re
   f.cell.messages.push({ id: 'unread', threadId: thr, author: 'session', sessionId: 'queen', role: 'queen', text: 'Please read', at: 2, n: 2, ack: { required: true, state: null, rev: 0 } });
   let badge = f.draw().list.querySelector('.hive-unread');
   assert.equal(badge.textContent, '1');
-  assert.match(badge.attributes.class, /is-needs-you/);
+  assert.match(badge.attributes.class, /is-human-wait/);
   assert.equal(badge.attributes['aria-label'], '1 unread; 1 request waiting for you');
   Object.assign(request, { state, delivery: { state: 'delivered' } });
   badge = f.draw().list.querySelector('.hive-unread');
   assert.equal(badge.textContent, '1');
-  assert.doesNotMatch(badge.attributes.class, /is-needs-you/);
+  assert.doesNotMatch(badge.attributes.class, /is-human-wait/);
   assert.equal(badge.attributes['aria-label'], '1 unread');
   f.cell.messages.pop();
   assert.equal(f.draw().list.querySelector('.hive-unread'), null);

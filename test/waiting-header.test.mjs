@@ -9,7 +9,7 @@ test('the cell-wide wait action includes unbound waits and remains available in 
   const h = (tag, attrs, ...children) => ({ tag, attrs, children: children.flat(Infinity).filter(Boolean) });
   const header = vm.runInNewContext(`(${source.match(/function cellHeader\([\s\S]*?\n}\n/)[0]})`, {
     h, cellWaitingItems, cellName: () => 'Example', queenPill: () => null, headProgress: () => null,
-    hasPanels: () => false, closedButton: () => null, needsYouIncomplete: () => false,
+    hasPanels: () => false, closedButton: () => null,
     capacityControl: () => null, allSettings: () => null, isRetired: () => false, retireKey: (id) => `retire:${id}`, openReopen() {},
     attentionEl: () => null, restoreNotices: () => null, noticesEl: () => null,
   });

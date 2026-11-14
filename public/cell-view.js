@@ -4,7 +4,7 @@ import { reviewPolicyForm } from './review-policy.js';
 import { confirmHive, promptHive } from './confirm-dialog.js';
 import { allSettings } from './settings-view.js';
 import { capacityControl } from './capacity-control.js';
-import { waitingItems, cellWaitingItems, waitingSection, openWaitingMenu, needsYouIncomplete } from './waiting-view.js';
+import { waitingItems, cellWaitingItems, waitingSection, openWaitingMenu } from './waiting-view.js';
 import { prSummary, pullRequestsSection } from './pr-view.js';
 import { h, syncChildren, markdown, safeHref, relativeTime } from './dom.js';
 import { hexPath, primaryMark, fitLines } from './hex-grid.js';
@@ -547,7 +547,6 @@ function cellHeader(ctx, cell, root) {
           onclick: () => (infoOpen ? ui.setForm(infoKey, null) : openInfo()),
         }, 'Info'))),
     allSettings(ctx),
-    needsYouIncomplete(graph) ? h('p', { class: 'hive-warning' }, 'Needs You list may be incomplete: the queue supplies at most 200 items. Open Needs You to see the queue.') : null,
     attentionEl(ctx, { cellId: cell.id }),
     noticesEl(ctx));
 }
