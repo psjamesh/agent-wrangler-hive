@@ -69,13 +69,15 @@ test('retired hives are off the All hives map until Show retired, which is remem
   assert.equal(top.querySelector('[data-tile-id="gone"]'), null);
   const toggle = () => f.draw().top.querySelector('[data-focus-key="show-retired"]');
   assert.match(text(toggle()), /Show retired \(1\)/);
+  assert.equal(toggle().getAttribute('aria-pressed'), 'false');
   f.ui.setShowRetired(true);
   top = f.draw().top;
   const tile = top.querySelector('[data-tile-id="gone"]');
   assert.ok(tile);
   assert.match(tile.getAttribute('class'), /is-retired/);
   assert.ok(tile.querySelector('.hive-pm-done'), 'outcome mark follows the closed-work style');
-  assert.match(text(toggle()), /Hide retired \(1\)/);
+  assert.match(text(toggle()), /Show retired \(1\)/);
+  assert.equal(toggle().getAttribute('aria-pressed'), 'true');
   assert.equal(f.ui.showRetired(), true);
   f.ui.setShowRetired(false);
   assert.equal(f.draw().top.querySelector('[data-tile-id="gone"]'), null);
