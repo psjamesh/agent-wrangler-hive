@@ -1336,6 +1336,8 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 .hive-root[data-view="cell-inspecting"] .hive-inspectbar { grid-area: bar; }
 .hive-root[data-view="cell-inspecting"] .hive-inspector-slot { grid-area: slot; display: flex; min-height: 0; padding: 0; }
 .hive-root[data-view="cell-inspecting"] .hive-inspector-panel { flex: 1 1 auto; height: auto; min-height: 0; }
+.hive-root[data-panels="closed"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "head" "map"; }
+.hive-root[data-view="cell-inspecting"][data-panels="closed"] { grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "head" "bar" "slot"; }
 .hive-root[data-layout="small"][data-view^="cell"][data-panels="open"] {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(100px, 1fr) auto minmax(180px, 1fr);
