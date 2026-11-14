@@ -395,7 +395,7 @@ export function createBeadsAdapter({
 
   function metaFields(fields) {
     const out = [];
-    for (const [key, metaKey] of [['kind', HIVE_META.kind], ['nextAction', HIVE_META.nextAction], ['waitingFor', HIVE_META.waitingFor], ['evidence', HIVE_META.evidence], ['outcome', HIVE_META.outcome], ['resume', HIVE_META.resume]]) {
+    for (const [key, metaKey] of [['pickup', HIVE_META.pickup], ['kind', HIVE_META.kind], ['nextAction', HIVE_META.nextAction], ['waitingFor', HIVE_META.waitingFor], ['evidence', HIVE_META.evidence], ['outcome', HIVE_META.outcome], ['resume', HIVE_META.resume]]) {
       if (fields[key] !== undefined) out.push([metaKey, encodeMeta(fields[key])]);
     }
     return out;
