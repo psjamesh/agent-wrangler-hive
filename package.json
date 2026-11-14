@@ -31,7 +31,7 @@
       "links:read"
     ],
     "engines": {
-      "wranglerApi": "^1.71.0"
+      "wranglerApi": "^1.80.0"
     }
   }
 }

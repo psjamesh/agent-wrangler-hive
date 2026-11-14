@@ -3,6 +3,7 @@ import test from 'node:test';
 import { fixture } from './ownership.test.mjs';
 import { applyLaunchPolicy, launchRestriction } from '../server/launch-policy.js';
 import * as workers from '../server/workers.js';
+import { requestReview } from '../server/reviews.js';
 import { handoffQueen } from '../server/queen-handoff.js';
 import { createManifest } from '../server/manifest.js';
 import { resolveCaller } from '../server/access.js';
@@ -35,6 +36,60 @@ function recordSpawns(f) {
   };
   return { calls, manifest };
 }
+
+for (const codex_approval of [undefined, 'on-request', 'never']) {
+  test(`Codex work launches use ${codex_approval ?? 'on-request by default'} approvals`, async () => {
+    const f = fixture(0);
+    const { calls } = recordSpawns(f);
+    await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build', agent: 'codex', codex_approval });
+    assert.equal(calls[0].approvalPolicy, codex_approval ?? 'on-request');
+    assert.equal('codex_approval' in calls[0], false);
+  });
+
+  test(`policy-selected Codex reviews use ${codex_approval ?? 'on-request by default'} approvals`, async () => {
+    const f = fixture(0);
+    const { calls } = recordSpawns(f);
+    f.live.a.assignee = 'aw:builder';
+    f.board.set('builder', { sessionId: 'builder', taskId: 'task', agent: 'claude', status: 'working' });
+    await requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review', codex_approval });
+    assert.equal(calls[0].agent, 'codex');
+    assert.equal(calls[0].approvalPolicy, codex_approval ?? 'on-request');
+    assert.equal('codex_approval' in calls[0], false);
+  });
+}
+
+test('invalid Codex approval policies are refused before reserving or spawning a worker', async () => {
+  for (const codex_approval of ['untrusted', 'on-failure', '', null, 42, {}]) {
+    const f = fixture(0);
+    const { calls } = recordSpawns(f);
+    await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build', agent: 'codex', codex_approval }), /codex_approval.*on-request.*never/);
+    assert.equal(calls.length, 0);
+    assert.equal(Object.keys(f.doc().workerLaunches).length, 0);
+  }
+});
+
+test('non-Codex launches ignore valid Codex approval choices', async () => {
+  for (const agent of [undefined, 'claude', 'gemini']) {
+    const f = fixture(0);
+    const { calls } = recordSpawns(f);
+    await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build', agent, codex_approval: 'never' });
+    assert.equal('approvalPolicy' in calls[0], false);
+    assert.equal('codex_approval' in calls[0], false);
+  }
+});
+
+test('worker and review tool schemas accept only core-supported Codex approval policies', () => {
+  for (const name of ['hive_spawn_worker', 'hive_request_review']) {
+    const tool = workTools.find(t => t.name === name);
+    for (const codex_approval of ['on-request', 'never']) {
+      const parsed = tool.inputSchema.parse({ bead_id: 'a', intent: 'x', codex_approval });
+      assert.equal(parsed.codex_approval, codex_approval);
+    }
+    for (const codex_approval of ['untrusted', 'on-failure', '', null, 42, {}]) {
+      assert.equal(tool.inputSchema.safeParse({ bead_id: 'a', intent: 'x', codex_approval }).success, false);
+    }
+  }
+});
 
 test('Claude and Codex worker launches add no denied tools and record unrestricted launches', async () => {
   const f = fixture(0);
