@@ -24,6 +24,8 @@ test('catalog keeps constraints and descriptions agents rely on', () => {
   assert.match(input.options.items.properties.label.description, /\(Recommended\)/);
   assert.equal(input.options.items.properties.label.maxLength, 80);
   assert.equal(input.title.maxLength, 200);
+  assert.equal(input.reply_to.maxLength, 80);
+  assert.match(input.reply_to.description, /message/i);
   const revision = catalog.hive_answer_request.properties.revision;
   assert.equal(revision.type, 'integer');
   assert.equal(revision.exclusiveMinimum, 0);
