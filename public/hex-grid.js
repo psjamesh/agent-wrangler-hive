@@ -227,6 +227,11 @@ const SEARCH_CHECK = [
   ['path', { d: 'm21 21-4.3-4.3' }],
 ];
 const LUCIDE = {
+  approved: [
+    ['path', { d: 'M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2 2 0 0 0-2.91-.09Z' }],
+    ['path', { d: 'm12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22 22 0 0 1-4 2Z' }],
+    ['path', { d: 'M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5' }],
+  ],
   'review-working': SEARCH_CHECK,
   'review-pending': SEARCH_CHECK,
   busy: [
@@ -291,7 +296,7 @@ export function primaryMark(kind, title, x = 0, y = 0, scale = 1) {
   if (!shapes) return null;
   return h('svg:g', { class: `hive-pm hive-pm-${kind}`, transform: `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${scale.toFixed(2)})` },
     h('svg:title', {}, title),
-    kind === 'waiting' ? null : kind === 'external' ? h('svg:path', { d: hexPath(MARK_R, 0.18), class: 'hive-pm-bg' }) : h('svg:circle', { r: String(MARK_R), class: 'hive-pm-bg' }),
+    ['waiting', 'approved'].includes(kind) ? null : kind === 'external' ? h('svg:path', { d: hexPath(MARK_R, 0.18), class: 'hive-pm-bg' }) : h('svg:circle', { r: String(MARK_R), class: 'hive-pm-bg' }),
     shapes);
 }
 
@@ -500,7 +505,7 @@ export function renderHexMap({
     const markScale = Math.max(1, size / 60);
     const marks = it.marks || (it.mark ? [it.mark] : []);
     const markAt = form.markY(markScale) - (marks.length > 1 ? 6 * markScale : 0);
-    const focusWords = marks.filter(m => m.focus || m.kind.startsWith('review-') || m.kind === 'recorded-wait' || m.kind === 'in-progress').map(m => m.title).join('\n');
+    const focusWords = marks.filter(m => m.focus || m.kind.startsWith('review-') || m.kind === 'recorded-wait' || m.kind === 'in-progress' || m.kind === 'approved').map(m => m.title).join('\n');
     const label = tileText({
       title: it.titleText != null ? { text: it.titleText, maxLines: it.titleLines || 3, px: it.titlePx || 12 } : null,
       lines: it.lines,

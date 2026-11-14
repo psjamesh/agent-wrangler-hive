@@ -42,7 +42,7 @@ test('recorded wait coexists with pending and active review while retaining revi
     assert.doesNotMatch(tile.ariaLabel, /In progress; agent idle/);
   }
   f.bead.reviewState = 'approved';
-  assert.deepEqual(kinds(f.render()), ['in-progress', 'recorded-wait']);
+  assert.deepEqual(kinds(f.render()), ['approved', 'recorded-wait']);
 });
 
 test('prerequisite cross carries the waiting note without an hourglass', () => {

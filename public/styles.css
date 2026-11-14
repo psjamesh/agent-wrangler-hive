@@ -719,6 +719,7 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 .hive-pm-bg { fill: var(--surface); stroke: var(--border); stroke-width: 1.2; }
 .hive-pm-line { fill: none; stroke: var(--hive-pm-quiet); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .hive-pm-fill { fill: var(--hive-pm-quiet); stroke: none; }
+.hive-pm-approved .hive-pm-glyph { stroke: var(--hive-pm-quiet); }
 .hive-pm-glyph { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .hive-pm-person .hive-pm-bg { fill: var(--hive-pm-person); stroke: var(--hive-pm-person); }
 .hive-pm-person .hive-pm-glyph { stroke: var(--hive-pm-person-ink); }
