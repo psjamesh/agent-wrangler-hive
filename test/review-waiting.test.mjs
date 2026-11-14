@@ -102,7 +102,7 @@ for (const status of ['open', 'in_progress', 'blocked', 'deferred', 'closed']) t
     return { tile: tileFor(hive), details: details({ hive, graph: {}, ui: { selectedBeadId: () => 'a', beadDetail: () => ({ bead: null, loading: false, error: null }) } }, hive.cells.cell) };
   };
   let out = render();
-  assert(out.tile.marks.some(m => m.kind === 'recorded-wait'));
+  assert.equal(out.tile.marks.some(m => m.kind === 'recorded-wait'), status !== 'blocked');
   assert.match(out.tile.title, /Waiting for: External approval/);
   assert.match(words(out.details), /Waiting for:.*External approval/);
   f.beads.a.waitingFor = '   ';
