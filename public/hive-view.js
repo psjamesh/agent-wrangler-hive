@@ -313,7 +313,7 @@ function workstreamMenu({ title, at, arranging, fitLabel, confirm, onArrange, on
   ];
 }
 
-function overviewMap(ctx, shown) {
+function overviewMap(ctx, shown, { retiredCount, showRetired } = {}) {
   const { hive, ui, api } = ctx;
   const cells = placedCells(shown, ui.placements());
   const items = cells.map((c) => cellTile(ctx, c));
@@ -322,6 +322,7 @@ function overviewMap(ctx, shown) {
   const enter = (id) => ui.openCell(id, map?.el.hiveTileRect(id) || null);
   map = renderHexMap({
     viewKey: 'overview',
+    viewControls: [retiredCount ? h('button', { type: 'button', class: 'hive-zoom-btn', onclick: () => ui.setShowRetired(!showRetired), 'aria-pressed': showRetired ? 'true' : 'false', 'data-focus-key': 'show-retired', title: showRetired ? 'Hide retired hives from this map' : 'Show retired hives on this map' }, `Show retired (${retiredCount})`) : null],
     storage: api?.storage,
     size: CELL_SIZE,
     tile: hiveTile(CELL_SIZE),
@@ -596,31 +597,27 @@ function cellMap(ctx, cell, related = null, previous = null) {
     },
     onDragState: (on) => ui.setDragging(on),
     claimDrag: api?.claimDrag ? (el) => api.claimDrag(el) : null,
+    actions: cell.snapshot ? [] : [h('button', {
+      type: 'button', class: 'hive-zoom-btn', onclick: arrange,
+      disabled: readOnly || arranging || !layout.order.length,
+      'data-focus-key': `arrange:${cell.id}`,
+      title: savedHere.length ? 'Reset positions set by hand and arrange this hive to fit the map' : 'Arrange this hive to fit the map',
+    }, arranging ? 'Arranging…' : 'Arrange')],
+    viewControls: [
+      cell.snapshot ? null : h('button', {
+        type: 'button', class: 'hive-zoom-btn', onclick: toggleHiveDone, disabled: arranging || !layout.order.length,
+        'data-focus-key': `hide-done:${cell.id}`, 'aria-pressed': String(!hiveHiding),
+        title: hiveHiding ? 'Show done work across this hive' : 'Hide done work across this hive',
+      }, 'Show done'),
+      h('button', {
+        type: 'button', class: 'hive-zoom-btn', 'aria-pressed': String(keyOpen),
+        'aria-expanded': String(keyOpen), 'data-focus-key': 'key',
+        title: keyOpen ? 'Hide the map key' : 'Show the map key: marks, outlines and arrows',
+        onclick: () => ui.setForm('key', keyOpen ? null : {}),
+      }, 'Key'),
+    ],
     overlay: [
-      cell.snapshot ? null : h('div', { class: 'hive-stage-tools' },
-        h('button', {
-          type: 'button',
-          class: 'hive-quiet-btn',
-          onclick: arrange,
-          disabled: readOnly || arranging || !layout.order.length,
-          'data-focus-key': `arrange:${cell.id}`,
-          title: savedHere.length ? 'Reset positions set by hand and pack this hive to fit the map as it is now' : 'Pack this hive to fit the map as it is now',
-        }, arranging ? 'Arranging…' : 'Arrange'),
-        h('button', {
-          type: 'button', class: 'hive-quiet-btn', onclick: toggleHiveDone, disabled: arranging || !layout.order.length,
-          'data-focus-key': `hide-done:${cell.id}`, 'aria-pressed': hiveHiding ? 'true' : 'false',
-          title: hiveHiding ? 'Show done work across this hive' : 'Hide done work across this hive',
-        }, hiveHiding ? 'Show done' : 'Hide done')),
-      h('div', { class: `hive-key${keyOpen ? ' is-open' : ''}`, onwheel: (e) => e.stopPropagation() },
-        keyOpen ? legend(Boolean(cell.snapshot)) : null,
-        h('button', {
-          type: 'button',
-          class: 'hive-key-btn',
-          'aria-expanded': keyOpen ? 'true' : 'false',
-          'data-focus-key': 'key',
-          title: 'What the marks, outlines and arrows on the map mean',
-          onclick: () => ui.setForm('key', keyOpen ? null : {}),
-        }, keyOpen ? 'Hide key' : 'Key')),
+      keyOpen ? h('div', { class: 'hive-key is-open', onwheel: (e) => e.stopPropagation() }, legend(Boolean(cell.snapshot))) : null,
       menuHead ? workstreamMenu({
         title: hive.beads[menuHead]?.title || menuHead,
         at: menuForm.at || { x: 0, y: 0 },
@@ -745,7 +742,7 @@ export function renderHive(ctx) {
     hiveViews.set(ui, cached);
   }
   const sig = mapInputs(ctx, null);
-  if (cached.sig !== sig) { disposeMap(cached.map); cached.map = overviewMap(ctx, cells); cached.sig = sig; }
+  if (cached.sig !== sig) { disposeMap(cached.map); cached.map = overviewMap(ctx, cells, { retiredCount, showRetired }); cached.sig = sig; }
   const top = syncChildren(cached.top, [
     h('div', { class: 'hive-overview-head' },
       h('header', { class: 'hive-overhead' },
@@ -753,8 +750,7 @@ export function renderHive(ctx) {
         h('h2', { class: 'hive-title' }, 'All hives'),
         capacityControl(ctx),
         h('span', { class: 'hive-counts' }, `${cells.length} hive${cells.length === 1 ? '' : 's'}, ${total} bead${total === 1 ? '' : 's'}`),
-        cells.length ? h('button', { type: 'button', class: 'hive-quiet-btn', 'aria-pressed': ui.globalInboxOpen() ? 'true' : 'false', onclick: () => ui.setGlobalInboxOpen(!ui.globalInboxOpen()), 'data-focus-key': 'global-inbox-toggle' }, ui.globalInboxOpen() ? 'Hide inbox' : 'Show inbox') : null,
-        retiredCount ? h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => ui.setShowRetired(!showRetired), 'aria-pressed': showRetired ? 'true' : 'false', 'data-focus-key': 'show-retired', title: showRetired ? 'Hide retired hives from this map' : 'Show retired hives on this map' }, showRetired ? `Hide retired (${retiredCount})` : `Show retired (${retiredCount})`) : null,
+        cells.length ? h('button', { type: 'button', class: 'hive-quiet-btn', 'aria-pressed': ui.globalInboxOpen() ? 'true' : 'false', onclick: () => ui.setGlobalInboxOpen(!ui.globalInboxOpen()), 'data-focus-key': 'global-inbox-toggle', title: ui.globalInboxOpen() ? 'Hide the inbox across all hives' : 'Show the inbox across all hives' }, 'Inbox') : null,
         h('div', { class: 'hive-head-actions' },
           h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openCellDialog(ui, 'new', 'open-new'), 'data-focus-key': 'open-new', 'aria-haspopup': 'dialog' }, 'New hive'),
           h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => openCellDialog(ui, 'adopt', 'open-adopt'), 'data-focus-key': 'open-adopt', 'aria-haspopup': 'dialog' }, 'Add existing task'),

@@ -81,12 +81,12 @@ test('the global inbox defaults hidden and its toggle remembers both choices', (
   const closed = f.draw();
   assert.equal(closed.bottom, null);
   assert.deepEqual(closed.view, { overview: true, panels: false, pane: null });
-  assert.equal(toggle(closed).textContent, 'Show inbox');
+  assert.equal(toggle(closed).textContent, 'Inbox');
   assert.equal(toggle(closed).getAttribute('aria-pressed'), 'false');
   toggle(closed).fire('click');
   const shown = f.draw();
   assert.ok(shown.bottom);
-  assert.equal(toggle(shown).textContent, 'Hide inbox');
+  assert.equal(toggle(shown).textContent, 'Inbox');
   assert.equal(toggle(shown).getAttribute('aria-pressed'), 'true');
   assert.equal(createUi().globalInboxOpen(), true);
   toggle(shown).fire('click');

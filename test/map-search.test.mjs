@@ -400,7 +400,7 @@ for (const overview of [false, true]) {
     canvas = mount();
     t.mock.timers.tick(300);
     assert.deepEqual(canvas.hiveCaptureView(), paused, 'board updates preserve manual viewport');
-    canvas.querySelectorAll('button').find(b => b.textContent === 'Fit').fire('click');
+    canvas.fire('keydown', { key: '0' });
     assert.equal(canvas.hiveCaptureView().auto, true);
     const before = canvas.hiveCaptureView();
     if (overview) delete f.ctx.hive.cells.other;
@@ -441,3 +441,33 @@ for (const enabled of [false, true]) {
     next.hiveDisposeView();
   });
 }
+
+test('map controls group zoom, stable view toggles and actions with explicit states', t => {
+  const f = fixture(t);
+  f.canvas().fire('keydown', { key: '0' });
+  const buttons = () => f.canvas().querySelector('.hive-zoom').querySelectorAll('button');
+  assert.deepEqual(buttons().map(b => b.textContent), ['−', '+', 'Auto-fit', 'Show done', 'Key', 'Arrange']);
+  const done = () => buttons().find(b => b.textContent === 'Show done');
+  assert.equal(done().getAttribute('aria-pressed'), 'true');
+  f.ui.setHideDoneForHive('cell', true);
+  f.draw();
+  assert.equal(done().getAttribute('aria-pressed'), 'false');
+  const key = buttons().find(b => b.textContent === 'Key');
+  assert.equal(key.getAttribute('aria-pressed'), 'false');
+  key.fire('click'); f.draw();
+  assert.equal(buttons().find(b => b.textContent === 'Key').getAttribute('aria-pressed'), 'true');
+  const auto = buttons().find(b => b.textContent === 'Auto-fit');
+  f.canvas().fire('wheel', { deltaMode: 0, deltaX: 60, deltaY: 0 });
+  assert.equal(auto.textContent, 'Auto-fit paused');
+  assert.equal(auto.getAttribute('data-paused'), 'true');
+  auto.fire('click');
+  auto.fire('click');
+  assert.equal(auto.getAttribute('aria-pressed'), 'false');
+  f.canvas().fire('keydown', { key: '0' });
+  assert.equal(auto.getAttribute('aria-pressed'), 'true');
+  assert.equal(auto.getAttribute('data-paused'), 'false');
+  f.ui.closeCell();
+  const overview = f.draw().querySelector('.hive-canvas');
+  overview.fire('keydown', { key: '0' });
+  assert.deepEqual(overview.querySelector('.hive-zoom').querySelectorAll('button').map(b => b.textContent), ['−', '+', 'Auto-fit']);
+});

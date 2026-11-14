@@ -98,14 +98,14 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
     await call('Page.reload');
     await ready;
   };
-  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Inbox' });
   await shot('all-hives-desktop-hidden-light');
   await theme(true);
   await shot('all-hives-desktop-hidden-dark');
   await theme(false);
   await viewport(390, 780);
   await reload();
-  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Inbox' });
   await shot('all-hives-phone-hidden-light');
   await theme(true);
   await shot('all-hives-phone-hidden-dark');
@@ -113,13 +113,13 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   await viewport(1280, 800);
   await reload();
   await toggleInbox();
-  assert.deepEqual(await visibility(), { panels: 'open', inbox: true, label: 'Hide inbox' });
+  assert.deepEqual(await visibility(), { panels: 'open', inbox: true, label: 'Inbox' });
   await reload();
-  assert.deepEqual(await visibility(), { panels: 'open', inbox: true, label: 'Hide inbox' });
+  assert.deepEqual(await visibility(), { panels: 'open', inbox: true, label: 'Inbox' });
   await toggleInbox();
-  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Inbox' });
   await reload();
-  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Inbox' });
   await toggleInbox();
   const wide = await run(`
     await new Promise(r => setTimeout(r, 150));
@@ -163,7 +163,7 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   `);
   assert.equal(collapsed.panels, 'closed');
   assert.equal(collapsed.inbox, false);
-  assert.match(collapsed.label, /Show inbox/);
+  assert.match(collapsed.label, /Inbox/);
   const reopened = await run(`
     document.querySelector('[data-focus-key="global-inbox-toggle"]').click();
     await new Promise(r => setTimeout(r, 150));
