@@ -36,6 +36,7 @@ function emptyDoc() {
     regionLayout: {},
     arrangeAspect: {},
     workstreamColours: {},
+    workstreamRefresh: {},
     workstreamShades: {},
     requests: {},
     conversation: {},

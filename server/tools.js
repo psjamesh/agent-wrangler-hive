@@ -235,6 +235,7 @@ export async function buildContext(rt, host, actor, { include_closed = false, be
       capacity: capacity(rt),
       attention: {
         watchdog: collectWatchdog(rt, host, cell),
+        workstreams_needing_refresh: Object.values(doc.workstreamRefresh || {}).filter(entry => entry.cellId === cell.id && ids.has(entry.bead_id) && beads[entry.bead_id]?.kind === 'workstream' && beads[entry.bead_id].status !== 'closed'),
         waiting_beads: open.filter((b) => b.waitingFor).map((b) => ({ bead_id: b.id, title: b.title, status: b.status, owner_session_id: b.ownerSessionId, waiting_for: b.waitingFor })),
         in_progress_without_owner: open.filter((b) => b.status === 'in_progress' && !b.assignee).map((b) => ({ bead_id: b.id, title: b.title, next_action: b.nextAction || undefined })),
         untracked_beads: open.filter((b) => isUntracked(host, rt.snapshots.graph, { ...b, ...reviewFields(rt, b.id) })).map((b) => ({ bead_id: b.id, title: b.title, owner_session_id: b.ownerSessionId })),

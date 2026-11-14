@@ -988,6 +988,7 @@ export async function updateBead(rt, actor, input) {
         if (next.length > LIMITS.evidence) throw new HiveError(`A bead holds at most ${LIMITS.evidence} evidence entries; remove some first.`);
         patch.evidence = next;
       }
+      const refreshToken = rt.metadata.read().workstreamRefresh?.[id]?.token;
       let pickupBefore = null;
       const written = await rt.beads.update(id, patch, actorFor(actor.sessionId), affectsCapacity || expectedUpdatedAt || bead.pickup?.armed ? (context) => {
         const graph = exportedGraph(context);
@@ -1014,6 +1015,11 @@ export async function updateBead(rt, actor, input) {
         if (startsWork) return { assignee: current.assignee, status: current.status };
       } : undefined);
       phase.applied = true;
+      if (refreshToken && (patch.summary !== undefined || patch.nextAction !== undefined)) {
+        rt.metadata.mutate(d => {
+          if (d.workstreamRefresh?.[id]?.token === refreshToken) delete d.workstreamRefresh[id];
+        });
+      }
       if (written) managedPickupReceipt(rt, pickupBefore, normalizeIssue(written));
       try {
         const current = await rt.beads.show(id);
@@ -1272,6 +1278,23 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
   return { cell_id: cell.id, session_id: target, bead_id: beadId, role: apiRole(cleanRole), ...(reviewId ? { review_id: reviewId } : {}) };
 }
 
+function markWorkstreamRefresh(rt, cell, bead, token) {
+  const beads = rt.snapshots.graph.beads;
+  const seen = new Set([bead.id]);
+  let parent = beads[bead.parentId];
+  while (parent && !seen.has(parent.id)) {
+    seen.add(parent.id);
+    if (parent.kind === 'workstream' && parent.status !== 'closed') {
+      const entry = { token, cellId: cell.id, bead_id: parent.id, closed_bead_id: bead.id,
+        action: 'Update this workstream with hive_update_bead: refresh summary and next_action after the child closed.' };
+      rt.metadata.mutate(d => { (d.workstreamRefresh ||= {})[parent.id] = entry; });
+      return entry;
+    }
+    parent = beads[parent.parentId];
+  }
+  return null;
+}
+
 export async function finishBead(rt, actor, input) {
   ensureWritable(rt);
   const id = beadIdArg(input.bead_id, 'bead_id');
@@ -1286,7 +1309,7 @@ export async function finishBead(rt, actor, input) {
   const who = actorFor(actor.sessionId);
   if (id !== cell.rootBeadId && Object.values(rt.snapshots.graph.beads).some((b) => b.parentId === id)) {
     const out = await finishGroup(rt, { cell, id, outcome, summary, add, who });
-    return { op_id: out.opId, bead_id: id, outcome, closed: true };
+    return { op_id: out.opId, bead_id: id, outcome, closed: true, workstream_refresh: out.workstreamRefresh || undefined };
   }
   const openChildren = Object.values(rt.snapshots.graph.beads).filter((b) => b.parentId === id && OPEN_STATUSES.includes(b.status));
   if (openChildren.length) {
@@ -1296,6 +1319,7 @@ export async function finishBead(rt, actor, input) {
   if (blockers.length) {
     throw new HiveError(`Bead ${id} is still waiting on ${blockers.join(', ')}. Beads will not close it while a blocking prerequisite is open: finish the prerequisite, or remove the link with hive_link_beads if it no longer applies.`);
   }
+  let workstreamRefresh = null;
   const out = await withLock(`bead:${id}`, () => journaled(rt, { kind: 'finish', cellId: cell.id, actor: who, summary: `Finish ${id} as ${outcome}`, beadIds: [id], intent: { beadId: id, outcome } }, async (opId, phase) => {
     if (openReview(rt, id)) throw new HiveError('This work still has an open review.');
     const fresh = await rt.beads.show(id);
@@ -1319,6 +1343,7 @@ export async function finishBead(rt, actor, input) {
       throw new BeadsError(err.code === 'uncertain' ? 'uncertain' : 'partial',
         `The summary and evidence were recorded, but closing ${id} ${err.code === 'uncertain' ? 'has an unknown outcome' : 'was refused'}: ${err.message}`);
     }
+    workstreamRefresh = markWorkstreamRefresh(rt, cell, normalized, opId);
     try {
       await rt.beads.update(id, { outcome, waitingFor: '', nextAction: '' }, who);
     } catch (err) {
@@ -1327,7 +1352,7 @@ export async function finishBead(rt, actor, input) {
     }
     return { journal: { outcome } };
   }));
-  return { op_id: out.opId, bead_id: id, outcome, closed: true };
+  return { op_id: out.opId, bead_id: id, outcome, closed: true, workstream_refresh: workstreamRefresh || undefined };
 }
 
 export function readyBeads(rt, actor, { under_bead_id, limit }) {
@@ -1388,18 +1413,23 @@ export function finishGroup(rt, { cell, id, outcome, summary, add = [], who }) {
     const fresh = await rt.beads.show(id);
     if (!fresh) throw new HiveError(`Bead ${id} no longer exists.`);
     const evidence = [...normalizeIssue(fresh).evidence, ...add].slice(-LIMITS.evidence);
+    let workstreamRefresh = null;
     try {
       await rt.beads.finishFenced(id, { summary, evidence: add.length ? evidence : null, outcome, reason: `${outcome}: ${summary.split('\n')[0].slice(0, 300)}` }, who, (read) => {
         const { problems } = assessCompletion(rt, cell, id, { ...buildGraph(read.issues), errors: read.errors }, who, opId);
         if (problems.length) throw new HiveError(`${id} was not finished. ${problems.join(' ')}`, 'refused');
-      }, () => { phase.applied = true; });
+      }, step => {
+        phase.applied = true;
+        if (step === 1) workstreamRefresh = markWorkstreamRefresh(rt, cell, normalizeIssue(fresh), opId);
+      });
     } catch (err) {
       if (err instanceof HiveError || !phase.applied) throw err;
       throw new BeadsError(err.code === 'uncertain' ? 'uncertain' : 'partial', err.step === 1
         ? `The summary was recorded, but closing ${id} ${err.code === 'uncertain' ? 'has an unknown outcome' : 'was refused'}: ${err.message}`
         : `${id} is closed, but recording its outcome ${err.code === 'uncertain' ? 'has an unknown outcome' : 'failed'}: ${err.message}`);
     }
-    return { journal: { outcome } };
+    workstreamRefresh ||= markWorkstreamRefresh(rt, cell, normalizeIssue(fresh), opId);
+    return { workstreamRefresh, journal: { outcome } };
   }));
 }
 
