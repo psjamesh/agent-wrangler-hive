@@ -159,7 +159,7 @@ export function revealMessage(root, messageId) {
   if (!root || root.clientWidth <= 0) return false;
   const item = [...root.querySelectorAll('.hive-message')].find(el => el.dataset.id === messageId);
   if (!item || item.getBoundingClientRect().width <= 0) return false;
-  item.scrollIntoView({ block: 'center', behavior: 'instant' });
+  item.scrollIntoView({ block: 'start', behavior: 'instant' });
   return true;
 }
 

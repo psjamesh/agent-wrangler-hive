@@ -24,6 +24,7 @@ function emptyDoc() {
     cells: {},
     launches: {},
     workerLaunches: {},
+    workerActivity: {},
     reviews: {},
     operations: {},
     bindings: {},

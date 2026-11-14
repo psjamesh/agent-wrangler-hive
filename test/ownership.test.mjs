@@ -1827,11 +1827,11 @@ for (const state of ['failed', 'uncertain']) test(`retained review tells the que
   assert.match(notice.text, /Mail unavailable/);
 });
 
-for (const field of ['agent', 'model', 'effort', 'override_reason']) test(`retained review refuses ${field} instead of silently ignoring it`, async () => {
+for (const field of ['agent', 'model', 'effort', 'override_reason', 'codex_approval']) test(`retained review refuses ${field} instead of silently ignoring it`, async () => {
   const f = fixture(1); reviewFixture(f); await dispatchFixture(f);
   const { give, record, out } = await reviewRounds(f);
   await give('changes_requested', 'c1');
-  await assert.rejects(reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', reviewer_session_id: out.session_id, intent: 'Review fix', commit: 'c2', [field]: 'different' }), /cannot.*reviewer_session_id/i);
+  await assert.rejects(reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', reviewer_session_id: out.session_id, intent: 'Review fix', commit: 'c2', [field]: field === 'codex_approval' ? 'never' : 'different' }), /cannot.*reviewer_session_id/i);
   assert.equal(record().state, 'changes_requested');
   assert.equal(record().history, undefined);
 });
