@@ -79,6 +79,8 @@ If the `hive_*` tools are not available to you, you cannot do this yet: tell the
 
 ## Reconcile
 
+- After each release or close, refresh the parent workstream’s summary and next_action with `hive_update_bead`. Check `hive_finish_bead.workstream_refresh` and `hive_context.attention.workstreams_needing_refresh`; the reminder persists until an update touches summary or next_action.
+
 - Check workers' beads against their acceptance. Close a bead with `hive_finish_bead` only when its evidence shows the outcome. An idle, stopped or replaced session has not finished anything by stopping.
 - If a worker's claim must move, ask the holder first. Then release it with `hive_release_bead` (`force: true` and a reason) and rebrief.
 - Before proposing to close a goal or workstream, list its open descendants (`open_descendants` on its heading in `hive_context` gives the count; walk `parent_id` in `hive_context` for the list) and state how its intent, not only its ticked criteria, has been demonstrated, with evidence. Ticked criteria alone are not proof: a goal that was never exercised in its real environment is not met, and open work beneath it means it is not done.
