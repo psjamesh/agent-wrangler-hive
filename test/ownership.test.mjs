@@ -1884,3 +1884,105 @@ test('exited coordinators retain binding-based authority when resumed', async ()
   session.status = 'idle';
   assert.equal(participation(f.rt, f.host, sid)[0]?.role, 'coordinator');
 });
+
+function refreshFixture(t) {
+  const f = fixture(8);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hive-refresh-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  f.rt.paths = { root };
+  reviewFixture(f);
+  f.live.stream = raw('stream', 'root', { metadata: { hive_kind: 'workstream' } });
+  f.live.a.dependencies[0].depends_on_id = 'stream';
+  f.live.b.dependencies[0].depends_on_id = 'stream';
+  f.rt.beads.close = async id => { f.live[id].status = 'closed'; };
+  return f;
+}
+
+test('closing work prompts its workstream until summary or next action is refreshed', async t => {
+  for (const field of ['summary', 'next_action']) {
+    const f = refreshFixture(t);
+    await f.rt.snapshots.refresh();
+    const out = await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Released' });
+    assert.equal(out.workstream_refresh.bead_id, 'stream');
+    assert.match(out.workstream_refresh.action, /summary.*next_action/);
+    let context = await buildContext(f.rt, f.host, f.actor());
+    assert.deepEqual(context.attention.workstreams_needing_refresh.map(b => b.bead_id), ['stream']);
+    await updateBead(f.rt, f.actor(), { bead_id: 'stream', title: 'Workstream' });
+    assert.equal((await buildContext(f.rt, f.host, f.actor())).attention.workstreams_needing_refresh.length, 1);
+    await updateBead(f.rt, f.actor(), { bead_id: 'stream', [field]: 'Current plan' });
+    context = await buildContext(f.rt, f.host, f.actor());
+    assert.deepEqual(context.attention.workstreams_needing_refresh, []);
+    await finishBead(f.rt, f.actor(), { bead_id: 'b', outcome: 'dropped', summary: 'No longer needed' });
+    assert.equal((await buildContext(f.rt, f.host, f.actor())).attention.workstreams_needing_refresh.length, 1);
+    assert.deepEqual((await buildContext(f.rt, f.host, f.actor('queen2', 'other'))).attention.workstreams_needing_refresh, []);
+  }
+});
+
+test('failed closes do not prompt and failed refreshes do not clear the prompt', async t => {
+  const f = refreshFixture(t);
+  await f.rt.snapshots.refresh();
+  const close = f.rt.beads.close;
+  f.rt.beads.close = async () => { throw new Error('refused'); };
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Finished' }));
+  assert.deepEqual((await buildContext(f.rt, f.host, f.actor())).attention.workstreams_needing_refresh, []);
+  f.rt.beads.close = close;
+  await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Finished' });
+  f.rt.beads.update = async () => { throw new Error('refused'); };
+  await assert.rejects(updateBead(f.rt, f.actor(), { bead_id: 'stream', summary: 'Current' }));
+  assert.equal((await buildContext(f.rt, f.host, f.actor())).attention.workstreams_needing_refresh.length, 1);
+});
+
+test('a close during a workstream refresh remains pending', async t => {
+  const f = refreshFixture(t);
+  await f.rt.snapshots.refresh();
+  await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Finished' });
+  const update = f.rt.beads.update;
+  f.rt.beads.update = async (id, patch, ...args) => {
+    if (id === 'stream') await finishBead(f.rt, f.actor(), { bead_id: 'b', outcome: 'done', summary: 'Also finished' });
+    return update(id, patch, ...args);
+  };
+  await updateBead(f.rt, f.actor(), { bead_id: 'stream', summary: 'New summary' });
+  const out = await buildContext(f.rt, f.host, f.actor());
+  assert.equal(out.attention.workstreams_needing_refresh[0].closed_bead_id, 'b');
+});
+
+test('closing nested work and then its workstream prompts the nearest open workstream', async t => {
+  const f = refreshFixture(t);
+  f.live.inner = raw('inner', 'stream', { metadata: { hive_kind: 'workstream' } });
+  f.live.a.dependencies[0].depends_on_id = 'inner';
+  f.live.b.dependencies[0].depends_on_id = 'inner';
+  f.rt.beads.finishFenced = async (id, patch, who, check, applied) => {
+    check({ issues: Object.values(f.live), errors: [] });
+    f.live[id].status = 'closed';
+    applied();
+  };
+  await f.rt.snapshots.refresh();
+  const first = await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Finished' });
+  assert.equal(first.workstream_refresh.bead_id, 'inner');
+  await f.rt.snapshots.refresh();
+  await finishBead(f.rt, f.actor(), { bead_id: 'b', outcome: 'done', summary: 'Finished' });
+  await f.rt.snapshots.refresh();
+  const group = await finishBead(f.rt, f.actor(), { bead_id: 'inner', outcome: 'done', summary: 'Released group' });
+  assert.equal(group.workstream_refresh.bead_id, 'stream');
+  const out = await buildContext(f.rt, f.host, f.actor());
+  assert.deepEqual(out.attention.workstreams_needing_refresh.map(b => b.bead_id), ['stream']);
+});
+
+test('a closed workstream still prompts when writing its outcome fails', async t => {
+  const f = refreshFixture(t);
+  f.live.a.status = 'closed';
+  f.live.b.status = 'closed';
+  f.rt.beads.finishFenced = async (id, patch, who, check, written) => {
+    check({ issues: Object.values(f.live), errors: [] });
+    written(0);
+    f.live[id].status = 'closed';
+    written(1);
+    throw Object.assign(new Error('Outcome refused'), { step: 2 });
+  };
+  f.live.outer = raw('outer', 'root', { metadata: { hive_kind: 'workstream' } });
+  f.live.stream.dependencies[0].depends_on_id = 'outer';
+  await f.rt.snapshots.refresh();
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'stream', outcome: 'done', summary: 'Released' }));
+  const out = await buildContext(f.rt, f.host, f.actor());
+  assert.deepEqual(out.attention.workstreams_needing_refresh.map(b => b.bead_id), ['outer']);
+});
