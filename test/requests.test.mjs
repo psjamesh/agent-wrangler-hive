@@ -924,3 +924,44 @@ test('dedupe reply_to cannot move an existing request to another topic', async t
   await assert.rejects(f.create(queen, { dedupe_key: 'scope', reply_to: h.id }), /dedupe.*context/i);
   assert.equal(f.rt.metadata.read().requests[r.id].threadId, r.threadId);
 });
+
+for (const action of ['read', 'reaction', 'reply']) test(`${action} acknowledges queen FYIs independently of human waits and request badges`, async t => {
+  const f = await privacyFixture(t);
+  f.rt.metadata.mutate(d => { d.cells.cell.rootBeadId = 'hive-root'; });
+  f.rt.snapshots.graph.beads = { 'hive-root': { id: 'hive-root', kind: 'goal' } };
+  const { projectForGraph } = await import('../server/projection.js');
+  f.projection = () => projectForGraph({ runtime: f.rt, snapshot: { graph: f.rt.snapshots.graph } });
+  const { cellWaitingItems } = await import('../public/waiting-model.js');
+  const { inboxRows } = await import('../public/global-inbox.js');
+  const { default: client, createUi } = await import('../public/client.js');
+  let view;
+  client.register({ register: (kind, value) => { if (kind === 'view') view = value; } });
+  const ui = createUi();
+  const update = await f.conv.publish(f.rt, f.actor, { text: 'FYI: the build is running.' }, f.host);
+  const check = (unread, needs) => {
+    const hive = f.projection(), cell = hive.cells.cell;
+    const ctx = { hive, graph: { sessions: [] }, ui };
+    assert.equal(cell.inbox.human.count, unread);
+    assert.equal(cell.threads.find(t => t.id === update.thread_id).awaiting.human?.count || 0, unread);
+    assert.equal(inboxRows(ctx, [cell], 'human').some(r => r.unreadCount > 0), Boolean(unread));
+    assert.deepEqual(cell.waits, []);
+    assert.equal(cellWaitingItems(ctx, cell).length, needs);
+    assert.equal(cell.requestCounts.human, needs);
+    assert.equal(hive.requestCount, needs);
+    assert.equal(view.badge({ hive }), needs);
+  };
+  check(1, 0);
+  const r = await f.create(queen);
+  check(1, 1);
+  if (action === 'reply') {
+    await f.conv.recordHumanInput(f.rt, { cellId: 'cell', text: 'Thanks', replyTo: update.message_id, ackRev: 0 });
+  } else {
+    f.conv.acknowledgeMessage(f.rt, { cellId: 'cell', messageId: update.message_id, kind: action, emoji: action === 'reaction' ? '👍' : undefined, rev: 0 });
+  }
+  const ack = f.rt.metadata.read().conversation.cell.find(m => m.id === update.message_id).ack;
+  assert.equal(ack.state.kind, action);
+  assert.equal(ack.rev, 1);
+  check(0, 1);
+  await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Yes', receipt: `fyi-${action}` });
+  check(0, 0);
+});

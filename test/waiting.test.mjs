@@ -42,14 +42,15 @@ test('claimant reports require a known associated PR and its full observed head;
   assert.equal(f.doc.prLabels[URL].humanAttention, null);
 });
 
-test('projection covers every outstanding message beyond conversation paging, and keeps PR associations explicit', () => {
+test('unread messages beyond conversation paging are indexed without creating human waits', () => {
   const f = fixture();
   f.doc.conversation.cell = Array.from({ length: 75 }, (_, i) => ({ id: 'm' + i, author: 'session', text: 'Please look ' + i, beadId: i === 0 ? null : 'hive-a', threadId: 'thread', ack: { required: true, state: null }, at: i }));
   f.doc.conversation.cell[1].ack.state = { kind: 'read' };
   const view = waiting.waitingProjection(f.rt, f.cell, new Set(Object.keys(f.beads)));
-  assert.equal(view.waits?.length, 74);
-  assert.deepEqual(view.waits[0].beadIds, ['hive-root']);
-  assert.match(view.waits[0].reason, /read|acknowledg/i);
+  assert.deepEqual(view.waits, []);
+  assert.equal(view.waitTargets.messages.m0, 'hive-root');
+  assert.equal(f.doc.conversation.cell[0].ack.state, null);
+  assert.deepEqual(f.doc.conversation.cell[1].ack.state, { kind: 'read' });
   assert.equal(view.waitTargets.messages.m2, 'hive-a');
   assert.equal(view.pullRequests.length, 1);
   assert.deepEqual(view.pullRequests[0].beadIds, ['hive-a', 'hive-b']);
@@ -67,13 +68,13 @@ test('waiting summaries and target indexes respect native request audience until
     { id: 'public-message', author: 'session', threadId: 'public-thread', text: 'Public update', ack: { required: true } },
   ];
   let view = waiting.waitingProjection(f.rt, f.cell, ids);
-  assert.deepEqual(view.waits.map(w => w.title), ['Public update']);
+  assert.deepEqual(view.waits, []);
   assert.equal(view.waitTargets.messages['private-origin'], undefined);
   assert.equal(view.waitTargets.messages['private-reply'], undefined);
   assert.equal(view.waitTargets.topics['private-thread'], undefined);
   f.doc.requests.secret.audience = 'human';
   view = waiting.waitingProjection(f.rt, f.cell, ids);
-  assert.deepEqual(view.waits.map(w => w.title), ['Private discussion', 'Public update']);
+  assert.deepEqual(view.waits, []);
   assert.equal(view.waitTargets.messages['private-reply'], 'hive-root');
 });
 

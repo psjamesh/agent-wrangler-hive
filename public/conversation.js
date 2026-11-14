@@ -164,7 +164,7 @@ function messageItem({ m, cell, beads, graph, api, ui, ctx, target, replyKey }) 
         ui.selectConversationMessage?.(cell.id, m.threadId, null);
       }
     },
-    class: `hive-message hive-message-${m.author}${waitsFor(x => ui.ackOf(cell.id, x))(m) ? ' is-unread' : ''}${ui.conversationMessage?.(cell.id, m.threadId) === m.id ? ' is-conversation-selected' : ''}${ui.linkedMessage?.(cell.id, m.threadId)?.messageId === m.id ? ' is-link-target' : ''}`,
+    class: `hive-message hive-message-${m.author}${unreadFor(x => ui.ackOf(cell.id, x))(m) ? ' is-unread' : ''}${ui.conversationMessage?.(cell.id, m.threadId) === m.id ? ' is-conversation-selected' : ''}${ui.linkedMessage?.(cell.id, m.threadId)?.messageId === m.id ? ' is-link-target' : ''}`,
     dataset: { id: m.id },
   },
     h('div', { class: 'hive-message-head' },
@@ -257,7 +257,7 @@ function contextLabel(t, cell, beads) {
   return beads[t.beadId]?.title || (cell.enabled ? 'removed item' : 'an item');
 }
 
-export const waitsFor = (ackOf) => (m) => m.author === 'session' && Boolean(ackOf(m)?.required) && !ackOf(m).state;
+export const unreadFor = (ackOf) => (m) => m.author === 'session' && Boolean(ackOf(m)?.required) && !ackOf(m).state;
 
 // The message a topic opens at: its earliest message still awaiting the
 // human's acknowledgement, from the messages held and the server's
@@ -266,7 +266,7 @@ export const waitsFor = (ackOf) => (m) => m.author === 'session' && Boolean(ackO
 // held messages may skip later waiting ones, so the answer is only that it
 // comes after waitingFrom ({ after }).
 export function earliestWaiting(t, msgs, ackOf) {
-  const waits = waitsFor(ackOf);
+  const waits = unreadFor(ackOf);
   const found = msgs.filter(waits).sort(inTopicOrder);
   const wf = t.waitingFrom;
   if (!wf || !Number.isInteger(wf.n)) return found[0] || null;
@@ -335,7 +335,7 @@ function ackDelta(msgs, ackOf, snapshot) {
 
 function unreadIn(t, msgs, ackOf, snapshot) {
   const known = ackMessages([t.preview, ...msgs]);
-  const n = snapshot ? snapshot.topics.get(t.id) || 0 : t.awaiting ? t.awaiting.human?.count || 0 : known.filter(waitsFor(m => m.ack)).length;
+  const n = snapshot ? snapshot.topics.get(t.id) || 0 : t.awaiting ? t.awaiting.human?.count || 0 : known.filter(unreadFor(m => m.ack)).length;
   return Math.max(0, n + ackDelta(known, ackOf, snapshot));
 }
 
@@ -486,11 +486,11 @@ function heldMessages(cell, hive, ui, kind) {
   return { first, later, byId };
 }
 
-export function waitingMessages(cell, hive, ui, kind) {
+export function inboxMessages(cell, hive, ui, kind) {
   const { first, later, byId } = heldMessages(cell, hive, ui, kind);
   if (!first) return [];
   const snapshot = acknowledgementSnapshot(cell);
-  const pending = kind === 'human' ? waitsFor(x => effectiveAck(x, y => ui.ackOf(cell.id, y), snapshot)) : (m) => answerState(m, cell) === 'waiting';
+  const pending = kind === 'human' ? unreadFor(x => effectiveAck(x, y => ui.ackOf(cell.id, y), snapshot)) : (m) => answerState(m, cell) === 'waiting';
   const restored = kind === 'human' ? [...byId.values()].filter(m => baselineAck(m, snapshot)?.state && pending(m)).map(m => m.id) : [];
   return [...new Set([...first.ids, ...(later?.ids || []), ...restored])]
     .map((id) => byId.get(id))
@@ -498,7 +498,7 @@ export function waitingMessages(cell, hive, ui, kind) {
     .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
 }
 
-export function waitingCount(cell, hive, ui, kind) {
+export function inboxMessageCount(cell, hive, ui, kind) {
   if (!cell.inbox) return 0;
   if (kind !== 'human') return cell.inbox[kind]?.count || 0;
   const { byId } = heldMessages(cell, hive, ui, kind);
@@ -554,10 +554,10 @@ function inboxHead(cell, hive, graph, ui) {
   const view = ui.inboxView(cell.id);
   const filters = inboxFilters(view, {
     human: inboxRows(context, [cell], 'human').length,
-    queen: waitingCount(cell, hive, ui, 'queen'),
+    queen: inboxMessageCount(cell, hive, ui, 'queen'),
   }, kind => ui.setInboxView(cell.id, view === kind ? null : kind), `inbox:${cell.id}`);
   if (view) filters.append(h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setInboxView(cell.id, null) }, 'Show topics'));
-  if (cell.inbox.backlog) filters.append(h('span', { class: 'hive-muted hive-inbox-backlog', role: 'note' }, 'More than 100 messages are waiting. Older ones stay until they are answered or acknowledged.'));
+  if (cell.inbox.backlog) filters.append(h('span', { class: 'hive-muted hive-inbox-backlog', role: 'note' }, 'More than 100 messages are unread or awaiting an answer. Older ones stay until they are answered or acknowledged.'));
   return filters;
 }
 
@@ -567,7 +567,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
   const later = ui.inboxPages(cell.id, kind, epoch, sig);
   const byId = new Map((later?.messages || []).map((m) => [m.id, m]));
   for (const m of kind === 'human' ? counted : cell.messages) byId.set(m.id, m);
-  const pending = (m) => (kind === 'human' ? waitsFor(x => effectiveAck(x, y => ui.ackOf(cell.id, y), snapshot))(m) : answerState(m, cell) === 'waiting');
+  const pending = (m) => (kind === 'human' ? unreadFor(x => effectiveAck(x, y => ui.ackOf(cell.id, y), snapshot))(m) : answerState(m, cell) === 'waiting');
   const restored = kind === 'human' ? counted.filter(m => baselineAck(m, snapshot)?.state && pending(m)).map(m => m.id) : [];
   const items = [...new Set([...first.ids, ...(later?.ids || []), ...restored])]
     .map((id) => byId.get(id))
@@ -626,7 +626,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
     }));
   }
   if (!shown.length) {
-    const none = kind === 'human' ? 'Nothing from the queen is waiting for you' : 'None of your messages is waiting for an answer';
+    const none = kind === 'human' ? 'No unread messages from the queen' : 'None of your messages is waiting for an answer';
     list.append(h('li', { class: 'hive-muted' }, searching ? `No topics match “${query.trim()}”.` : `${none}.`));
   }
   const more = later ? later.more : first.more;
@@ -657,9 +657,9 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selec
   const scopeName = scope ? (beads[selected]?.title || selected) : null;
   const toggle = h('button', { type: 'button', class: 'hive-link-btn', 'aria-pressed': all ? 'true' : 'false', onclick: () => ui.setAllTopics(cell.id, !all) }, all ? 'Only this selection' : 'All topics');
   const inbox = cell.inbox ? ui.inboxView(cell.id) : null;
-  const what = inbox ? (inbox === 'human' ? 'Waiting for you' : 'Waiting for the queen') : 'Topics';
+  const what = inbox ? (inbox === 'human' ? 'Inbox' : 'Waiting for the queen') : 'Topics';
   const head = h('div', { class: `hive-topics-head${inbox ? ' hive-inbox-head' : ''}` },
-    cell.inbox ? h('div', { class: 'hive-inbox-totals' }, inboxTotals({ needs: needsRows({ hive, graph, ui }, [cell]).length, human: waitingCount(cell, hive, ui, 'human') })) : null,
+    cell.inbox ? h('div', { class: 'hive-inbox-totals' }, inboxTotals({ needs: needsRows({ hive, graph, ui }, [cell]).length, human: inboxMessageCount(cell, hive, ui, 'human') })) : null,
     inbox ? h('div', { class: 'hive-inbox-toolbar' }, inboxHead(cell, hive, graph, ui)) : inboxHead(cell, hive, graph, ui),
     !inbox ? h('span', { class: 'hive-muted' }, all || !scope ? 'All topics in this hive' : [`${what} about `, h('strong', {}, scopeName), ' (and its items)']) : null,
     scope && !inbox ? toggle : null,
@@ -893,7 +893,7 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
   if (ui.startPending(key)) {
     const ackOf = (m) => ui.ackOf(cell.id, m);
     const waiting = earliestWaiting(t, msgs, ackOf);
-    const s = startTarget({ window, page, from, retained: t.retained, waiting, waits: waitsFor(ackOf) });
+    const s = startTarget({ window, page, from, retained: t.retained, waiting, waits: unreadFor(ackOf) });
     if ('id' in s) list.dataset.startAt = s.id;
     else if (ui.startFailed(key)) list.dataset.startAt = s.before?.id || '';
     else if (ui.askStart(key, s.before?.id || '')) {

@@ -1,4 +1,4 @@
-import { awaitingHuman, humanConversationDoc } from './conversation.js';
+import { humanConversationDoc } from './conversation.js';
 import { requireBeadAccess } from './access.js';
 import { HiveError } from './ops.js';
 import { prRepository } from './pr-labels.js';
@@ -24,11 +24,6 @@ export function reportPrWait(rt, actor, args) {
 export function waitingProjection(rt, cell, beadIds) {
   if (!cell.enabled || cell.snapshot) return { waits: [], pullRequests: [], waitTargets: { messages: {}, topics: {} } };
   const doc = humanConversationDoc(rt.metadata.read(), cell.id);
-  const waits = (doc.conversation[cell.id] || []).filter(awaitingHuman).map(m => {
-    const topic = doc.threads?.[cell.id]?.[m.threadId];
-    const beadId = beadIds.has(m.beadId) ? m.beadId : beadIds.has(topic?.beadId) ? topic.beadId : cell.rootBeadId;
-    return { id: `message:${m.id}`, kind: 'message', title: line(m.text), reason: 'Hive message awaiting your acknowledgement (read, react or reply).', beadIds: [beadId], cellId: cell.id, messageId: m.id, threadId: m.threadId, at: m.at };
-  });
   const pullRequests = Object.values(doc.prLabels || {}).filter(r => prRepository(r?.url)).flatMap(r => {
     const ids = [...new Set((r.associations || []).filter(a => a.cellId === cell.id && beadIds.has(a.beadId)).map(a => a.beadId))];
     if (!ids.length) return [];
@@ -36,5 +31,5 @@ export function waitingProjection(rt, cell, beadIds) {
   });
   const topics = Object.fromEntries(Object.values(doc.threads?.[cell.id] || {}).map(t => [t.id, beadIds.has(t.beadId) ? t.beadId : cell.rootBeadId]));
   const messages = Object.fromEntries((doc.conversation[cell.id] || []).map(m => [m.id, beadIds.has(m.beadId) ? m.beadId : topics[m.threadId] || cell.rootBeadId]));
-  return { waits, pullRequests, waitTargets: { messages, topics } };
+  return { waits: [], pullRequests, waitTargets: { messages, topics } };
 }

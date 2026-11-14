@@ -1,4 +1,4 @@
-import { humanConversationDoc, awaitingHuman, awaitingQueen, threadRecords, threadIn, contextOf } from './conversation.js';
+import { humanConversationDoc, unreadForHuman, awaitingQueen, threadRecords, threadIn, contextOf } from './conversation.js';
 import { refuseSnapshot } from './ops.js';
 import { topicMatches, snippetFor, searchTerms, INBOX_SEARCH_MAX } from '../public/inbox-search.js';
 
@@ -15,7 +15,7 @@ function indexOf(rt, cellId) {
   const doc = humanConversationDoc(store.read(), cellId);
   const records = threadRecords(doc, cellId);
   const built = { human: [], queen: [] };
-  for (const [kind, waiting] of [['human', awaitingHuman], ['queen', awaitingQueen]]) {
+  for (const [kind, waiting] of [['human', unreadForHuman], ['queen', awaitingQueen]]) {
     const groups = new Map();
     for (const m of doc.conversation[cellId] || []) {
       if (!waiting(m)) continue;

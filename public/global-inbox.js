@@ -4,7 +4,7 @@ import { hiveLink } from './deep-links.js';
 import { needsHuman, requestAuthor } from './requests.js';
 import { cellName } from './model.js';
 import { filterRows, highlightParts, searchTerms, snippetFor } from './inbox-search.js';
-import { waitingMessages, waitingCount, topicTitles, topicPriorities, messageAuthor } from './conversation.js';
+import { inboxMessages, inboxMessageCount, topicTitles, topicPriorities, messageAuthor } from './conversation.js';
 
 export const GLOBAL_FILTERS = [['human', 'Inbox'], ['queen', 'Waiting for queen']];
 
@@ -35,7 +35,7 @@ export function messageRows(ctx, cells, kind) {
   for (const cell of cells) {
     const titles = topicTitles(cell, hive, ui);
     const byThread = new Map();
-    for (const m of waitingMessages(cell, hive, ui, kind)) {
+    for (const m of inboxMessages(cell, hive, ui, kind)) {
       const k = m.threadId || m.id;
       if (!byThread.has(k)) byThread.set(k, []);
       byThread.get(k).push(m);
@@ -50,8 +50,8 @@ export function messageRows(ctx, cells, kind) {
       });
     }
     const held = [...byThread.values()].reduce((n, g) => n + g.length, 0);
-    const more = waitingCount(cell, hive, ui, kind) - held;
-    if (more > 0) rows.push({ key: `more:${cell.id}:${kind}`, cellId: cell.id, hive: cellName(graph, cell), title: `${more} more waiting in this hive`, at: Infinity, count: 0, more, preview: 'Open the hive to see them.', link: hiveLink(cell.id) });
+    const more = inboxMessageCount(cell, hive, ui, kind) - held;
+    if (more > 0) rows.push({ key: `more:${cell.id}:${kind}`, cellId: cell.id, hive: cellName(graph, cell), title: `${more} more ${kind === 'human' ? 'unread' : 'awaiting an answer'} in this hive`, at: Infinity, count: 0, more, preview: 'Open the hive to see them.', link: hiveLink(cell.id) });
   }
   return rows.sort((a, b) => a.at - b.at || (a.key < b.key ? -1 : 1));
 }
@@ -158,7 +158,7 @@ export function globalInbox(ctx, cells) {
   const lists = { human: null, queen: null };
   for (const kind of ['human', 'queen']) {
     lists[kind] = inboxRows(ctx, cells, kind);
-    counts[kind] = cells.reduce((n, c) => n + waitingCount(c, hive, ui, kind), 0);
+    counts[kind] = cells.reduce((n, c) => n + inboxMessageCount(c, hive, ui, kind), 0);
   }
   const query = ui.globalInboxQuery?.() || '';
   const searching = searchTerms(query).length > 0;
@@ -168,7 +168,7 @@ export function globalInbox(ctx, cells) {
   const filters = inboxFilters(view, filterCounts, kind => ui.setGlobalInboxView(kind));
   const label = GLOBAL_FILTERS.find(f => f[0] === view)[1];
   const elsewhere = searching ? GLOBAL_FILTERS.filter(([k]) => k !== view && found.lists[k].length).map(([k, l]) => `${found.lists[k].length} in ${l}`) : [];
-  const empty = searching ? `No topics match “${query.trim()}” in ${label}.${elsewhere.length ? ` ${elsewhere.join(', ')}.` : ''}` : view === 'human' ? 'Nothing is waiting for you in any hive.' : 'None of your messages is waiting for an answer.';
+  const empty = searching ? `No topics match “${query.trim()}” in ${label}.${elsewhere.length ? ` ${elsewhere.join(', ')}.` : ''}` : view === 'human' ? 'No unread messages or open requests in any hive.' : 'None of your messages is waiting for an answer.';
   const list = h('ol', { class: 'hive-topics hive-inbox hive-global-inbox-list', 'aria-label': GLOBAL_FILTERS.find(f => f[0] === view)[1] },
     rows.length ? rows.map(r => inboxRow(ctx, r, { query: searching ? query : '' })) : h('li', { class: 'hive-muted' }, empty));
   const box = inboxSearchBox(ui, query, rows, found);
