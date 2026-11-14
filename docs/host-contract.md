@@ -4,7 +4,7 @@ This page lists exactly what Hive relies on from Agent Wrangler and from Beads. 
 
 ## Agent Wrangler host API
 
-The manifest declares `engines.wranglerApi: ^1.71.0`. Hive needs the read-only `links:read` capability introduced in host API 1.70.0. Earlier hosts reject this build as incompatible. The session context and view also use the live `status` and `waitingReason` projections introduced in 1.59.0.
+The manifest declares `engines.wranglerApi: ^1.80.0`. Hive uses `host.sessions.spawn({ agent: 'codex', approvalPolicy })` from host API 1.80.0 for tracked Codex launches, needs metadata-only `host.mail.list` from host API 1.79.0, and the read-only `links:read` capability introduced in host API 1.70.0. Earlier hosts reject this build as incompatible. The session context and view also use the live `status` and `waitingReason` projections introduced in 1.59.0.
 
 ### Capabilities
 
@@ -13,6 +13,7 @@ The manifest declares `engines.wranglerApi: ^1.71.0`. Hive needs the read-only `
 | `tasks:read` | `host.tasks.get`, `forSession` and `adhocId`: cell titles, participation and adoption checks. |
 | `tasks:write` | `host.tasks.create`: the task behind a new cell. Hive never renames, reassigns or archives tasks. |
 | `sessions:read` | `host.sessions.get` and `forTask`: queen nomination checks, binding checks and the session list in `hive_context`. |
+| `mail:read` | `host.mail.list(sessionId)`: sender and timestamp metadata for holder activity, without message bodies or excerpts. |
 | `sessions:spawn` | `host.sessions.spawn`: launching a human-requested queen, or a queen/coordinator-requested tracked worker or reviewer. |
 | `sessions:archive` | `host.sessions.archive(id, { cascade: false })`: only when the human ticks Archive these sessions too while retiring a hive. Each session is archived on its own and failures are reported without blocking the retirement. |
 | `deliver` | `host.deliver`: human messages and activation briefs for the queen. |

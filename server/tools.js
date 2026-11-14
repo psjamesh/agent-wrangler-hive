@@ -441,18 +441,19 @@ const workerArgs = {
   model: z.string().max(200).optional(),
   effort: z.string().max(80).optional(),
   auto_compact_tokens: z.number().int().positive().optional(),
+  codex_approval: z.enum(['on-request', 'never']).optional().describe('Codex approval policy; defaults to on-request for new Codex launches. Valid values are ignored for other agents. Cannot change a retained reviewer\'s configuration.'),
   worktree: strictObject({ branch: z.string().optional(), folderName: z.string().optional(), auto: z.boolean().optional(), base: z.string().optional() }).optional(),
 };
 
 const reviewArgs = {
-  reviewer_session_id: z.string().min(1).max(200).optional().describe('Retained reviewer already bound to this bead. With a new commit after changes_requested, opens a fresh round and mails that session without launching another. Cannot be combined with agent, model, effort or override_reason.'),
+  reviewer_session_id: z.string().min(1).max(200).optional().describe('Retained reviewer already bound to this bead. With a new commit after changes_requested, opens a fresh round and mails that session without launching another. Cannot be combined with agent, model, effort, override_reason or codex_approval.'),
   commit: z.string().min(1).max(80).optional().describe('SHA to review (role review).'),
   override_reason: z.string().min(1).max(1000).optional().describe('Queen/coordinator only: required to use an agent, model or effort other than the hive review policy for a review. Recorded on the review.'),
 };
 
 export const spawnWorkerTool = hiveTool({
   name: 'hive_spawn_worker',
-  description: 'Launch a tracked session attached to a bead, with a role: work (default) or review. The queen/coordinator may launch either. The session holding the bead\'s claim may launch review sessions for that bead only (never another work session). An advisor, investigation or other helper is its own bead launched with role work; there is no shared-bead helper. work reserves the bead and global capacity and launches a worker already claimed and bound. review launches a reviewer bound to the bead on the hive review policy (cell.review_policy: a primary and a secondary config, chosen so the reviewer\'s provider differs from the builder\'s, else the primary with sameProvider noted); agent/model/effort are ignored for a holder, and the queen/coordinator may differ only with override_reason, which is recorded. For a retained reviewer, pass reviewer_session_id and a new commit after changes_requested: opens a new round, preserves earlier receipts and mails that reviewer without launching a session. Omit reviewer_session_id to launch a new reviewer. Review sessions share the bead\'s capacity slot. The queen is told when a review session starts. An uncertain launch keeps its reservation; reconcile it instead of launching again. Launch every helper, advisor or investigation as its own bead here; sessions started with spawn_session, spawn_workflow, schedule_session or update_schedule are untracked.',
+  description: 'Launch a tracked session attached to a bead, with a role: work (default) or review. New Codex sessions default to on-request approvals; codex_approval accepts on-request or never and is ignored for other agents. It cannot be supplied with reviewer_session_id. The queen/coordinator may launch either. The session holding the bead\'s claim may launch review sessions for that bead only (never another work session). An advisor, investigation or other helper is its own bead launched with role work; there is no shared-bead helper. work reserves the bead and global capacity and launches a worker already claimed and bound. review launches a reviewer bound to the bead on the hive review policy (cell.review_policy: a primary and a secondary config, chosen so the reviewer\'s provider differs from the builder\'s, else the primary with sameProvider noted); agent/model/effort are ignored for a holder, and the queen/coordinator may differ only with override_reason, which is recorded. For a retained reviewer, pass reviewer_session_id and a new commit after changes_requested: opens a new round, preserves earlier receipts and mails that reviewer without launching a session. Omit reviewer_session_id to launch a new reviewer. Review sessions share the bead\'s capacity slot. The queen is told when a review session starts. An uncertain launch keeps its reservation; reconcile it instead of launching again. Launch every helper, advisor or investigation as its own bead here; sessions started with spawn_session, spawn_workflow, schedule_session or update_schedule are untracked.',
   inputSchema: { ...workerArgs, ...reviewArgs, role: z.enum(['work', 'review']).optional() },
 }, ({ rt, host, actor, args }) => {
   const { role = 'work', commit, override_reason, reviewer_session_id, ...rest } = args;
@@ -469,7 +470,7 @@ export const reconcileWorkerTool = hiveTool({
 
 export const requestReviewTool = hiveTool({
   name: 'hive_request_review',
-  description: 'Alias of hive_spawn_worker with role review, kept for existing callers. Launches a reviewer on this bead on the hive review policy; pass reviewer_session_id and a new commit after changes_requested to reopen a round with its retained reviewer and notify it by mail without spawning. Earlier rounds and receipts remain intact; archived, foreign-bead and builder sessions are refused. With reviewer_session_id, agent/model/effort/override_reason are refused. See hive_spawn_worker. The claim holder or the queen/coordinator may call it; override_reason is required to depart from the policy.',
+  description: 'Alias of hive_spawn_worker with role review, kept for existing callers. Launches a reviewer on this bead on the hive review policy; pass reviewer_session_id and a new commit after changes_requested to reopen a round with its retained reviewer and notify it by mail without spawning. Earlier rounds and receipts remain intact; archived, foreign-bead and builder sessions are refused. With reviewer_session_id, agent/model/effort/override_reason/codex_approval are refused. See hive_spawn_worker. The claim holder or the queen/coordinator may call it; override_reason is required to depart from the policy.',
   inputSchema: { ...workerArgs, ...reviewArgs },
 }, ({ rt, host, actor, args }) => requestReview(rt, host, actor, args));
 
@@ -516,13 +517,14 @@ const requestRevisionArgs = {
   route_revision: z.number().int().positive().describe('Current route revision from Hive.'),
 };
 const requestTools = [
-  requestTool('hive_request_input', 'Ask for a decision or action inside your active Hive cell. Pass session_id (and optionally session_label) when the human should act in a specific board session. Forwarding automatically links the requester too. Worker/reviewer/helper requests go to its queen, who answers or forwards the same request to the human. Queens ask the human directly. Do not also call request_human_input. Outside Hive use that standard tool instead. Offer 2-4 options where there is a choice, recommended first with (Recommended) in its label, and explain your recommendation in the body. Caller identity comes from MCP, never arguments.', {
+  requestTool('hive_request_input', 'Ask for a decision or action inside your active Hive cell. Pass reply_to when a request answers a human message: it joins the topic of that message, inherits its bead, and a queen request counts as an answer. With thread_id alone, the bead comes from the topic. With bead_id alone, reuse its topic when exactly one is available in the cell; otherwise start a new topic. Pass session_id (and optionally session_label) when the human should act in a specific board session. Forwarding automatically links the requester too. Worker/reviewer/helper requests go to its queen, who answers or forwards the same request to the human. Queens ask the human directly. Do not also call request_human_input. Outside Hive use that standard tool instead. Offer 2-4 options where there is a choice, recommended first with (Recommended) in its label, and explain your recommendation in the body. Caller identity comes from MCP, never arguments.', {
     cell_id: cellIdArg,
     ...sessionLinkArgs,
     title: z.string().min(1).max(200), body: z.string().min(1).max(20000),
     options: optionsSchema.optional(),
     allow_free_text: z.boolean().optional().describe('Compatibility parameter; ignored. Standalone text replies and optional notes are always allowed.'),
     kind: z.enum(['question', 'decision', 'approval', 'manual-action']).optional(),
+    reply_to: z.string().max(80).optional().describe('Message id this request replies to. Pass when answering a human message. Conflicting thread_id is rejected.'),
     bead_id: beadId.optional(), thread_id: z.string().max(80).optional(), blocking: z.boolean().optional(),
     dedupe_key: z.string().max(120).optional(), expires_at: z.number().int().positive().optional().describe('Optional future Unix timestamp in milliseconds.'),
   }, requests.createRequest),

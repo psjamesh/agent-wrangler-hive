@@ -835,3 +835,92 @@ test('published session references are stored separately from author identity an
   await assert.rejects(publish(f.rt, actor, { text: 'Unknown target', session_id: '44444444-4444-4444-8444-444444444444' }, f.host), /session.*board|Unknown session/i);
   assert.equal(f.sent.length, 0);
 });
+
+async function routingFixture(t) {
+  const f = await privacyFixture(t);
+  f.rt.metadata.mutate(d => { d.cells.cell.rootBeadId = 'hive-root'; });
+  f.rt.snapshots.hierarchyCurrent = true;
+  f.rt.snapshots.current.error = null;
+  f.rt.snapshots.graph.beads = {
+    'hive-root': { id: 'hive-root', status: 'open' },
+    'hive-work': { id: 'hive-work', parentId: 'hive-root', title: 'Work', status: 'open' },
+    'hive-other': { id: 'hive-other', parentId: 'hive-root', title: 'Other', status: 'open' },
+  };
+  f.actor.cell = f.rt.metadata.cell('cell');
+  return f;
+}
+
+for (const source of ['topic', 'message']) test(`request reply_to inherits the ${source} bead and a queen request answers the human`, async t => {
+  const f = await routingFixture(t);
+  const human = await f.conv.recordHumanInput(f.rt, { cellId: 'cell', text: 'Please clarify the scope', beadId: 'hive-work' });
+  if (source === 'message') f.rt.metadata.mutate(d => { d.threads.cell[human.threadId].beadId = null; });
+  const before = f.conv.inboxRev(f.rt.metadata.read(), 'cell');
+  const r = await f.create(queen, { reply_to: human.id });
+  assert.equal(r.threadId, human.threadId);
+  assert.equal(r.beadId, 'hive-work');
+  const doc = f.rt.metadata.read(), h = doc.conversation.cell.find(m => m.id === human.id);
+  const m = doc.conversation.cell.find(m => m.id === r.messageId);
+  assert.equal(m.replyTo, human.id);
+  assert.deepEqual(m.answers, [human.id]);
+  assert.deepEqual(h.response.answers, [{ messageId: r.messageId, sessionId: queen, at: m.at }]);
+  assert.equal(h.acknowledgedBy, queen);
+  assert.equal(f.conv.awaitingQueen(h), false);
+  assert.ok(f.conv.inboxRev(doc, 'cell') > before);
+  assert.ok(f.conv.threadHistory(f.rt, { cellId: 'cell', threadId: human.threadId }).messages.some(m => m.id === r.messageId));
+});
+
+test('request reply_to accepts its matching thread and rejects conflicting or unavailable targets atomically', async t => {
+  const f = await routingFixture(t);
+  const a = await f.conv.recordHumanInput(f.rt, { cellId: 'cell', text: 'First question' });
+  const b = await f.conv.recordHumanInput(f.rt, { cellId: 'cell', text: 'Second question' });
+  const before = structuredClone(f.rt.metadata.read());
+  await assert.rejects(f.create(queen, { reply_to: a.id, thread_id: b.threadId }), /reply.*another topic|reply_to.*thread_id/i);
+  await assert.rejects(f.create(queen, { reply_to: 'msg_000000000000' }), /Unknown|unavailable/);
+  assert.deepEqual(f.rt.metadata.read(), before);
+  assert.equal((await f.create(queen, { reply_to: a.id, thread_id: a.threadId })).threadId, a.threadId);
+});
+
+test('worker request replies stay private and do not answer human messages', async t => {
+  const f = await routingFixture(t);
+  const h = await f.conv.recordHumanInput(f.rt, { cellId: 'cell', text: 'Public question' });
+  const r = await f.create(worker, { reply_to: h.id });
+  assert.equal(r.threadId, h.threadId);
+  assert.equal(f.conv.awaitingQueen(f.rt.metadata.read().conversation.cell.find(m => m.id === h.id)), true);
+  assert.ok(!f.conv.threadHistory(f.rt, { cellId: 'cell', threadId: h.threadId }).messages.some(m => m.id === r.messageId));
+  f.members.get(other).taskId = 'task';
+  await assert.rejects(f.create(other, { reply_to: r.messageId }), /Unknown|unavailable/);
+});
+
+test('thread-only request takes the topic bead while an explicit conflicting bead is rejected', async t => {
+  const f = await routingFixture(t);
+  const h = await f.conv.recordHumanInput(f.rt, { cellId: 'cell', text: 'Scope question', beadId: 'hive-work' });
+  const r = await f.create(queen, { thread_id: h.threadId });
+  assert.equal(r.beadId, 'hive-work');
+  assert.equal(r.threadId, h.threadId);
+  await assert.rejects(f.create(queen, { thread_id: h.threadId, bead_id: 'hive-other' }), /Topic and bead context disagree/);
+});
+
+test('bead-only request reuses its sole visible topic in the cell', async t => {
+  const f = await routingFixture(t);
+  const h = await f.conv.recordHumanInput(f.rt, { cellId: 'cell', text: 'Scope question', beadId: 'hive-work' });
+  await f.conv.recordHumanInput(f.rt, { cellId: 'cell', text: 'Other work', beadId: 'hive-other' });
+  const r = await f.create(queen, { bead_id: 'hive-work' });
+  assert.equal(r.threadId, h.threadId);
+  assert.equal(Object.keys(f.rt.metadata.read().threads.cell).length, 2);
+});
+
+for (const count of [0, 2]) test(`bead-only request starts a new topic when ${count} match`, async t => {
+  const f = await routingFixture(t), topics = [];
+  for (let i = 0; i < count; i++) topics.push((await f.conv.recordHumanInput(f.rt, { cellId: 'cell', text: `Question ${i}`, beadId: 'hive-work' })).threadId);
+  const r = await f.create(queen, { bead_id: 'hive-work' });
+  assert.equal(topics.includes(r.threadId), false);
+  assert.equal(Object.keys(f.rt.metadata.read().threads.cell).length, count + 1);
+});
+
+test('dedupe reply_to cannot move an existing request to another topic', async t => {
+  const f = await routingFixture(t);
+  const h = await f.conv.recordHumanInput(f.rt, { cellId: 'cell', text: 'Scope question' });
+  const r = await f.create(queen, { dedupe_key: 'scope' });
+  await assert.rejects(f.create(queen, { dedupe_key: 'scope', reply_to: h.id }), /dedupe.*context/i);
+  assert.equal(f.rt.metadata.read().requests[r.id].threadId, r.threadId);
+});
