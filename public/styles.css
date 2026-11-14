@@ -1141,7 +1141,7 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   background: var(--hive-fill);
   border-radius: 999px;
 }
-.hive-unread.is-needs-you {
+.hive-unread.is-human-wait {
   color: var(--surface, #fff);
   background: var(--red, #c33);
 }

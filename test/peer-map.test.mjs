@@ -464,13 +464,13 @@ test('formerly hidden completed regions yield reused hexes to live work immediat
 
 for (const [name, update] of [
   ['Hive request', f => { f.cell.requests = { r: { id: 'r', audience: 'human', state: 'open', title: 'Choose', beadId: 'a' } }; }],
-  ['Needs You queue', f => { f.ctx.graph.inbox.items = [{ id: 'n', state: 'open', sessionId: 's' }]; }],
+  ['core session input', f => { f.ctx.graph.sessions = [{ sessionId: 's', status: 'needs-you' }]; }],
   ['PR attention', f => { f.cell.pullRequests = [{ url: 'https://github.com/example/repo/pull/1', beadIds: ['a'], state: 'OPEN', headSha: 'a'.repeat(40), checks: 'green', isDraft: false, stateCheckedAt: Date.now(), humanAttention: { state: 'ready', headSha: 'a'.repeat(40), reason: 'Review' } }]; }],
 ]) {
   test(`retained map refreshes ${name} changes without a click`, () => {
     const f = mapFixture({ cached: true });
     f.cell.taskId = 'task';
-    f.ctx.graph = { sessions: [], tasks: { assignments: { s: 'task' } }, inbox: { items: [] } };
+    f.ctx.graph = { sessions: [], tasks: { assignments: { s: 'task' } } };
     f.render();
     const builds = f.mapRenders();
     f.render();
@@ -480,7 +480,7 @@ for (const [name, update] of [
     assert.equal(f.mapRenders(), builds + 1);
     f.cell.requests = {};
     f.cell.pullRequests = [];
-    f.ctx.graph.inbox.items = [];
+    f.ctx.graph.sessions = [];
     f.render();
     assert.equal(f.mapRenders(), builds + 2);
   });

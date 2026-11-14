@@ -42,40 +42,18 @@ test('claimant reports require a known associated PR and its full observed head;
   assert.equal(f.doc.prLabels[URL].humanAttention, null);
 });
 
-test('unread messages beyond conversation paging are indexed without creating human waits', () => {
+test('unread messages beyond conversation paging do not create human waits', () => {
   const f = fixture();
   f.doc.conversation.cell = Array.from({ length: 75 }, (_, i) => ({ id: 'm' + i, author: 'session', text: 'Please look ' + i, beadId: i === 0 ? null : 'hive-a', threadId: 'thread', ack: { required: true, state: null }, at: i }));
   f.doc.conversation.cell[1].ack.state = { kind: 'read' };
   const view = waiting.waitingProjection(f.rt, f.cell, new Set(Object.keys(f.beads)));
   assert.deepEqual(view.waits, []);
-  assert.equal(view.waitTargets.messages.m0, 'hive-root');
   assert.equal(f.doc.conversation.cell[0].ack.state, null);
   assert.deepEqual(f.doc.conversation.cell[1].ack.state, { kind: 'read' });
-  assert.equal(view.waitTargets.messages.m2, 'hive-a');
   assert.equal(view.pullRequests.length, 1);
   assert.deepEqual(view.pullRequests[0].beadIds, ['hive-a', 'hive-b']);
   f.cell.snapshot = {};
-  assert.deepEqual(waiting.waitingProjection(f.rt, f.cell, new Set(Object.keys(f.beads))), { waits: [], pullRequests: [], waitTargets: { messages: {}, topics: {} } });
-});
-
-test('waiting summaries and target indexes respect native request audience until forwarding', () => {
-  const f = fixture(), ids = new Set(Object.keys(f.beads));
-  f.doc.requests = { secret: { id: 'secret', cellId: 'cell', messageId: 'private-origin', threadId: 'private-thread', audience: 'queen', state: 'open', title: 'Canonical request' } };
-  f.doc.threads.cell = { 'private-thread': { id: 'private-thread', origin: 'request', requestId: 'secret' }, 'public-thread': { id: 'public-thread' } };
-  f.doc.conversation.cell = [
-    { id: 'private-origin', author: 'session', requestId: 'secret', threadId: 'private-thread', text: 'Private draft' },
-    { id: 'private-reply', author: 'session', replyTo: 'private-origin', threadId: 'private-thread', text: 'Private discussion', ack: { required: true } },
-    { id: 'public-message', author: 'session', threadId: 'public-thread', text: 'Public update', ack: { required: true } },
-  ];
-  let view = waiting.waitingProjection(f.rt, f.cell, ids);
-  assert.deepEqual(view.waits, []);
-  assert.equal(view.waitTargets.messages['private-origin'], undefined);
-  assert.equal(view.waitTargets.messages['private-reply'], undefined);
-  assert.equal(view.waitTargets.topics['private-thread'], undefined);
-  f.doc.requests.secret.audience = 'human';
-  view = waiting.waitingProjection(f.rt, f.cell, ids);
-  assert.deepEqual(view.waits, []);
-  assert.equal(view.waitTargets.messages['private-reply'], 'hive-root');
+  assert.deepEqual(waiting.waitingProjection(f.rt, f.cell, new Set(Object.keys(f.beads))), { waits: [], pullRequests: [] });
 });
 
 test('a changed head permanently clears the old human report, including after reverting to the old head', async () => {

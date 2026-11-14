@@ -3,7 +3,6 @@ import { hiveLink } from './deep-links.js';
 import { cellWaitingItems as collect } from './waiting-model.js';
 import { pullRequestRow } from './pr-view.js';
 
-export { needsYouIncomplete } from './waiting-model.js';
 const caches = new WeakMap();
 let menu = null;
 const menuSignature = items => JSON.stringify(items, (key, value) => key === 'stateCheckedAt' ? undefined : value);
@@ -26,7 +25,6 @@ function waitingList(ctx, items, labelled, close = () => {}, selectedBeadId = nu
       item.kind === 'pr' ? pullRequestRow(ctx, bead, item.pr) : [
         h('strong', {}, item.title), h('p', {}, item.reason),
         h('div', { class: 'hive-pr-actions' }, reply,
-          item.kind === 'needsyou' ? h('a', { class: 'hive-link-btn', href: '#view=ext:needsyou:inbox', dataset: { waitAction: 'needsyou' }, onclick: close }, 'Open Needs You queue') : null,
           item.kind === 'agent' ? h('button', { type: 'button', class: 'hive-btn', dataset: { waitAction: 'session' }, onclick: () => { close(); ctx.ui.inspect(item.sessionId); } }, 'Open session') : null)]);
   }));
 }

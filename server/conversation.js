@@ -642,7 +642,7 @@ async function publishMessage(rt, host, actor, { text: body, bead_id, reply_to, 
   await removeAttachmentBatch(rt, cell.id, removed);
   rt.changed();
   const link = hiveLink(cell.id, topic, id);
-  return { message_id: id, cell_id: cell.id, thread_id: topic, link, next_step: `If you raise a Needs You request about this message, include [Open Hive message](${link}) in its body.`, acknowledged_reply_target: acknowledged, answered };
+  return { message_id: id, cell_id: cell.id, thread_id: topic, link, acknowledged_reply_target: acknowledged, answered };
 }
 
 export function acknowledgeInput(rt, actor, { message_ids }) {

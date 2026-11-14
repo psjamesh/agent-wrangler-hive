@@ -4,7 +4,7 @@ import { reviewPolicyForm } from './review-policy.js';
 import { confirmHive, promptHive } from './confirm-dialog.js';
 import { allSettings } from './settings-view.js';
 import { capacityControl } from './capacity-control.js';
-import { waitingItems, cellWaitingItems, waitingSection, openWaitingMenu, needsYouIncomplete } from './waiting-view.js';
+import { waitingItems, cellWaitingItems, waitingSection, openWaitingMenu } from './waiting-view.js';
 import { prSummary, pullRequestsSection } from './pr-view.js';
 import { h, syncChildren, markdown, safeHref, relativeTime } from './dom.js';
 import { hexPath, primaryMark, fitLines } from './hex-grid.js';
@@ -197,7 +197,7 @@ export function legend(snapshot = false) {
       class: 'hive-legend-item hive-legend-marks',
       title: snapshot
         ? 'One mark per item, from its recorded work status. Captured sessions describe the capture, not now, so this hive never shows an agent working or waiting for input; their states are in each tooltip.'
-        : 'One person icon for every human wait: agent input, a Hive decision or action request, a Needs You request or a PR explicitly waiting on you. Unread messages stay in Topics and Inbox. Several waits get a count badge. Worker-handled failing checks stay quiet. One mark per item, most urgent first. Waiting for input means an attached agent is asking someone something; the cross means the work itself is blocked or waits on a prerequisite. Filled search-check badges show review: green while the reviewer works, amber while pending. Review marks remain visible alongside them. A recorded wait uses an hourglass unless the primary mark is a blocked cross; then its reason is included in the cross tooltip. The outlined progress arc means in-progress work with an idle live owner. Items with no mark have no activity or recorded wait. Each tooltip names every agent and its state.',
+        : 'One person icon for every human wait: agent input, a Hive decision or action request or a PR explicitly waiting on you. Unread messages stay in Topics and Inbox. Several waits get a count badge. Worker-handled failing checks stay quiet. One mark per item, most urgent first. Waiting for input means an attached agent is asking someone something; the cross means the work itself is blocked or waits on a prerequisite. Filled search-check badges show review: green while the reviewer works, amber while pending. Review marks remain visible alongside them. A recorded wait uses an hourglass unless the primary mark is a blocked cross; then its reason is included in the cross tooltip. The outlined progress arc means in-progress work with an idle live owner. Items with no mark have no activity or recorded wait. Each tooltip names every agent and its state.',
     }, [...(snapshot ? [] : [['person', 'waiting for you (count when several)'], ['busy', 'agent working'], ['review-working', 'in review: reviewer working'], ['review-pending', 'in review: review pending'], ['in-progress', 'in progress; agent idle']]), ['pickup', 'ready for automatic pickup'], ['recorded-wait', 'recorded wait (cross carries reason when blocked)'], ['untracked', 'untracked work'], ['waiting', 'blocked or waiting'], ['deferred', 'deferred'], ['done', 'done'], ['closed', 'closed otherwise']].map(([k, label]) => h('span', { class: 'hive-legend-st' },
       h('svg:svg', { viewBox: '-8 -8 16 16', width: '14', height: '14', 'aria-hidden': 'true' }, primaryMark(k, label)), label))),
     h('span', { class: 'hive-legend-item hive-legend-note' }, 'No mark: no activity or recorded wait'),
@@ -546,7 +546,6 @@ function cellHeader(ctx, cell, root) {
           onclick: () => (infoOpen ? ui.setForm(infoKey, null) : openInfo()),
         }, 'Info'))),
     allSettings(ctx),
-    needsYouIncomplete(graph) ? h('p', { class: 'hive-warning' }, 'Needs You list may be incomplete: the queue supplies at most 200 items. Open Needs You to see the queue.') : null,
     attentionEl(ctx, { cellId: cell.id }),
     noticesEl(ctx));
 }

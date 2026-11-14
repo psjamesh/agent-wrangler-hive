@@ -681,7 +681,7 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selec
       },
       h('span', { class: 'hive-topic-line' },
         h('strong', { class: 'hive-topic-title' }, t.title),
-        count ? h('span', { class: `hive-unread${needs ? ' is-needs-you' : ''}`, 'aria-label': label }, String(count)) : null,
+        count ? h('span', { class: `hive-unread${needs ? ' is-human-wait' : ''}`, 'aria-label': label }, String(count)) : null,
         h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(t.lastAt))),
       h('span', { class: 'hive-topic-line' },
         h('span', { class: 'hive-chip hive-topic-context' }, contextLabel(t, cell, beads)),
