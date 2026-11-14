@@ -28,7 +28,8 @@ export function recover(rt, host) {
     if (host) await recoverReviews(rt, host);
     if (host && rt.host === host) await notifyQueens(rt, host);
     if (rt.metadata.version !== before) rt.changed();
-  })().catch((err) => rt.log(`hive: recovery pass failed: ${err.message}`)).finally(() => { passes.delete(rt); });
+    return true;
+  })().catch((err) => { rt.log(`hive: recovery pass failed: ${err.message}`); return false; }).finally(() => { passes.delete(rt); });
   passes.set(rt, pass);
   return pass;
 }

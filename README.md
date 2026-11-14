@@ -68,6 +68,10 @@ Store creation refuses a Git work tree and does not initialize product repositor
 
 For isolated evaluation, run a separate Agent Wrangler instance with a separate `AW_DATA_DIR` (for example `~/hive-sandbox`) and an unused port, following the host's instructions. Install Hive into that instance and use synthetic tasks only.
 
+## Automatic pickup
+
+Enabled hives start ready-marked work automatically, bounded by the global work limit. The queen marks each bounded deliverable with `hive_set_pickup` and an explicit worker profile; the human can also use bead details. Each mark allows one attempt, and failed or uncertain starts require reconciliation and deliberate rearming. See [automatic pickup](docs/automatic-pickup.md) for eligibility, rate guards and recovery.
+
 ## Licence
 
 Hive is licensed under [Apache-2.0](LICENSE). See the [host contract](docs/host-contract.md) for integration details. Third-party icon notices follow.
