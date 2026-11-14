@@ -73,6 +73,21 @@ For isolated evaluation, run a separate Agent Wrangler instance with a separate 
 
 Enabled hives start ready-marked work automatically, bounded by the global work limit. The queen marks each bounded deliverable with `hive_set_pickup` and an explicit worker profile; the human can also use bead details. Each mark allows one attempt, and failed or uncertain starts require reconciliation and deliberate rearming. See [automatic pickup](docs/automatic-pickup.md) for eligibility, rate guards and recovery.
 
+## Tests
+
+`npm test` runs the fast automated suites in `test/`, `public/` and `server/`. `npm run test:native` runs the native release suites in `test/native/`; run it for changes touching the Beads, `bd` or Dolt integration, or the release and install path. Standalone browser scripts in `test/` run separately. Test data uses temporary directories and honours `TMPDIR`; to keep it inside the checkout, run:
+
+```sh
+mkdir -p .scratch
+echo '{}' > .scratch/package.json
+TMPDIR="$PWD/.scratch" npm test
+TMPDIR="$PWD/.scratch" npm run test:native
+```
+
+Use the explicit file globs in `npm test`. A bare `node --test` can discover tests in local scratch directories.
+
+The empty `.scratch/package.json` keeps Node's module detection inside scratch fixtures. Native release tests limit Git discovery to their temporary directory so a checkout-local `TMPDIR` does not inherit the source repository. They require compatible `bd` and `dolt` executables; set `HIVE_TEST_BD` and `HIVE_TEST_DOLT` if these are not installed under `/opt/homebrew/bin`. Missing executables produce visible skips. The native suite can take about 13 minutes; CI runs the fast suite without installing the native toolchain.
+
 ## Licence
 
 Hive is licensed under [Apache-2.0](LICENSE). See the [host contract](docs/host-contract.md) for integration details. Third-party icon notices follow.
