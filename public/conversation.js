@@ -1,7 +1,7 @@
 import { inboxRows, needsRows, mergeRows, inboxRow, inboxFilters, inboxTotals, searchedInbox, inboxSearchBox } from './global-inbox.js';
 import { searchTerms } from './inbox-search.js';
 import { beadReferences } from './bead-references.js';
-import { requestCard } from './requests.js';
+import { requestCard, needsHuman } from './requests.js';
 import { conversationEpoch } from './view-state.js';
 import { confirmHive } from './confirm-dialog.js';
 import { imageDraft, imageComposer, messageImages } from './attachments.js';
@@ -676,10 +676,18 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, byThread, counted
     scope && !inbox ? toggle : null,
     elsewhere && !inbox ? h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setAllTopics(cell.id, true) }, `${elsewhere} unread in other topics`) : null);
   const list = h('ol', { class: 'hive-topics', 'aria-label': 'Topics' });
+  const requestsByThread = new Map();
+  for (const r of Object.values(cell.requests || {})) {
+    if (needsHuman(r)) requestsByThread.set(r.threadId, (requestsByThread.get(r.threadId) || 0) + 1);
+  }
   for (const t of shown) {
+    const needs = requestsByThread.get(t.id) || 0;
     const unread = unreadIn(t, byThread.get(t.id) || [], ackOf, snapshot);
+    const count = unread || needs;
+    const waiting = `${needs} request${needs === 1 ? '' : 's'} waiting for you`;
+    const label = needs ? `${unread ? `${unread} unread; ` : ''}${waiting}` : `${unread} unread`;
     const p = t.preview;
-    list.append(h('li', { class: `hive-topic${unread ? ' is-unread' : ''}` },
+    list.append(h('li', { class: `hive-topic${count ? ' is-unread' : ''}` },
       h('button', {
         type: 'button',
         class: 'hive-topic-btn',
@@ -688,8 +696,7 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, byThread, counted
       },
       h('span', { class: 'hive-topic-line' },
         h('strong', { class: 'hive-topic-title' }, t.title),
-        Object.values(cell.requests || {}).some(r => r.threadId === t.id) ? h('span', { class: 'hive-chip' }, 'Request') : null,
-        unread ? h('span', { class: 'hive-unread', 'aria-label': `${unread} unread` }, String(unread)) : null,
+        count ? h('span', { class: `hive-unread${needs ? ' is-needs-you' : ''}`, 'aria-label': label }, String(count)) : null,
         h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(t.lastAt))),
       h('span', { class: 'hive-topic-line' },
         h('span', { class: 'hive-chip hive-topic-context' }, contextLabel(t, cell, beads)),
