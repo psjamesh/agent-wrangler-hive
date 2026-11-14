@@ -1922,7 +1922,6 @@ test('a withdrawn message offers no Send to queen or Send again, and the list\'s
   assert.ok(!f.draw().list.textContent.includes('Withdrawn: h2'));
 });
 
-
 for (const [name, patch, waiting] of [
   ['open human', {}, true],
   ['private queen', { audience: 'queen' }, false],
@@ -1942,6 +1941,7 @@ for (const [name, patch, waiting] of [
   const badge = list.querySelector('.hive-unread');
   if (waiting) {
     assert.equal(badge?.textContent, '1');
+    assert.match(list.querySelector('.hive-topic').attributes.class, /is-unread/);
     assert.match(badge.attributes.class, /is-needs-you/);
     assert.equal(badge.attributes['aria-label'], '1 request waiting for you');
   } else assert.equal(badge, null);
@@ -1967,7 +1967,6 @@ for (const state of ['answered', 'withdrawn']) test(`topic badge clears after re
   assert.equal(f.draw().list.querySelector('.hive-unread'), null);
 });
 
-
 test('Inbox drops answered or withdrawn request rows while delivery repair still waits', t => {
   const f = nativeFixture(t);
   f.ui.setInboxView(f.cell.id, 'human');
@@ -1982,7 +1981,6 @@ test('Inbox drops answered or withdrawn request rows while delivery repair still
   request.state = 'withdrawn';
   assert.doesNotMatch(f.draw().list.textContent, /API decision/);
 });
-
 
 test('topic request badges keep unread totals and stay scoped to the request topic', t => {
   const f = nativeFixture(t);

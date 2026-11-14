@@ -687,7 +687,7 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, byThread, counted
     const waiting = `${needs} request${needs === 1 ? '' : 's'} waiting for you`;
     const label = needs ? `${unread ? `${unread} unread; ` : ''}${waiting}` : `${unread} unread`;
     const p = t.preview;
-    list.append(h('li', { class: `hive-topic${unread ? ' is-unread' : ''}` },
+    list.append(h('li', { class: `hive-topic${count ? ' is-unread' : ''}` },
       h('button', {
         type: 'button',
         class: 'hive-topic-btn',
