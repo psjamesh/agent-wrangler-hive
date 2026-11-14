@@ -101,9 +101,9 @@ function cancelDeepLink() {
 }
 
 export function createUi() {
-  const newInboxSearch = () => ({ query: '', scheduled: null, inflight: null, remote: null, failedKey: null, epoch: null, timer: null });
+  const newInboxSearch = () => ({ scheduled: null, inflight: null, remote: null, failedKey: null, epoch: null, timer: null });
   const cleanedVisibility = new Set();
-  const mem = { drafts: new Map(), forms: {}, thread: {}, all: {}, history: {}, older: {}, renames: {}, inboxView: {}, globalInbox: 'human', inboxSearch: newInboxSearch(), cellInboxSearch: new Map(), inbox: {}, acks: new Map(), acknowledgementMessages: new Map(), acknowledgementTopics: new Map(), opened: {}, readers: new Map(), conversationMessage: {}, relations: null, relationFailure: null, conversationEpoch: {}, detail: new Map() };
+  const mem = { drafts: new Map(), forms: {}, thread: {}, all: {}, history: {}, older: {}, renames: {}, inboxView: {}, globalInbox: 'human', searchQuery: '', inboxSearch: newInboxSearch(), cellInboxSearch: new Map(), inbox: {}, acks: new Map(), acknowledgementMessages: new Map(), acknowledgementTopics: new Map(), opened: {}, readers: new Map(), conversationMessage: {}, relations: null, relationFailure: null, conversationEpoch: {}, detail: new Map() };
   const inboxSearchFor = cellId => {
     if (!cellId) return mem.inboxSearch;
     if (!mem.cellInboxSearch.has(cellId)) mem.cellInboxSearch.set(cellId, newInboxSearch());
@@ -433,11 +433,16 @@ export function createUi() {
     // waiting for an answer, or null.
     inboxView: (cellId) => mem.inboxView[cellId] || null,
     globalInboxView: () => mem.globalInbox,
-    globalInboxQuery: (cellId) => inboxSearchFor(cellId).query,
-    setGlobalInboxQuery(query, cellId) {
-      const q = inboxSearchFor(cellId);
-      q.query = String(query || '').slice(0, 200);
-      if (!q.query.trim()) { clearTimeout(q.timer); q.timer = null; q.scheduled = null; q.inflight = null; q.remote = null; q.failedKey = null; }
+    searchQuery: () => mem.searchQuery,
+    setSearchQuery(query) {
+      const next = String(query || '').slice(0, 200);
+      if (next === mem.searchQuery) return;
+      const changed = next.trim() !== mem.searchQuery.trim();
+      mem.searchQuery = next;
+      if (!next.trim()) mem.forms.mapSearchReveal = null;
+      if (changed) for (const q of [mem.inboxSearch, ...mem.cellInboxSearch.values()]) {
+        clearTimeout(q.timer); q.timer = null; q.scheduled = null; q.inflight = null; q.remote = null; q.failedKey = null;
+      }
       navigate();
     },
     cancelGlobalInboxSearch() {
@@ -446,7 +451,7 @@ export function createUi() {
     },
     askGlobalInboxSearch(cellIds, revision, epoch = '', cellId) {
       const q = inboxSearchFor(cellId);
-      const query = q.query.trim();
+      const query = mem.searchQuery.trim();
       if (!query) return { remote: null, pending: false, failed: false };
       if (q.epoch !== epoch) { q.epoch = epoch; q.inflight = null; q.remote = null; q.failedKey = null; }
       const key = `${query}\n${epoch}\n${revision}\n${cellIds.join(',')}`;
@@ -462,7 +467,7 @@ export function createUi() {
             onReply: (frame) => {
               if (q.inflight !== key) return;
               q.inflight = null;
-              if (frame.ok) { q.remote = { key, query, epoch, human: frame.human || [], queen: frame.queen || [], truncated: Boolean(frame.truncated) }; q.failedKey = null; }
+              if (frame.ok) { q.remote = { key, query, epoch, human: frame.human || [], queen: frame.queen || [], topics: frame.topics, truncated: Boolean(frame.truncated) }; q.failedKey = null; }
               else q.failedKey = key;
               navigate();
             },

@@ -6,7 +6,7 @@ const beadNames = hive => Object.values(hive.beads).map(b => [b.id, b.title, b.p
 export function conversationInputs(ctx, cell) {
   const thread = ctx.ui.openThread?.(cell.id);
   return JSON.stringify([
-    cell.id, cell.enabled, cell.retired, cell.queenSessionId, cell.rootBeadId, cell.conversationRevision,
+    ctx.ui.searchQuery?.(), cell.id, cell.enabled, cell.retired, cell.queenSessionId, cell.rootBeadId, cell.conversationRevision,
     thread ? cell.messages.filter(m => m.threadId === thread) : cell.messages,
     thread ? cell.threads?.find(t => t.id === thread) : cell.threads,
     thread ? null : [cell.threadsAfter, cell.threadsTruncated],

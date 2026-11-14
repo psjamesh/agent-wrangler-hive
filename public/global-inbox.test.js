@@ -158,3 +158,14 @@ test('request matches keep their snippet when remote messages do not match', asy
   assert.equal(result.lists.human[0].snippet, 'Find the second needle');
   assert.equal(result.lists.human[0].needsCount, 2);
 });
+
+
+test('remote read topics outside the loaded window sort after unread topics', async () => {
+  const { orderInboxTopics } = await import('./global-inbox.js');
+  const a = cell('a');
+  const rows = [
+    { key: 'read', cellId: 'a', threadId: 'old', at: 1, count: 99, unreadCount: 0 },
+    { key: 'unread', cellId: 'a', threadId: 'new', at: 2, count: 1, unreadCount: 1 },
+  ];
+  assert.deepEqual(orderInboxTopics(ctx([a]), [a], rows).map(r => r.key), ['unread', 'read']);
+});
