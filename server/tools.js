@@ -189,6 +189,9 @@ export async function buildContext(rt, host, actor, { include_closed = false, be
     const open = all.filter((b) => b.status !== 'closed');
     const closed = all.filter((b) => b.status === 'closed').sort((a, b) => String(b.closedAt).localeCompare(String(a.closedAt)));
     const doc = rt.metadata.read();
+    const launches = Object.values(doc.launches || {}).filter(l => l.cellId === cell.id);
+    const currentLaunch = launches.findLast(l => l.sessionId === cell.queenSessionId && !l.superseded && !['abandoned', 'dismissed'].includes(l.state));
+    const launchDecision = l => ({ ...l, handoverSourceSessionId: l.handoverSourceSessionId || null, archiveSourceAfterHandover: Boolean(l.handoverSourceSessionId) && l.archiveSourceAfterHandover === true });
     const bindings = (doc.bindings[cell.id] || []).filter((b) => b.active);
     const sessionIds = new Set([cell.queenSessionId, ...open.map((b) => b.ownerSessionId), ...bindings.map((b) => b.sessionId)].filter(Boolean));
     for (const s of host.sessions.forTask(cell.taskId)) sessionIds.add(s.sessionId);
@@ -226,6 +229,8 @@ export async function buildContext(rt, host, actor, { include_closed = false, be
         claims: open.filter((b) => b.ownerSessionId === actor.sessionId).map((b) => b.id),
         bindings: bindings.filter((b) => b.sessionId === actor.sessionId).map((b) => ({ bead_id: b.beadId, role: b.role })),
       },
+      queen_launch: currentLaunch ? launchDecision(currentLaunch) : null,
+      queen_launches: launches.slice(-20).map(l => ({ ...launchDecision(l), historical: l.id !== currentLaunch?.id })),
       focus: focus ? compactBead(rt, focus, { full: true, cell }) : undefined,
       beads: open.map((b) => compactBead(rt, b, { full: true, cell })),
       closed_beads: (include_closed ? closed : closed.slice(0, 20)).map((b) => compactBead(rt, b, { full: false })),

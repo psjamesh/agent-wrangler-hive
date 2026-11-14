@@ -27,7 +27,7 @@ Hive reads and creates tasks, reads and launches sessions, delivers messages and
 
 1. Open **Hive** on the rail. Install a compatible `bd` if prompted, then press **Recheck**. If the server cannot find it, configure **Hive → Settings → bd executable**.
 2. Press **Create Hive store**. Hive requires this explicit action before initializing its local Beads workspace.
-3. Choose **New hive**, give it a name and an optional goal, and select the queen launch. Alternatively, use **Add existing task** to nominate an existing or new queen for a task.
+3. Choose **New hive**, give it a name and an optional goal, and launch a fresh queen. **Add existing task** also launches a fresh queen. Each form offers one optional handover source and **Archive source after handover**, checked by default; clearing the source requests no handover and archives nobody.
 4. Ask the queen to map the work, define acceptance criteria and assign bounded items to workers. The included `hive-queen` and `hive-worker` skills describe the workflow.
 5. Select a bead to inspect its summary, evidence and attached sessions. Use the conversation for questions and decisions. Answer native requests with **Answer request** or **Dismiss request**; reading or replying in the conversation does not settle a request.
 
@@ -46,13 +46,13 @@ Drag the background to pan, zoom to inspect the map, and use **Fit** to see ever
 ## Concepts
 
 - **Hive / cell:** one opted-in Agent Wrangler task with its own goal, conversation and work graph.
-- **Queen:** the nominated session that coordinates work and keeps the record coherent. Replacing the queen preserves the record.
+- **Queen:** the freshly launched session that coordinates work and keeps the record coherent. Replacing the queen preserves the record.
 - **Bead:** a durable goal, workstream, work item, investigation or decision, with acceptance criteria, status, summary and evidence.
 - **Worker and claim:** a session responsible for a bounded bead. A session stopping or going idle does not finish its work.
 - **Link:** an explicit dependency or association. Blocking links make work wait; neighbouring hexagons do not imply dependencies.
 - **Request:** a tracked question needing a decision or action. Worker requests go privately to the queen until forwarded; a missing or archived queen routes requests to the human.
 - **Delegation.** Tracked delegation uses Hive's tools, which claim a bead before launching a session. Hive adds no tool deny list to Claude, Codex or Gemini launches. Sessions they start outside Hive appear under `attention.untracked_descendants` in `hive_context`. A helper, advisor or investigation is its own claimed bead launched with `hive_spawn_worker`; a code review uses `role: "review"` on the work bead. New Codex workers and reviewers default to `on-request` approvals. Set `codex_approval: "never"` to disable approval requests for a launch, or explicitly select `"on-request"`. Only these two values are accepted; valid choices are ignored when the resolved agent is not Codex. A retained reviewer keeps its existing configuration and rejects `codex_approval`.
-- **Queen handoff.** The current queen calls `hive_handoff_queen` to hand the cell to one Hive-launched successor at a time. The handoff is generation-fenced: if the queen changes meanwhile, the successor is refused before it acts. Workers keep their claims and reviews; the old queen loses queen and coordinator authority, and claims it holds personally are not transferred. The human can launch or nominate a replacement queen at any time.
+- **Queen handoff.** The current queen calls `hive_handoff_queen` to hand the cell to one Hive-launched successor at a time. The handoff is generation-fenced: if the queen changes meanwhile, the successor is refused before it acts. Workers keep their claims and reviews; the old queen loses queen and coordinator authority, and claims it holds personally are not transferred. The human can launch a replacement queen at any time.
 
 ## Data and evaluation
 

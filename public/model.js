@@ -172,3 +172,7 @@ export function closedLabel(bead) {
   if (bead.outcome === 'done') return 'Done';
   return bead.outcome ? `Closed, ${bead.outcome}` : 'Closed';
 }
+
+export function eligibleHandoverSources(hive, taskId) {
+  return (hive.handoverSources || []).filter(s => !taskId || s.taskId === taskId);
+}

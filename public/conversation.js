@@ -760,7 +760,7 @@ function newTopicComposer({ cell, beads, ui, ctx, selected }) {
   const textarea = composerInput(ui, key, {
     class: 'hive-composer-input',
     rows: '3',
-    placeholder: cell.queenSessionId ? 'Message the queen…' : 'No queen yet: messages are kept until you nominate or launch one.',
+    placeholder: cell.queenSessionId ? 'Message the queen…' : 'No queen yet: messages are kept until you launch one.',
     'aria-label': 'Message to the queen',
   });
   const submit = () => {
@@ -939,7 +939,7 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
   const textarea = composerInput(ui, key, {
     class: 'hive-composer-input',
     rows: '3',
-    placeholder: cell.queenSessionId ? 'Reply in this topic…' : 'No queen yet: messages are kept until you nominate or launch one.',
+    placeholder: cell.queenSessionId ? 'Reply in this topic…' : 'No queen yet: messages are kept until you launch one.',
     'aria-label': `Message in ${t.title}`,
   });
   const selected = ui.selectedBeadId();
@@ -1003,7 +1003,7 @@ function renderStream({ cell, hive, graph, api, ui, ctx }) {
   const textarea = composerInput(ui, key, {
     class: 'hive-composer-input',
     rows: '3',
-    placeholder: cell.queenSessionId ? 'Message the queen…' : 'No queen yet: messages are kept until you nominate or launch one.',
+    placeholder: cell.queenSessionId ? 'Message the queen…' : 'No queen yet: messages are kept until you launch one.',
     'aria-label': 'Message to the queen',
   });
   const selected = ui.selectedBeadId();
