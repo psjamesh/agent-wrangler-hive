@@ -178,7 +178,7 @@ export async function createRequest(rt, host, id, args) {
   }
   if (bead && topic?.beadId && topic.beadId !== bead.id) fail('Topic and bead context disagree.');
   const at = Date.now(), rid = newId('hreq'), mid = newId('msg'), tid = topic?.id || newId('thr');
-  const kept = args.attachments === undefined ? [] : await adoptAttachments(rt, actor.cell.id, mid, args.attachments);
+  const kept = args.attachments === undefined ? [] : await adoptAttachments(rt, actor.cell.id, mid, args.attachments, { sessionId: actor.sessionId });
   let r, removed = [];
   try {
     actor = member(rt, host, id, actor.cell.id);

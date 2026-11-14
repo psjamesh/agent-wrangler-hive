@@ -20,7 +20,7 @@ async function fixture(t) {
   metadata.mutate(d => { d.cells[cell.id] = cell; });
   const rt = { host: { tasks: { forSession: () => null } }, pendingParticipants: new Map(), paths: { root }, metadata, snapshots: { graph: { beads: {} } }, changed() {}, log() {} };
   const actor = { cell, role: 'queen', sessionId: '11111111-1111-4111-8111-111111111111' };
-  const inbox = (await attachmentsInbox(rt, cell.id));
+  const inbox = (await attachmentsInbox(rt, cell.id, actor.sessionId));
   fs.writeFileSync(path.join(inbox, 'a.png'), PNG);
   const send = async () => (await publish(rt, actor, { text: 'review', attachments: [{ file: 'a.png' }] }));
   return { root, metadata, cell, rt, inbox, send };
@@ -119,7 +119,7 @@ test('R1/R2: replacing the cache directory during sips cannot install into the o
 test('R2: a running helper keeps its original directory after the pathname is replaced', async t => {
   const f = (await fixture(t)), outside = path.join(f.root, 'outside');
   fs.mkdirSync(outside); fs.writeFileSync(path.join(outside, 'a.png'), Buffer.concat([PNG, Buffer.from('OUTSIDE')]));
-  const folders = [f.root, path.join(f.root, 'attachments'), path.join(f.root, 'attachments', f.cell.id), f.inbox];
+  const folders = [f.root, path.join(f.root, 'attachments'), path.join(f.root, 'attachments', f.cell.id), path.dirname(f.inbox), f.inbox];
   const pins = folders.map(dir => { const st = fs.statSync(dir); return { dev: st.dev, ino: st.ino }; });
   const child = spawn(process.execPath, [fileURLToPath(new URL('./attachment-files.js', import.meta.url))], { cwd: f.inbox, stdio: ['pipe', 'pipe', 'pipe'] });
   let output = ''; child.stdout.on('data', b => { output += b; });

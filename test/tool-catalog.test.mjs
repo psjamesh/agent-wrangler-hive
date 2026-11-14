@@ -50,8 +50,8 @@ test('request images share publish schema limits and describe private forwarding
   assert.equal(images.maxItems, 4);
   assert.deepEqual(images.items, published.items);
   assert.match(images.description, /All requesters/);
-  assert.match(images.description, /shared staging/);
-  assert.match(images.description, /session-prefixed filename with a random suffix/);
-  assert.match(images.description, /Never overwrite/);
+  assert.match(images.description, /inbox belongs to your session/);
+  assert.match(images.description, /Other sessions may use the same filenames independently/);
+  assert.match(images.description, /only files staged there can be attached/);
   assert.match(images.description, /forwarding/);
 });
