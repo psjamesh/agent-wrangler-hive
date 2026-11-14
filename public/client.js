@@ -176,7 +176,6 @@ export function createUi() {
         mem.all[cellId] = true;
         mem.inboxView[cellId] = null;
         mem.forms.renameTopic = null;
-        save('dock', true);
         save('pane', frame.pane === 'details' ? 'details' : 'conversation');
         if (frame.beadId) save(`bead:${cellId}`, frame.beadId);
         if (frame.thread) {
@@ -251,8 +250,6 @@ export function createUi() {
     setDetachedRegions: (cellId, ids) => save(`detachedRegions:${cellId}`, [...ids]),
     globalInboxOpen: () => load('globalInboxOpen', false) === true,
     setGlobalInboxOpen(open) { save('globalInboxOpen', Boolean(open)); navigate(); },
-    dockOpen: () => load('dock', true),
-    setDockOpen(open) { cancelDeepLink(); save('dock', Boolean(open)); navigate(); },
     pane: () => load('pane', 'conversation'),
     setPane(pane, { render = true } = {}) { cancelDeepLink(); save('pane', pane); navigate(render); },
     // Unsent text is kept per composer in this browser, so a reload or

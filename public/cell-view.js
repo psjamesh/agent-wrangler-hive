@@ -534,7 +534,6 @@ function cellHeader(ctx, cell, root) {
         headProgress(counts),
         waiting.length ? h('button', { type: 'button', class: 'hive-quiet-btn hive-waiting', 'aria-haspopup': 'dialog', 'data-focus-key': 'waiting-header', onclick: event => openWaitingMenu(ctx, waiting, event.currentTarget, { cellId: cell.id }) }, `${waiting.length} waiting for you`) : null),
       h('div', { class: 'hive-head-actions' },
-        hasPanels(cell, root) ? h('button', { type: 'button', class: 'hive-quiet-btn', 'aria-pressed': ui.dockOpen() ? 'true' : 'false', onclick: () => ui.setDockOpen(!ui.dockOpen()), 'data-focus-key': `panels:${cell.id}` }, ui.dockOpen() ? 'Hide panels' : 'Show panels') : null,
         isRetired(cell) ? h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openReopen(ctx, cell), 'data-focus-key': `reopen-open:${cell.id}` }, 'Reopen hive…') : (cell.enabled || cell.snapshot ? null : h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => send({ type: 'hive-cell-enable', cellId: cell.id }) }, 'Turn on')),
         cell.enabled && !cell.snapshot ? closedButton(ctx, cell) : null,
         h('button', {
@@ -648,7 +647,6 @@ export function cellPanels(ctx, cell) {
   const inspectbar = inspecting ? h('div', { class: 'hive-inspectbar', 'aria-label': 'Session' },
     h('strong', {}, sessionLabel(graph, inspecting)),
     h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => ui.closeInspector() }, 'Back to the map')) : null;
-  const open = ui.dockOpen();
   let cached = panelViews.get(ui);
   if (!cached || cached.cellId !== cell.id) {
     cached = { cellId: cell.id, dock: h('div', { class: 'hive-dock' }), conversation: null };
@@ -675,7 +673,7 @@ export function cellPanels(ctx, cell) {
   if (conversation && !conversation.hiveKeys) { conversation.addEventListener('keydown', onKeyDown); conversation.hiveKeys = true; }
   const details = cell.enabled || isRetired(cell) ? beadDetails(ctx, cell) : h('section', { class: 'hive-panel hive-details', tabindex: '-1', 'data-focus-key': 'panel:details', 'aria-label': 'Details', 'data-pane': 'details' },
     h('h3', {}, 'Details'), h('p', { class: 'hive-muted' }, 'This hive is off. Turn it on to see its work.'));
-  const dock = hasPanels(cell, root) && open ? syncChildren(cached.dock, [conversation, details]) : null;
+  const dock = hasPanels(cell, root) ? syncChildren(cached.dock, [conversation, details]) : null;
   return {
     header: cellHeader(ctx, cell, root),
     info: infoDrawer(ctx, cell, root) || retireDrawer(ctx, cell) || workstreamDrawer(ctx, cell),
