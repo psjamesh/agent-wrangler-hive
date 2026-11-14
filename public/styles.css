@@ -722,7 +722,9 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 .hive-pm-glyph { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .hive-pm-person .hive-pm-bg { fill: var(--hive-pm-person); stroke: var(--hive-pm-person); }
 .hive-pm-person .hive-pm-glyph { stroke: var(--hive-pm-person-ink); }
+.hive-pm-review-working .hive-pm-bg,
 .hive-pm-busy .hive-pm-bg { fill: var(--hive-pm-busy); stroke: var(--hive-pm-busy); }
+.hive-pm-review-working .hive-pm-glyph,
 .hive-pm-busy .hive-pm-glyph { stroke: var(--hive-pm-busy-ink); }
 .hive-pm-waiting .hive-pm-line { stroke: var(--hive-pm-waiting); stroke-width: 2; }
 .hive-pm-done .hive-pm-bg { fill: color-mix(in srgb, var(--hive-pm-done) 18%, var(--surface)); stroke: var(--hive-pm-done); }
@@ -1575,8 +1577,8 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 
 .hive-pm-untracked .hive-pm-line { stroke: var(--warn-fg, #b45309); }
 
-.hive-pm-review-working .hive-pm-line { stroke: var(--success-fg, #16803c); }
-.hive-pm-review-pending .hive-pm-line { stroke: var(--warn-fg, #b45309); }
+.hive-pm-review-pending .hive-pm-bg { fill: var(--warn-fg, #b45309); stroke: var(--warn-fg, #b45309); }
+.hive-pm-review-pending .hive-pm-glyph { stroke: var(--bar-on, var(--surface)); }
 
 .hive-message.is-link-target {
   outline: 2px solid var(--accent, #d5a93b);
