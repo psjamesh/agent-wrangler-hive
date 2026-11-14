@@ -98,14 +98,14 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
     await call('Page.reload');
     await ready;
   };
-  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Inbox' });
   await shot('all-hives-desktop-hidden-light');
   await theme(true);
   await shot('all-hives-desktop-hidden-dark');
   await theme(false);
   await viewport(390, 780);
   await reload();
-  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Inbox' });
   await shot('all-hives-phone-hidden-light');
   await theme(true);
   await shot('all-hives-phone-hidden-dark');
@@ -113,13 +113,13 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   await viewport(1280, 800);
   await reload();
   await toggleInbox();
-  assert.deepEqual(await visibility(), { panels: 'open', inbox: true, label: 'Hide inbox' });
+  assert.deepEqual(await visibility(), { panels: 'open', inbox: true, label: 'Inbox' });
   await reload();
-  assert.deepEqual(await visibility(), { panels: 'open', inbox: true, label: 'Hide inbox' });
+  assert.deepEqual(await visibility(), { panels: 'open', inbox: true, label: 'Inbox' });
   await toggleInbox();
-  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Inbox' });
   await reload();
-  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Inbox' });
   await toggleInbox();
   const wide = await run(`
     await new Promise(r => setTimeout(r, 150));
@@ -163,7 +163,7 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   `);
   assert.equal(collapsed.panels, 'closed');
   assert.equal(collapsed.inbox, false);
-  assert.match(collapsed.label, /Show inbox/);
+  assert.match(collapsed.label, /Inbox/);
   const reopened = await run(`
     document.querySelector('[data-focus-key="global-inbox-toggle"]').click();
     await new Promise(r => setTimeout(r, 150));
@@ -271,8 +271,9 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.ok(cellInbox.archived.includes('Archived worker'));
   assert.equal(cellInbox.zeros, false);
   const checkCellLayout = async () => {
-    const layout = await run(`const panel = document.querySelector('.hive-conversation'); const search = document.querySelector('.hive-global-search').getBoundingClientRect(); const filters = panel.querySelector('.hive-inbox-filters').getBoundingClientRect(); return { above: search.bottom <= filters.top, width: search.width, input: document.querySelector('.hive-inbox-search-input').getBoundingClientRect().width, count: document.querySelectorAll('input[type="search"]').length, context: panel.querySelectorAll('.hive-inbox .hive-topic-context').length };`);
-    assert.equal(layout.above, true);
+    await run(`if (document.querySelector('.hive-map-search').hidden) document.querySelector('.hive-search-open').click();`);
+    const layout = await run(`const panel = document.querySelector('.hive-conversation'); const search = document.querySelector('.hive-map-search').getBoundingClientRect(); const filters = panel.querySelector('.hive-inbox-filters').getBoundingClientRect(); return { inside: document.querySelector('.hive-canvas').contains(document.querySelector('.hive-map-search')), width: search.width, input: document.querySelector('.hive-inbox-search-input').getBoundingClientRect().width, count: document.querySelectorAll('input[type="search"]').length, context: panel.querySelectorAll('.hive-inbox .hive-topic-context').length };`);
+    assert.equal(layout.inside, true);
     assert.equal(layout.count, 1);
     assert.ok(layout.input > 100 && layout.input <= layout.width);
     assert.equal(layout.context, 0);

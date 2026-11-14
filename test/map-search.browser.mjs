@@ -78,13 +78,13 @@ try {
       await writeFile(join(output, `${phase}-${theme}-${view}-${width}${suffix}.png`), Buffer.from(data, 'base64'));
     };
     await shot('');
-    if (view === 'cell') {
+    if (view === 'cell' || phase === 'after') {
       const trigger = await run(`(() => {
         const el = document.querySelector('.hive-search-open'), button = el.getBoundingClientRect(), css = getComputedStyle(el);
         const canvas = document.querySelector('.hive-canvas'), map = canvas.getBoundingClientRect();
-        return { left: button.left - map.left - canvas.clientLeft, top: button.top - map.top - canvas.clientTop, height: button.height, radius: css.borderRadius, borderStyle: css.borderStyle, borderWidth: css.borderWidth };
+        return { left: button.left - map.left - canvas.clientLeft, top: button.top - map.top - canvas.clientTop, inControls: Boolean(el.closest('.hive-zoom')), height: button.height, radius: css.borderRadius, borderStyle: css.borderStyle, borderWidth: css.borderWidth };
       })()`);
-      if (phase === 'after') assert.deepEqual(trigger, { left: 10, top: 10, height: 30, radius: '8px', borderStyle: 'solid', borderWidth: '1px' });
+      if (phase === 'after') { assert.equal(trigger.inControls, true); assert.equal(trigger.height, 34); assert.equal(trigger.radius, '6px'); assert.equal(trigger.borderStyle, 'solid'); }
       await run(`document.querySelector('.hive-search-open').click()`);
     }
     const measure = await run(`(() => {
@@ -101,7 +101,7 @@ try {
       assert.equal(measure.radius, '8px');
       assert.equal(measure.overflow, false, `${view} page overflow at ${width}`);
       assert.ok(measure.left >= 0 && measure.right <= width, `${view} field stays on screen at ${width}`);
-      if (view === 'cell') {
+      if (view === 'cell' || phase === 'after') {
         assert.equal(measure.insetLeft, 10);
         assert.equal(measure.insetTop, 10);
         assert.ok(measure.barRight <= measure.mapRight - 10);
