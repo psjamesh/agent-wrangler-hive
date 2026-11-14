@@ -1921,3 +1921,75 @@ test('a withdrawn message offers no Send to queen or Send again, and the list\'s
   f.cell.messages = f.cell.messages.map((m) => (m.id === 'h2' ? { ...m, response: { required: true, answers: [] } } : m));
   assert.ok(!f.draw().list.textContent.includes('Withdrawn: h2'));
 });
+
+
+for (const [name, patch, waiting] of [
+  ['open human', {}, true],
+  ['private queen', { audience: 'queen' }, false],
+  ['no queen', { audience: 'route-repair', routeReason: 'no-queen' }, true],
+  ['forwarded repair', { audience: 'route-repair', forwarded: true }, true],
+  ['private repair', { audience: 'route-repair', routeReason: 'unavailable' }, false],
+  ['answered and delivered', { state: 'answered', delivery: { state: 'delivered' } }, false],
+  ['answer delivery failed', { state: 'answered', delivery: { state: 'failed' } }, true],
+  ['answer delivery pending', { state: 'answered', delivery: { state: 'pending' } }, true],
+  ['withdrawn', { state: 'withdrawn' }, false],
+  ['resolved', { state: 'resolved' }, false],
+]) test(`topic badge follows human request routing: ${name}`, t => {
+  const f = nativeFixture(t);
+  Object.assign(f.cell.requests[f.id], patch);
+  const list = f.draw().list;
+  assert.equal(descendants(list).some(el => el.attributes.class === 'hive-chip' && el.textContent === 'Request'), false);
+  const badge = list.querySelector('.hive-unread');
+  if (waiting) {
+    assert.equal(badge?.textContent, '1');
+    assert.match(badge.attributes.class, /is-needs-you/);
+    assert.equal(badge.attributes['aria-label'], '1 request waiting for you');
+  } else assert.equal(badge, null);
+});
+
+for (const state of ['answered', 'withdrawn']) test(`topic badge clears after request is ${state} and preserves unread count`, t => {
+  const f = nativeFixture(t);
+  const request = f.cell.requests[f.id];
+  f.cell.requests.second = { ...request, id: 'second' };
+  assert.equal(f.draw().list.querySelector('.hive-unread')?.textContent, '2');
+  delete f.cell.requests.second;
+  f.cell.messages.push({ id: 'unread', threadId: thr, author: 'session', sessionId: 'queen', role: 'queen', text: 'Please read', at: 2, n: 2, ack: { required: true, state: null, rev: 0 } });
+  let badge = f.draw().list.querySelector('.hive-unread');
+  assert.equal(badge.textContent, '1');
+  assert.match(badge.attributes.class, /is-needs-you/);
+  assert.equal(badge.attributes['aria-label'], '1 unread; 1 request waiting for you');
+  Object.assign(request, { state, delivery: { state: 'delivered' } });
+  badge = f.draw().list.querySelector('.hive-unread');
+  assert.equal(badge.textContent, '1');
+  assert.doesNotMatch(badge.attributes.class, /is-needs-you/);
+  assert.equal(badge.attributes['aria-label'], '1 unread');
+  f.cell.messages.pop();
+  assert.equal(f.draw().list.querySelector('.hive-unread'), null);
+});
+
+
+test('Inbox drops answered or withdrawn request rows while delivery repair still waits', t => {
+  const f = nativeFixture(t);
+  f.ui.setInboxView(f.cell.id, 'human');
+  const request = f.cell.requests[f.id];
+  assert.match(f.draw().list.textContent, /API decision/);
+  Object.assign(request, { state: 'answered', delivery: { state: 'failed' } });
+  assert.match(f.draw().list.textContent, /API decision/);
+  request.delivery.state = 'delivered';
+  assert.doesNotMatch(f.draw().list.textContent, /API decision/);
+  request.state = 'open';
+  assert.match(f.draw().list.textContent, /API decision/);
+  request.state = 'withdrawn';
+  assert.doesNotMatch(f.draw().list.textContent, /API decision/);
+});
+
+
+test('topic request badges keep unread totals and stay scoped to the request topic', t => {
+  const f = nativeFixture(t);
+  f.cell.threads.push({ id: 'other', title: 'Other topic', beads: [], count: 0, retained: 0, lastAt: 1 });
+  f.cell.messages.push(...[2, 3].map(n => ({ id: `unread-${n}`, threadId: thr, author: 'session', sessionId: 'queen', role: 'queen', text: 'Please read', at: n, n, ack: { required: true, state: null, rev: 0 } })));
+  const badges = descendants(f.draw().list).filter(el => (el.attributes.class || '').split(' ').includes('hive-unread'));
+  assert.equal(badges.length, 1);
+  assert.equal(badges[0].textContent, '2');
+  assert.equal(badges[0].attributes['aria-label'], '2 unread; 1 request waiting for you');
+});

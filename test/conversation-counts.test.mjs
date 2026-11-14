@@ -340,7 +340,7 @@ test('a newer preview acknowledgement preserves full history metadata for Undo',
   assert.deepEqual(f.counts('human'), inboxChips({ messages: 1, badges: [1] }));
 });
 
-for (const state of ['open', 'answered', 'resolved']) for (const legacy of [false, true]) test(`native ${state} card ${legacy ? 'with legacy ack' : 'without ack'} stays out of message counts and topic badges`, t => {
+for (const state of ['open', 'answered', 'resolved']) for (const legacy of [false, true]) test(`native ${state} card ${legacy ? 'with legacy ack' : 'without ack'} stays out of unread message counts`, t => {
   const card = { ...queen('card', 'request-topic'), requestId: 'hreq_000000000001' };
   if (!legacy) delete card.ack;
   const request = { id: card.requestId, cellId: 'cell_test', messageId: card.id, threadId: card.threadId, title: 'Approve?', body: 'Approve the change?', audience: 'human', state, delivery: { state: 'delivered' } };
@@ -354,7 +354,10 @@ for (const state of ['open', 'answered', 'resolved']) for (const legacy of [fals
   f.cell.requests = projected.requests;
   f.cell.requestCounts.human = state === 'open' ? 1 : 0;
   const expected = { messages: 1, badges: [1] };
-  assert.deepEqual(f.counts(null), expected);
+  assert.deepEqual(f.counts(null), { ...expected, badges: state === 'open' ? [1, 1] : [1] });
+  const requestBadges = f.draw(null).list.querySelectorAll('.is-needs-you');
+  assert.equal(requestBadges.length, state === 'open' ? 1 : 0);
+  if (requestBadges.length) assert.equal(requestBadges[0].attributes['aria-label'], '1 request waiting for you');
   assert.deepEqual(f.counts('human'), inboxChips(expected));
   assert.deepEqual(inboxSlice(doc, 'cell_test', 'human').ids, ['ordinary']);
   assert.equal(f.draw('human').list.children.filter(x => x.dataset?.id).length, state === 'open' ? 2 : 1);
