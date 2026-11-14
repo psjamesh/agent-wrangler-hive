@@ -386,7 +386,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
   let draggedId = null, dragPlanner = null;
   const startDrag = (id) => {
     draggedId = id;
-    dragPlanner = createDragPlanner({ layout, kids, rootId: cell.rootBeadId, saved, aspect: cell.arrangeAspect, id, hidden, yieldIds: closed });
+    dragPlanner = createDragPlanner({ layout, kids, rootId: cell.rootBeadId, saved, aspect: cell.arrangeAspect, id, hidden, yieldIds: closed }, { previewOnly: true });
   };
   const dragPreview = (id, target) => {
     if (draggedId !== id) startDrag(id);
@@ -567,7 +567,9 @@ function cellMap(ctx, cell, related = null, previous = null) {
     movePreview: dragPreview,
     onDrop: (id, target) => {
       if (readOnly) return;
-      const plan = dragPreview(id, target);
+      const preview = dragPreview(id, target);
+      if (!preview.ok) { ctx.notice(preview.reason); return; }
+      const plan = planMove({ layout, kids, rootId: cell.rootBeadId, saved, aspect: cell.arrangeAspect, id, target: preview.target, hidden, yieldIds: closed });
       if (!plan.ok) { ctx.notice(plan.reason); return; }
       if (!plan.same) {
         for (const [id, p] of Object.entries(plan.moves)) map.el.hiveTilePositions?.set(id, toPixel(p, BEAD_SIZE));

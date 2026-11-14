@@ -488,9 +488,10 @@ function growBeside({ shown, coming, startOf, taken }) {
   return placed;
 }
 
-export function createDragPlanner(args, { budgetMs = 8, now = () => performance.now() } = {}) {
+export function createDragPlanner(args, { budgetMs = 8, now = () => performance.now(), previewOnly = false } = {}) {
   const { layout, kids, id, hidden = new Set(), saved = {} } = args;
-  if (!layout.groupHeads.includes(id)) return (target) => ({ ...planMove({ ...args, target }), target });
+  const resolve = previewOnly ? previewMove : planMove;
+  if (!layout.groupHeads.includes(id)) return (target) => ({ ...resolve({ ...args, target }), target });
   const fullMembers = subtreeMembers(layout, kids, id);
   const members = [...fullMembers].filter((m) => !hidden.has(m));
   const home = layout.positions[id];
@@ -535,7 +536,7 @@ export function createDragPlanner(args, { budgetMs = 8, now = () => performance.
     if(cache.size>8) cache.delete(cache.keys().next().value);
   };
   const movePlan = (target) => {
-    const plan = planMove({ ...preparedArgs, target });
+    const plan = resolve({ ...preparedArgs, target });
     if (plan.same) return { ...plan, target, moves: Object.fromEntries(members.map((m) => [m, layout.positions[m]])) };
     return { ...plan, target };
   };
