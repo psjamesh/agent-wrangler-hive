@@ -45,15 +45,31 @@ test('recorded wait coexists with pending and active review while retaining revi
   assert.deepEqual(kinds(f.render()), ['in-progress', 'recorded-wait']);
 });
 
-test('prerequisite cross and recorded-wait hourglass explain different waits', () => {
+test('prerequisite cross carries the waiting note without an hourglass', () => {
   const f = fixture();
   f.hive.beads.prereq = { id: 'prereq', title: 'Approve interface', status: 'open' };
   f.hive.edges.push({ prerequisite: 'prereq', dependent: 'a', blocking: true });
   const tile = f.render();
-  assert.deepEqual(kinds(tile), ['waiting', 'recorded-wait']);
-  reasonOnce(tile);
+  assert.deepEqual(kinds(tile), ['waiting']);
+  for (const text of [tile.title, tile.ariaLabel, tile.marks[0].title]) assert.match(text, /Waiting for: External compatibility report/);
   for (const text of [tile.title, tile.ariaLabel, tile.mark.title]) assert.match(text, /Approve interface/);
   assert.match(tile.mark.title, /Waiting on a prerequisite/);
+});
+
+test('blocked status puts the waiting note in the cross tooltip and aria-label', () => {
+  const f = fixture({ status: 'blocked' });
+  const tile = f.render();
+  assert.deepEqual(kinds(tile), ['waiting']);
+  assert.match(tile.marks[0].title, /Blocked.*Waiting for: External compatibility report/);
+  assert.match(tile.ariaLabel, /Waiting for: External compatibility report/);
+});
+
+test('waiting note alone keeps its hourglass and tooltip', () => {
+  const f = fixture({ status: 'open', ownerSessionId: null });
+  const tile = f.render();
+  assert.deepEqual(kinds(tile), ['recorded-wait']);
+  assert.equal(tile.marks[0].title, 'Waiting for: External compatibility report');
+  reasonOnce(tile);
 });
 
 test('closed and higher-priority work retain their mark alongside a stale recorded wait', () => {
