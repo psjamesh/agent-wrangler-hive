@@ -73,6 +73,18 @@ For isolated evaluation, run a separate Agent Wrangler instance with a separate 
 
 Enabled hives start ready-marked work automatically, bounded by the global work limit. The queen marks each bounded deliverable with `hive_set_pickup` and an explicit worker profile; the human can also use bead details. Each mark allows one attempt, and failed or uncertain starts require reconciliation and deliberate rearming. See [automatic pickup](docs/automatic-pickup.md) for eligibility, rate guards and recovery.
 
+## Tests
+
+`npm test` runs all automated test suites in `test/`, `public/` and `server/`. Standalone browser scripts in `test/` run separately. Test data uses temporary directories and honours `TMPDIR`; to keep it inside the checkout, run:
+
+```sh
+mkdir -p .scratch
+echo '{}' > .scratch/package.json
+TMPDIR="$PWD/.scratch" npm test
+```
+
+Use the explicit file globs in `npm test`. A bare `node --test` can discover tests in local scratch directories.
+
 ## Licence
 
 Hive is licensed under [Apache-2.0](LICENSE). See the [host contract](docs/host-contract.md) for integration details. Third-party icon notices follow.
