@@ -70,7 +70,7 @@ test('pasting from outside Hive reaches the host through its exact registered vi
   bridge.dispose();
 });
 
-test('message reveal waits for the visible panel and scrolls the exact target into its centre', () => {
+test('message reveal waits for the visible panel and aligns the exact target at its top', () => {
   const calls = [];
   const item = { dataset: { id: 'msg_target' }, getBoundingClientRect: () => ({ width: 300 }), scrollIntoView: options => calls.push(options) };
   const root = { clientWidth: 0, querySelectorAll: () => [item] };
@@ -78,8 +78,25 @@ test('message reveal waits for the visible panel and scrolls the exact target in
   root.clientWidth = 800;
   assert.equal(revealMessage(root, 'msg_missing'), false);
   assert.equal(revealMessage(root, 'msg_target'), true);
-  assert.deepEqual(calls, [{ block: 'center', behavior: 'instant' }]);
+  assert.deepEqual(calls, [{ block: 'start', behavior: 'instant' }]);
 });
+
+for (const height of [200, 1200]) {
+  test(`message reveal keeps the top of a ${height}px request visible in a 600px viewport`, () => {
+    const viewportHeight = 600, offsetTop = 900;
+    let scrollTop = 0;
+    const item = {
+      dataset: { id: 'msg_request' },
+      getBoundingClientRect: () => ({ width: 300, height, top: offsetTop - scrollTop }),
+      scrollIntoView({ block }) {
+        scrollTop = offsetTop - (block === 'center' ? (viewportHeight - height) / 2 : block === 'end' ? viewportHeight - height : 0);
+      },
+    };
+    const root = { clientWidth: 800, querySelectorAll: () => [item] };
+    assert.equal(revealMessage(root, 'msg_request'), true);
+    assert.equal(item.getBoundingClientRect().top, 0);
+  });
+}
 
 test('a pending resolution cannot restore its hash over a later outside navigation', () => {
   const win = browser(hiveLink('cell_one', 'thr_two'));

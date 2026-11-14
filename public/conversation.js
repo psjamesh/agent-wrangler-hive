@@ -164,7 +164,7 @@ function messageItem({ m, cell, beads, graph, api, ui, ctx, target, replyKey }) 
         ui.selectConversationMessage?.(cell.id, m.threadId, null);
       }
     },
-    class: `hive-message hive-message-${m.author}${ui.conversationMessage?.(cell.id, m.threadId) === m.id ? ' is-conversation-selected' : ''}${ui.linkedMessage?.(cell.id, m.threadId)?.messageId === m.id ? ' is-link-target' : ''}`,
+    class: `hive-message hive-message-${m.author}${waitsFor(x => ui.ackOf(cell.id, x))(m) ? ' is-unread' : ''}${ui.conversationMessage?.(cell.id, m.threadId) === m.id ? ' is-conversation-selected' : ''}${ui.linkedMessage?.(cell.id, m.threadId)?.messageId === m.id ? ' is-link-target' : ''}`,
     dataset: { id: m.id },
   },
     h('div', { class: 'hive-message-head' },
@@ -604,7 +604,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
     }
     rows.push({
       key: `message:${cell.id}:${group[0].id}`, cellId: cell.id, threadId: m.threadId,
-      title: t?.title || 'Topic no longer kept', at: group[0].at, count: n, id: m.id,
+      title: t?.title || 'Topic no longer kept', at: group[0].at, count: n, unreadCount: kind === 'human' ? n : 0, id: m.id,
       author: authorName(graph, cell, m), preview: m.text.replace(/\s+/g, ' ').slice(0, 200),
       texts: group.map(x => x.text), sessionLinks: group.map(x => x.sessionLink).filter(Boolean),
       hive: messageContextLabel(m, cell, beads, members), link: hiveLink(cell.id, m.threadId, group[0].id),

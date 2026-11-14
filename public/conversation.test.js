@@ -246,6 +246,18 @@ function topicFixture(t, waiting, saved = { 'read:cell_test': { baseline: 0, thr
   return f;
 }
 
+test('unread queen messages lose their tint after acknowledgement and regain it after undo', t => {
+  const f = topicFixture(t, ['m2']);
+  const unread = () => f.draw().list.querySelectorAll('.is-unread').map(el => el.dataset.id);
+  assert.deepEqual(unread(), ['m2']);
+  f.ui.noteAck(f.cell.id, 'm2', { required: true, state: READ, rev: 1 });
+  assert.deepEqual(unread(), []);
+  f.ui.noteAck(f.cell.id, 'm2', { required: true, state: null, rev: 2 });
+  assert.deepEqual(unread(), ['m2']);
+  f.cell.messages.push({ ...queen('worker', 50), ack: null });
+  assert.deepEqual(unread(), ['m2'], 'worker and human messages do not get unread tint');
+});
+
 test('a topic opens at its earliest message awaiting acknowledgement, held here or named by the server', () => {
   const ackOf = (m) => m.ack;
   const msgs = [queen('m1', 10, READ), { id: 'h1', author: 'human', at: 20, n: 20 }, queen('m2', 30), queen('m3', 40)];
@@ -1989,6 +2001,24 @@ function orderedTopicsFixture(t) {
 }
 
 const topicTitlesIn = list => list.querySelectorAll('.hive-topic-title').map(el => el.textContent);
+
+for (const view of ['topics', 'cell', 'global', 'cell-search', 'global-search']) test(`${view} tints unread topics and clears the tint when read`, async t => {
+  const { globalInbox } = await import('./global-inbox.js');
+  const f = orderedTopicsFixture(t);
+  if (view !== 'topics') f.ui.setInboxView(f.cell.id, 'human');
+  if (view.includes('search')) f.ui.setGlobalInboxQuery('unread', view.startsWith('cell') ? f.cell.id : undefined);
+  const list = () => view.startsWith('global') ? globalInbox({
+    hive: f.hive, ui: f.ui, graph: { sessions: [] }, api: {},
+  }, [f.cell]).querySelector('.hive-global-inbox-list') : f.draw().list;
+  const tinted = () => list().querySelectorAll('.is-unread').map(row => row.querySelector('.hive-topic-title').textContent);
+  assert.ok(tinted().includes('unread-old'));
+  assert.ok(!tinted().includes('read-old'));
+  const message = f.cell.messages.find(m => m.threadId === 'unread-old');
+  f.ui.noteAck(f.cell.id, message.id, { required: true, state: READ, rev: 1 });
+  assert.ok(!tinted().includes('unread-old'));
+  f.ui.noteAck(f.cell.id, message.id, { required: true, state: null, rev: 2 });
+  assert.ok(tinted().includes('unread-old'));
+});
 
 test('topic comparator groups needs, unread and read, oldest activity first with stable ties', async () => {
   const { compareTopics } = await import('./topic-order.js');

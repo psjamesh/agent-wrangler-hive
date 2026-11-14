@@ -8,6 +8,7 @@ import { HiveError, refuseSnapshot } from './ops.js';
 import { liveClaimant, sleepingReason } from './tracking.js';
 import { GROUP_KINDS, descendantIds } from './bead-model.js';
 import { humanWaitText } from './human-wait.js';
+import { workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
 
 export const WATCHDOG_DEFAULTS = Object.freeze({ workerMinutes: 30, idleMinutes: 30, reviewMinutes: 60, messageMinutes: 30, waitHours: 24, deferredDays: 7, untrackedMinutes: 30, waitGraceMinutes: 30, humanWaitMinutes: 10 });
 const DAY_MS = 86400000;
@@ -69,7 +70,7 @@ export function setWatchdogSettings(rt, { cellId, settings }) {
   return { cellId, settings: watchdogSettings(rt.metadata.cell(cellId)) };
 }
 
-function watchdogIndex(rt) {
+function watchdogIndex(rt, host = rt.host) {
   const doc = rt.metadata.read();
   const children = new Map(), reviews = new Map(), requesters = new Map(), asked = new Map();
   for (const bead of Object.values(rt.snapshots.graph.beads)) {
@@ -93,10 +94,10 @@ function watchdogIndex(rt) {
     const prerequisite = rt.snapshots.graph.beads[edge.prerequisite];
     if (edge.blocking && prerequisite && prerequisite.status !== 'closed') blockers.set(edge.dependent, true);
   }
-  return { children, reviews, requesters, blockers, asked };
+  return { children, reviews, requesters, blockers, asked, activity: workerActivityIndex(rt, host) };
 }
 
-export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchdogIndex(rt)) {
+export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchdogIndex(rt, host)) {
   if (!cell?.enabled || cell.snapshot) return [];
   const doc = rt.metadata.read();
   const beads = rt.snapshots.graph.beads;
@@ -166,7 +167,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       add('human_wait_unasked', bead.id, [updated, bead.status, humanWait], updated, `Bead waits on the human but no hive_request_input is open for it: ${humanWait}`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
     }
     if (!session) continue;
-    const activity = Math.max(stamp(session.lastActivity), stamp(session.createdAt), stamp(session.relaunchedAt), updated);
+    const activity = workerLastActivity(session, bead, index.activity);
     if (['exited', 'error', 'errored'].includes(session.status)) {
       add('stalled_worker', bead.id, [sid, session.status], activity || now, `Claimed worker ${session.status}.`, { bead_id: bead.id, session_id: sid });
       continue;
@@ -298,7 +299,8 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
   }
   async function pass() {
     if (!usable()) return;
-    const index = watchdogIndex(rt);
+    const index = watchdogIndex(rt, host);
+    saveWorkerActivity(rt, host, index.activity);
     syncWaitAnchors(rt);
     const changes = new Map(), groups = new Map();
     for (const cell of rt.metadata.cells()) {
@@ -323,7 +325,7 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
       const recipient = host.sessions?.get?.(queen);
       if (!recipient || recipient.archived || typeof host.deliver !== 'function') continue;
       const currentFlags = new Map();
-      const currentIndex = watchdogIndex(rt);
+      const currentIndex = watchdogIndex(rt, host);
       for (const { cellId } of candidates) if (!currentFlags.has(cellId)) {
         const cell = rt.metadata.cell(cellId);
         currentFlags.set(cellId, new Set(collectWatchdog(rt, host, cell, now(), currentIndex).map(flag => flag.id)));
