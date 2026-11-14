@@ -92,16 +92,13 @@ test('the global inbox defaults hidden and its toggle remembers both choices', (
   toggle(shown).fire('click');
   assert.equal(f.draw().bottom, null);
   assert.equal(createUi().globalInboxOpen(), false);
-  assert.equal(f.ui.dockOpen(), true);
 });
 
-test('the global inbox ignores the cell dock preference and invalid stored values', t => {
-  const f = fixture(t, { open: false, store: new Map([['dock', 'true'], ['globalInboxOpen', '"true"']]) });
+test('the global inbox ignores invalid stored values', t => {
+  const f = fixture(t, { open: false, store: new Map([['globalInboxOpen', '"true"']]) });
   assert.equal(f.draw().bottom, null);
-  f.ui.setDockOpen(false);
   f.ui.setGlobalInboxOpen(true);
   assert.ok(f.draw().bottom);
-  assert.equal(f.ui.dockOpen(), false);
 });
 
 test('unavailable browser storage falls back to a hidden inbox without throwing', t => {
@@ -202,4 +199,14 @@ test('cell Inbox search stays in the cell and zero filter badges are absent', t 
   assert.deepEqual(panel.querySelector('.hive-inbox-filters').querySelectorAll('.hive-inbox-count').map(e => e.textContent), ['1']);
   f.ui.setGlobalInboxQuery('does not match', 'live');
   assert.equal(f.draw().bottom.querySelectorAll('.hive-inbox-item').length, 0);
+});
+
+test('cell dock stays visible without a panels toggle despite a saved closed preference', t => {
+  const f = fixture(t, { store: new Map([['dock', 'false']]) });
+  f.ui.openCell('live');
+  const out = f.draw();
+  assert.ok(out.bottom?.classList.contains('hive-dock'));
+  assert.equal(out.view.panels, true);
+  assert.equal(out.top.querySelector('[data-focus-key="panels:live"]'), null);
+  assert.doesNotMatch(out.top.textContent, /Show panels|Hide panels/);
 });

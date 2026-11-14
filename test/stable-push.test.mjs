@@ -158,7 +158,7 @@ test('removing the root cleans read listeners from the old conversation before h
     renderConversation: () => ({ list: h(), scrollKey: 'messages:cell', onReadInteraction() {} }),
     syncChildren: el => el, beadDetails: h, cellHeader: h, infoDrawer: () => null, workstreamDrawer: () => null, retireDrawer: () => null, isRetired: () => false, paneTabs: h,
   });
-  const ui = { inspecting: () => null, dockOpen: () => true };
+  const ui = { inspecting: () => null };
   const cell = { id: 'cell', rootBeadId: 'root', enabled: true };
   const hive = { beads: { root: { id: 'root' } } };
   const ctx = { ui, hive };

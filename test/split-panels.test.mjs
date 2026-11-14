@@ -14,8 +14,7 @@ test('all cell sizes share right-hand tabs with only the selected pane visible',
   assert.doesNotMatch(css, /data-layout="wide"|data-layout="narrow-short"/);
 });
 
-test('hidden panels and inspector keep their own grid areas', () => {
-  assert.match(css, /data-panels="closed"/);
+test('inspector keeps its own grid areas', () => {
   assert.match(css, /"head head head" "bar divider tabs" "slot divider rail"/);
 });
 
