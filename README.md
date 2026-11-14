@@ -75,17 +75,18 @@ Enabled hives start ready-marked work automatically, bounded by the global work 
 
 ## Tests
 
-`npm test` runs all automated test suites in `test/`, `public/` and `server/`. Standalone browser scripts in `test/` run separately. Test data uses temporary directories and honours `TMPDIR`; to keep it inside the checkout, run:
+`npm test` runs the fast automated suites in `test/`, `public/` and `server/`. `npm run test:native` runs the native release suites in `test/native/`; run it for changes touching the Beads, `bd` or Dolt integration, or the release and install path. Standalone browser scripts in `test/` run separately. Test data uses temporary directories and honours `TMPDIR`; to keep it inside the checkout, run:
 
 ```sh
 mkdir -p .scratch
 echo '{}' > .scratch/package.json
 TMPDIR="$PWD/.scratch" npm test
+TMPDIR="$PWD/.scratch" npm run test:native
 ```
 
 Use the explicit file globs in `npm test`. A bare `node --test` can discover tests in local scratch directories.
 
-The empty `.scratch/package.json` keeps Node's module detection inside scratch fixtures. Native release tests limit Git discovery to their temporary directory so a checkout-local `TMPDIR` does not inherit the source repository. They require compatible `bd` and `dolt` executables; set `HIVE_TEST_BD` and `HIVE_TEST_DOLT` if these are not installed under `/opt/homebrew/bin`.
+The empty `.scratch/package.json` keeps Node's module detection inside scratch fixtures. Native release tests limit Git discovery to their temporary directory so a checkout-local `TMPDIR` does not inherit the source repository. They require compatible `bd` and `dolt` executables; set `HIVE_TEST_BD` and `HIVE_TEST_DOLT` if these are not installed under `/opt/homebrew/bin`. Missing executables produce visible skips. The native suite can take about 13 minutes; CI runs the fast suite without installing the native toolchain.
 
 ## Licence
 

@@ -1,22 +1,32 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import test from 'node:test';
+import nodeTest from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile as nodeExecFile, execFileSync, spawnSync } from 'node:child_process';
-import { buildContext } from '../server/tools.js';
-import { createBeadsAdapter } from '../server/beads.js';
-import { MetadataStore } from '../server/metadata-store.js';
-import { createSnapshotCache } from '../server/snapshots.js';
-import { releaseBead, humanRelease, claimBead, settleOne, needsSettling, createBeads, updateBead, reconcileForAgent, deleteBeads } from '../server/ops.js';
+import { buildContext } from '../../server/tools.js';
+import { createBeadsAdapter } from '../../server/beads.js';
+import { MetadataStore } from '../../server/metadata-store.js';
+import { createSnapshotCache } from '../../server/snapshots.js';
+import { releaseBead, humanRelease, claimBead, settleOne, needsSettling, createBeads, updateBead, reconcileForAgent, deleteBeads } from '../../server/ops.js';
 
 const executable = process.env.HIVE_TEST_BD || '/opt/homebrew/bin/bd';
+const doltExecutable = process.env.HIVE_TEST_DOLT || '/opt/homebrew/bin/dolt';
+const missingTools = [executable, doltExecutable].filter(file => {
+  try { fs.accessSync(file, fs.constants.X_OK); return false; } catch { return true; }
+});
+const test = (name, fn) => nodeTest(name, {
+  skip: missingTools.length ? `Native release tests need executable bd and dolt; unavailable: ${missingTools.join(', ')}. Set HIVE_TEST_BD and HIVE_TEST_DOLT.` : false,
+}, fn);
 const sessionId = '00000000-0000-4000-8000-000000000001';
 const who = `aw:${sessionId}`;
 
 async function fixture(t, status = 'in_progress') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hive-release-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let rt;
+  t.after(async () => {
+    try { await rt?.snapshots.refresh(); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
   const control = { before: null, after: null, calls: [] };
   let nativeOptions;
   const execFile = (exe, args, options, callback) => {
@@ -41,7 +51,7 @@ async function fixture(t, status = 'in_progress') {
   const metadata = new MetadataStore({ file: path.join(dir, 'metadata.json') });
   const cell = { id: 'cell_test', rootBeadId: ids.root, enabled: true };
   metadata.mutate((d) => { d.cells[cell.id] = cell; });
-  const rt = { beads, metadata, paths: { root: dir }, pendingParticipants: new Map(), snapshots: createSnapshotCache({ beads }), log() {} };
+  rt = { beads, metadata, paths: { root: dir }, pendingParticipants: new Map(), snapshots: createSnapshotCache({ beads }), log() {} };
   await rt.snapshots.refresh();
   const actor = { sessionId, cell, role: 'worker', cells: [{ cell, role: 'worker' }] };
   const host = { tasks: { get: () => ({}), forSession: () => ({ taskId: 'task_test' }) }, sessions: { forTask: () => [], get: () => null } };
@@ -161,7 +171,7 @@ test('a new native holder between unclaim and restore is preserved', async (t) =
 test('native unclaim clears the lease and started_at and records its event', async (t) => {
   const f = await fixture(t);
   f.native(['heartbeat', f.id, '--actor', who, '--json']);
-  const leases = () => JSON.parse(execFileSync(process.env.HIVE_TEST_DOLT || '/opt/homebrew/bin/dolt', ['--data-dir', path.join(f.dir, 'workspace', '.beads', 'embeddeddolt'), 'sql', '-q', `SELECT COUNT(*) AS n FROM hive.leases WHERE issue_id = '${f.id}'`, '-r', 'json'], { encoding: 'utf8', cwd: f.dir, env: { ...process.env, HOME: path.join(f.dir, 'home') } })).rows[0].n;
+  const leases = () => JSON.parse(execFileSync(doltExecutable, ['--data-dir', path.join(f.dir, 'workspace', '.beads', 'embeddeddolt'), 'sql', '-q', `SELECT COUNT(*) AS n FROM hive.leases WHERE issue_id = '${f.id}'`, '-r', 'json'], { encoding: 'utf8', cwd: f.dir, env: { ...process.env, HOME: path.join(f.dir, 'home') } })).rows[0].n;
   assert.equal(leases(), 1);
   await releaseBead(f.rt, f.actor, { bead_id: f.id, status: 'open' });
   await f.rt.snapshots.refresh();
@@ -184,7 +194,7 @@ test('native unclaim clears the lease and started_at and records its event', asy
 
 test('process crashes at every journal and native boundary remain reconcilable after restart', async (t) => {
   const f = await fixture(t, 'blocked');
-  const moduleUrls = Object.fromEntries(['beads', 'metadata-store', 'snapshots', 'ops'].map((name) => [name, new URL(`../server/${name}.js`, import.meta.url).href]));
+  const moduleUrls = Object.fromEntries(['beads', 'metadata-store', 'snapshots', 'ops'].map((name) => [name, new URL(`../../server/${name}.js`, import.meta.url).href]));
   const boundaries = ['journal', ...['prepare', 'unclaim', 'restore'].flatMap((step) => [`${step}:started`, `${step}:native`, `${step}:done`])];
   for (const boundary of boundaries) {
     await t.test(boundary, async () => {
@@ -390,7 +400,7 @@ test('review control: blocked and deferred releases retain native cleanup and un
     await f.rt.beads.update(f.id, { status: 'in_progress' }, who);
     f.native(['heartbeat', f.id, '--actor', who, '--json']);
     await f.rt.beads.update(f.id, { status }, who);
-    const leases = () => JSON.parse(execFileSync(process.env.HIVE_TEST_DOLT || '/opt/homebrew/bin/dolt', ['--data-dir', path.join(f.dir, 'workspace', '.beads', 'embeddeddolt'), 'sql', '-q', `SELECT COUNT(*) AS n FROM hive.leases WHERE issue_id = '${f.id}'`, '-r', 'json'], { encoding: 'utf8', cwd: f.dir, env: { ...process.env, HOME: path.join(f.dir, 'home') } })).rows[0].n;
+    const leases = () => JSON.parse(execFileSync(doltExecutable, ['--data-dir', path.join(f.dir, 'workspace', '.beads', 'embeddeddolt'), 'sql', '-q', `SELECT COUNT(*) AS n FROM hive.leases WHERE issue_id = '${f.id}'`, '-r', 'json'], { encoding: 'utf8', cwd: f.dir, env: { ...process.env, HOME: path.join(f.dir, 'home') } })).rows[0].n;
     assert.equal(leases(), 0);
     assert.ok((await f.rt.beads.show(f.id)).started_at);
     await releaseBead(f.rt, f.actor, { bead_id: f.id });
@@ -460,7 +470,7 @@ test('R2 an ambiguous verification mismatch after native unclaim remains uncerta
 
 for (const status of ['open', 'in_progress', 'blocked', 'deferred']) {
   test(`archive cleanup preserves ${status} with the native release sequence`, async (t) => {
-    const { releaseArchivedClaims } = await import('../server/archived-claims.js');
+    const { releaseArchivedClaims } = await import('../../server/archived-claims.js');
     const { rt, host, id } = await fixture(t, status);
     host.sessions.get = (sid) => sid === sessionId ? { sessionId, archived: true } : null;
     rt.host = host;
@@ -473,7 +483,7 @@ for (const status of ['open', 'in_progress', 'blocked', 'deferred']) {
 }
 
 test('native archive cleanup does not write when the session is restored during its queued pre-read', async (t) => {
-  const { releaseArchivedClaims } = await import('../server/archived-claims.js');
+  const { releaseArchivedClaims } = await import('../../server/archived-claims.js');
   const { rt, host, id, control } = await fixture(t, 'blocked');
   let archived = true;
   let shows = 0;
