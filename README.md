@@ -85,6 +85,8 @@ TMPDIR="$PWD/.scratch" npm test
 
 Use the explicit file globs in `npm test`. A bare `node --test` can discover tests in local scratch directories.
 
+The empty `.scratch/package.json` keeps Node's module detection inside scratch fixtures. Native release tests limit Git discovery to their temporary directory so a checkout-local `TMPDIR` does not inherit the source repository. They require compatible `bd` and `dolt` executables; set `HIVE_TEST_BD` and `HIVE_TEST_DOLT` if these are not installed under `/opt/homebrew/bin`.
+
 ## Licence
 
 Hive is licensed under [Apache-2.0](LICENSE). See the [host contract](docs/host-contract.md) for integration details. Third-party icon notices follow.

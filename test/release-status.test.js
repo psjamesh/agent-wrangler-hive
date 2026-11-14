@@ -16,9 +16,11 @@ const who = `aw:${sessionId}`;
 
 async function fixture(t, status = 'in_progress') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hive-release-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const control = { before: null, after: null, calls: [] };
   let nativeOptions;
   const execFile = (exe, args, options, callback) => {
+    options = { ...options, env: { ...process.env, ...options.env, GIT_CEILING_DIRECTORIES: path.dirname(dir) } };
     nativeOptions = options;
     control.calls.push(args);
     try { control.before?.(args, options); } catch (err) {
@@ -39,11 +41,11 @@ async function fixture(t, status = 'in_progress') {
   const metadata = new MetadataStore({ file: path.join(dir, 'metadata.json') });
   const cell = { id: 'cell_test', rootBeadId: ids.root, enabled: true };
   metadata.mutate((d) => { d.cells[cell.id] = cell; });
-  const rt = { beads, metadata, pendingParticipants: new Map(), snapshots: createSnapshotCache({ beads }), log() {} };
-  t.after(async () => { await rt.snapshots.refresh(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const rt = { beads, metadata, paths: { root: dir }, pendingParticipants: new Map(), snapshots: createSnapshotCache({ beads }), log() {} };
   await rt.snapshots.refresh();
   const actor = { sessionId, cell, role: 'worker', cells: [{ cell, role: 'worker' }] };
   const host = { tasks: { get: () => ({}), forSession: () => ({ taskId: 'task_test' }) }, sessions: { forTask: () => [], get: () => null } };
+  rt.host = host;
   metadata.mutate((d) => { d.bindings[cell.id] = [{ sessionId, active: true }]; });
   return { rt, actor, host, id: ids.work, dir, control, native: (args) => JSON.parse(execFileSync(executable, args, { ...nativeOptions, encoding: 'utf8' })) };
 }
