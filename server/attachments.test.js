@@ -19,7 +19,7 @@ async function fixture(t) {
   metadata.mutate((d) => { d.cells[cell.id] = cell; });
   const rt = { host: { tasks: { forSession: () => null } }, pendingParticipants: new Map(), paths: { root }, metadata, snapshots: { graph: { beads: {} } }, changed() {}, log() {} };
   const actor = { cell, role: 'queen', sessionId: '11111111-1111-4111-8111-111111111111' };
-  const inbox = (await attachmentsInbox(rt, cell.id));
+  const inbox = (await attachmentsInbox(rt, cell.id, actor.sessionId));
   const put = (name, bytes = PNG) => fs.writeFileSync(path.join(inbox, name), bytes);
   const send = async (attachments, rest = {}) => (await publish(rt, actor, { text: 'Look at this', attachments, ...rest }));
   const list = () => metadata.read().conversation[cell.id] || [];
@@ -78,11 +78,11 @@ test('a symlinked inbox cannot expose files outside Hive storage', async (t) => 
 test('a failed attachment or metadata write leaves no message or partial kept files', async (t) => {
   const f = (await fixture(t)); f.put('good.png'); f.put('bad.png', JPG);
   await assert.rejects(async () => await f.send([{ file: 'good.png' }, { file: 'bad.png' }]), /bad.png/);
-  assert.deepEqual(fs.readdirSync(path.dirname(f.inbox)), ['inbox']);
+  assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(f.inbox))), ['inbox']);
   const mutate = f.rt.metadata.mutate.bind(f.rt.metadata);
   f.rt.metadata.mutate = (fn) => mutate((d) => { fn(d); throw new Error('disk failed'); });
   await assert.rejects(async () => await f.send([{ file: 'good.png' }]), /disk failed/);
-  assert.deepEqual(fs.readdirSync(path.dirname(f.inbox)), ['inbox']);
+  assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(f.inbox))), ['inbox']);
   assert.equal(f.list().length, 0);
 });
 
@@ -143,7 +143,7 @@ test('a failed prune commit retains the original image and message', async (t) =
   await assert.rejects(async () => await f.send([{ file: 'a.png' }]), /disk failed/);
   assert.equal(fs.existsSync(messageDir(f.rt, f.cell.id, first.message_id)), true);
   assert.equal(f.list().some((m) => m.id === first.message_id), true);
-  assert.equal(fs.readdirSync(path.dirname(f.inbox)).length, 2);
+  assert.equal(fs.readdirSync(path.dirname(path.dirname(f.inbox))).length, 2);
 });
 
 test('outstanding message images are protected from pruning', async (t) => {
@@ -225,7 +225,7 @@ test('R6: a cell disabled during adoption is rechecked and the copied files are 
   f.rt.attachmentHelperStarted = action => { if (action === 'adopt') f.rt.metadata.mutate(d => { d.cells[f.cell.id].enabled = false; }); };
   await assert.rejects(f.send([{ file: 'a.png' }]), /turned off/);
   assert.equal(f.list().length, 0);
-  assert.deepEqual(fs.readdirSync(path.dirname(f.inbox)), ['inbox']);
+  assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(f.inbox))), ['inbox']);
 });
 
 test('R6: concurrent sends serialize, and a rejected adoption leaves the following send intact', async t => {
@@ -234,7 +234,7 @@ test('R6: concurrent sends serialize, and a rejected adoption leaves the followi
   assert.deepEqual(results.map(x => x.status), ['rejected', 'fulfilled']);
   assert.equal(f.list().length, 1);
   assert.deepEqual((await readAttachment(f.rt, f.cell.id, results[1].value.message_id, 'a.png')).bytes, PNG);
-  assert.deepEqual(fs.readdirSync(path.dirname(f.inbox)).sort(), ['inbox', results[1].value.message_id].sort());
+  assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(f.inbox))).sort(), ['inbox', results[1].value.message_id].sort());
 });
 
 const WORKER = '22222222-2222-4222-8222-222222222222';
@@ -268,7 +268,7 @@ test('publish rechecks current role after adoption and rolls back queen-only fil
   };
   await assert.rejects(f.send([{ file: 'a.png' }]), /queen/);
   assert.equal(f.list().length, 0);
-  assert.deepEqual(fs.readdirSync(path.dirname(f.inbox)), ['inbox']);
+  assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(f.inbox))), ['inbox']);
 });
 
 test('context refreshes authority and conversation after inbox work', async t => {

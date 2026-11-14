@@ -587,7 +587,7 @@ async function publishMessage(rt, host, actor, { text: body, bead_id, reply_to, 
   if (listed.length && !queen) throw new HiveError('Only the queen answers the human\'s messages. Tell the queen what you found so it can answer.');
   const id = newId('msg');
   if (attachments?.length) requireQueen(actor, 'attach images');
-  const kept = await adoptAttachments(rt, cell.id, id, attachments);
+  const kept = await adoptAttachments(rt, cell.id, id, attachments, { sessionId: actor.sessionId });
   const removed = [];
   const at = Date.now();
   let acknowledged = false;
@@ -1162,7 +1162,7 @@ export function markReceived(rt, { cellId, messageId }) {
 }
 
 export async function cellContextConversation(rt, host, actor, { recent = 20, bead_id } = {}, render = out => out) {
-  const inbox = await attachmentsInbox(rt, actor.cell.id);
+  const inbox = await attachmentsInbox(rt, actor.cell.id, actor.sessionId);
   actor = resolveCaller(rt, host, actor.sessionId, actor.cell.id);
   const doc = audienceConversationDoc(rt.metadata.read(), actor.cell.id, actor);
   const visibleThreads = threadRecords(doc, actor.cell.id);
