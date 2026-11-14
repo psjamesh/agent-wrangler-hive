@@ -1,6 +1,6 @@
 {
   "name": "agent-wrangler-hive",
-  "version": "0.1.114",
+  "version": "0.1.117",
   "private": true,
   "license": "Apache-2.0",
   "description": "Agent Wrangler extension: tasks as hexagonal cells, each with a queen-maintained Beads work graph and a deliberate conversation.",
@@ -32,7 +32,7 @@
       "links:read"
     ],
     "engines": {
-      "wranglerApi": "^1.79.0"
+      "wranglerApi": "^1.80.0"
     }
   }
 }
