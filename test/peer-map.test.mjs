@@ -60,7 +60,7 @@ function mapFixture({contact=false,enclosed=false,hiveHidingStart=true,related=n
   let tileNodes = [];
   const element = { classList: { add() {} }, addEventListener() {}, querySelectorAll: () => tileNodes };
   const sandbox = {
-    mapInputs, hiveViews: new WeakMap(), automaticPlacements: new WeakMap(), cellPanels: () => ({ header: [], related: null }),
+    mapInputs, hiveViews: new WeakMap(), automaticPlacements: new WeakMap(), globalSearchBox: () => null, cellPanels: () => ({ header: [], related: null }),
     syncChildren: (el, children) => {
       for (const child of el.children || []) if (child && !children.includes(child)) child.parentNode = null;
       el.children = children;

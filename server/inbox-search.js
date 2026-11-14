@@ -14,8 +14,8 @@ function indexOf(rt, cellId) {
   if (held.cells.has(cellId)) return held.cells.get(cellId);
   const doc = humanConversationDoc(store.read(), cellId);
   const records = threadRecords(doc, cellId);
-  const built = { human: [], queen: [] };
-  for (const [kind, waiting] of [['human', unreadForHuman], ['queen', awaitingQueen]]) {
+  const built = { human: [], queen: [], topics: [] };
+  for (const [kind, waiting] of [['human', unreadForHuman], ['queen', awaitingQueen], ['topics', () => true]]) {
     const groups = new Map();
     for (const m of doc.conversation[cellId] || []) {
       if (!waiting(m)) continue;
@@ -39,7 +39,7 @@ function indexOf(rt, cellId) {
 
 export function searchInbox(rt, { cellIds, query }) {
   const text = typeof query === 'string' ? query.slice(0, 200) : '';
-  const out = { human: [], queen: [] };
+  const out = { human: [], queen: [], topics: [] };
   let truncated = false;
   if (!searchTerms(text).length || rt.metadata.error) return { query: text, ...out, truncated };
   const ids = Array.isArray(cellIds) ? [...new Set(cellIds.slice(0, 500).filter((id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(id)))] : [];
@@ -48,13 +48,13 @@ export function searchInbox(rt, { cellIds, query }) {
     if (!cell) continue;
     try { refuseSnapshot(cell); } catch { continue; }
     const built = indexOf(rt, cellId);
-    for (const kind of ['human', 'queen']) {
+    for (const kind of ['human', 'queen', 'topics']) {
       for (const { group, title, lastAt, texts, beadIds } of built[kind]) {
         if (!topicMatches({ title, texts, beadIds }, text)) continue;
         if (out[kind].length >= INBOX_SEARCH_MAX) { truncated = true; break; }
         const last = group.at(-1);
         out[kind].push({
-          cellId, threadId: group[0].threadId || null, firstId: group[0].id, title, lastAt, at: group[0].at, count: group.length,
+          cellId, beadIds, threadId: group[0].threadId || null, firstId: group[0].id, title, lastAt, at: group[0].at, count: group.length,
           sessionLinks: group.map(m => m.sessionLink).filter(Boolean),
           last: { author: last.author, sessionId: last.sessionId || null, role: last.role || null },
           snippet: snippetFor(texts, text),

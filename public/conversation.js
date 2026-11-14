@@ -1,6 +1,6 @@
-import { inboxRows, needsRows, mergeRows, inboxRow, inboxFilters, inboxTotals, searchedInbox, inboxSearchBox, orderInboxTopics } from './global-inbox.js';
+import { inboxRows, needsRows, mergeRows, inboxRow, inboxFilters, inboxTotals, searchedInbox, searchStatus, marked, orderInboxTopics } from './global-inbox.js';
 import { compareTopics } from './topic-order.js';
-import { searchTerms } from './inbox-search.js';
+import { searchTerms, topicMatches } from './inbox-search.js';
 import { beadReferences } from './bead-references.js';
 import { requestCard, needsHuman } from './requests.js';
 import { conversationEpoch } from './view-state.js';
@@ -612,7 +612,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
   }
   const context = { ...ctx, hive, graph, ui };
   const merged = kind === 'human' ? mergeRows(rows, needsRows(context, [cell])) : rows;
-  const query = ui.globalInboxQuery?.(cell.id) || '';
+  const query = ui.searchQuery?.(cell.id) || '';
   const searching = searchTerms(query).length > 0;
   const found = searching ? searchedInbox(context, [cell], query, ui.askGlobalInboxSearch?.([cell.id], `${hive.revision}:${hive.metaVersion}`, hive.metaEpoch, cell.id)) : null;
   const shown = orderInboxTopics(context, [cell], searching ? found.lists[kind] : merged);
@@ -644,12 +644,21 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
       }),
     }, 'Load more')));
   }
-  return { list, search: inboxSearchBox(ui, query, shown, found, cell.id), scrollKey: `inbox:${cell.id}:${kind}` };
+  return { list, search: searchStatus(query, shown, found), scrollKey: `inbox:${cell.id}:${kind}` };
 }
 
 function listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selected, epoch }) {
   const priorities = topicPriorities(cell, hive, ui);
-  const shown = topics.filter((t) => all || inScope(t, scope)).sort((a, b) => compareTopics(priorities.get(a.id), priorities.get(b.id)));
+  const query = ui.searchQuery?.() || '';
+  const found = searchTerms(query).length ? searchedInbox({ ...ctx, hive, graph, ui }, [cell], query, ui.askGlobalInboxSearch?.([cell.id], `${hive.revision}:${hive.metaVersion}`, hive.metaEpoch, cell.id)) : null;
+  const matching = new Map((found?.lists.human || []).map(r => [r.threadId, r]));
+  const candidates = new Map(topics.map(t => [t.id, t]));
+  for (const [id, row] of matching) if (!candidates.has(id)) candidates.set(id, { id, title: row.title, lastAt: row.at, beads: row.beadIds || [] });
+  const priority = t => priorities.get(t.id) || { ...t, unreadCount: 0, needsCount: 0 };
+  const shown = [...candidates.values()]
+    .filter(t => matching.has(t.id) || topicMatches({ title: t.title, texts: [t.preview?.text], beadIds: [t.beadId, ...(t.beads || [])] }, query))
+    .filter(t => all || inScope(t, scope))
+    .sort((a, b) => compareTopics(priority(a), priority(b)));
   const outside = all ? [] : topics.filter(t => !inScope(t, scope)).map(t => priorities.get(t.id));
   const elsewhere = outside.reduce((n, t) => n + t.unreadCount, 0);
   const waitingElsewhere = outside.filter(t => t.needsCount).length;
@@ -662,12 +671,13 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selec
     cell.inbox ? h('div', { class: 'hive-inbox-totals' }, inboxTotals({ needs: needsRows({ hive, graph, ui }, [cell]).length, human: inboxMessageCount(cell, hive, ui, 'human') })) : null,
     inbox ? h('div', { class: 'hive-inbox-toolbar' }, inboxHead(cell, hive, graph, ui)) : inboxHead(cell, hive, graph, ui),
     !inbox ? h('span', { class: 'hive-muted' }, all || !scope ? 'All topics in this hive' : [`${what} about `, h('strong', {}, scopeName), ' (and its items)']) : null,
+    !inbox && found ? searchStatus(query, shown, found) : null,
     scope && !inbox ? toggle : null,
     hint && !inbox ? h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setAllTopics(cell.id, true) }, `${hint} in other topics`) : null);
   const list = h('ol', { class: 'hive-topics', 'aria-label': 'Topics' });
   for (const t of shown) {
-    const needs = priorities.get(t.id).needsCount;
-    const unread = priorities.get(t.id).unreadCount;
+    const needs = priorities.get(t.id)?.needsCount || 0;
+    const unread = priorities.get(t.id)?.unreadCount || 0;
     const count = unread || needs;
     const waiting = `${needs} request${needs === 1 ? '' : 's'} waiting for you`;
     const label = needs ? `${unread ? `${unread} unread; ` : ''}${waiting}` : `${unread} unread`;
@@ -680,7 +690,7 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selec
         onclick: () => openTopic(ui, ctx, cell, t, cell.threads.some((x) => x.id === t.id), epoch),
       },
       h('span', { class: 'hive-topic-line' },
-        h('strong', { class: 'hive-topic-title' }, t.title),
+        h('strong', { class: 'hive-topic-title' }, marked(t.title, query)),
         count ? h('span', { class: `hive-unread${needs ? ' is-human-wait' : ''}`, 'aria-label': label }, String(count)) : null,
         h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(t.lastAt))),
       h('span', { class: 'hive-topic-line' },
@@ -796,6 +806,13 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
   const seen = new Map();
   for (const m of [...(page?.messages || []), ...window]) seen.set(m.id, m);
   const msgs = [...seen.values()].sort(inTopicOrder);
+  const query = ui.searchQuery?.() || '';
+  const searching = searchTerms(query).length > 0;
+  const beadIds = [t.beadId, ...(t.beads || [])];
+  const messageBeads = m => [m.beadId, m.context?.beadId].filter(Boolean);
+  let visible = msgs.filter(m => topicMatches({ title: t.title, texts: [m.text], beadIds: [...beadIds, ...messageBeads(m)] }, query));
+  if (!visible.length && topicMatches({ title: t.title, texts: msgs.map(m => m.text), beadIds: [...beadIds, ...msgs.flatMap(messageBeads)] }, query)) visible = msgs;
+  const visibleIds = new Set(visible.map(m => m.id));
   ui.rememberConversation(cell.id, [t], msgs);
   const byId = new Map(msgs.map((m) => [m.id, m]));
   const renaming = ui.form('renameTopic');
@@ -823,7 +840,7 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
       h('button', { type: 'button', class: 'hive-link-btn', disabled: ctx.busy('hive-thread-rename'), onclick: save }, 'Save'),
       h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setForm('renameTopic', null) }, 'Cancel'));
   } else {
-    titleEl = h('span', { class: 'hive-topic-name', title: t.title }, h('strong', {}, t.title));
+    titleEl = h('span', { class: 'hive-topic-name', title: t.title }, h('strong', {}, marked(t.title, query)));
   }
   const relations = ui.relationsFor(cell.id, t.id, epoch, hive.metaVersion) || (cell.topicRelations ? cell.topicRelations[t.id] || { references: [] } : t);
   const related = { ids: relatedBeads(hive, cell, relations, msgs, ui.conversationMessage?.(cell.id, t.id)), el: h('div', { class: 'hive-conversation-relations', 'aria-label': 'Related beads' }) };
@@ -886,9 +903,11 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
         onclick: () => loadHistory(ui, ctx, cell, t.id, from, epoch, BRIDGE),
       }, 'Load the messages in between')));
     }
+    if (!visibleIds.has(m.id)) continue;
     const target = m.replyTo ? byId.get(m.replyTo) : null;
     list.append(messageItem({ m, cell, beads, graph, api, ui, ctx, target, replyKey: key }));
   }
+  if (!loading && searching && !visible.length) list.append(h('li', { class: 'hive-muted' }, `No messages match “${ui.searchQuery().trim()}”.`));
   if (loading) list.append(h('li', { class: 'hive-muted' }, 'Loading…'));
   if (ui.startPending(key)) {
     const ackOf = (m) => ui.ackOf(cell.id, m);
@@ -937,7 +956,7 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
     const rev = ui.draftRev(key);
     const sentImages = images.snapshot();
     const ackRev = replyTarget ? ui.ackOf(cell.id, replyTarget)?.rev ?? null : null;
-    const shown = msgs.at(-1);
+    const shown = searching ? null : msgs.at(-1);
     const about = ui.selectedBeadId();
     ctx.send({ type: 'hive-send', images: images.frames(), cellId: cell.id, threadId: t.id, text: value, beadId: ui.attachFor(key, about) ? about : null, replyTo, ackRev, readThrough: shown?.id || null }, {
       onReply: (frame) => {

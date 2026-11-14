@@ -186,18 +186,18 @@ test('cell Inbox search stays in the cell and zero filter badges are absent', t 
   };
   f.ui.openCell('live');
   f.ui.setInboxView('live', 'human');
-  f.ui.setGlobalInboxQuery('SQLite', 'live');
+  f.ui.setSearchQuery('SQLite', 'live');
   const panel = f.draw().bottom;
   assert.equal(panel.querySelectorAll('.hive-inbox-item').length, 1);
   assert.match(panel.querySelector('.hive-inbox-item').textContent, /Database/);
-  assert.equal(panel.querySelector('.hive-inbox-search-input').value, 'SQLite');
+  assert.equal(f.draw().top.querySelector('.hive-inbox-search-input').value, 'SQLite');
   const head = panel.querySelector('.hive-inbox-head');
   const toolbar = head.querySelector('.hive-inbox-toolbar');
-  assert.ok(toolbar.children.indexOf(head.querySelector('.hive-inbox-search')) < toolbar.children.indexOf(head.querySelector('.hive-inbox-filters')));
+  assert.ok(toolbar.children.indexOf(head.querySelector('.hive-inbox-search-status')) < toolbar.children.indexOf(head.querySelector('.hive-inbox-filters')));
   assert.equal(panel.querySelector('.hive-inbox').querySelector('.hive-topic-context'), null);
   assert.equal(panel.querySelector('.hive-search-hit').textContent, 'SQLite');
   assert.deepEqual(panel.querySelector('.hive-inbox-filters').querySelectorAll('.hive-inbox-count').map(e => e.textContent), ['1']);
-  f.ui.setGlobalInboxQuery('does not match', 'live');
+  f.ui.setSearchQuery('does not match', 'live');
   assert.equal(f.draw().bottom.querySelectorAll('.hive-inbox-item').length, 0);
 });
 

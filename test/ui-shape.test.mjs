@@ -33,7 +33,7 @@ test('createUi exposes the same public methods', () => {
   'followMessages',
   'form',
   'globalInboxOpen',
-  'globalInboxQuery',
+  'searchQuery',
   'globalInboxView',
   'hideDoneForHive',
   'highlightCell',
@@ -84,7 +84,7 @@ test('createUi exposes the same public methods', () => {
   'setDragging',
   'setForm',
   'setGlobalInboxOpen',
-  'setGlobalInboxQuery',
+  'setSearchQuery',
   'setGlobalInboxView',
   'setHideDoneForHive',
   'setInboxView',
@@ -99,5 +99,5 @@ test('createUi exposes the same public methods', () => {
   'startToken',
   'syncConversation',
   'topicAboutFor',
-  ]);
+  ].sort());
 });
