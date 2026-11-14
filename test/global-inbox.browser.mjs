@@ -7,9 +7,8 @@ const darkTheme = '--bg:#15171b;--surface:#202329;--surface-2:#292d35;--fg:#ecee
 
 const page = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/public/styles.css"><style>*{transition:none!important;box-sizing:border-box}body{margin:0}:root{--bg:#f4f5f7;--surface-2:#f4f5f7;--surface:#ffffff;--fg:#202631;--fg-muted:#555f70;--border:#c9ced8;--hive-tile:#f2e3b3}</style></head><body><div class="hive-root" id="root" style="width:100vw;height:100vh"></div><script type="module">
 import client from '/public/client.js';
-const store = new Map();
 let view;
-client.register({ api: { send: () => {}, storage: { get: k => store.get(k), set: (k, v) => store.set(k, v), remove: k => store.delete(k) } }, register(kind, v) { view = v; } });
+client.register({ api: { send: () => {}, storage: { get: k => localStorage.getItem("hive:" + k), set: (k, v) => localStorage.setItem("hive:" + k, v), remove: k => localStorage.removeItem("hive:" + k) } }, register(kind, v) { view = v; } });
 const base = { launches: [], bindings: [], beadLayout: {}, arrangeAspect: null, workstreamColours: {}, workstreamShades: {}, archived: {}, restoreNotices: [], regionAttachments: {}, detachedWorkstreams: [], threads: [], messages: [], threadsTruncated: false, threadsAfter: null, inbox: { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } }, requestCounts: {} };
 const req = (id, title, body, at, extra = {}) => ({ id, audience: 'human', state: 'open', title, body, createdAt: at, threadId: 't_' + id, messageId: 'm_' + id, requesterSessionId: 's1', sessionLink: { sessionId: 'archived', label: 'Archived worker' }, ...extra });
 const cells = {
@@ -84,11 +83,49 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   await call('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` });
   await loaded;
   await viewport(1280, 800);
+  const theme = async dark => run(`document.documentElement.style.cssText = ${JSON.stringify(dark ? darkTheme : '')};`);
+  const visibility = () => run(`
+    await new Promise(r => setTimeout(r, 150));
+    return { panels: t.root.dataset.panels, inbox: Boolean(t.root.querySelector('.hive-global-inbox')), label: t.root.querySelector('[data-focus-key="global-inbox-toggle"]').textContent };
+  `);
+  const toggleInbox = () => run(`document.querySelector('[data-focus-key="global-inbox-toggle"]').click();`);
+  const reload = async () => {
+    const ready = new Promise(resolve => socket.addEventListener('message', function onLoad(event) {
+      if (JSON.parse(event.data).method !== 'Page.loadEventFired') return;
+      socket.removeEventListener('message', onLoad);
+      resolve();
+    }));
+    await call('Page.reload');
+    await ready;
+  };
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  await shot('all-hives-desktop-hidden-light');
+  await theme(true);
+  await shot('all-hives-desktop-hidden-dark');
+  await theme(false);
+  await viewport(390, 780);
+  await reload();
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  await shot('all-hives-phone-hidden-light');
+  await theme(true);
+  await shot('all-hives-phone-hidden-dark');
+  await theme(false);
+  await viewport(1280, 800);
+  await reload();
+  await toggleInbox();
+  assert.deepEqual(await visibility(), { panels: 'open', inbox: true, label: 'Hide inbox' });
+  await reload();
+  assert.deepEqual(await visibility(), { panels: 'open', inbox: true, label: 'Hide inbox' });
+  await toggleInbox();
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  await reload();
+  assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
+  await toggleInbox();
   const wide = await run(`
     await new Promise(r => setTimeout(r, 150));
     const root = document.getElementById('root');
     const box = s => { const e = root.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right }; };
-    return { view: root.dataset.view, panels: root.dataset.panels, layout: root.dataset.layout, panel: box('.hive-global-inbox'), map: box('.hive-overview'), divider: box('.hive-divider'), rows: root.querySelectorAll('.hive-global-inbox .hive-inbox-item').length, on: root.querySelector('.hive-inbox-filter.is-on')?.textContent, links: [...root.querySelectorAll('.hive-global-inbox a.hive-topic-btn')].map(a => a.getAttribute('href')), width: root.style.getPropertyValue('--hive-panel-width'), docOverflow: document.documentElement.scrollWidth > innerWidth };
+    return { view: root.dataset.view, panels: root.dataset.panels, layout: root.dataset.layout, panel: box('.hive-global-inbox'), map: box('.hive-overview .hive-stage'), divider: box('.hive-divider'), rows: root.querySelectorAll('.hive-global-inbox .hive-inbox-item').length, on: root.querySelector('.hive-inbox-filter.is-on')?.textContent, links: [...root.querySelectorAll('.hive-global-inbox a.hive-topic-btn')].map(a => a.getAttribute('href')), width: root.style.getPropertyValue('--hive-panel-width'), docOverflow: document.documentElement.scrollWidth > innerWidth };
   `);
   assert.equal(wide.view, 'overview');
   assert.equal(wide.panels, 'open');
@@ -96,6 +133,8 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.ok(wide.panel.x > wide.map.x + wide.map.w - 1, 'inbox sits to the right of the map');
   assert.ok(wide.panel.right <= 1280 + 1 && wide.panel.h > 400, 'inbox runs down the side');
   assert.ok(Math.abs(wide.panel.w - parseFloat(wide.width)) < 2, 'inbox uses the shared panel width');
+  assert.ok(Math.abs(wide.panel.h - wide.map.h) < 1, 'inbox and map heights match');
+  assert.ok(Math.abs(wide.panel.y - wide.map.y) < 1, 'inbox and map tops align');
   assert.ok(wide.divider.w >= 6);
   assert.equal(wide.rows, 4);
   assert.match(wide.on, /Inbox/);
@@ -110,7 +149,6 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.match(merged.totals, /3 needs you.*3 messages/);
   assert.deepEqual(merged.rows.map(r => r.needs || '0'), ['1', '1', '1', '0']);
   assert.deepEqual(merged.rows.map(r => r.count), [null, null, '2', null]);
-  const theme = async dark => run(`document.documentElement.style.cssText = ${JSON.stringify(dark ? darkTheme : '')};`);
   await shot('all-hives-desktop-light');
   await theme(true);
   await shot('all-hives-desktop-dark');
@@ -133,6 +171,48 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   `);
   assert.equal(reopened, 'open');
 
+  const attention = await run(`
+    t.graph.hive = { ...t.graph.hive, metaVersion: t.graph.hive.metaVersion + 1,
+      launches: Array.from({ length: 8 }, (_, i) => ({ id: 'failed-' + i, taskId: 't1', state: 'failed', error: 'Synthetic launch failure ' + i })) };
+    t.redraw();
+    await new Promise(r => setTimeout(r, 150));
+    const head = document.querySelector('.hive-overview-head');
+    head.scrollTop = head.scrollHeight;
+    const box = head.getBoundingClientRect();
+    const last = head.querySelector('.hive-attention-item:last-child button')?.getBoundingClientRect();
+    return { count: head.querySelectorAll('.hive-attention-item').length, scrolled: head.scrollTop, headHeight: box.height,
+      lastVisible: Boolean(last && last.top >= box.top && last.bottom <= box.bottom + 1),
+      mapHeight: document.querySelector('.hive-overview .hive-stage').getBoundingClientRect().height,
+      panelHeight: document.querySelector('.hive-global-inbox').getBoundingClientRect().height };
+  `);
+  assert.equal(attention.count, 8);
+  assert.ok(attention.scrolled > 0 && attention.lastVisible, 'last attention action can be scrolled into view');
+  assert.ok(attention.headHeight <= 800 * 0.4 + 1, 'attention header stays bounded');
+  assert.ok(attention.mapHeight >= 300, 'long attention list leaves a usable map');
+  assert.ok(Math.abs(attention.panelHeight - attention.mapHeight) < 1, 'inbox stays aligned beside the map with attention');
+  assert.equal(await run(`
+    t.graph.hive = { ...t.graph.hive, launches: [], metaVersion: t.graph.hive.metaVersion + 1 };
+    t.redraw();
+    await new Promise(r => setTimeout(r, 150));
+    return document.querySelectorAll('.hive-attention-item').length;
+  `), 0, 'synthetic failed launches are cleared before later checks');
+
+  const overflowing = await run(`
+    const list = document.querySelector('.hive-global-inbox-list');
+    const panel = document.querySelector('.hive-global-inbox');
+    const clones = Array.from({ length: 60 }, () => list.firstElementChild.cloneNode(true));
+    list.append(...clones);
+    list.scrollTop = list.scrollHeight;
+    const result = { mapHeight: document.querySelector('.hive-overview .hive-stage').getBoundingClientRect().height, panelHeight: panel.getBoundingClientRect().height, scrolled: list.scrollTop, overflow: getComputedStyle(list).overflowY };
+    clones.forEach(node => node.remove());
+    list.scrollTop = 0;
+    return result;
+  `);
+  assert.ok(Math.abs(overflowing.panelHeight - overflowing.mapHeight) < 1, 'long inbox cannot grow beyond the map');
+  assert.ok(overflowing.scrolled > 0, 'inbox contents scroll internally');
+  assert.equal(overflowing.overflow, 'auto');
+  assert.equal(await run(`return document.querySelectorAll('.hive-global-inbox-list .hive-inbox-item').length;`), wide.rows, 'overflow clones are removed before screenshots');
+
   const resized = await run(`
     const root = document.getElementById('root');
     const d = root.querySelector('.hive-divider');
@@ -148,7 +228,7 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
     await new Promise(r => setTimeout(r, 200));
     const root = document.getElementById('root');
     const r = s => { const e = root.querySelector(s); const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; };
-    return { layout: root.dataset.layout, panel: r('.hive-global-inbox'), map: r('.hive-overview'), divider: getComputedStyle(root.querySelector('.hive-divider')).display, docOverflow: document.documentElement.scrollWidth > innerWidth };
+    return { layout: root.dataset.layout, panel: r('.hive-global-inbox'), map: r('.hive-overview .hive-stage'), divider: getComputedStyle(root.querySelector('.hive-divider')).display, docOverflow: document.documentElement.scrollWidth > innerWidth };
   `);
   assert.equal(narrow.layout, 'small');
   assert.equal(narrow.divider, 'none');

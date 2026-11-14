@@ -686,7 +686,7 @@ export function renderHive(ctx) {
   const cells = showRetired ? allCells : allCells.filter((c) => !c.retired || c.occupiedCount > 0);
   const focusedId = ui.cellId();
   const cell = focusedId ? hive.cells[focusedId] : null;
-  if (focusedId || cells.length === 0 || !ui.dockOpen()) ui.cancelGlobalInboxSearch?.();
+  if (focusedId || cells.length === 0 || !ui.globalInboxOpen()) ui.cancelGlobalInboxSearch?.();
   if (focusedId && !cell && ui.pendingCell() === focusedId) {
     return {
       top: h('div', { class: 'hive-cellview' },
@@ -746,23 +746,24 @@ export function renderHive(ctx) {
   const sig = mapInputs(ctx, null);
   if (cached.sig !== sig) { disposeMap(cached.map); cached.map = overviewMap(ctx, cells); cached.sig = sig; }
   const top = syncChildren(cached.top, [
-    h('header', { class: 'hive-overhead' },
-      h('span', { class: 'hive-mark', 'aria-hidden': 'true' }),
-      h('h2', { class: 'hive-title' }, 'All hives'),
-      capacityControl(ctx),
-      h('span', { class: 'hive-counts' }, `${cells.length} hive${cells.length === 1 ? '' : 's'}, ${total} bead${total === 1 ? '' : 's'}`),
-      cells.length ? h('button', { type: 'button', class: 'hive-quiet-btn', 'aria-pressed': ui.dockOpen() ? 'true' : 'false', onclick: () => ui.setDockOpen(!ui.dockOpen()), 'data-focus-key': 'global-inbox-toggle' }, ui.dockOpen() ? 'Hide inbox' : 'Show inbox') : null,
-      retiredCount ? h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => ui.setShowRetired(!showRetired), 'aria-pressed': showRetired ? 'true' : 'false', 'data-focus-key': 'show-retired', title: showRetired ? 'Hide retired hives from this map' : 'Show retired hives on this map' }, showRetired ? `Hide retired (${retiredCount})` : `Show retired (${retiredCount})`) : null,
-      h('div', { class: 'hive-head-actions' },
-        h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openCellDialog(ui, 'new', 'open-new'), 'data-focus-key': 'open-new', 'aria-haspopup': 'dialog' }, 'New hive'),
-        h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => openCellDialog(ui, 'adopt', 'open-adopt'), 'data-focus-key': 'open-adopt', 'aria-haspopup': 'dialog' }, 'Add existing task'),
-        settingsButton(ctx)),
-      allSettings(ctx)),
-    noticesEl(ctx),
-    attentionEl(ctx),
+    h('div', { class: 'hive-overview-head' },
+      h('header', { class: 'hive-overhead' },
+        h('span', { class: 'hive-mark', 'aria-hidden': 'true' }),
+        h('h2', { class: 'hive-title' }, 'All hives'),
+        capacityControl(ctx),
+        h('span', { class: 'hive-counts' }, `${cells.length} hive${cells.length === 1 ? '' : 's'}, ${total} bead${total === 1 ? '' : 's'}`),
+        cells.length ? h('button', { type: 'button', class: 'hive-quiet-btn', 'aria-pressed': ui.globalInboxOpen() ? 'true' : 'false', onclick: () => ui.setGlobalInboxOpen(!ui.globalInboxOpen()), 'data-focus-key': 'global-inbox-toggle' }, ui.globalInboxOpen() ? 'Hide inbox' : 'Show inbox') : null,
+        retiredCount ? h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => ui.setShowRetired(!showRetired), 'aria-pressed': showRetired ? 'true' : 'false', 'data-focus-key': 'show-retired', title: showRetired ? 'Hide retired hives from this map' : 'Show retired hives on this map' }, showRetired ? `Hide retired (${retiredCount})` : `Show retired (${retiredCount})`) : null,
+        h('div', { class: 'hive-head-actions' },
+          h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openCellDialog(ui, 'new', 'open-new'), 'data-focus-key': 'open-new', 'aria-haspopup': 'dialog' }, 'New hive'),
+          h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => openCellDialog(ui, 'adopt', 'open-adopt'), 'data-focus-key': 'open-adopt', 'aria-haspopup': 'dialog' }, 'Add existing task'),
+          settingsButton(ctx)),
+        allSettings(ctx)),
+      noticesEl(ctx),
+      attentionEl(ctx)),
     cached.map,
     cellDialog(ctx)], ctx.beforeReplace);
-  const panelsOpen = cells.length > 0 && ui.dockOpen();
+  const panelsOpen = cells.length > 0 && ui.globalInboxOpen();
   return {
     top,
     bottom: panelsOpen ? globalInbox(ctx, cells) : null,

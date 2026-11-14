@@ -33,12 +33,11 @@ class Element {
   getBoundingClientRect() { return { left: 0, top: 0, right: 1000, bottom: 700, width: 1000, height: 700 }; }
 }
 
-function fixture(t) {
+function fixture(t, { open = true, store = new Map(), unavailable = false } = {}) {
   const saved = Object.fromEntries(['Node', 'document', 'requestAnimationFrame', 'cancelAnimationFrame', 'CSS'].map(k => [k, globalThis[k]]));
   Object.assign(globalThis, { Node: Element, document: { createElement: t => new Element(t), createElementNS: (_, t) => new Element(t), createTextNode: t => Object.assign(new Element('#text'), { text: t }), body: new Element('body') }, requestAnimationFrame: () => 1, cancelAnimationFrame() {}, CSS: { escape: s => s } });
   t.after(() => Object.assign(globalThis, saved));
-  const store = new Map();
-  client.register({ api: { storage: { get: (k) => store.get(k), set: (k, v) => store.set(k, v), remove: (k) => store.delete(k) } }, register() {} });
+  client.register({ api: { storage: { get: (k) => { if (unavailable) throw Error('Storage unavailable'); return store.get(k); }, set: (k, v) => { if (unavailable) throw Error('Storage unavailable'); store.set(k, v); }, remove: (k) => store.delete(k) } }, register() {} });
   const cells = {
     live: { id: 'live', taskId: 't1', enabled: true, rootBeadId: 'r1', queenSessionId: 'q', position: { q: 0, r: 0 } },
   };
@@ -46,10 +45,11 @@ function fixture(t) {
   const doc = { cells, conversation: {}, threads: {}, inbox: {}, bindings: {}, beadLayout: {}, arrangeAspect: {}, restoreNotices: {}, operations: {}, launches: {}, requests: {}, archived: {} };
   const runtime = { metadata: { read: () => doc, cells: () => Object.values(doc.cells) }, beads: { status: { state: 'missing' } }, paths: {} };
   const ui = createUi();
+  if (open) ui.setGlobalInboxOpen(true);
   const sent = [];
   const hive = () => projectForGraph({ runtime, snapshot: { graph: { beads, edges: [] } } });
   const draw = () => renderHive({ ui, hive: hive(), graph: { sessions: [{ sessionId: 'worker' }, { sessionId: 'old', archived: true }] }, api: {}, notices: [], busy: () => false, send: (m) => sent.push(m), notice() {} });
-  return { doc, ui, draw, hive, sent };
+  return { doc, ui, draw, hive, sent, store };
 }
 
 test('All hives puts the global inbox in the side dock, not under the map', (t) => {
@@ -75,17 +75,40 @@ test('the side inbox defaults to the merged Inbox with separate header totals', 
   assert.match(on[0].textContent, /Inbox/);
 });
 
-test('hiding the panels collapses the side inbox and the toggle brings it back', (t) => {
-  const f = fixture(t);
+test('the global inbox defaults hidden and its toggle remembers both choices', (t) => {
+  const f = fixture(t, { open: false });
   const toggle = out => out.top.querySelector('[data-focus-key="global-inbox-toggle"]');
-  assert.match(toggle(f.draw()).textContent, /Hide inbox/);
-  f.ui.setDockOpen(false);
   const closed = f.draw();
   assert.equal(closed.bottom, null);
   assert.deepEqual(closed.view, { overview: true, panels: false, pane: null });
-  assert.match(toggle(closed).textContent, /Show inbox/);
-  f.ui.setDockOpen(true);
+  assert.equal(toggle(closed).textContent, 'Show inbox');
+  assert.equal(toggle(closed).getAttribute('aria-pressed'), 'false');
+  toggle(closed).fire('click');
+  const shown = f.draw();
+  assert.ok(shown.bottom);
+  assert.equal(toggle(shown).textContent, 'Hide inbox');
+  assert.equal(toggle(shown).getAttribute('aria-pressed'), 'true');
+  assert.equal(createUi().globalInboxOpen(), true);
+  toggle(shown).fire('click');
+  assert.equal(f.draw().bottom, null);
+  assert.equal(createUi().globalInboxOpen(), false);
+  assert.equal(f.ui.dockOpen(), true);
+});
+
+test('the global inbox ignores the cell dock preference and invalid stored values', t => {
+  const f = fixture(t, { open: false, store: new Map([['dock', 'true'], ['globalInboxOpen', '"true"']]) });
+  assert.equal(f.draw().bottom, null);
+  f.ui.setDockOpen(false);
+  f.ui.setGlobalInboxOpen(true);
   assert.ok(f.draw().bottom);
+  assert.equal(f.ui.dockOpen(), false);
+});
+
+test('unavailable browser storage falls back to a hidden inbox without throwing', t => {
+  const f = fixture(t, { open: false, unavailable: true });
+  assert.equal(f.draw().bottom, null);
+  assert.doesNotThrow(() => f.ui.setGlobalInboxOpen(true));
+  assert.equal(f.draw().bottom, null);
 });
 
 
