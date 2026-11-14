@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { launchQueen, onBeforeDispatch } from '../server/sessions.js';
 import { buildContext, contextTool } from '../server/tools.js';
 import { buildGraph } from '../server/bead-model.js';
 
@@ -169,4 +170,62 @@ test('context tool publishes scope in its schema and validates values', () => {
   const schema = contextTool.inputSchema._zod.toJSONSchema();
   assert.deepEqual(schema.properties.scope.enum, ['cell', 'bead']);
   assert.equal(contextTool.inputSchema.safeParse({ scope: 'invalid' }).success, false);
+});
+
+test('current queen launch retains explicit no-handover decision beyond bounded history', async t => {
+  const f = fixture(t);
+  f.doc.launches = {
+    previous: { id: 'previous', cellId: 'cell', sessionId: 'old', handoverSourceSessionId: 'source', archiveSourceAfterHandover: true },
+    current: { id: 'current', cellId: 'cell', sessionId: 'queen', handoverSourceSessionId: null, archiveSourceAfterHandover: false },
+  };
+  for (let i = 0; i < 22; i++) f.doc.launches[`later${i}`] = { id: `later${i}`, cellId: 'cell', sessionId: `other${i}` };
+  let out = await buildContext(f.rt, f.host, f.actor('queen'));
+  assert.equal(out.queen_launch.id, 'current');
+  assert.equal(out.queen_launch.handoverSourceSessionId, null);
+  assert.equal(out.queen_launch.archiveSourceAfterHandover, false);
+  assert(out.queen_launches.every(l => l.historical));
+  f.doc.launches.current.handoverSourceSessionId = 'source';
+  out = await buildContext(f.rt, f.host, f.actor('queen'));
+  assert.equal(out.queen_launch.handoverSourceSessionId, 'source');
+  assert.equal(out.queen_launch.archiveSourceAfterHandover, false);
+  delete f.doc.launches.current.handoverSourceSessionId;
+  delete f.doc.launches.current.archiveSourceAfterHandover;
+  out = await buildContext(f.rt, f.host, f.actor('queen'));
+  assert.equal(out.queen_launch.handoverSourceSessionId, null);
+  assert.equal(out.queen_launch.archiveSourceAfterHandover, false);
+  f.doc.cells.cell.queenSessionId = 'legacy';
+  assert.equal((await buildContext(f.rt, f.host, f.actor('legacy'))).queen_launch, null);
+});
+
+
+test('sequential fresh launches replace the recovery decision without changing the source', async t => {
+  const f = fixture(t);
+  f.doc.launches = {};
+  f.doc.cells.cell.queens = [{ sessionId: 'queen', from: 1 }];
+  f.rt.changed = () => {};
+  f.rt.metadata.mutate = fn => fn(f.doc);
+  const source = f.host.sessions.get('queen');
+  Object.assign(source, { name: 'Source', agent: 'codex' });
+  const briefs = [];
+  let n = 0;
+  f.host.sessions.spawn = async opts => {
+    const sessionId = `fresh${++n}`;
+    briefs.push(opts.intent);
+    onBeforeDispatch({ sessionId, ext: opts.ext.hive, host: f.host });
+    return { sessionId };
+  };
+  const first = await launchQueen(f.rt, f.host, { cellId: 'cell', handoverSourceSessionId: 'queen' });
+  const second = await launchQueen(f.rt, f.host, { cellId: 'cell' });
+  let out = await buildContext(f.rt, f.host, { ...f.actor(), sessionId: second.sessionId, role: 'queen' });
+  assert.equal(out.queen_launch.id, second.launchId);
+  assert.equal(out.queen_launch.handoverSourceSessionId, null);
+  assert.equal(out.queen_launch.archiveSourceAfterHandover, false);
+  assert(out.queen_launches.find(l => l.id === first.launchId).historical);
+  assert.match(briefs[1], /no handover, no archive/);
+  const third = await launchQueen(f.rt, f.host, { cellId: 'cell', handoverSourceSessionId: 'queen', archiveSourceAfterHandover: false });
+  out = await buildContext(f.rt, f.host, { ...f.actor(), sessionId: third.sessionId, role: 'queen' });
+  assert.equal(out.queen_launch.id, third.launchId);
+  assert.equal(out.queen_launch.handoverSourceSessionId, 'queen');
+  assert.equal(out.queen_launch.archiveSourceAfterHandover, false);
+  assert.equal(source.archived, undefined);
 });

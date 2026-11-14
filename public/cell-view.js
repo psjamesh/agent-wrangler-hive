@@ -1,3 +1,4 @@
+import { handoverFields, handoverError } from './handover-fields.js';
 import { pickupDetails } from './pickup.js';
 import { watchdogSettingsForm } from './watchdog-settings.js';
 import { reviewPolicyForm } from './review-policy.js';
@@ -353,7 +354,7 @@ export function queenInstructions(ctx, cell) {
     },
   },
   instructionsField(editing.text, (text) => ui.patchForm(key, { text }), `instructions:${cell.id}`),
-  h('p', { class: 'hive-muted' }, cell.queenSessionId ? 'The current queen sees the change the next time it reads hive_context; use Send brief to tell it now.' : 'The next queen launched or nominated for this hive receives them.'),
+  h('p', { class: 'hive-muted' }, cell.queenSessionId ? 'The current queen sees the change the next time it reads hive_context; use Send brief to tell it now.' : 'The next queen launched for this hive receives them.'),
   errorNote(editing.error),
   h('div', { class: 'hive-actions' },
     h('button', { type: 'submit', class: 'hive-btn hive-btn-primary', disabled: Boolean(editing.pending) }, editing.pending ? 'Saving…' : 'Save'),
@@ -362,22 +363,7 @@ export function queenInstructions(ctx, cell) {
 
 function queenBar(ctx, cell) {
   const { graph, ui, send, busy, api } = ctx;
-  const members = sessionsInTask(graph, cell.taskId);
   const launchForm = ui.form(`launch:${cell.id}`);
-  const nominate = h('select', {
-    'aria-label': 'Nominate a queen',
-    'data-focus-key': 'nominate',
-    onchange: async (e) => {
-      const sid = e.target.value;
-      if (!sid) return;
-      if (await confirmHive(`Make ${sessionLabel(graph, sid)} the queen? It keeps its conversation and instructions and receives an activation brief; it is not restarted. If it is already running, it may need its agent terminal restarted or resumed before Hive's skills and tools appear.`)) {
-        send({ type: 'hive-queen-nominate', cellId: cell.id, sessionId: sid, sendBrief: true });
-      } else {
-        e.target.value = '';
-      }
-    },
-  }, h('option', { value: '' }, cell.queenSessionId ? 'Replace queen…' : 'Nominate a queen…'),
-  members.filter((s) => s.sessionId !== cell.queenSessionId).map((s) => h('option', { value: s.sessionId }, sessionLabel(graph, s.sessionId))));
   const a = cell.activation;
   const launch = launchState(ctx.hive, cell);
   return h('div', { class: 'hive-queenbar' },
@@ -397,13 +383,14 @@ function queenBar(ctx, cell) {
         send({ type: 'hive-queen-brief', cellId: cell.id });
       },
     }, a && a.sessionId === cell.queenSessionId && a.state !== 'failed' ? 'Send brief again…' : 'Send brief') : null,
-    members.length > (cell.queenSessionId ? 1 : 0) ? nominate : null,
-    launch?.active ? null : h('button', { type: 'button', class: cell.queenSessionId ? 'hive-quiet-btn' : 'hive-btn', onclick: () => ui.setForm(`launch:${cell.id}`, launchForm ? null : { autoCompactTokens: 250000 }) }, launchForm ? 'Cancel launch' : (cell.queenSessionId ? 'Launch a new queen…' : 'Launch a queen…')),
+    launch?.active ? null : h('button', { type: 'button', class: cell.queenSessionId ? 'hive-quiet-btn' : 'hive-btn', onclick: () => ui.setForm(`launch:${cell.id}`, launchForm ? null : { autoCompactTokens: 250000, handoverSourceSessionId: cell.queenSessionId || '', archiveSourceAfterHandover: true }) }, launchForm ? 'Cancel launch' : 'Launch a new queen…'),
     launchForm ? h('form', {
       class: 'hive-form hive-form-inline',
       onsubmit: (e) => {
         e.preventDefault();
         const form = ui.form(`launch:${cell.id}`) || {};
+        const sourceError = handoverError(ctx.hive, form, cell.taskId);
+        if (sourceError) return ctx.notice(sourceError);
         const { instructions, ...settings } = form;
         send({ type: 'hive-queen-launch', cellId: cell.id, ...settings, instructions: instructions ?? cell.queenInstructions ?? '' }, {
           onReply: (frame) => {
@@ -413,28 +400,9 @@ function queenBar(ctx, cell) {
         });
       },
     }, launchFields(api, launchForm, (next) => ui.setForm(`launch:${cell.id}`, { ...ui.form(`launch:${cell.id}`), ...next }), (p) => ui.patchForm(`launch:${cell.id}`, p)),
+    handoverFields(ctx.hive, launchForm, next => ui.setForm(`launch:${cell.id}`, { ...ui.form(`launch:${cell.id}`), ...next }), cell.taskId, Boolean(cell.queenSessionId)),
     instructionsField(launchForm.instructions ?? cell.queenInstructions ?? '', (text) => ui.patchForm(`launch:${cell.id}`, { instructions: text }), `launch-instructions:${cell.id}`),
-    h('button', { type: 'submit', class: 'hive-btn hive-btn-primary', disabled: busy('hive-queen-launch') }, busy('hive-queen-launch') ? 'Launching…' : 'Launch queen')) : null,
-    nominatedNote(ctx, cell));
-}
-
-// A nominated queen is a session that was already running: it keeps its
-// conversation and instructions, but its agent may not load Hive's skills and
-// tools until its terminal is restarted or resumed. Hive cannot tell, and a
-// delivered brief proves nothing about it, so the human gets the route to the
-// session's own controls instead.
-function nominatedNote(ctx, cell) {
-  const { ui } = ctx;
-  const current = cell.queens?.at(-1);
-  if (!cell.queenSessionId || current?.sessionId !== cell.queenSessionId || current.via !== 'nominated') return null;
-  return h('div', { class: 'hive-queen-note' },
-    h('span', { class: 'hive-muted' }, 'Existing session: if it does not have Hive\'s tools yet, restart or resume its agent terminal from its session (this does not restart Agent Wrangler).'),
-    h('button', {
-      type: 'button',
-      class: 'hive-link-btn',
-      onclick: () => ui.inspect(cell.queenSessionId),
-      title: 'Opens the queen\'s own session panel, with its normal Restart and Resume controls.',
-    }, 'Open queen session'));
+    h('button', { type: 'submit', class: 'hive-btn hive-btn-primary', disabled: busy('hive-queen-launch') }, busy('hive-queen-launch') ? 'Launching…' : 'Launch queen')) : null);
 }
 
 const LAUNCH_TEXT = {
@@ -481,7 +449,7 @@ function queenPill(ctx, cell, openInfo) {
   if (!cell.enabled) return null;
   if (!cell.queenSessionId) {
     const launch = launchState(hive, cell);
-    return h('button', { type: 'button', class: 'hive-setup-pill hive-pill-btn', onclick: openInfo, title: 'Open hive info to launch or nominate a queen' }, launch ? launch.text : 'Setup incomplete: no queen');
+    return h('button', { type: 'button', class: 'hive-setup-pill hive-pill-btn', onclick: openInfo, title: 'Open hive info to launch a new queen' }, launch ? launch.text : 'Setup incomplete: no queen');
   }
   const dot = statusDot(graph, cell.queenSessionId);
   const a = cell.activation;

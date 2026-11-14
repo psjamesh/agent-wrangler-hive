@@ -17,27 +17,49 @@ export function instructionsBlock(cell) {
   return body ? `\nHow the human wants you to work in this cell (also in hive_context as queen_instructions):\n${body}` : '';
 }
 
-export function queenBrief({ cell, taskName, extra = '' }) {
+export function handoverSources(host) {
+  return (host.sessions.list?.() || []).filter((s) =>
+    !s.archived && !s.archivedAt && (s.name || s.lastLabel)?.trim() &&
+    (!s.runtime || s.runtime === 'local') && ['claude', 'codex'].includes(s.agent)
+  ).map((s) => ({ sessionId: s.sessionId, name: s.name || s.lastLabel, taskId: s.taskId, taskName: host.tasks.get(s.taskId)?.name || s.taskId || 'No task' }));
+}
+
+export function validateHandoverSource(host, source, taskId, allowCrossTask = false) {
+  if (source === undefined || source === null || source === '') return null;
+  if (typeof source !== 'string' || !isSessionId(source)) throw new HiveError('Choose a valid handover source session.');
+  const s = host.sessions.get(source);
+  if (!s || s.archived || s.archivedAt || !(s.name || s.lastLabel)?.trim() ||
+      (s.runtime && s.runtime !== 'local') || !['claude', 'codex'].includes(s.agent)) {
+    throw new HiveError('The selected handover source is no longer eligible. Choose a named, active local Claude or Codex session.');
+  }
+  if (!allowCrossTask && s.taskId !== taskId) throw new HiveError('The handover source must belong to this task.');
+  return source;
+}
+
+function handoverBrief(launch) {
+  if (!launch) return '';
+  if (!launch.handoverSourceSessionId) return `Current queen launch ${launch.id}: no handover, no archive. Do not revive historical handover requests or archive any source from them.`;
+  return `
+Request a handover from session ${launch.handoverSourceSessionId} using send_message; request id ${launch.id}. You are already the newly launched and nominated queen of cell ${launch.cellId}, task ${launch.taskId}. Archive-after-handover: ${launch.archiveSourceAfterHandover ? 'YES' : 'NO'}.
+Follow the hive-queen handover procedure: send a standalone request with your actual session id as reply address, verify the source reply and read all referenced files, publish a durable receipt, confirm receipt by mail, then explicitly reconcile releases, claims and bindings. Only archive the exact selected source after its readiness and obligations are settled, with archive_children:false. Delivery is not receipt. Recheck your current queen role before accepting, changing claims or archiving. Do not use generic handoff or ask the source to launch another queen.
+Source mail capability cannot be verified by the current host API: eligible local legacy cards may fail delivery or never reply. Failed/uncertain delivery, busy or incomplete replies and unreadable files leave handover pending: tell the human, keep the source unarchived and continue independent work. No polling or automatic timeout-to-archive. Cross-task sources provide context only; never move another cell's claims or archive while its obligations remain. Record request, receipt, dispositions and archive outcome in one Hive topic.`;
+}
+
+export function queenBrief({ cell, taskName, extra = '', launch }) {
   return [
     `You are the queen of the Hive cell for task "${taskName}" (cell ${cell.id}, task ${cell.taskId}).`,
     'Use the hive-queen skill. Start with hive_context to recover the goal, the work graph and any input from the human, then keep the work record coherent: maintain goals and readiness with the hive_* tools, delegate tracked work with hive_spawn_worker (passing its bead_id) and request reviews with hive_request_review, and reconcile what workers report. Do not call spawn_session, spawn_workflow or schedule_session; every helper, advisor or investigation is a bead launched with hive_spawn_worker, and a successor queen is requested with hive_handoff_queen.',
     'If the task already has sessions or work, map it before anything else, as the hive-queen skill\'s "Map existing work" section describes: reuse any beads and bindings already there, and do not spawn workers just to represent sessions that exist.',
     'Follow the review and merge instructions the human, the repository and your global skills give you. Answer each [Hive] message from the human with hive_publish and its reply_to: your terminal text is not shown in Hive. Also publish what the human should know even when they need not act: meaningful milestones and results, significant changes of approach, scope or timing, material blockers and how you are handling them, decisions, questions, and completion or verification outcomes. Say in one concise message what changed, why it matters and what comes next. Leave routine bookkeeping, unchanged status and worker chatter on the beads, and post no timed status updates.',
     `When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Review worker/reviewer input_requests in hive_context: answer within your authority with hive_answer_request or forward the same id with hive_forward_request. Queen-stage requests stay out of human views; human step-in is not supported. Helpers must launch into task ${cell.taskId}; ancestry alone does not enroll them. If tools are missing, check membership and refresh the agent terminal.`,
+    handoverBrief(launch),
     instructionsBlock(cell),
     extra ? `\nFrom the human, for this launch:\n${extra}` : '',
   ].join('\n').trim();
 }
 
 export function activationBrief({ cell, taskName }) {
-  return [
-    `[Hive] The human nominated you as queen of the Hive cell for task "${taskName}" (cell ${cell.id}).`,
-    'Your session was not restarted and keeps its conversation and instructions. If the hive_* tools are not available to you yet, tell the human: they need to restart or resume your agent terminal (from your session panel, not by restarting Agent Wrangler) so your skills and tools refresh. Do not try to work around it.',
-    'Once they are available, call hive_context first and use the hive-queen skill. Your first job is to map the work this task already has, following the skill\'s "Map existing work" section: inventory the task\'s sessions and any beads already in the cell, create or reconcile workstream and work beads, and bind the relevant existing sessions with hive_bind_session. Reuse what is already mapped (this brief may be a repeat, or you may be a replacement); never spawn workers just to represent existing sessions, and never infer completion or dependencies from a session being idle or from who launched whom. Once the map is in place, publish one short summary of it with hive_publish.',
-    'After that, keep the record coherent with the hive_* tools, delegate with hive_spawn_worker and request reviews with hive_request_review, and follow the review and merge instructions you already have. Answer each [Hive] message from the human with hive_publish and its reply_to: your terminal text is not shown in Hive. Also publish what the human should know even when they need not act: meaningful milestones and results, significant changes of approach, scope or timing, material blockers and how you are handling them, decisions, questions, and completion or verification outcomes. Say in one concise message what changed, why it matters and what comes next. Leave routine bookkeeping, unchanged status and worker chatter on the beads, and post no timed status updates.',
-    `When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Review worker/reviewer input_requests in hive_context: answer within your authority with hive_answer_request or forward the same id with hive_forward_request. Queen-stage requests stay out of human views; human step-in is not supported. Helpers must launch into task ${cell.taskId}; ancestry alone does not enroll them. If tools are missing, check membership and refresh the agent terminal.`,
-    instructionsBlock(cell),
-  ].join('\n').trim();
+  return `[Hive] Queen brief\n${queenBrief({ cell, taskName })}`;
 }
 
 // An explicit unknown outcome wins over the mode: AW reports
@@ -59,8 +81,6 @@ export async function safeDeliver(host, sessionId, textBody, rt = host?.stores?.
   }
 }
 
-// Human nominates an existing, running session. Nothing restarts it; the
-// brief tells it what changed.
 export async function sendActivationBrief(rt, host, { cellId }) {
   const cell = rt.metadata.cell(cellId);
   refuseSnapshot(cell);
@@ -78,7 +98,7 @@ export async function sendActivationBrief(rt, host, { cellId }) {
   return result;
 }
 
-export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort, autoCompactTokens, intent, instructions, handoff = null }) {
+export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort, autoCompactTokens, intent, instructions, handoff = null, handoverSourceSessionId, archiveSourceAfterHandover, allowCrossTaskSource = false }) {
   if (rt.metadata.error) throw new HiveError(rt.metadata.error);
   let cell = rt.metadata.cell(cellId);
   if (!cell) throw new HiveError(`Unknown cell ${cellId}.`);
@@ -89,6 +109,9 @@ export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort,
   const task = host.tasks.get(cell.taskId);
   if (!task || task.archived) throw new HiveError('The cell\'s task is archived.');
   if (handoff && ((cell.queenGeneration || 0) !== handoff.expectedGeneration || cell.queenSessionId !== handoff.fromSessionId)) throw new HiveError('The queen changed; this handoff is stale.', 'conflict');
+  const source = validateHandoverSource(host, handoverSourceSessionId, cell.taskId, allowCrossTaskSource);
+  if (archiveSourceAfterHandover !== undefined && typeof archiveSourceAfterHandover !== 'boolean') throw new HiveError('Archive source after handover must be a checkbox value.');
+  const archive = Boolean(source) && archiveSourceAfterHandover !== false;
   const extra = text(intent, 'intent', 20000) || '';
   if (autoCompactTokens != null && (!Number.isInteger(autoCompactTokens) || autoCompactTokens <= 0)) throw new HiveError('Auto-compaction threshold must be a whole number of tokens.');
   if (instructions !== undefined) {
@@ -97,9 +120,9 @@ export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort,
   }
   const launchId = newId('launch');
   rt.metadata.mutate((d) => {
-    d.launches[launchId] = { id: launchId, cellId, taskId: cell.taskId, state: 'pending', sessionId: null, generation: d.cells[cellId].queenGeneration || 0, restriction: launchRestriction(agent), ...(handoff ? { handoff: { fromSessionId: handoff.fromSessionId, summary: handoff.summary.slice(0, 4000) } } : {}), createdAt: Date.now(), updatedAt: Date.now() };
+    d.launches[launchId] = { id: launchId, cellId, taskId: cell.taskId, handoverSourceSessionId: source, archiveSourceAfterHandover: archive, state: 'pending', sessionId: null, generation: d.cells[cellId].queenGeneration || 0, restriction: launchRestriction(agent), ...(handoff ? { handoff: { fromSessionId: handoff.fromSessionId, summary: handoff.summary.slice(0, 4000) } } : {}), createdAt: Date.now(), updatedAt: Date.now() };
   });
-  const opts = { intent: queenBrief({ cell, taskName: task.name, extra }), taskId: cell.taskId, ext: { hive: { launchId } } };
+  const opts = { intent: queenBrief({ cell, taskName: task.name, extra, launch: rt.metadata.read().launches[launchId] }), taskId: cell.taskId, ext: { hive: { launchId } } };
   if (typeof cwd === 'string' && cwd.trim()) opts.cwd = cwd.trim();
   for (const [k, v] of [['agent', agent], ['model', model], ['effort', effort]]) if (typeof v === 'string' && v.trim()) opts[k] = v.trim();
   if (autoCompactTokens != null) opts.autoCompactTokens = autoCompactTokens;

@@ -14,7 +14,7 @@ export async function handoffQueen(rt, host, actor, input) {
     `Handoff summary from the previous queen:\n${summary}`,
   ].join('\n\n');
   const launched = await launchQueen(rt, host, {
-    cellId: cell.id, cwd: input.cwd, agent: input.agent, model: input.model, effort: input.effort, intent: brief,
+    cellId: cell.id, cwd: input.cwd, agent: input.agent, model: input.model, effort: input.effort, intent: brief, autoCompactTokens: 250000,
     handoff: { fromSessionId: actor.sessionId, expectedGeneration, summary },
   });
   const now = rt.metadata.cell(cell.id);
