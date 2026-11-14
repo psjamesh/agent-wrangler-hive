@@ -50,5 +50,8 @@ test('request images share publish schema limits and describe private forwarding
   assert.equal(images.maxItems, 4);
   assert.deepEqual(images.items, published.items);
   assert.match(images.description, /All requesters/);
+  assert.match(images.description, /shared staging/);
+  assert.match(images.description, /session-prefixed filename with a random suffix/);
+  assert.match(images.description, /Never overwrite/);
   assert.match(images.description, /forwarding/);
 });
