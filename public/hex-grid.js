@@ -818,8 +818,13 @@ function wireTile({ g, it, toWorld, snap, onClick, onActivate, onSelect, onMove,
   let dragging = false;
   let unclaim = null;
   let pointer = '';
+  let frame = 0;
+  let pending = null;
   const home = `translate(${it.x.toFixed(1)} ${it.y.toFixed(1)})`;
   const end = () => {
+    cancelAnimationFrame(frame);
+    frame = 0;
+    pending = null;
     if (unclaim) { try { unclaim(); } catch { } unclaim = null; }
     if (dragging) aid()?.stop();
     if (dragging) onDragState(false);
@@ -845,9 +850,15 @@ function wireTile({ g, it, toWorld, snap, onClick, onActivate, onSelect, onMove,
       if (claimDrag) { try { unclaim = claimDrag(g); } catch { unclaim = null; } }
       aid()?.start(it.id);
     }
-    const p = toWorld(evt);
-    g.setAttribute('transform', `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`);
-    aid()?.follow(it, p, snap({ x: p.x - (it.ox || 0), y: p.y - (it.oy || 0) }));
+    pending = { clientX: evt.clientX, clientY: evt.clientY };
+    if (!frame) frame = requestAnimationFrame(() => {
+      frame = 0;
+      if (!pending || !dragging || g.isConnected === false) return;
+      const p = toWorld(pending);
+      pending = null;
+      g.setAttribute('transform', `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`);
+      aid()?.follow(it, p, snap({ x: p.x - (it.ox || 0), y: p.y - (it.oy || 0) }));
+    });
   });
   g.addEventListener('pointerup', (evt) => {
     if (!start) return;

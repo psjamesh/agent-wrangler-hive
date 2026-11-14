@@ -9,7 +9,7 @@ const source=fs.readFileSync(new URL('../public/hex-grid.js',import.meta.url),'u
 test('pointer release uses the drop resolver and arrow keys use the exact one-step move',()=>{
   const events={},moves=[],drops=[];
   const g={classList:{add(){},remove(){}},setPointerCapture(){},setAttribute(){},addEventListener:(name,fn)=>{events[name]=fn;}};
-  const sandbox={key,neighbour,DIRECTIONS,DRAG_THRESHOLD:6,args:{
+  const sandbox={key,neighbour,DIRECTIONS,DRAG_THRESHOLD:6,requestAnimationFrame:()=>1,cancelAnimationFrame(){},args:{
     g,it:{id:'child',x:0,y:0,local:{q:0,r:0}},toWorld:(e)=>({x:e.clientX,y:e.clientY}),snap:(p)=>({q:p.x/10,r:0}),
     onMove:(id,p)=>moves.push(p),onDrop:(id,p)=>drops.push(p),onDragState(){},aid:()=>({start(){},follow(){},stop(){}}),
   }};
