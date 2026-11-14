@@ -560,7 +560,7 @@ export const reportPrWaitTool = hiveTool({
 
 export const pickupTool = hiveTool({
   name: 'hive_set_pickup',
-  description: 'Queen only: mark bounded work ready for one automatic worker launch. Pickup is default behavior; max claimed work controls concurrency. Supply an explicit launch profile (agent, model, effort, cwd, optional worktree and intent). Dependencies may still be pending. Rearming a consumed or held mark requires expected_token and a reason. Failed or uncertain starts never retry automatically.',
+  description: 'Queen only: mark bounded work ready for one automatic worker launch. Pickup is default behavior; max claimed work controls concurrency. Supply an explicit launch profile (agent, model, effort, cwd, optional worktree and intent). Returns current pickup state, eligibility and every hold reason, including blocking session ids. Dependencies may still be pending. Rearming a consumed or held mark requires expected_token and a reason. Failed or uncertain starts never retry automatically.',
   inputSchema: {
     bead_id: beadId,
     ready: z.boolean(),

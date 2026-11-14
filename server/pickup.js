@@ -109,16 +109,22 @@ export function structuralPickupReasons(rt, graph, bead, { launchId = null, ownO
   return reasons;
 }
 
-function cellReasons(rt, host, cell) {
-  if (!cell?.enabled || cell.snapshot || cell.retired) return ['Hive is disabled, retired or a snapshot'];
-  if (cell.setup?.state !== 'ready' || !cell.rootBeadId) return ['Hive setup is incomplete'];
+export function pickupBlockingSessions(rt, host, cell) {
+  return cell ? ungovernedDescendants(rt, host, cell, Object.values(rt.snapshots.graph?.beads || {}).filter(b => b.status !== 'closed')).filter(s => s.live).map(s => s.session_id).sort() : [];
+}
+
+function cellReasons(rt, host, cell, blockingSessions = pickupBlockingSessions(rt, host, cell)) {
+  if (!cell) return ['Hive is disabled, retired or a snapshot'];
+  const reasons = [];
+  if (!cell.enabled || cell.snapshot || cell.retired) reasons.push('Hive is disabled, retired or a snapshot');
+  if (cell.setup?.state !== 'ready' || !cell.rootBeadId) reasons.push('Hive setup is incomplete');
   const task = host?.tasks?.get?.(cell.taskId);
-  if (!task || task.archived) return ['Task is missing or archived'];
+  if (!task || task.archived) reasons.push('Task is missing or archived');
   const queen = host?.sessions?.get?.(cell.queenSessionId);
-  if (!queen || queen.archived || queen.status === 'exited') return ['Current queen is missing, archived or exited'];
-  if (Object.values(rt.metadata.read().launches || {}).some(l => l.cellId === cell.id && ['pending', 'bound', 'uncertain'].includes(l.state))) return ['Queen transition needs reconciliation'];
-  if (ungovernedDescendants(rt, host, cell, Object.values(rt.snapshots.graph?.beads || {}).filter(b => b.status !== 'closed')).length) return ['Untracked descendant sessions need queen reconciliation'];
-  return [];
+  if (!queen || queen.archived || queen.status === 'exited') reasons.push('Current queen is missing, archived or exited');
+  if (Object.values(rt.metadata.read().launches || {}).some(l => l.cellId === cell.id && ['pending', 'bound', 'uncertain'].includes(l.state))) reasons.push('Queen transition needs reconciliation');
+  if (blockingSessions.length) reasons.push(`Live untracked descendant sessions need queen reconciliation: ${blockingSessions.join(', ')}`);
+  return reasons;
 }
 
 export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { launchId = null, ownOperationId = null, now = Date.now(), checkVersion = true, rates = true, ignoreProfileHold = false } = {}) {
@@ -130,7 +136,8 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
   const base = { ...mark, nativeVersion: receipt(rt, bead)?.nativeVersion, eligible: false, launchId: launch?.id };
   if (attempt && attempt.launchId !== launchId) return { ...base, state: launch && ['reserved', 'binding', 'claimed'].includes(launch.state) ? 'starting' : launch && ATTENTION.has(launch.state) ? 'attention' : 'consumed', reason: (launch && ATTENTION.has(launch.state) ? launch.error : '') || (launch?.state === 'launched' ? 'Worker launched; readiness was consumed' : 'Readiness was consumed; deliberate rearm is required') };
   if (!mark.armed) return unmarked;
-  const reasons = cellReasons(rt, host, cell);
+  const blockingSessions = pickupBlockingSessions(rt, host, cell);
+  const reasons = cellReasons(rt, host, cell, blockingSessions);
   const hold = rt.metadata.read().pickupHolds?.[bead.id];
   if (!ignoreProfileHold && hold?.token === mark.armToken && hold.reason) reasons.push(hold.reason);
   if (receipt(rt, bead)?.heldReason) reasons.push(receipt(rt, bead).heldReason);
@@ -148,7 +155,7 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
       if (rate.reason) reasons.push(rate.reason);
     }
   }
-  return { ...base, eligible: !reasons.length, state: reasons.length ? 'queued' : 'ready', reason: reasons[0] || 'Ready for pickup', reasons };
+  return { ...base, eligible: !reasons.length, state: reasons.length ? 'queued' : 'ready', blocking_session_ids: blockingSessions, reason: reasons[0] || 'Ready for pickup', reasons };
 }
 
 export function assertPickupAuthorization(rt, host, launch, graph, { ownOperationId = null, checkVersion = true } = {}) {
@@ -187,7 +194,7 @@ export async function setPickup(rt, host, actor, input) {
     if (!bead || !descendantIds(graph.beads, cell.rootBeadId).has(bead.id) || bead.id === cell.rootBeadId) throw new HiveError('Mark a work bead below this hive goal.');
     if (Object.values(rt.metadata.read().operations || {}).some(o => UNSETTLED.has(o.state) && (o.beadIds?.includes(bead.id) || o.intent?.beadId === bead.id))) throw new HiveError('Reconcile the earlier Beads write before changing pickup readiness.', 'conflict');
     const previous = bead.pickup;
-    if (input.ready && previous?.armed && !input.rearm && !pickupConsumed(rt.metadata.read(), bead) && receipt(rt, bead)?.nativeVersion === bead.updatedAt && !receipt(rt, bead)?.heldReason && previous.briefDigest === briefDigest(bead, cell.id) && (!profile || JSON.stringify(profile) === JSON.stringify(previous.profile))) return { bead_id: bead.id, pickup: { ...previous, nativeVersion: bead.updatedAt } };
+    if (input.ready && previous?.armed && !input.rearm && !pickupConsumed(rt.metadata.read(), bead) && receipt(rt, bead)?.nativeVersion === bead.updatedAt && !receipt(rt, bead)?.heldReason && previous.briefDigest === briefDigest(bead, cell.id) && (!profile || JSON.stringify(profile) === JSON.stringify(previous.profile))) return { bead_id: bead.id, pickup: pickupState(rt, host, cell, bead, graph) };
     if (input.ready && previous?.armToken) {
       if (!input.rearm || input.expected_token !== previous.armToken || !text(input.reason, 'reason', 2000)) throw new HiveError('Rearm needs rearm: true, the expected_token and a reason.', 'conflict');
       const old = pickupConsumed(rt.metadata.read(), bead);
@@ -215,7 +222,7 @@ export async function setPickup(rt, host, actor, input) {
     });
     await rt.snapshots.refresh();
     rt.pickup?.schedule();
-    return { op_id: out.opId, bead_id: bead.id, pickup: { ...mark, nativeVersion: receipt(rt, { id: bead.id, pickup: mark })?.nativeVersion } };
+    return { op_id: out.opId, bead_id: bead.id, pickup: pickupState(rt, host, cell, rt.snapshots.graph.beads[bead.id]) };
   });
 }
 
