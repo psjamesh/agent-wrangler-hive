@@ -24,7 +24,7 @@ export function mapInputs(ctx, cell) {
       c.position, c.snapshot, c.inbox?.human?.count, c.inbox?.queen?.count, c.requestCounts?.human, c.launch, c.occupiedCount]),
     Object.values(hive.beads).map(b => [b.id, b.parentId, b.title, b.kind, b.status, b.ownerSessionId,
       b.createdAt, b.outcome, b.assignee, b.untracked, b.waitingFor, b.reviewState, b.reviewWorking, b.closeReason, b.closedReason, cell ? null : b.goal]),
-    cell ? cellWaitingItems(ctx, cell).filter(item => item.kind !== 'message') : null,
+    cell ? cellWaitingItems(ctx, cell) : null,
     hive.edges, cell ? null : hive.launches, hive.backend?.snapshotComplete, hive.backend?.snapshotError, hive.backend?.snapshotBeadIds,
     (ctx.graph?.sessions || []).map(s => [s.sessionId, s.status, s.exitOutput ? true : false, s.archived, s.name, s.label, s.lastLabel]),
     ctx.graph?.tasks, cell ? ui.selectedBeadId() : ui.highlightedCell?.(), ui.placements(),

@@ -13,7 +13,7 @@ test('the cell-wide wait action includes unbound waits and remains available in 
     capacityControl: () => null, allSettings: () => null, isRetired: () => false, retireKey: (id) => `retire:${id}`, openReopen() {},
     attentionEl: () => null, restoreNotices: () => null, noticesEl: () => null,
   });
-  const cell = { id: 'c', enabled: true, rootBeadId: 'root', taskId: 't', bindings: [], requests: { native: { id: 'native', cellId: 'c', audience: 'human', state: 'open', title: 'Hive-wide decision' } } };
+  const cell = { id: 'c', enabled: true, rootBeadId: 'root', taskId: 't', bindings: [], waits: [{ id: 'message:fyi', kind: 'message', beadIds: ['root'] }], inbox: { human: { count: 1 } }, requests: { native: { id: 'native', cellId: 'c', audience: 'human', state: 'open', title: 'Hive-wide decision' } } };
   const ctx = { hive: { cells: { c: cell }, beads: { root: { id: 'root' } } }, graph: {
     sessions: [{ sessionId: 'unbound', status: 'needs-you' }], tasks: { assignments: { unbound: 't' } },
   }, ui: { form: () => null }, send: () => {} };
@@ -23,6 +23,9 @@ test('the cell-wide wait action includes unbound waits and remains available in 
   assert.equal(action.children[0], '2 waiting for you');
   assert.equal(typeof action.attrs.onclick, 'function');
   assert.equal(action.attrs['aria-haspopup'], 'dialog');
+  cell.requests = {};
+  ctx.graph.sessions = [];
+  assert.equal(all(header(ctx, cell, null)).some(n => n.attrs?.['data-focus-key'] === 'waiting-header'), false);
   const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
   const hidden = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, , declarations]) => /display\s*:\s*none\b/.test(declarations));
   const classes = action.attrs.class.split(/\s+/);

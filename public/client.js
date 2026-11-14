@@ -431,8 +431,8 @@ export function createUi() {
       bump();
     },
     olderTopics(cellId, epoch) { const o = mem.older[cellId]; return o && o.epoch === epoch ? o.threads : []; },
-    // Which list the topic list shows instead of topics: 'human' for queen
-    // messages waiting for the human, 'queen' for the human's messages
+    // Which list the topic list shows instead of topics: 'human' for
+    // unread queen messages, 'queen' for the human's messages
     // waiting for an answer, or null.
     inboxView: (cellId) => mem.inboxView[cellId] || null,
     globalInboxView: () => mem.globalInbox,

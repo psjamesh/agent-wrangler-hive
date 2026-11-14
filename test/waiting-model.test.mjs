@@ -11,9 +11,9 @@ function fixture() {
 }
 test('unique header waits deduplicate passive status but keep separate explicit requests, with many bead labels', () => {
   const f = fixture(), waits = model.cellWaitingItems(f, f.cell) || [];
-  assert.deepEqual(waits.map(x => x.id), ['message:m', 'agent:s', 'needsyou:explicit']);
-  assert.deepEqual(waits[1].beadIds, ['a', 'b']);
-  assert.equal(waitingItems(f, f.hive.beads.a).length, 3);
+  assert.deepEqual(waits.map(x => x.id), ['agent:s', 'needsyou:explicit']);
+  assert.deepEqual(waits[0].beadIds, ['a', 'b']);
+  assert.equal(waitingItems(f, f.hive.beads.a).length, 2);
   assert.equal(waitingItems(f, f.hive.beads.b).length, 2);
   f.graph.sessions[0].archived = true;
   assert.equal(model.cellWaitingItems(f, f.cell).some(x => x.id === 'agent:s'), false);
@@ -34,7 +34,7 @@ test('native human requests join the unified waits with exact bead and topic att
   assert.deepEqual(items.find(x => x.id === 'request:unbound')?.beadIds, ['root']);
   assert.equal(items.some(x => x.id === 'request:private'), false);
   assert.ok(items.some(x => x.id === 'agent:s'));
-  assert.equal(items.length, 5);
+  assert.equal(items.length, 4);
   f.cell.enabled = false;
   assert.deepEqual(model.cellWaitingItems(f, f.cell), []);
 });
@@ -83,7 +83,7 @@ test('a passive Needs You item without a matching live input still remains visib
   const f = fixture();
   f.graph.sessions = [];
   const items = model.cellWaitingItems(f, f.cell);
-  assert.equal(items.length, 3);
+  assert.equal(items.length, 2);
   assert.ok(items.some(x => x.id === 'needsyou:status'));
 });
 

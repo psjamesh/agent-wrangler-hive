@@ -28,12 +28,11 @@ export const ACK_EMOJI = ['👍', '✅', '👀', '❤️', '🙏'];
 const HUMAN = 'aw:human';
 const inFlight = new Set();
 
-// The inbox's two obligations. A human message waits for a visible queen
-// answer linked to it; a queen message waits for the human to mark it read,
-// react to it or reply to it. Receipt (acknowledgedAt) is separate.
+// Human messages await a queen answer; queen messages stay unread until
+// read, reacted to or replied to. Receipt (acknowledgedAt) is separate.
 export const awaitingQueen = (m) => m.author === 'human' && Boolean(m.response?.required) && !m.response.answers?.length && !m.response.withdrawn;
-export const awaitingHuman = (m) => m.author === 'session' && !m.requestId && Boolean(m.ack?.required) && !m.ack.state;
-export const outstanding = (m) => awaitingQueen(m) || awaitingHuman(m);
+export const unreadForHuman = (m) => m.author === 'session' && !m.requestId && Boolean(m.ack?.required) && !m.ack.state;
+export const unsettledMessage = (m) => awaitingQueen(m) || unreadForHuman(m);
 
 const oneLine = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
@@ -41,7 +40,7 @@ function clip(s, n) {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 }
 
-// Outstanding messages, and the messages each one replies to or answers,
+// Unread or unanswered messages, and the messages each replies to or answers,
 // are never pruned; a cell can then hold more than the cap until they are
 // settled. A pruned message that carried an obligation leaves a compact
 // record of how it was settled, and by whom, in the cell's ledger, which is
@@ -68,14 +67,14 @@ function prune(d, cellId, list, removed) {
   }
   const visible = new Set(humanConversationDoc(d, cellId).conversation[cellId].map(m => m.id));
   const quoted = new Set();
-  for (const m of list) if (outstanding(m)) for (const id of linkedTargets(m)) quoted.add(id);
+  for (const m of list) if (unsettledMessage(m)) for (const id of linkedTargets(m)) quoted.add(id);
   const gone = [];
   let excess = list.length - CELL_MESSAGE_CAP;
   for (let i = 0; i < list.length && excess > 0;) {
     const m = list[i];
     const r = m.requestId && d.requests?.[m.requestId];
     const heldRequest = r && (r.state === 'open' || (r.state === 'answered' && r.delivery?.state !== 'delivered'));
-    const settled = !heldRequest && (m.author !== 'human' || m.acknowledgedAt || m.response?.withdrawn) && !outstanding(m) && !quoted.has(m.id);
+    const settled = !heldRequest && (m.author !== 'human' || m.acknowledgedAt || m.response?.withdrawn) && !unsettledMessage(m) && !quoted.has(m.id);
     if (settled) {
       const topic = d.threads[cellId]?.[m.threadId];
       if (topic && visible.has(m.id)) {
@@ -98,7 +97,7 @@ function prune(d, cellId, list, removed) {
   }
 }
 
-// Bumped by every write that can change which messages are outstanding, so
+// Bumped by every write that can change which messages are unread or unanswered, so
 // a reader can tell any two inbox states apart.
 function bumpInbox(d, cellId) {
   const box = inboxOf(d, cellId);
@@ -470,8 +469,8 @@ export function threadIndex(list, { references = false } = {}) {
     if (m.beadId) e.beads.add(m.beadId);
     for (const id of m.relatedBeadIds || []) e.beads.add(id);
     if (references) for (const id of beadReferences(m.text)) e.references.add(id);
-    if (!e.waiting && awaitingHuman(m)) e.waiting = m;
-    const kind = awaitingHuman(m) ? 'human' : awaitingQueen(m) ? 'queen' : null;
+    if (!e.waiting && unreadForHuman(m)) e.waiting = m;
+    const kind = unreadForHuman(m) ? 'human' : awaitingQueen(m) ? 'queen' : null;
     if (kind) e.awaiting[kind] = { count: (e.awaiting[kind]?.count || 0) + 1, newest: m };
     e.last = m;
   }
@@ -546,7 +545,7 @@ function replyRef(rt, cellId, replyTo) {
 // or, for callers that predate topics, from the message's first line.
 // Only the queen answers human messages: its reply to one, and every message
 // it lists in answers, is answered and received in the same write. Each
-// queen message then waits for the human to acknowledge it.
+// queen message stays unread until the human acknowledges it.
 const messageWrites = new WeakMap();
 function messageWrite(rt, cellId, run) {
   if (!messageWrites.has(rt)) messageWrites.set(rt, new Map());
@@ -790,7 +789,7 @@ async function recordHumanMessage(rt, { cellId, text: body, beadId, replyTo, thr
         target.ack.state = { kind: 'reaction', reaction, by: HUMAN, at, replyId: id };
         target.ack.rev += 1;
         settled = true;
-      } else if (target && awaitingHuman(target)) {
+      } else if (target && unreadForHuman(target)) {
         settled = Number.isInteger(ackRev) && ackRev === target.ack.rev;
         if (settled) {
           target.ack.state = { kind: 'reply', by: HUMAN, at, replyId: id };
@@ -802,7 +801,7 @@ async function recordHumanMessage(rt, { cellId, text: body, beadId, replyTo, thr
       const marked = [];
       for (let i = 0; i <= bound; i += 1) {
         const x = list[i];
-        if (!visible.has(x.id) || x.threadId !== t.id || !awaitingHuman(x) || (x === target && settled === false)) continue;
+        if (!visible.has(x.id) || x.threadId !== t.id || !unreadForHuman(x) || (x === target && settled === false)) continue;
         x.ack.state = { kind: 'read', by: HUMAN, at };
         x.ack.rev += 1;
         markedRead += 1;
@@ -919,7 +918,7 @@ function changeAck(rt, cellId, messageId, rev, next, through = false) {
     if (through && current && m.ack.state) {
       const now = Date.now();
       for (const x of list.slice(0, at)) {
-        if (!visible.has(x.id) || x.threadId !== m.threadId || !awaitingHuman(x)) continue;
+        if (!visible.has(x.id) || x.threadId !== m.threadId || !unreadForHuman(x)) continue;
         x.ack.state = { kind: 'read', by: HUMAN, at: now };
         x.ack.rev += 1;
         marked.push({ messageId: x.id, ack: x.ack });
@@ -931,11 +930,11 @@ function changeAck(rt, cellId, messageId, rev, next, through = false) {
   return out;
 }
 
-// Outstanding messages of one kind, oldest first, paged by their own cursor
-// rather than by topic: 'human' waits for the human, 'queen' for the queen.
+// Inbox messages, oldest first: 'human' is unread queen messages,
+// 'queen' is human messages awaiting an answer.
 export function inboxSlice(doc, cellId, awaiting, { after = null, limit = INBOX_PAGE } = {}) {
   const list = doc.conversation[cellId] || [];
-  const all = list.filter(awaiting === 'queen' ? awaitingQueen : awaitingHuman);
+  const all = list.filter(awaiting === 'queen' ? awaitingQueen : unreadForHuman);
   let start = 0;
   if (after) {
     const i = all.findIndex((m) => m.id === after.id);
@@ -952,7 +951,7 @@ export function inboxSlice(doc, cellId, awaiting, { after = null, limit = INBOX_
   const last = page.at(-1);
   return {
     awaiting, count: all.length, rev: inboxRev(doc, cellId), ids: page.map((m) => m.id), more: start + n < all.length, after: last ? { id: last.id, at: last.at } : after,
-    ...(awaiting === 'human' ? { acknowledgements: Object.fromEntries(list.filter(m => m.author === 'session' && m.ack?.required).map(m => [m.id, { rev: m.ack.rev, waiting: awaitingHuman(m), threadId: m.threadId }])) } : {}),
+    ...(awaiting === 'human' ? { acknowledgements: Object.fromEntries(list.filter(m => m.author === 'session' && m.ack?.required).map(m => [m.id, { rev: m.ack.rev, waiting: unreadForHuman(m), threadId: m.threadId }])) } : {}),
   };
 }
 
@@ -1207,7 +1206,7 @@ export async function cellContextConversation(rt, host, actor, { recent = 20, be
     out.awaiting_response = waiting.slice(0, 50).map((m) => ({ ...shape(m), thread_title: threadIn(threads, m.threadId)?.title }));
     out.awaiting_response_total = waiting.length;
     out.withdrawn_by_human = list.filter((m) => m.author === 'human' && m.response?.withdrawn && !m.response.answers?.length).slice(-50).map((m) => ({ ...shape(m), thread_title: threadIn(threads, m.threadId)?.title }));
-    out.awaiting_human_acknowledgement = list.filter(awaitingHuman).length;
+    out.awaiting_human_acknowledgement = list.filter(unreadForHuman).length;
   }
   return render(out, actor);
 }

@@ -140,7 +140,7 @@ test('changed waits preserve focus by wait/action identity and keep submitted qu
   all(dialog).find(n => n.tag === 'button' && text(n) === 'Ask the queen to fix').events.click();
   all(dialog).find(n => n.tag === 'a' && text(n) === 'Open on GitHub').focus();
   const message = { id: 'message:new', kind: 'message', title: 'New message', reason: 'Read me', beadIds: ['a'], cellId: 'c', threadId: 'new-topic', messageId: 'new' };
-  const next = { ...f.ctx, hive: { ...f.ctx.hive, cells: { c: { ...f.cell, waits: [message] } } } };
+  const next = { ...f.ctx, hive: { ...f.ctx.hive, cells: { c: { ...f.cell, waits: [message], requests: { r: { id: 'r', audience: 'human', state: 'open', title: 'Choose', beadId: 'a' } } } } } };
   view.refreshWaitingMenu(next);
   assert.equal(text(document.activeElement), 'Open on GitHub');
   assert.equal(document.activeElement.attrs.href, pr.url);
@@ -185,7 +185,7 @@ test('native waits open the exact request card without adding answer controls an
 });
 
 for (const isHead of [false, true]) {
-  test(`unread messages stay in Waiting for you without marking a ${isHead ? 'workstream' : 'bead'}`, async t => {
+  test(`unread messages create no waiting list or person mark on a ${isHead ? 'workstream' : 'bead'}`, async t => {
     const f = setup(t);
     const { beadTile } = await import('./cell-view.js');
     const bead = f.ctx.hive.beads.a;
@@ -195,7 +195,7 @@ for (const isHead of [false, true]) {
     let output = beadTile(f.ctx, bead, tile, new Map());
     assert.equal(output.mark, null);
     assert.equal(output.onMark, null);
-    assert.match(text(view.waitingSection(f.ctx, bead)), /Waiting for you \(1\).*Look here/);
+    assert.equal(view.waitingSection(f.ctx, bead), null);
     const fresh = { ...f.ctx, hive: { ...f.ctx.hive, cells: { c: { ...f.cell, requests: { r: { id: 'r', audience: 'human', state: 'open', title: 'Choose', beadId: 'a' } } } } } };
     output = beadTile(fresh, bead, tile, new Map());
     assert.equal(output.mark.kind, 'person');

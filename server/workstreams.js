@@ -1,7 +1,7 @@
 import {
   HiveError, LIMITS, text, beadIdArg, ensureWritable, refuseSnapshot, withLocks, journaled, assessCompletion, finishGroup, evidenceInput, CATCHING_UP,
 } from './ops.js';
-import { outstanding, contextOf, humanConversationDoc } from './conversation.js';
+import { unsettledMessage, contextOf, humanConversationDoc } from './conversation.js';
 import { BeadsError } from './beads.js';
 import { OUTCOMES, HUMAN_ACTOR, OPEN_STATUSES, descendantIds, normalizeIssue, buildGraph } from './bead-model.js';
 import { planArchive, planReturn, planPlace, hiddenHead, archiveHidden, activeKids, under, drawnNow } from '../public/archive-layout.js';
@@ -38,7 +38,7 @@ function closedAncestors(beads, rootId, id) {
 }
 
 function waitingMessages(rt, cellId, ids) {
-  return (humanConversationDoc(rt.metadata.read(), cellId).conversation[cellId] || []).filter((m) => outstanding(m) && ids.has(contextOf(m)?.beadId)).length;
+  return (humanConversationDoc(rt.metadata.read(), cellId).conversation[cellId] || []).filter((m) => unsettledMessage(m) && ids.has(contextOf(m)?.beadId)).length;
 }
 
 export function checkWorkstream(rt, { cellId, headId }) {
