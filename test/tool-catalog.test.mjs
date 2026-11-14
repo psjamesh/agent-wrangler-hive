@@ -42,3 +42,13 @@ for (const tool of [publishTool, workTools.find(t => t.name === 'hive_request_in
   assert.equal(tool.inputSchema.safeParse({ ...base, session_id: 'not-a-session' }).success, false);
   assert.equal(tool.inputSchema.safeParse({ ...base, session_label: 'x'.repeat(201) }).success, false);
 });
+
+
+test('request images share publish schema limits and describe private forwarding', () => {
+  const images = catalog.hive_request_input.properties.attachments;
+  const published = publishTool.inputSchema._zod.toJSONSchema().properties.attachments;
+  assert.equal(images.maxItems, 4);
+  assert.deepEqual(images.items, published.items);
+  assert.match(images.description, /All requesters/);
+  assert.match(images.description, /forwarding/);
+});

@@ -1162,7 +1162,7 @@ export function markReceived(rt, { cellId, messageId }) {
 }
 
 export async function cellContextConversation(rt, host, actor, { recent = 20, bead_id } = {}, render = out => out) {
-  const inbox = actor.role === 'queen' && !bead_id ? await attachmentsInbox(rt, actor.cell.id) : undefined;
+  const inbox = await attachmentsInbox(rt, actor.cell.id);
   actor = resolveCaller(rt, host, actor.sessionId, actor.cell.id);
   const doc = audienceConversationDoc(rt.metadata.read(), actor.cell.id, actor);
   const visibleThreads = threadRecords(doc, actor.cell.id);
@@ -1189,7 +1189,7 @@ export async function cellContextConversation(rt, host, actor, { recent = 20, be
     at: new Date(m.at).toISOString(),
   });
   const out = {
-    ...(actor.role === 'queen' && !bead_id ? { attachments_inbox: inbox } : {}),
+    attachments_inbox: inbox,
     conversation: list.slice(-recent).map(shape),
     threads: ownThreads(threads)
       .sort(byRecent)

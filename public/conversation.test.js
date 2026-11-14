@@ -2117,3 +2117,21 @@ test('remote Inbox search orders topics by last activity even without loaded sum
   const result = searchedInbox(context, [f.cell], 'needle', { remote });
   assert.deepEqual(result.lists.human.map(row => row.threadId), ['old', 'new']);
 });
+
+
+test('request conversation message renders its images exactly once inside the request card', async t => {
+  const f = fixture(t);
+  const attachments = [{ file: 'screen.png', alt: 'Settings preview' }];
+  const r = { id: 'hreq_image', messageId: 'msg_image', title: 'Review settings', body: 'See screenshot.', audience: 'human', state: 'open', attachments };
+  f.cell.requests = { [r.id]: r };
+  f.cell.threads = [{ id: thr, title: r.title, count: 1, retained: 1, lastAt: 10 }];
+  f.cell.messages = [{ id: r.messageId, requestId: r.id, attachments, author: 'session', sessionId: 'queen', text: r.title, threadId: thr, at: 10, n: 1 }];
+  f.ui.setAllTopics(f.cell.id, true);
+  f.draw();
+  f.ui.openThreadFor(f.cell.id, thr, f.cell.threads[0]);
+  const out = f.draw();
+  const thumbs = descendants(out.list).filter(el => el.attributes['aria-label'] === 'Open Settings preview');
+  assert.equal(thumbs.length, 1);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.sent.filter(frame => frame.type === 'hive-image').length, 1);
+});
