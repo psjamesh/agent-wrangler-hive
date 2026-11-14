@@ -1337,7 +1337,7 @@
   overflow: hidden;
 }
 .hive-root[data-view="overview"][data-panels="open"] .hive-overview { display: contents; }
-.hive-root[data-view="overview"][data-panels="open"] .hive-overview-head { grid-area: head; min-width: 0; }
+.hive-root[data-view="overview"][data-panels="open"] .hive-overview-head { grid-area: head; min-width: 0; max-height: 40vh; overflow: auto; }
 .hive-root[data-view="overview"][data-panels="open"] .hive-stage { grid-area: main; min-height: 0; height: auto; }
 .hive-root[data-view="overview"][data-panels="open"] .hive-dock { grid-area: rail; padding: 0; }
 .hive-root[data-view="overview"][data-panels="open"] .hive-divider { display: block; grid-area: divider; position: relative; cursor: col-resize; touch-action: none; }
