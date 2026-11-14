@@ -488,9 +488,14 @@ function growBeside({ shown, coming, startOf, taken }) {
   return placed;
 }
 
-export function createDragPlanner(args, { budgetMs = 8, now = () => performance.now() } = {}) {
+export function createDragPlanner(args, { budgetMs = 8, now = () => performance.now(), previewOnly = false } = {}) {
   const { layout, kids, id, hidden = new Set(), saved = {} } = args;
-  if (!layout.groupHeads.includes(id)) return (target) => ({ ...planMove({ ...args, target }), target });
+  const resolve = previewOnly ? previewMove : planMove;
+  if (!layout.groupHeads.includes(id)) {
+    const preview = (target) => ({ ...resolve({ ...args, target }), target });
+    preview.drop = previewOnly ? (target) => ({ ...planMove({ ...args, target }), target }) : preview;
+    return preview;
+  }
   const fullMembers = subtreeMembers(layout, kids, id);
   const members = [...fullMembers].filter((m) => !hidden.has(m));
   const home = layout.positions[id];
@@ -534,8 +539,8 @@ export function createDragPlanner(args, { budgetMs = 8, now = () => performance.
     cache.set(key(target),plan);
     if(cache.size>8) cache.delete(cache.keys().next().value);
   };
-  const movePlan = (target) => {
-    const plan = planMove({ ...preparedArgs, target });
+  const movePlan = (target, resolver = resolve) => {
+    const plan = resolver({ ...preparedArgs, target });
     if (plan.same) return { ...plan, target, moves: Object.fromEntries(members.map((m) => [m, layout.positions[m]])) };
     return { ...plan, target };
   };
@@ -546,7 +551,7 @@ export function createDragPlanner(args, { budgetMs = 8, now = () => performance.
     return key(target)!==key(home) || !parent || state.attachments[id]?.status!=='detached';
   };
   if (acceptable(home)) validTargets.push(home);
-  return (target) => {
+  const preview = (target) => {
     const cached = cache.get(key(target));
     if (cached && !cached.pending) return cached;
     const started = now();
@@ -597,6 +602,20 @@ export function createDragPlanner(args, { budgetMs = 8, now = () => performance.
     }
     return { ...exact, target, pending: !complete, reason: complete ? 'No free attached placement fits this workstream.' : 'Finding a free attached placement for this workstream.' };
   };
+  preview.drop = (target) => {
+    const shown = preview(target);
+    if (!previewOnly || !shown.ok) return shown;
+    const plan = { ...movePlan(shown.target, planMove), snapped: shown.snapped, approximate: shown.approximate };
+    if (plan.ok || !parent || !shown.snapped) return plan;
+    const ranked = [...validTargets].sort((a, b) => nearestTarget(a, b, target));
+    for (const resolved of ranked) {
+      if (key(resolved) === key(shown.target)) continue;
+      const fallback = movePlan(resolved, planMove);
+      if (fallback.ok) return { ...fallback, snapped: key(resolved) !== key(target), approximate: !complete };
+    }
+    return plan;
+  };
+  return preview;
 }
 
 export function planDrag(args) {
