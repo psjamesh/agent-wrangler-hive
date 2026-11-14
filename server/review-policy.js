@@ -16,8 +16,12 @@ export function reviewPolicy(cell) {
   return { primary: config(cell?.reviewPolicy?.primary, REVIEW_POLICY_DEFAULTS.primary), secondary: config(cell?.reviewPolicy?.secondary, REVIEW_POLICY_DEFAULTS.secondary) };
 }
 
+export function assertAllowedModel(config, label = 'worker') {
+  if (['agent', 'model', 'resolvedModel'].some(key => BANNED_MODEL.test(config[key] || ''))) throw new HiveError(`The ${label} cannot use a Terra model.`, 'refused');
+}
+
 export function assertAllowedReviewer(config, slot = 'review') {
-  if (BANNED_MODEL.test(config.model || '') || BANNED_MODEL.test(config.agent || '')) throw new HiveError(`The ${slot} reviewer cannot use a Terra model; it is not allowed for reviews.`, 'refused');
+  assertAllowedModel(config, `${slot} reviewer`);
 }
 
 export function setReviewPolicy(rt, { cellId, policy }) {
