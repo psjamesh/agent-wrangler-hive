@@ -2117,3 +2117,42 @@ test('remote Inbox search orders topics by last activity even without loaded sum
   const result = searchedInbox(context, [f.cell], 'needle', { remote });
   assert.deepEqual(result.lists.human.map(row => row.threadId), ['old', 'new']);
 });
+
+for (const query of ['Topic', 'hive-one', 'Topic m1']) test(`opening a topic preserves matching context for search ${query}`, t => {
+  const f = topicFixture(t, ['m1', 'm2', 'm3']);
+  f.ui.closeThread(f.cell.id);
+  f.cell.threads[0].beadId = 'hive-one';
+  f.ui.setSearchQuery(query);
+  const topics = f.draw();
+  assert.equal(topics.list.querySelectorAll('.hive-topic').length, 1);
+  assert.match(topics.head.querySelector('.hive-inbox-search-status').textContent, /1 topic matches/);
+  if (query === 'Topic') assert.equal(topics.list.querySelector('.hive-search-hit').textContent, 'Topic');
+  topics.list.querySelector('.hive-topic-btn').fire('click');
+  const out = f.draw();
+  assert.equal(out.list.querySelectorAll('.hive-message').length, query === 'Topic m1' ? 1 : 4);
+  assert.doesNotMatch(out.list.textContent, /No messages match/);
+});
+
+test('sending a filtered reply does not mark hidden newer messages read', t => {
+  const f = topicFixture(t, ['m1', 'm2', 'm3']);
+  f.ui.setSearchQuery('m1');
+  const out = f.draw();
+  assert.deepEqual(out.list.querySelectorAll('.hive-message').map(e => e.dataset.id), ['m1']);
+  assert.equal(f.send(out).readThrough, null);
+  f.replies.at(-1).onReply({ ok: true });
+  assert.equal(f.ui.readMarks(f.cell.id).threads[thr], undefined);
+});
+
+test('filtered history keeps its bridge when no message after the gap matches', t => {
+  const f = topicFixture(t, []);
+  const old = { ...queen('old', 1, READ), text: 'needle in history' };
+  f.ui.addHistory(f.cell.id, thr, f.hive.metaEpoch, { messages: [old], more: false, anchorN: 2 });
+  f.ui.setSearchQuery('needle');
+  const out = f.draw();
+  assert.deepEqual(out.list.querySelectorAll('.hive-message').map(e => e.dataset.id), ['old']);
+  const bridge = out.list.querySelectorAll('button').find(e => e.textContent === 'Load the messages in between');
+  assert.ok(bridge);
+  bridge.fire('click');
+  assert.equal(f.sent.at(-1).type, 'hive-thread-history');
+  assert.equal(f.sent.at(-1).before, 'm1');
+});

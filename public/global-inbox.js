@@ -83,7 +83,7 @@ export function orderInboxTopics(ctx, cells, rows) {
     const topic = priorities.get(row.cellId)?.get(row.threadId);
     return {
       id: `${row.cellId}:${row.threadId || row.key}`, lastAt: topic?.lastAt ?? row.lastAt ?? row.at,
-      needsCount: topic?.needsCount ?? row.needsCount, unreadCount: topic?.unreadCount ?? row.count,
+      needsCount: topic?.needsCount ?? row.needsCount, unreadCount: topic?.unreadCount ?? row.unreadCount ?? row.count,
     };
   };
   return rows.map(row => ({

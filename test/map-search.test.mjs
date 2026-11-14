@@ -450,7 +450,7 @@ test('one header query filters topics and messages while highlighting the map, a
   const f = fixture(t);
   const cell = f.ctx.hive.cells.cell;
   cell.threads = [
-    { id: 'matching', title: 'Needle discussion', beads: [], retained: 2 },
+    { id: 'matching', title: 'Matching discussion', beads: [], retained: 2 },
     { id: 'other', title: 'Other discussion', beads: [], retained: 1 },
   ];
   cell.messages = [
