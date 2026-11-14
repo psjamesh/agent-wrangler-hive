@@ -1,4 +1,3 @@
-import { humanConversationDoc } from './conversation.js';
 import { requireBeadAccess } from './access.js';
 import { HiveError } from './ops.js';
 import { prRepository } from './pr-labels.js';
@@ -22,14 +21,12 @@ export function reportPrWait(rt, actor, args) {
 }
 
 export function waitingProjection(rt, cell, beadIds) {
-  if (!cell.enabled || cell.snapshot) return { waits: [], pullRequests: [], waitTargets: { messages: {}, topics: {} } };
-  const doc = humanConversationDoc(rt.metadata.read(), cell.id);
+  if (!cell.enabled || cell.snapshot) return { waits: [], pullRequests: [] };
+  const doc = rt.metadata.read();
   const pullRequests = Object.values(doc.prLabels || {}).filter(r => prRepository(r?.url)).flatMap(r => {
     const ids = [...new Set((r.associations || []).filter(a => a.cellId === cell.id && beadIds.has(a.beadId)).map(a => a.beadId))];
     if (!ids.length) return [];
     return [{ url: r.url, number: r.number || Number(r.url.split('/').at(-1)), title: r.title || r.url, state: r.state, headSha: r.headSha || null, checks: r.checks || 'unknown', isDraft: r.isDraft !== false, reviewDecision: r.reviewDecision || null, mergeable: r.mergeable || null, mergeStateStatus: r.mergeStateStatus || null, stateCheckedAt: r.stateCheckedAt ?? null, observationError: r.observationError || null, humanAttention: r.humanAttention || null, beadIds: ids, cellId: cell.id }];
   });
-  const topics = Object.fromEntries(Object.values(doc.threads?.[cell.id] || {}).map(t => [t.id, beadIds.has(t.beadId) ? t.beadId : cell.rootBeadId]));
-  const messages = Object.fromEntries((doc.conversation[cell.id] || []).map(m => [m.id, beadIds.has(m.beadId) ? m.beadId : topics[m.threadId] || cell.rootBeadId]));
-  return { waits: [], pullRequests, waitTargets: { messages, topics } };
+  return { waits: [], pullRequests };
 }

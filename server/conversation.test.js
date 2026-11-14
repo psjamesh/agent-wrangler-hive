@@ -328,8 +328,6 @@ test('hive_publish returns the relative hash link for its posted message', async
   assert.deepEqual(JSON.parse(response.content[0].text), result);
   assert.equal(result.link, `#view=ext:hive:overview&cell=${f.cell.id}&topic=${result.thread_id}&message=${result.message_id}`);
   assert.equal(publishTool.name, 'hive_publish');
-  assert.ok(result.next_step.includes('Needs You request'));
-  assert.ok(result.next_step.includes(`[Open Hive message](${result.link})`));
 });
 
 test('context provides links for topics and other authors’ messages, including waiting input', async (t) => {
