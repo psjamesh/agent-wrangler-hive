@@ -7,6 +7,7 @@
   --hive-fill: color-mix(in srgb, var(--hive-honey) 42%, var(--surface));
   --hive-cap: color-mix(in srgb, var(--hive-honey) 18%, var(--surface-2));
   --hive-message-link: color-mix(in srgb, var(--fg) 80%, var(--accent, var(--fg)));
+  --hive-unread-bg: #202c3d;
   --hive-ink: color-mix(in srgb, var(--hive-honey) 50%, var(--fg));
   --hive-line: color-mix(in srgb, var(--fg-muted, var(--fg)) 70%, transparent);
   --hive-tile: var(--surface);
@@ -30,6 +31,8 @@
   font-variant-numeric: tabular-nums;
   overflow: auto;
 }
+
+body.light .hive-root { --hive-unread-bg: #edf3fc; }
 
 .hive-region { display: contents; }
 
@@ -1015,6 +1018,7 @@
 
 .hive-message { position: relative; padding: 8px 0; border-bottom: 1px solid var(--border-muted, var(--border)); }
 .hive-message:last-child { border-bottom: none; }
+.hive-message.is-unread { background: var(--hive-unread-bg); }
 .hive-message-human { border-left: 3px solid var(--hive-comb); padding-left: 10px; }
 .hive-message-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
 .hive-quote { color: var(--fg-muted, var(--fg)); font-size: 12.5px; border-left: 3px solid var(--border); padding-left: 8px; margin: 2px 0; overflow-wrap: anywhere; }
@@ -1106,7 +1110,8 @@
   border-radius: 6px;
   cursor: pointer;
 }
-.hive-topic-btn:hover { background: var(--hive-wax); }
+.hive-topic.is-unread .hive-topic-btn { background: var(--hive-unread-bg); }
+.hive-topic .hive-topic-btn:hover { background: var(--hive-wax); }
 .hive-topic-line { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
 .hive-topic-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .hive-topic.is-unread .hive-topic-title { font-weight: 700; }
