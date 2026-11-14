@@ -507,7 +507,7 @@ function renderTopics({ cell, hive, graph, api, ui, ctx }) {
   const out = listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selected, epoch });
   if (inbox) {
     Object.assign(out, inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot, epoch, kind: inbox }));
-    out.head.insertBefore(out.search, out.head.querySelector('.hive-inbox-filters'));
+    out.head.querySelector('.hive-inbox-toolbar').insertBefore(out.search, out.head.querySelector('.hive-inbox-filters'));
   }
   return out;
 }
@@ -694,8 +694,8 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selec
   const what = inbox ? (inbox === 'human' ? 'Waiting for you' : 'Waiting for the queen') : 'Topics';
   const head = h('div', { class: `hive-topics-head${inbox ? ' hive-inbox-head' : ''}` },
     cell.inbox ? h('div', { class: 'hive-inbox-totals' }, inboxTotals({ needs: needsRows({ hive, graph, ui }, [cell]).length, human: waitingCount(cell, hive, ui, 'human') })) : null,
-    inboxHead(cell, hive, graph, ui),
-    h('span', { class: 'hive-muted' }, inbox || all || !scope ? `${inbox ? what : 'All topics'} in this hive` : [`${what} about `, h('strong', {}, scopeName), ' (and its items)']),
+    inbox ? h('div', { class: 'hive-inbox-toolbar' }, inboxHead(cell, hive, graph, ui)) : inboxHead(cell, hive, graph, ui),
+    !inbox ? h('span', { class: 'hive-muted' }, all || !scope ? 'All topics in this hive' : [`${what} about `, h('strong', {}, scopeName), ' (and its items)']) : null,
     scope && !inbox ? toggle : null,
     hint && !inbox ? h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setAllTopics(cell.id, true) }, `${hint} in other topics`) : null);
   const list = h('ol', { class: 'hive-topics', 'aria-label': 'Topics' });
