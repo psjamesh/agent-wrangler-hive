@@ -1,5 +1,6 @@
 import { buildGraph, descendantIds, GROUP_KINDS } from './bead-model.js';
 import { HiveError } from './ops.js';
+import { liveClaimant } from './tracking.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 
 export const WORK_LIMIT_SETTING = 'maxClaimedWork';
@@ -23,29 +24,55 @@ export function hiveWorkIds(rt, graph) {
   return ids;
 }
 
+// Core sends no completion notification for failed launches or later hook refusals.
+// Expire transient admissions so those launches cannot hold capacity indefinitely.
+export function helperSlots(rt, graph = rt.snapshots.graph, now = Date.now()) {
+  const slots = new Map();
+  const liveCells = new Set(rt.metadata.cells().filter(c => c.enabled && !c.snapshot).map(c => c.id));
+  const eligible = (cellId, beadId) => liveCells.has(cellId) && graph.beads[beadId] && graph.beads[beadId].status !== 'closed';
+  for (const [id, admission] of rt.spawnAdmissions || []) {
+    if (now - admission.at >= 10 * 60 * 1000) rt.spawnAdmissions.delete(id);
+    else if (eligible(admission.cellId, admission.beadId)) slots.set(`helper:${id}`, admission);
+  }
+  for (const [cellId, list] of Object.entries(rt.metadata.read().bindings || {})) {
+    for (const b of list) {
+      if (!b.active || !b.autoEnrolled || !eligible(cellId, b.beadId)) continue;
+      const session = rt.host?.sessions.get(b.sessionId);
+      if (session && !session.archived && session.status !== 'exited') slots.set(`helper:${b.sessionId}`, { beadId: b.beadId, cellId });
+    }
+  }
+  return slots;
+}
+
 export function capacitySlots(rt, graph, reserve = []) {
   const scope = hiveWorkIds(rt, graph);
   const charge = (id) => id;
-  const claimed = new Set([...scope].filter((id) => graph.beads[id].status === 'in_progress' && graph.beads[id].assignee).map(charge));
+  const reservationActive = (sid) => {
+    const session = rt.host?.sessions?.get?.(sid);
+    return !session || (!session.archived && session.status !== 'exited');
+  };
+  const claimed = new Set([...scope].filter((id) => graph.beads[id].status === 'in_progress' && graph.beads[id].assignee && (!graph.beads[id].ownerSessionId || !rt.host?.sessions?.get || liveClaimant(rt.host, graph.beads[id].ownerSessionId))).map(charge));
   const roots = new Set(rt.metadata.cells().map((c) => c.rootBeadId));
   const counts = (id) => typeof id === 'string' && !roots.has(id) && graph.beads[id]?.kind !== 'external' && !GROUP_KINDS.has(graph.beads[id]?.kind);
   const reserved = new Set(Object.values(rt.metadata.read().workerLaunches || {})
-    .filter((l) => RESERVED_LAUNCH_STATES.has(l.state) && counts(l.beadId)).map((l) => charge(l.beadId)));
+    .filter((l) => RESERVED_LAUNCH_STATES.has(l.state) && reservationActive(l.sessionId) && counts(l.beadId)).map((l) => charge(l.beadId)));
   for (const op of Object.values(rt.metadata.read().operations)) {
     if (op.kind === 'claim' && ['pending', 'uncertain', 'partial'].includes(op.state) && counts(op.intent?.beadId)) reserved.add(charge(op.intent.beadId));
   }
-  const reviews = new Set(Object.values(rt.metadata.read().reviews || {}).filter((r) => OPEN_REVIEW_STATES.has(r.state) && counts(r.workBeadId)).map((r) => r.workBeadId));
+  const reviews = new Set(Object.values(rt.metadata.read().reviews || {}).filter((r) => OPEN_REVIEW_STATES.has(r.state) && reservationActive(r.reviewerSessionId) && counts(r.workBeadId)).map((r) => r.workBeadId));
   for (const id of reviews) reserved.add(id);
   for (const id of reserve) if (counts(id)) reserved.add(charge(id));
-  return { claimed, reserved, reviews };
+  const helpers = helperSlots(rt, graph);
+  for (const id of helpers.keys()) reserved.add(id);
+  return { claimed, reserved, reviews, helpers };
 }
 
 export function capacity(rt, graph = rt.snapshots.graph, { reserve = [], breakdown = false, slots = capacitySlots(rt, graph, reserve) } = {}) {
-  const { claimed, reserved, reviews } = slots;
+  const { claimed, reserved, reviews, helpers } = slots;
   const used = new Set([...claimed, ...reserved]).size;
   const limit = workLimit(rt);
   return { limit, unlimited: limit === 0, claimed: claimed.size, reserved: [...reserved].filter((id) => !claimed.has(id)).length, used, available: limit === 0 ? null : Math.max(0, limit - used),
-    ...(breakdown ? { breakdown: { claimed: claimed.size, reviews: [...reviews].filter((id) => !claimed.has(id)).length, launching: [...reserved].filter((id) => !claimed.has(id) && !reviews.has(id)).length } } : {}),
+    ...(breakdown ? { breakdown: { claimed: claimed.size, reviews: [...reviews].filter((id) => !claimed.has(id)).length, launching: [...reserved].filter((id) => !claimed.has(id) && !reviews.has(id) && !helpers.has(id)).length, ...(helpers.size ? { helpers: helpers.size } : {}) } } : {}),
   };
 }
 

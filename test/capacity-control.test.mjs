@@ -244,3 +244,11 @@ test('external popup changes invalidate the client render signature', () => {
   settings.requestNotifications = true;
   assert.equal(signature(hive), before);
 });
+
+
+test('capacity tooltip explains the additional slots charged for helpers', t => {
+  const f = fixture(t);
+  f.ctx.hive.capacity.breakdown.helpers = 2;
+  f.draw();
+  assert.match(f.control('capacity-toggle').attrs.title, /2 additional helper slots/);
+});
