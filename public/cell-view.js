@@ -1,3 +1,4 @@
+import { codexApprovalsForm } from './codex-approvals.js';
 import { handoverFields, handoverError } from './handover-fields.js';
 import { pickupDetails } from './pickup.js';
 import { watchdogSettingsForm } from './watchdog-settings.js';
@@ -557,6 +558,7 @@ function infoDrawer(ctx, cell, root) {
     h('section', {}, h('h4', {}, 'Queen'), queen),
     cell.snapshot || isRetired(cell) ? null : queenInstructions(ctx, cell),
     cell.snapshot || isRetired(cell) ? null : watchdogSettingsForm(ctx, cell),
+    cell.snapshot || isRetired(cell) ? null : codexApprovalsForm(ctx, cell),
     cell.snapshot || isRetired(cell) ? null : h('p', { class: 'hive-muted' }, 'Automatic pickup starts ready-marked work whenever global work capacity is available. Each mark carries its worker profile. Maximum active workers controls concurrency; starts are limited to one per hive and two overall per minute.'),
     cell.snapshot || isRetired(cell) ? null : reviewPolicyForm(ctx, cell),
     cell.snapshot ? null : h('section', {},

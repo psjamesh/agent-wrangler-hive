@@ -1,3 +1,4 @@
+import { codexPolicy } from './codex-policy.js';
 import { beforeSpawn, spawned } from './spawn-hooks.js';
 import { onArchive } from './archived-claims.js';
 import { workerLaunchContext } from './workers.js';
@@ -98,6 +99,7 @@ export function createManifest({ dir }) {
     skills: SKILLS,
     skillsFor,
     hideTool,
+    codexPolicy,
     session: { onBeforeDispatch, onArchive },
     hooks: { 'session.beforeSpawn': beforeSpawn, 'session.spawned': spawned, 'session.prepare': prepareSession, 'session.launchContext': async (args) => (await workerLaunchContext(args)) ?? queenLaunchContext(args) },
     graph: ({ host }) => ({ hive: { ...host.stores.hive.projection(), handoverSources: handoverSources(host) } }),

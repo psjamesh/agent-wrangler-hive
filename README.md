@@ -51,8 +51,23 @@ Drag the background to pan, zoom to inspect the map, and use **Fit** to see ever
 - **Worker and claim:** a session responsible for a bounded bead. A session stopping or going idle does not finish its work.
 - **Link:** an explicit dependency or association. Blocking links make work wait; neighbouring hexagons do not imply dependencies.
 - **Request:** a tracked question needing a decision or action. Worker requests go privately to the queen until forwarded; a missing or archived queen routes requests to the human.
-- **Delegation.** Tracked delegation uses Hive's tools, which claim a bead before launching a session. Hive adds no tool deny list to Claude, Codex or Gemini launches. Sessions they start outside Hive appear under `attention.untracked_descendants` in `hive_context`. A helper, advisor or investigation is its own claimed bead launched with `hive_spawn_worker`; a code review uses `role: "review"` on the work bead. New Codex workers and reviewers default to `on-request` approvals. Set `codex_approval: "never"` to disable approval requests for a launch, or explicitly select `"on-request"`. Only these two values are accepted; valid choices are ignored when the resolved agent is not Codex. A retained reviewer keeps its existing configuration and rejects `codex_approval`.
+- **Delegation.** Tracked delegation uses Hive's tools, which claim a bead before launching a session. Hive adds no tool deny list to Claude, Codex or Gemini launches. Sessions they start outside Hive appear under `attention.untracked_descendants` in `hive_context`. A helper, advisor or investigation is its own claimed bead launched with `hive_spawn_worker`; a code review uses `role: "review"` on the work bead. Codex approvals are configured per hive in **Info → Settings** (see below). `codex_approval` on `hive_spawn_worker` accepts `"on-request"` or `"never"` and is ignored when the resolved agent is not Codex. A retained reviewer keeps its stored launch configuration and rejects `codex_approval`; the hive setting still applies when it resumes.
 - **Queen handoff.** The current queen calls `hive_handoff_queen` to hand the cell to one Hive-launched successor at a time. The handoff is generation-fenced: if the queen changes meanwhile, the successor is refused before it acts. Workers keep their claims and reviews; the old queen loses queen and coordinator authority, and claims it holds personally are not transferred. The human can launch a replacement queen at any time.
+
+### Codex approvals
+
+Each hive has a **Codex approvals** selector in **Info → Settings**:
+
+| Choice | Behavior |
+| --- | --- |
+| Use my Codex config (default) | Hive adds no policy or approval flag; Agent Wrangler's stored session policy and configured defaults apply. |
+| Approve for me | Uses Codex `--approve-for-me` through the extension policy hook. |
+| Ask me | Uses approval `on-request`. |
+| Never ask | Uses approval `never`. |
+
+The setting applies to Codex queens, workers and reviewers at launch, resume and fork, including existing sessions on their next start. It does not change a running terminal. A session dispatched directly from the board into the hive task receives the hive policy from its next resume, because core assigns its task after the first dispatch. Existing hives with no saved setting use **Use my Codex config**. Sessions outside an enabled hive keep core defaults. A fork inherits its parent's hive policy before its own binding is established; an existing membership takes precedence. If a session belongs to several hives, Hive leaves the policy to core rather than choosing between them.
+
+An explicit hive choice takes precedence over `codex_approval` on `hive_spawn_worker` (or its review alias), as core gives extension policy answers precedence over stored launch settings. With **Use my Codex config**, an explicit `codex_approval` controls that launch and is stored by core for resume and fork; omitting it leaves core/user defaults untouched. Returning to **Use my Codex config** restores that stored policy, including an approval choice saved by an earlier launch. The hook answers the whole policy rather than merging with core's stored sandbox choice: **Ask me** and **Never ask** use core's default workspace-write sandbox, and **Approve for me** implies workspace-write. Agent Wrangler's existing host API requirement `^1.80.0` supports both the policy hook and per-launch approval option.
 
 ## Data and evaluation
 

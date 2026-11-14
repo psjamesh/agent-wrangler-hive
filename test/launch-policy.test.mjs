@@ -21,7 +21,7 @@ test('Hive launches carry no deny list and are labelled unrestricted for every p
 });
 
 function recordSpawns(f) {
-  const calls = [];
+  const calls = [], policies = [];
   const manifest = createManifest({ dir: '.' });
   let n = 0;
   f.host.sessions.spawn = async (opts) => {
@@ -31,29 +31,30 @@ function recordSpawns(f) {
     await manifest.session.onBeforeDispatch({ sessionId, ext, host: f.host });
     const out = await manifest.hooks['session.launchContext']({ sid: sessionId, task: { id: opts.taskId }, reason: 'spawn', host: f.host });
     if (out?.refuse) throw new Error(out.refuse);
+    policies.push(manifest.codexPolicy({ phase: 'dispatch', sessionId, ext: f.host }));
     f.board.set(sessionId, { sessionId, taskId: opts.taskId, status: 'working', spawnedBy: null });
     return { sessionId };
   };
-  return { calls, manifest };
+  return { calls, manifest, policies };
 }
 
 for (const codex_approval of [undefined, 'on-request', 'never']) {
-  test(`Codex work launches use ${codex_approval ?? 'on-request by default'} approvals`, async () => {
+  test(`Codex work launches use ${codex_approval ?? 'core default'} approvals`, async () => {
     const f = fixture(0);
     const { calls } = recordSpawns(f);
     await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build', agent: 'codex', codex_approval });
-    assert.equal(calls[0].approvalPolicy, codex_approval ?? 'on-request');
+    assert.equal(calls[0].approvalPolicy, codex_approval);
     assert.equal('codex_approval' in calls[0], false);
   });
 
-  test(`policy-selected Codex reviews use ${codex_approval ?? 'on-request by default'} approvals`, async () => {
+  test(`policy-selected Codex reviews use ${codex_approval ?? 'core default'} approvals`, async () => {
     const f = fixture(0);
     const { calls } = recordSpawns(f);
     f.live.a.assignee = 'aw:builder';
     f.board.set('builder', { sessionId: 'builder', taskId: 'task', agent: 'claude', status: 'working' });
     await requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review', codex_approval });
     assert.equal(calls[0].agent, 'codex');
-    assert.equal(calls[0].approvalPolicy, codex_approval ?? 'on-request');
+    assert.equal(calls[0].approvalPolicy, codex_approval);
     assert.equal('codex_approval' in calls[0], false);
   });
 }
@@ -323,3 +324,33 @@ test('descendants are found transitively across tasks, through exited intermedia
   assert.deepEqual(out.map((s) => s.session_id), ['child', 'grandchild', 'dead-mid', 'orphan-gc']);
   assert(out.every((s) => s.origin_session_id === 'queen' || s.origin_session_id === 'queen'));
 });
+
+for (const role of ['work', 'review']) for (const [setting, policy] of [
+  ['config', undefined], ['approve-for-me', { approveForMe: true }], ['on-request', { approval: 'on-request' }], ['never', { approval: 'never' }],
+]) for (const codex_approval of [undefined, 'never', 'on-request']) {
+  test(`${role}: hive ${setting} takes precedence over launch ${codex_approval ?? 'default'}`, async () => {
+    const f = fixture(0);
+    f.rt.metadata.mutate(d => { d.cells.cell.codexApprovals = setting; });
+    const { calls, manifest, policies } = recordSpawns(f);
+    const answers = [];
+    const spawn = f.host.sessions.spawn;
+    f.host.sessions.spawn = async opts => {
+      const result = await spawn(opts);
+      for (const phase of ['dispatch', 'resume', 'fork']) {
+        answers.push(manifest.codexPolicy({ phase, sessionId: phase === 'fork' ? 'forked' : result.sessionId, parentId: result.sessionId, ext: f.host }));
+      }
+      return result;
+    };
+    if (role === 'review') {
+      f.live.a.assignee = 'aw:builder';
+      f.board.set('builder', { sessionId: 'builder', taskId: 'task', agent: 'claude', status: 'working' });
+      await requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review', codex_approval });
+    } else {
+      await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build', agent: 'codex', codex_approval });
+    }
+    assert.equal(calls[0].approvalPolicy, codex_approval);
+    assert.equal(Object.hasOwn(calls[0], 'approvalPolicy'), codex_approval !== undefined);
+    assert.deepEqual(policies, [policy]);
+    assert.deepEqual(answers, [policy, policy, policy]);
+  });
+}
