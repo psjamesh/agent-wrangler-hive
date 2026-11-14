@@ -218,3 +218,22 @@ test('non-session assignees retain their existing capacity charge', t => {
   setGraph([raw('root'), { ...raw('a', 'root', true), assignee: 'human' }]);
   assert.equal(rt.projection().capacity.used, 1);
 });
+test('helper slots appear in their cell and projection cache follows live helpers and transient admissions', t => {
+  const { rt } = fixture(t);
+  const session = { status: 'working' };
+  rt.host = { sessions: { get: id => id === 'helper' ? session : { status: 'working' } } };
+  rt.metadata.mutate(d => { d.bindings.one = [{ sessionId: 'helper', beadId: 'a', role: 'investigator', autoEnrolled: true, active: true }]; });
+  assert.equal(rt.projection().capacity.used, 3);
+  assert.equal(rt.projection().capacity.breakdown.helpers, 1);
+  assert.equal(rt.projection().capacity.breakdown.launching, 0);
+  assert.equal(rt.projection().cells.one.occupiedCount, 2);
+  session.archived = true;
+  assert.equal(rt.projection().capacity.used, 2);
+  rt.spawnAdmissions = new Map([['pending', { beadId: 'a', cellId: 'one', at: Date.now() }]]);
+  assert.equal(rt.projection().capacity.used, 3);
+  assert.equal(rt.projection().capacity.breakdown.helpers, 1);
+  assert.equal(rt.projection().capacity.breakdown.launching, 0);
+  assert.equal(rt.projection().cells.one.occupiedCount, 2);
+  rt.spawnAdmissions.get('pending').at -= 10 * 60 * 1000;
+  assert.equal(rt.projection().capacity.used, 2);
+});

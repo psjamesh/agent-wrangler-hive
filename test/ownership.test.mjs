@@ -775,8 +775,17 @@ test('review marks have rendered glyphs and both states appear in the map Key', 
   globalThis.document = { createElement: () => new Element(), createElementNS: () => new Element(), createTextNode: (text) => new Element(text) };
   t.after(() => { globalThis.document = previousDocument; globalThis.Node = previousNode; });
   const words = (node) => node.text + node.children.map(words).join(' ');
-  assert(primaryMark('review-working', 'Reviewer working'));
-  assert(primaryMark('review-pending', 'Review pending'));
+  for (const kind of ['review-working', 'review-pending']) {
+    const mark = primaryMark(kind, 'Review');
+    const disc = mark.children.find(n => n.attributes.class === 'hive-pm-bg');
+    assert.equal(disc.attributes.r, '7.5');
+    const glyph = mark.children.find(n => n.attributes.class === 'hive-pm-glyph');
+    assert.equal(glyph.attributes.transform, 'scale(0.48) translate(-12 -12)');
+    assert.deepEqual(glyph.children.map(n => n.attributes), [
+      { d: 'm8 11 2 2 4-4' }, { cx: '11', cy: '11', r: '8' }, { d: 'm21 21-4.3-4.3' },
+    ]);
+    assert(!mark.children.some(n => n.attributes.class === 'hive-pm-line'));
+  }
   assert.match(words(legend()), /reviewer working/);
   assert.match(words(legend()), /review pending/);
 });

@@ -125,9 +125,9 @@ export function projectForGraph({ runtime, snapshot }) {
   for (const cell of Object.values(cells)) cell.occupiedCount = 0;
   let outside = 0;
   for (const id of occupied) {
-    let bead = beads[id];
+    let bead = beads[slots.helpers.get(id)?.beadId || id];
     const seen = new Set();
-    let cellId;
+    let cellId = slots.helpers.get(id)?.cellId;
     while (bead && !seen.has(bead.id)) {
       seen.add(bead.id);
       cellId = cellRoots.get(bead.id);
