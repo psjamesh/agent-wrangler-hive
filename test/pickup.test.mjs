@@ -6,6 +6,7 @@ import { spawnWorker } from '../server/workers.js';
 import * as pickup from '../server/pickup.js';
 import { capacity } from '../server/admission.js';
 import { beforeSpawn, spawned } from '../server/spawn-hooks.js';
+import { reconcileInactiveBindings } from '../server/tracking.js';
 
 const arm = (f, id = 'a', extra = {}) => pickup.setPickup(f.rt, f.host, f.actor(), { bead_id: id, ready: true, profile: f.profile, ...extra });
 const run = f => pickup.createPickupDispatcher({ runtime: f.rt, host: f.host, now: f.now }).run();
@@ -508,4 +509,39 @@ test('a competing claimant after eligibility prevents automatic dispatch', async
   await run(f);
   assert.equal(f.spawned.length, 0);
   assert.equal(f.live.a.assignee, 'aw:other');
+});
+
+for (const ended of ['exited', 'archived']) {
+  for (const held of ['claim', 'reservation', 'helper']) {
+    test(`${ended} ${held} frees capacity for pickup without clearing other work fences`, async () => {
+      const f = pickupFixture(1); await arm(f); await arm(f, 'b');
+      f.board.set('ended', { sessionId: 'ended', taskId: 'task', status: ended === 'exited' ? 'exited' : 'idle', archived: ended === 'archived' });
+      f.doc().bindings.cell = [{ sessionId: 'ended', beadId: 'b', role: held === 'helper' ? 'investigator' : 'worker', active: true, autoEnrolled: held === 'helper' }];
+      if (held === 'claim') { f.live.b.assignee = 'aw:ended'; f.live.b.status = 'in_progress'; f.bump('b'); }
+      if (held === 'reservation') f.doc().workerLaunches.ended = { id: 'ended', sessionId: 'ended', cellId: 'cell', beadId: 'b', state: 'uncertain' };
+      await f.rt.snapshots.refresh();
+      reconcileInactiveBindings(f.rt, f.host);
+      assert.equal(capacity(f.rt).used, 0);
+      assert.equal(f.doc().bindings.cell[0].active, ended !== 'archived');
+      if (held !== 'helper') assert.ok(pickup.structuralPickupReasons(f.rt, f.graph(), f.graph().beads.b).length);
+      await run(f);
+      assert.equal(f.spawned.length, 1);
+      assert.equal(f.spawned[0].ext.hive.beadId, 'a');
+      assert.equal(capacity(f.rt).used, 1);
+      if (held === 'claim') assert.equal(f.live.b.assignee, 'aw:ended');
+      if (held === 'reservation') assert.equal(f.doc().workerLaunches.ended.state, 'uncertain');
+      if (ended === 'exited') assert.equal(f.doc().bindings.cell.find(b => b.sessionId === 'ended').active, true);
+    });
+  }
+}
+
+test('dormant live claimants continue to hold capacity against pickup', async () => {
+  const f = pickupFixture(1); await arm(f);
+  f.live.b.assignee = 'aw:dormant'; f.live.b.status = 'in_progress';
+  f.board.set('dormant', { sessionId: 'dormant', taskId: 'task', status: 'idle', dormant: true });
+  await f.rt.snapshots.refresh();
+  await run(f);
+  assert.equal(f.spawned.length, 0);
+  assert.equal(capacity(f.rt).used, 1);
+  assert.equal(Object.keys(f.doc().pickupAttempts).length, 0);
 });

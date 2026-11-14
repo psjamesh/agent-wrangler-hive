@@ -174,7 +174,8 @@ export function globalInbox(ctx, cells) {
   const box = inboxSearchBox(ui, query, rows, found);
   return h('div', { class: 'hive-dock hive-global-dock' },
     h('section', { class: 'hive-panel hive-conversation hive-global-inbox', tabindex: '-1', 'data-focus-key': 'panel:global-inbox', 'data-scroll-key': 'panel:global-inbox', 'aria-label': 'Inbox across all hives', 'data-pane': 'conversation' },
-      h('h3', {}, 'Inbox'), h('div', { class: 'hive-inbox-totals' }, inboxTotals(counts)), box, filters, list));
+      h('div', { class: 'hive-inbox-heading' }, h('h3', {}, 'Inbox'), h('div', { class: 'hive-inbox-totals' }, inboxTotals(counts))),
+      h('div', { class: 'hive-inbox-toolbar' }, box, filters), list));
 }
 
 
@@ -210,7 +211,7 @@ export function inboxSearchBox(ui, query, rows, found, cellId) {
   const searching = searchTerms(query).length > 0;
   const input = h('input', {
     type: 'search', class: 'hive-input hive-inbox-search-input', autocomplete: 'off', spellcheck: 'false', value: query, maxlength: '200',
-    placeholder: 'Search topics, messages and bead ids', 'aria-label': 'Search the inbox', 'data-focus-key': 'global-inbox-search',
+    placeholder: 'Search inbox', title: 'Search topics, messages and bead ids', 'aria-label': 'Search the inbox', 'data-focus-key': 'global-inbox-search',
     oninput: (e) => { if (!e.isComposing) ui.setGlobalInboxQuery(input.value, cellId); },
     onkeydown: (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); ui.setGlobalInboxQuery('', cellId); } },
   });

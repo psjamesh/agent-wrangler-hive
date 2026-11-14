@@ -1,3 +1,4 @@
+import { liveClaimant } from './tracking.js';
 import { capacity, capacitySlots } from './admission.js';
 import { needsHuman } from './requests.js';
 import { waitingProjection } from './waiting.js';
@@ -106,7 +107,7 @@ export function projectForGraph({ runtime, snapshot }) {
       ...waitingProjection(runtime, cell, ids),
       regionAttachments: geometry?.attachments || {},
       detachedWorkstreams: geometry?.detachedHeads || [],
-      bindings: (doc.bindings[cell.id] || []).filter((b) => b.active),
+      bindings: (doc.bindings[cell.id] || []).filter((b) => b.active && (!runtime.host?.sessions?.get || liveClaimant(runtime.host, b.sessionId))),
       beadLayout: doc.beadLayout[cell.id] || {},
       ...(layoutWarning ? { layoutWarning } : {}),
       arrangeAspect: doc.arrangeAspect[cell.id] ?? null,

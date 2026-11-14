@@ -1,3 +1,4 @@
+import { reconcileInactiveBindings } from './tracking.js';
 import { reconcilePendingCreates, settleOperations, settleOne, needsSettling, checkTarget, byLastChecked, noticeReceipts } from './ops.js';
 import { releaseArchivedClaims } from './archived-claims.js';
 import { recoverReviews } from './reviews.js';
@@ -22,6 +23,7 @@ export function recover(rt, host) {
   const pass = (async () => {
     if (rt.metadata.error || rt.beads.status.state !== 'ready') return;
     const before = rt.metadata.version;
+    reconcileInactiveBindings(rt, host);
     await reconcilePendingCreates(rt);
     await settleOperations(rt);
     if (host) await releaseArchivedClaims(rt, host);

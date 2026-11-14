@@ -14,8 +14,9 @@ function fixture() {
   const beads = Object.fromEntries([['root', null, 'goal'], ['ws', 'root', 'workstream'], ['a', 'ws', 'work']].map(([id, parentId, kind]) => [id, { id, parentId, kind, title: id, status: 'open', waitingFor: '', evidence: [] }]));
   const doc = { cells: { cell }, bindings: {}, reviews: {}, beadLayout: {}, arrangeAspect: {}, archived: {}, restoreNotices: {}, conversation: {}, threads: {}, operations: {}, launches: {} };
   const runtime = { metadata: { read: () => doc, cells: () => Object.values(doc.cells) }, beads: { status: {} }, paths: {}, host: {} };
-  const project = () => projectForGraph({ runtime, snapshot: { graph: { beads, edges: [] }, revision: 1, loadedAt: 1 } });
-  return { cell, beads, doc, runtime, project };
+  const edges = [];
+  const project = () => projectForGraph({ runtime, snapshot: { graph: { beads, edges }, revision: 1, loadedAt: 1 } });
+  return { cell, beads, edges, doc, runtime, project };
 }
 const tileFor = (hive, bead = hive.beads.a, graph = {}) => beadTile({ hive, graph }, bead, { cellId: 'cell', x: 0, y: 0, layout: { groupHeads: [], parentHead: {}, halo: {}, rootId: 'root' } }, model.childrenMap(hive.beads));
 
@@ -102,7 +103,7 @@ for (const status of ['open', 'in_progress', 'blocked', 'deferred', 'closed']) t
     return { tile: tileFor(hive), details: details({ hive, graph: {}, ui: { selectedBeadId: () => 'a', beadDetail: () => ({ bead: null, loading: false, error: null }) } }, hive.cells.cell) };
   };
   let out = render();
-  assert(out.tile.marks.some(m => m.kind === 'recorded-wait'));
+  assert.equal(out.tile.marks.some(m => m.kind === 'recorded-wait'), status !== 'blocked');
   assert.match(out.tile.title, /Waiting for: External approval/);
   assert.match(words(out.details), /Waiting for:.*External approval/);
   f.beads.a.waitingFor = '   ';
@@ -209,6 +210,37 @@ for (const reviewing of [false, true]) test(`keyboard focus visibly explains ${r
   assert.doesNotMatch(visibleWords(map), /Outside compatibility report|In review/);
 });
 
+
+for (const block of ['status', 'prerequisite']) test(`keyboard focus shows a waiting note on the ${block} cross`, t => {
+  dom(t);
+  const previousFrame = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = () => 1;
+  t.after(() => { globalThis.requestAnimationFrame = previousFrame; });
+  const f = fixture();
+  f.beads.a.waitingFor = 'Outside compatibility report';
+  if (block === 'status') f.beads.a.status = 'blocked';
+  else {
+    f.beads.prereq = { id: 'prereq', parentId: 'ws', title: 'Approve interface', status: 'open', kind: 'work' };
+    f.edges.push({ prerequisite: 'prereq', dependent: 'a', blocking: true });
+  }
+  assert.deepEqual(tileFor(f.project()).marks.map(m => m.kind), ['waiting']);
+  const render = () => renderHexMap({ viewKey: 'blocked-focus', size: 60, items: [tileFor(f.project())], bounds: { x: -60, y: -60, w: 120, h: 120 }, ariaLabel: 'Work map' }).el;
+  let map = render();
+  const tile = () => walk(map).find(el => el.attributes.tabindex === '0');
+  assert.doesNotMatch(visibleWords(map), /Outside compatibility report/);
+  tile().fire('focus');
+  assert.match(visibleWords(map), /Waiting for: Outside compatibility report/);
+  assert(tile().attributes['aria-describedby']);
+  assert.equal(visibleWords(map).split('Outside compatibility report').length - 1, 1);
+  tile().fire('blur');
+  assert.doesNotMatch(visibleWords(map), /Outside compatibility report/);
+  assert.equal(tile().attributes['aria-describedby'], undefined);
+  f.beads.a.waitingFor = '';
+  map = render();
+  tile().fire('focus');
+  assert.doesNotMatch(visibleWords(map), /Outside compatibility report/);
+  assert.equal(tile().attributes['aria-describedby'], undefined);
+});
 
 test('idle arc and hourglass render separately with one focused waiting reason', t => {
   dom(t);
