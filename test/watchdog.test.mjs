@@ -307,6 +307,94 @@ test('watchdog attention and digest carry available session links and omit dead 
   assert.equal(f.flags().find(x => x.kind === 'stuck_review').session_link, null);
 });
 
+test('restored holder mailing the queen after its turn gets a fresh idle interval', async t => {
+  const f = fixture(t);
+  f.sessions.worker.status = 'idle';
+  f.sessions.worker.dormant = true;
+  f.advance(30 * MIN);
+  await f.watchdog.run();
+  assert.equal(f.sent.length, 1);
+  const mail = [];
+  f.host.sessions.list = () => Object.entries(f.sessions).map(([sessionId, s]) => ({ sessionId, ...s }));
+  f.host.mail = { list: id => id === 'queen' ? mail : [] };
+  f.sessions.worker.dormant = false;
+  f.sessions.worker.status = 'working';
+  f.advance(MIN);
+  mail.push({ from: 'worker', at: f.now(), state: 'read' });
+  f.sessions.worker.status = 'idle';
+  await f.watchdog.run();
+  assert.deepEqual(f.flags(), []);
+  assert.equal(f.sent.length, 1);
+  mail.length = 0;
+  f.advance(30 * MIN - 1);
+  assert.deepEqual(f.flags(), []);
+  f.advance(1);
+  await f.watchdog.run();
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.flags()[0].age_ms, 30 * MIN);
+});
+
+for (const source of ['evidence', 'operation']) test(`holder ${source} resets idle age despite an old bead snapshot`, t => {
+  const f = fixture(t);
+  f.sessions.worker.status = 'idle';
+  f.advance(40 * MIN);
+  if (source === 'evidence') f.beads.work.evidence = [{ by: 'aw:worker', at: new Date(f.now()).toISOString(), label: 'Validation' }];
+  else f.rt.metadata.mutate(d => {
+    d.operations.update = { kind: 'update-bead', state: 'applied', actor: 'aw:worker', beadIds: ['work'], updatedAt: f.now() };
+  });
+  assert.deepEqual(f.flags(), []);
+  f.advance(30 * MIN);
+  assert.equal(f.flags()[0].age_ms, 30 * MIN);
+});
+
+test('activity from other sessions and failed holder updates do not renew a claim', t => {
+  const f = fixture(t);
+  f.sessions.worker.status = 'idle';
+  f.advance(40 * MIN);
+  f.host.sessions.list = () => [{ sessionId: 'outsider' }];
+  f.host.mail = { list: () => [{ from: 'queen', at: f.now() }] };
+  f.beads.work.evidence = [{ by: 'aw:queen', at: f.now(), label: 'Queen note' }];
+  f.rt.metadata.mutate(d => {
+    d.operations.other = { actor: 'aw:queen', state: 'applied', beadIds: ['work'], updatedAt: f.now() };
+    d.operations.failed = { actor: 'aw:worker', state: 'error', beadIds: ['work'], updatedAt: f.now() };
+  });
+  assert.equal(f.flags()[0].age_ms, 40 * MIN);
+});
+
+test('mail activity survives metadata reload and covers recipients outside the hive', async t => {
+  const { MetadataStore } = await import('../server/metadata-store.js');
+  const f = fixture(t);
+  f.sessions.worker.status = 'idle';
+  f.advance(40 * MIN);
+  f.host.sessions.list = () => [{ sessionId: 'outside' }];
+  f.host.mail = { list: id => id === 'outside' ? [{ from: 'worker', at: f.now() }] : [] };
+  await f.watchdog.run();
+  assert.deepEqual(f.flags(), []);
+  f.rt.metadata = new MetadataStore({ file: f.rt.metadata.file });
+  f.rt.metadata.lifetime.attach(f.rt, f.host);
+  f.host.mail.list = () => [];
+  f.advance(30 * MIN - 1);
+  assert.deepEqual(f.flags(), []);
+  f.advance(1);
+  assert.equal(f.flags()[0].age_ms, 30 * MIN);
+});
+
+test('idle grace starts at the latest session, restore, bead or holder signal', t => {
+  for (const source of ['lastActivity', 'relaunchedAt', 'updatedAt', 'mail']) {
+    const f = fixture(t);
+    f.sessions.worker.status = 'idle';
+    f.advance(40 * MIN);
+    if (source === 'updatedAt') f.beads.work.updatedAt = new Date(f.now()).toISOString();
+    else if (source === 'mail') {
+      const at = f.now();
+      f.host.mail = { list: id => id === 'queen' ? [{ from: 'worker', at }] : [] };
+    }
+    else f.sessions.worker[source] = f.now();
+    assert.deepEqual(f.flags(), [], source);
+    f.advance(30 * MIN);
+    assert.equal(f.flags()[0].age_ms, 30 * MIN, source);
+  }
+});
 test('open PR linked to a closed-bead session flags and notifies until the link is removed', async t => {
   const f = fixture(t), url = 'https://github.com/example/repo/pull/42';
   let links = [{ type: 'pr', url }];

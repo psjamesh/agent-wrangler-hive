@@ -23,6 +23,26 @@ export function hiveWorkIds(rt, graph) {
   return ids;
 }
 
+// Core sends no completion notification for failed launches or later hook refusals.
+// Expire transient admissions so those launches cannot hold capacity indefinitely.
+export function helperSlots(rt, graph = rt.snapshots.graph, now = Date.now()) {
+  const slots = new Map();
+  const liveCells = new Set(rt.metadata.cells().filter(c => c.enabled && !c.snapshot).map(c => c.id));
+  const eligible = (cellId, beadId) => liveCells.has(cellId) && graph.beads[beadId] && graph.beads[beadId].status !== 'closed';
+  for (const [id, admission] of rt.spawnAdmissions || []) {
+    if (now - admission.at >= 10 * 60 * 1000) rt.spawnAdmissions.delete(id);
+    else if (eligible(admission.cellId, admission.beadId)) slots.set(`helper:${id}`, admission);
+  }
+  for (const [cellId, list] of Object.entries(rt.metadata.read().bindings || {})) {
+    for (const b of list) {
+      if (!b.active || !b.autoEnrolled || !eligible(cellId, b.beadId)) continue;
+      const session = rt.host?.sessions.get(b.sessionId);
+      if (session && !session.archived && session.status !== 'exited') slots.set(`helper:${b.sessionId}`, { beadId: b.beadId, cellId });
+    }
+  }
+  return slots;
+}
+
 export function capacitySlots(rt, graph, reserve = []) {
   const scope = hiveWorkIds(rt, graph);
   const charge = (id) => id;
@@ -37,15 +57,17 @@ export function capacitySlots(rt, graph, reserve = []) {
   const reviews = new Set(Object.values(rt.metadata.read().reviews || {}).filter((r) => OPEN_REVIEW_STATES.has(r.state) && counts(r.workBeadId)).map((r) => r.workBeadId));
   for (const id of reviews) reserved.add(id);
   for (const id of reserve) if (counts(id)) reserved.add(charge(id));
-  return { claimed, reserved, reviews };
+  const helpers = helperSlots(rt, graph);
+  for (const id of helpers.keys()) reserved.add(id);
+  return { claimed, reserved, reviews, helpers };
 }
 
 export function capacity(rt, graph = rt.snapshots.graph, { reserve = [], breakdown = false, slots = capacitySlots(rt, graph, reserve) } = {}) {
-  const { claimed, reserved, reviews } = slots;
+  const { claimed, reserved, reviews, helpers } = slots;
   const used = new Set([...claimed, ...reserved]).size;
   const limit = workLimit(rt);
   return { limit, unlimited: limit === 0, claimed: claimed.size, reserved: [...reserved].filter((id) => !claimed.has(id)).length, used, available: limit === 0 ? null : Math.max(0, limit - used),
-    ...(breakdown ? { breakdown: { claimed: claimed.size, reviews: [...reviews].filter((id) => !claimed.has(id)).length, launching: [...reserved].filter((id) => !claimed.has(id) && !reviews.has(id)).length } } : {}),
+    ...(breakdown ? { breakdown: { claimed: claimed.size, reviews: [...reviews].filter((id) => !claimed.has(id)).length, launching: [...reserved].filter((id) => !claimed.has(id) && !reviews.has(id) && !helpers.has(id)).length, ...(helpers.size ? { helpers: helpers.size } : {}) } } : {}),
   };
 }
 
