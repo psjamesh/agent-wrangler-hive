@@ -517,13 +517,14 @@ const requestRevisionArgs = {
   route_revision: z.number().int().positive().describe('Current route revision from Hive.'),
 };
 const requestTools = [
-  requestTool('hive_request_input', 'Ask for a decision or action inside your active Hive cell. Pass session_id (and optionally session_label) when the human should act in a specific board session. Forwarding automatically links the requester too. Worker/reviewer/helper requests go to its queen, who answers or forwards the same request to the human. Queens ask the human directly. Do not also call request_human_input. Outside Hive use that standard tool instead. Offer 2-4 options where there is a choice, recommended first with (Recommended) in its label, and explain your recommendation in the body. Caller identity comes from MCP, never arguments.', {
+  requestTool('hive_request_input', 'Ask for a decision or action inside your active Hive cell. Pass reply_to when a request answers a human message: it joins the topic of that message, inherits its bead, and a queen request counts as an answer. With thread_id alone, the bead comes from the topic. With bead_id alone, reuse its topic when exactly one is available in the cell; otherwise start a new topic. Pass session_id (and optionally session_label) when the human should act in a specific board session. Forwarding automatically links the requester too. Worker/reviewer/helper requests go to its queen, who answers or forwards the same request to the human. Queens ask the human directly. Do not also call request_human_input. Outside Hive use that standard tool instead. Offer 2-4 options where there is a choice, recommended first with (Recommended) in its label, and explain your recommendation in the body. Caller identity comes from MCP, never arguments.', {
     cell_id: cellIdArg,
     ...sessionLinkArgs,
     title: z.string().min(1).max(200), body: z.string().min(1).max(20000),
     options: optionsSchema.optional(),
     allow_free_text: z.boolean().optional().describe('Compatibility parameter; ignored. Standalone text replies and optional notes are always allowed.'),
     kind: z.enum(['question', 'decision', 'approval', 'manual-action']).optional(),
+    reply_to: z.string().max(80).optional().describe('Message id this request replies to. Pass when answering a human message. Conflicting thread_id is rejected.'),
     bead_id: beadId.optional(), thread_id: z.string().max(80).optional(), blocking: z.boolean().optional(),
     dedupe_key: z.string().max(120).optional(), expires_at: z.number().int().positive().optional().describe('Optional future Unix timestamp in milliseconds.'),
   }, requests.createRequest),
