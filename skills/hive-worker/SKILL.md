@@ -35,6 +35,10 @@ Membership comes from the current queen nomination, an active Hive binding, assi
 
 For a request about a specific Hive message or topic, include `[Open Hive message](<link>)` in its body, using the link from `hive_publish` or `hive_context`. An ordinary conversation reply does not answer or withdraw a native request. Pre-existing standard requests retain their original recovery/withdraw tools; never mirror them into Hive.
 
+## Archived workers
+
+Archived Hive workers are refused at startup, including `restore_session` and scheduled resumes. The refusal names the launch bead and its last known claim holder. The queen should check `hive_context` and, if that claim is stale, release it with `hive_release_bead` (`force: true` and a reason), then launch a fresh worker with `hive_spawn_worker` on open, unclaimed work. A fresh worker starts a new conversation; include the relevant findings and remaining work in its brief.
+
 ## Finish or hand off
 
 - When the acceptance is met, call `hive_finish_bead` with `outcome: "done"`, a summary of what was achieved and the evidence.
