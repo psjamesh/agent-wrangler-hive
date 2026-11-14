@@ -113,13 +113,13 @@ export function beadTile(ctx, bead, tile, kids) {
     ['requested', 'in_review'].includes(bead.reviewState) ? [bead.review?.summary, bead.review?.waitingFor].filter(Boolean).join('; ') : '',
   ].filter(Boolean);
   const own = `${state}${waits.length ? `, waits on ${waits.length}` : ''}${['requested', 'in_review'].includes(bead.reviewState) ? `, ${bead.reviewWorking ? 'reviewer working' : 'review pending'}` : ''}`;
-  const waiting = waitingItems(ctx, bead);
+  const waiting = waitingItems(ctx, bead).filter(item => item.kind !== 'message');
   const kind = primaryKind(bead, waits, agents?.dots || [], waiting.length, !snap && owner ? statusDot(graph, owner) : null);
   const attention = waiting.length ? `${waiting.length} waiting for you: ${waiting.map(item => item.title).join('; ')}` : '';
   const prIds = isHead ? cellBeadIds({ beads: hive.beads }, { rootBeadId: bead.id }) : new Set([bead.id]);
   const prs = prSummary((cell?.pullRequests || []).filter(pr => pr.beadIds.some(id => prIds.has(id))));
   const marks = [];
-  if (kind) marks.push({ kind, count: waiting.length, onMark: waiting.length ? anchor => openWaitingMenu(ctx, waiting, anchor, { cellId: cell.id, beadId: bead.id }) : null, title: attention || markWords(kind, bead) });
+  if (kind) marks.push({ kind, count: waiting.length, onMark: waiting.length ? anchor => openWaitingMenu(ctx, waiting, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true }) : null, title: attention || markWords(kind, bead) });
   if (status === 'in_review' && !kind?.startsWith('review-')) marks.push({ kind: bead.reviewWorking ? 'review-working' : 'review-pending', title: markWords(bead.reviewWorking ? 'review-working' : 'review-pending', bead) });
   if (waitReason) marks.push({ kind: 'recorded-wait', title: `Waiting for: ${waitReason}` });
   const detail = `${waitReason ? `Waiting for: ${waitReason}. ` : ''}${attachmentText ? `${attachmentText} ` : ''}Work: ${isHead ? `${countText}; ` : ''}${own}. ${agentText}.${waitReasons.length ? ` Waiting: ${waitReasons.join('; ')}.` : ''}`;
@@ -140,7 +140,7 @@ export function beadTile(ctx, bead, tile, kids) {
     lineHeight: 11,
     mark: kind ? { kind, count: waiting.length, title: `${attention || markWords(kind, bead)}. ${detail}` } : null,
     marks,
-    onMark: waiting.length ? anchor => openWaitingMenu(ctx, waiting, anchor, { cellId: cell.id, beadId: bead.id }) : null,
+    onMark: waiting.length ? anchor => openWaitingMenu(ctx, waiting, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true }) : null,
     menu: isHead,
     classes: `hive-bead hive-status-${displayStatus(bead)}${isDone(bead) ? ' hive-done' : ''}${isHead ? ' is-head' : ''}${isHead && colour != null ? ` has-ws ${colour}${bead.parentId === layout.rootId ? ' is-top' : ''}` : ''} hive-kind-${bead.kind}`,
     ariaLabel: `${isHead ? 'Workstream ' : bead.kind === 'external' ? 'External prerequisite ' : ''}${bead.title}. ${groupName ? `In ${groupName}. ` : ''}${kind ? `${attention || markWords(kind, bead)}. ` : ''}${detail}${prs ? ` ${prs}.` : ''}${owner ? ` Claimed by ${sessionLabel(graph, owner)}.` : ''} Enter ${waiting.length ? 'opens the waiting-for-you dialog' : 'shows its details'}; Shift and an arrow key moves ${isHead ? 'this workstream and its descendants; Shift+F10 shows its actions' : 'it'}.`,
@@ -194,7 +194,7 @@ export function legend(snapshot = false) {
       class: 'hive-legend-item hive-legend-marks',
       title: snapshot
         ? 'One mark per item, from its recorded work status. Captured sessions describe the capture, not now, so this hive never shows an agent working or waiting for input; their states are in each tooltip.'
-        : 'One person icon for every human wait: agent input, an unacknowledged Hive message, a Needs You request or a PR explicitly waiting on you. Several waits get a count badge. Worker-handled failing checks stay quiet. One mark per item, most urgent first. Waiting for input means an attached agent is asking someone something; the cross means the work itself is blocked or waits on a prerequisite. In review and recorded wait marks remain visible alongside them. The outlined progress arc means in-progress work with an idle live owner. Items with no mark have no activity or recorded wait. Each tooltip names every agent and its state.',
+        : 'One person icon for every human wait: agent input, a Hive decision or action request, a Needs You request or a PR explicitly waiting on you. Unread messages stay in Topics, Inbox and Waiting for you. Several waits get a count badge. Worker-handled failing checks stay quiet. One mark per item, most urgent first. Waiting for input means an attached agent is asking someone something; the cross means the work itself is blocked or waits on a prerequisite. In review and recorded wait marks remain visible alongside them. The outlined progress arc means in-progress work with an idle live owner. Items with no mark have no activity or recorded wait. Each tooltip names every agent and its state.',
     }, [...(snapshot ? [] : [['person', 'waiting for you (count when several)'], ['busy', 'agent working'], ['review-working', 'in review: reviewer working'], ['review-pending', 'in review: review pending'], ['in-progress', 'in progress; agent idle']]), ['recorded-wait', 'recorded wait (reason in tooltip and details)'], ['untracked', 'untracked work'], ['waiting', 'blocked or waiting'], ['deferred', 'deferred'], ['done', 'done'], ['closed', 'closed otherwise']].map(([k, label]) => h('span', { class: 'hive-legend-st' },
       h('svg:svg', { viewBox: '-8 -8 16 16', width: '14', height: '14', 'aria-hidden': 'true' }, primaryMark(k, label)), label))),
     h('span', { class: 'hive-legend-item hive-legend-note' }, 'No mark: no activity or recorded wait'),

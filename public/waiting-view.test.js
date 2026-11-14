@@ -68,13 +68,14 @@ test('a real tile gets one person and the exact unified badge count, while ordin
   const bead = f.ctx.hive.beads.a;
   Object.assign(bead, { status: 'in_progress', kind: 'work', reviewState: 'in_review', reviewWorking: true });
   f.ctx.hive.edges = [];
+  f.cell.requests = { r: { id: 'r', audience: 'human', state: 'open', title: 'Choose', beadId: 'a' } };
   const tile = { cellId: 'c', layout: { groupHeads: [], parentHead: {}, halo: {} } };
   let output = beadTile(f.ctx, bead, tile, new Map());
   assert.equal(output.mark.kind, 'person');
   assert.equal(output.mark.count, 1);
   assert.equal(typeof output.onMark, 'function');
   assert.match(output.ariaLabel, /Enter opens/);
-  const fresh = { ...f.ctx, hive: { ...f.ctx.hive, cells: { c: { ...f.cell, waits: [] } } } };
+  const fresh = { ...f.ctx, hive: { ...f.ctx.hive, cells: { c: { ...f.cell, waits: [], requests: {} } } } };
   output = beadTile(fresh, bead, tile, new Map());
   assert.equal(output.mark.kind, 'review-working');
 });
@@ -182,3 +183,32 @@ test('native waits open the exact request card without adding answer controls an
   view.refreshWaitingMenu(next);
   assert.equal(dialog.removed, true);
 });
+
+for (const isHead of [false, true]) {
+  test(`unread messages stay in Waiting for you without marking a ${isHead ? 'workstream' : 'bead'}`, async t => {
+    const f = setup(t);
+    const { beadTile } = await import('./cell-view.js');
+    const bead = f.ctx.hive.beads.a;
+    Object.assign(bead, { status: 'open', kind: isHead ? 'workstream' : 'work' });
+    f.ctx.hive.edges = [];
+    const tile = { cellId: 'c', layout: { groupHeads: isHead ? ['a'] : [], parentHead: {}, halo: {} } };
+    let output = beadTile(f.ctx, bead, tile, new Map());
+    assert.equal(output.mark, null);
+    assert.equal(output.onMark, null);
+    assert.match(text(view.waitingSection(f.ctx, bead)), /Waiting for you \(1\).*Look here/);
+    const fresh = { ...f.ctx, hive: { ...f.ctx.hive, cells: { c: { ...f.cell, requests: { r: { id: 'r', audience: 'human', state: 'open', title: 'Choose', beadId: 'a' } } } } } };
+    output = beadTile(fresh, bead, tile, new Map());
+    assert.equal(output.mark.kind, 'person');
+    assert.equal(output.mark.count, 1);
+    output.onMark();
+    const dialog = document.body.children.at(-1);
+    assert.match(text(dialog), /Choose/);
+    assert.doesNotMatch(text(dialog), /Look here/);
+    const updated = { ...fresh, hive: { ...fresh.hive, cells: { c: { ...fresh.hive.cells.c, requests: { r: { ...fresh.hive.cells.c.requests.r, title: 'Choose again' } } } } } };
+    view.refreshWaitingMenu(updated);
+    assert.match(text(dialog), /Choose again/);
+    assert.doesNotMatch(text(dialog), /Look here/);
+    view.refreshWaitingMenu({ ...updated, hive: { ...updated.hive, cells: { c: { ...updated.hive.cells.c, requests: {} } } } });
+    assert.equal(dialog.removed, true);
+  });
+}
