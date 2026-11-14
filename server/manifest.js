@@ -1,3 +1,4 @@
+import { beforeSpawn, spawned } from './spawn-hooks.js';
 import { onArchive } from './archived-claims.js';
 import { workerLaunchContext } from './workers.js';
 import { WORK_LIMIT_SETTING } from './admission.js';
@@ -44,7 +45,7 @@ export function createManifest({ dir }) {
     help: 'Adds a Hive view to the rail. Each opted-in task is a cell with a nominated queen; the cell\'s durable work lives in a private Beads store under the wrangler data directory, maintained through hive_* tools. Turning Hive off removes the view and tools; the store and Hive metadata are kept.',
     author: 'Agent Wrangler Hive contributors',
     defaultEnabled: false,
-    engines: { wranglerApi: '^1.71.0' },
+    engines: { wranglerApi: '^1.78.0' },
     requires: ['tasks:read', 'tasks:write', 'sessions:read', 'sessions:spawn', 'sessions:archive', 'deliver', 'board:rebuild', 'links:read'],
     settings: [{
       key: BD_PATH_SETTING,
@@ -98,7 +99,7 @@ export function createManifest({ dir }) {
     skillsFor,
     hideTool,
     session: { onBeforeDispatch, onArchive },
-    hooks: { 'session.prepare': prepareSession, 'session.launchContext': async (args) => (await workerLaunchContext(args)) ?? queenLaunchContext(args) },
+    hooks: { 'session.beforeSpawn': beforeSpawn, 'session.spawned': spawned, 'session.prepare': prepareSession, 'session.launchContext': async (args) => (await workerLaunchContext(args)) ?? queenLaunchContext(args) },
     graph: ({ host }) => ({ hive: host.stores.hive.projection() }),
     sweeps: [{
       id: 'refresh',
