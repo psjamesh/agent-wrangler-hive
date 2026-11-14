@@ -134,6 +134,90 @@ test('summary categories partition reviewed, closed and status-only work without
   assert.equal(hive.cells.one.occupiedCount, 2);
 });
 
+
+test('capacity drops gone claimants and bound reservations as sessions change', t => {
+  const { rt } = fixture(t);
+  const sessions = { worker: { status: 'working' }, reviewer: { status: 'idle' } };
+  rt.host = { sessions: { get: id => sessions[id] } };
+  rt.metadata.mutate(d => {
+    d.reviews.r = { workBeadId: 'b', state: 'in_review', reviewerSessionId: 'reviewer' };
+    d.workerLaunches.l = { beadId: 'a', state: 'claimed', sessionId: 'worker' };
+  });
+  assert.equal(rt.projection().capacity.used, 3);
+  sessions.worker.archived = true;
+  assert.equal(rt.projection().capacity.used, 1);
+  sessions.reviewer.status = 'exited';
+  assert.equal(rt.projection().capacity.used, 0);
+  sessions.worker.archived = false;
+  sessions.worker.status = 'exited';
+  assert.equal(capacity(rt).used, 0);
+  sessions.worker.status = 'idle';
+  assert.equal(rt.projection().capacity.used, 2);
+});
+
+test('projection durably cleans archives and temporarily hides exited bindings', t => {
+  const { rt } = fixture(t);
+  const sessions = { worker: { archived: true }, exited: { status: 'exited' }, waiting: { status: 'idle', dormant: true } };
+  rt.host = { sessions: { get: id => sessions[id] } };
+  rt.metadata.mutate(d => {
+    d.bindings.one = Object.keys(sessions).map(sessionId => ({ sessionId, beadId: 'a', role: 'worker', active: true }));
+  });
+  assert.deepEqual(rt.projection().cells.one.bindings.map(b => b.sessionId), ['waiting']);
+  const bindings = rt.metadata.read().bindings.one;
+  assert.equal(bindings[0].active, false);
+  assert.equal(bindings[1].active, true);
+  assert.ok(bindings[0].unboundAt);
+  assert.equal(bindings[0].unboundBy, 'aw:hive-recovery');
+  sessions.exited.status = 'idle';
+  assert.deepEqual(rt.projection().cells.one.bindings.map(b => b.sessionId), ['exited', 'waiting']);
+  const version = rt.metadata.version;
+  rt.projection();
+  assert.equal(rt.metadata.version, version);
+});
+
+test('cached capacity follows a launch-only session exiting', t => {
+  const { rt, setGraph } = fixture(t);
+  setGraph([raw('root'), raw('a', 'root')]);
+  const session = { status: 'working' };
+  rt.host = { sessions: { get: id => id === 'launching' ? session : null } };
+  rt.metadata.mutate(d => { d.workerLaunches.l = { beadId: 'a', state: 'binding', sessionId: 'launching' }; });
+  assert.equal(rt.projection().capacity.used, 1);
+  session.status = 'exited';
+  assert.equal(rt.projection().capacity.used, 0);
+});
+
+test('an uncertain launch keeps its fence until the session is confirmed gone', t => {
+  const { rt, setGraph } = fixture(t);
+  setGraph([raw('root'), raw('a', 'root')]);
+  let session = null;
+  rt.host = { sessions: { get: () => session } };
+  rt.metadata.mutate(d => { d.workerLaunches.l = { beadId: 'a', state: 'uncertain', sessionId: 'launching' }; });
+  assert.equal(rt.projection().capacity.used, 1);
+  session = { status: 'exited' };
+  assert.equal(rt.projection().capacity.used, 0);
+});
+
+
+test('cleanup leaves disabled and snapshot cell bindings intact', t => {
+  const { rt } = fixture(t);
+  rt.host = { sessions: { get: () => ({ archived: true }) } };
+  rt.metadata.mutate(d => {
+    d.cells.one.enabled = false;
+    d.cells.two.snapshot = { capturedAt: 1 };
+    d.bindings.one = [{ sessionId: 'archived', beadId: 'a', role: 'worker', active: true }];
+    d.bindings.two = [{ sessionId: 'archived', beadId: 'c', role: 'worker', active: true }];
+  });
+  rt.projection();
+  assert.equal(rt.metadata.read().bindings.one[0].active, true);
+  assert.equal(rt.metadata.read().bindings.two[0].active, true);
+});
+
+test('non-session assignees retain their existing capacity charge', t => {
+  const { rt, setGraph } = fixture(t);
+  rt.host = { sessions: { get: () => null } };
+  setGraph([raw('root'), { ...raw('a', 'root', true), assignee: 'human' }]);
+  assert.equal(rt.projection().capacity.used, 1);
+});
 test('helper slots appear in their cell and projection cache follows live helpers and transient admissions', t => {
   const { rt } = fixture(t);
   const session = { status: 'working' };

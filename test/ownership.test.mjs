@@ -1844,3 +1844,34 @@ for (const field of ['agent', 'model', 'effort', 'override_reason', 'codex_appro
   assert.equal(record().state, 'changes_requested');
   assert.equal(record().history, undefined);
 });
+
+
+test('exited reviewers resume with verdict authority and can be retained for another round', async () => {
+  const f = fixture(1); reviewFixture(f); await dispatchFixture(f);
+  const { out, give, record } = await reviewRounds(f);
+  const session = f.board.get(out.session_id);
+  session.status = 'exited';
+  tracking.reconcileInactiveBindings(f.rt, f.host);
+  session.status = 'idle';
+  await give('changes_requested', 'c1');
+  session.status = 'exited';
+  tracking.reconcileInactiveBindings(f.rt, f.host);
+  session.status = 'idle';
+  const reopened = await reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'Check fix', commit: 'c2', reviewer_session_id: out.session_id });
+  assert.equal(reopened.session_id, out.session_id);
+  await give('approved', 'c2');
+  assert.equal(record().state, 'approved');
+  assert.equal(record().round, 2);
+});
+
+test('exited coordinators retain binding-based authority when resumed', async () => {
+  const { participation } = await import('../server/access.js');
+  const f = fixture();
+  const sid = 'resumable-coordinator';
+  const session = { sessionId: sid, status: 'exited' };
+  f.board.set(sid, session);
+  f.doc().bindings.cell = [{ sessionId: sid, beadId: 'a', role: 'coordinator', active: true }];
+  tracking.reconcileInactiveBindings(f.rt, f.host);
+  session.status = 'idle';
+  assert.equal(participation(f.rt, f.host, sid)[0]?.role, 'coordinator');
+});

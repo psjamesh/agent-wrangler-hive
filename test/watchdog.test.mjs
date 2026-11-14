@@ -436,3 +436,18 @@ test('closed-bead PR flags require a current binding, live card, actual link and
   f.rt.metadata.mutate(d => { d.bindings.cell[0].active = true; });
   f.host.links.get = () => [{ type: 'jira', url }]; assert.deepEqual(f.flags(), []);
 });
+
+
+test('stalled flags persist a toast episode across restarts and renew after recovery', async t => {
+  const f = fixture(t);
+  f.sessions.worker.status = 'idle'; f.advance(30 * MIN);
+  await f.watchdog.run();
+  const first = Object.values(f.rt.metadata.cell('cell').watchdogFlags)[0];
+  assert.equal(first.episodeAt, f.now());
+  f.advance(MIN);
+  await createWatchdog({ runtime: f.rt, host: f.host, now: f.now }).run();
+  assert.equal(Object.values(f.rt.metadata.cell('cell').watchdogFlags)[0].episodeAt, first.episodeAt);
+  f.sessions.worker.status = 'working'; await f.watchdog.run();
+  f.sessions.worker.status = 'idle'; await f.watchdog.run();
+  assert.notEqual(Object.values(f.rt.metadata.cell('cell').watchdogFlags)[0].episodeAt, first.episodeAt);
+});
