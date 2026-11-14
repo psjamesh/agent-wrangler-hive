@@ -131,10 +131,19 @@ export async function createRequest(rt, host, id, args) {
   if (args.allow_free_text !== undefined && typeof args.allow_free_text !== 'boolean') fail('allow_free_text must be a boolean.');
   const key = bounded(args.dedupe_key, 'dedupe_key', 120);
   const old = key && values(rt).find(r => r.cellId === actor.cell.id && r.requesterSessionId === id && r.dedupeKey === key && r.state === 'open');
+  const visible = audienceConversationDoc(rt.metadata.read(), actor.cell.id, actor);
+  const topics = visible.threads[actor.cell.id] || {};
+  const replyTo = bounded(args.reply_to, 'reply_to', 80);
+  const target = replyTo ? visible.conversation[actor.cell.id]?.find(m => m.id === replyTo) : null;
+  if (replyTo && !target) fail('Unknown or unavailable message in this hive.');
+  if (target && args.thread_id && args.thread_id !== target.threadId) fail('reply_to belongs to another topic; thread_id must match its topic.');
+  const threadId = target?.threadId || args.thread_id;
+  let topic = threadId ? topics[threadId] : null;
+  if (threadId && (!topic || topic.id !== threadId || !/^thr_[0-9a-f]{12}$/.test(threadId))) fail('Unknown topic in this hive.');
   const sessionLink = sessionReference(host, args) || old?.sessionLink;
   requireOptionsForChoices({ kind: args.kind || old?.kind || 'question', body }, options);
   if (old) {
-    if ((args.bead_id && args.bead_id !== old.beadId) || (args.thread_id && args.thread_id !== old.threadId)) fail('A dedupe update cannot move request context.');
+    if ((args.bead_id && args.bead_id !== old.beadId) || (threadId && threadId !== old.threadId) || (replyTo && replyTo !== old.replyTo)) fail('A dedupe update cannot move request context.');
     const nextKind = args.kind || old.kind;
     const expiresAt = args.expires_at === undefined ? old.expiresAt : args.expires_at;
     if (expiresAt && (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now())) fail('expires_at must be a future timestamp in milliseconds.');
@@ -158,14 +167,16 @@ export async function createRequest(rt, host, id, args) {
     if (access.cell.id !== actor.cell.id) fail('The bead belongs to another hive.');
     bead = access.bead;
   }
-  const topic = args.thread_id ? audienceConversationDoc(rt.metadata.read(), actor.cell.id, actor).threads[actor.cell.id]?.[args.thread_id] : null;
-  if (args.thread_id && (!topic || topic.id !== args.thread_id || !/^thr_[0-9a-f]{12}$/.test(args.thread_id))) fail('Unknown topic in this hive.');
+  if (bead && !threadId && !replyTo) {
+    const matching = Object.values(topics).filter(t => t.beadId === bead.id);
+    if (matching.length === 1) topic = matching[0];
+  }
   if (bead && topic?.beadId && topic.beadId !== bead.id) fail('Topic and bead context disagree.');
   const q = queenRoute(host, actor.cell);
   const at = Date.now(), rid = newId('hreq'), mid = newId('msg'), tid = topic?.id || newId('thr');
   const r = {
     id: rid, cellId: actor.cell.id, requesterSessionId: id, ...(sessionLink ? { sessionLink } : {}), title, body, kind, options, allowFreeText: true, blocking: args.blocking === true, dedupeKey: key || null,
-    beadId: bead?.id || topic?.beadId || null, threadId: tid, messageId: mid, createdAt: at, updatedAt: at, expiresAt: args.expires_at || null,
+    beadId: bead?.id || topic?.beadId || target?.beadId || null, ...(replyTo ? { replyTo } : {}), threadId: tid, messageId: mid, createdAt: at, updatedAt: at, expiresAt: args.expires_at || null,
     state: 'open', audience: !q || q === id ? 'human' : 'queen', routeReason: q ? null : 'no-queen', warning: q ? null : 'No queen in this hive',
     queenSessionId: q, queenGeneration: actor.cell.queenGeneration || 0, routeRevision: 1, contentRevision: 1, revision: 1, answer: null,
     queenNotification: { state: 'pending', attempts: [] }, delivery: null,
@@ -178,7 +189,20 @@ export async function createRequest(rt, host, id, args) {
     preservePublicSequence(d, r.cellId, t);
     t.hasRequests = true;
     t.count++; t.lastAt = at; t.lastMessageId = mid;
-    (d.conversation[r.cellId] ||= []).push({ id: mid, cellId: r.cellId, author: 'session', role: actor.role, sessionId: id, requestId: rid, text: title, at, threadId: tid, beadId: r.beadId, context: r.beadId ? { beadId: r.beadId, title: bead?.title || null } : null, n: t.count });
+    const message = { id: mid, cellId: r.cellId, author: 'session', role: actor.role, sessionId: id, requestId: rid, text: title, at, threadId: tid, beadId: r.beadId, context: r.beadId ? { beadId: r.beadId, title: bead?.title || null } : null, n: t.count, ...(replyTo ? { replyTo } : {}) };
+    if (actor.role === 'queen' && target?.author === 'human') {
+      const human = d.conversation[r.cellId].find(m => m.id === replyTo);
+      human.response ||= { required: true, answers: [] };
+      human.response.answers.push({ messageId: mid, sessionId: id, at });
+      if (!human.acknowledgedAt) {
+        human.acknowledgedAt = at;
+        human.acknowledgedBy = id;
+      }
+      message.answers = [replyTo];
+      const inbox = (d.inbox[r.cellId] ||= { enabledAt: at });
+      inbox.rev = (Number.isInteger(inbox.rev) ? inbox.rev : 0) + 1;
+    }
+    (d.conversation[r.cellId] ||= []).push(message);
     prune(d);
     removed = pruneConversation(d, r.cellId);
   });

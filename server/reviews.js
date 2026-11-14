@@ -135,7 +135,7 @@ export async function requestReview(rt, host, actor, input) {
       cellOf = cell;
       if (cell.id !== actor.cell.id || bead.status === 'closed' || bead.id === cell.rootBeadId) throw new HiveError('Request a review for open work in this cell.');
       if (reviewerSessionId) {
-        const launchOptions = ['agent', 'model', 'effort', 'override_reason'].filter(k => input[k] !== undefined);
+        const launchOptions = ['agent', 'model', 'effort', 'override_reason', 'codex_approval'].filter(k => input[k] !== undefined);
         if (launchOptions.length) throw new HiveError(`Cannot use ${launchOptions.join(', ')} with reviewer_session_id; a retained reviewer keeps its existing configuration.`, 'refused');
         if (!commit) throw new HiveError('A retained review requires a new commit.', 'refused');
         const doc = rt.metadata.read();

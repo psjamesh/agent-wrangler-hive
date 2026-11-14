@@ -20,6 +20,8 @@ function launchOptions(input) {
     const value = text(input[field], field, 2000);
     if (value) out[field] = value;
   }
+  if (input.codex_approval !== undefined && !['on-request', 'never'].includes(input.codex_approval)) throw new HiveError('codex_approval must be on-request or never.');
+  if (out.agent === 'codex') out.approvalPolicy = input.codex_approval ?? 'on-request';
   if (input.worktree !== undefined) {
     const value = input.worktree;
     if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((k) => !['branch', 'folderName', 'auto', 'base'].includes(k)) || ['branch', 'folderName', 'base'].some((k) => value[k] !== undefined && typeof value[k] !== 'string') || (value.auto !== undefined && typeof value.auto !== 'boolean')) throw new HiveError('worktree must be an object with branch, folderName, auto or base.');
