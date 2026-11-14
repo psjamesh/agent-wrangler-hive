@@ -104,12 +104,14 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   await shot('all-hives-desktop-hidden-dark');
   await theme(false);
   await viewport(390, 780);
+  await reload();
   assert.deepEqual(await visibility(), { panels: 'closed', inbox: false, label: 'Show inbox' });
   await shot('all-hives-phone-hidden-light');
   await theme(true);
   await shot('all-hives-phone-hidden-dark');
   await theme(false);
   await viewport(1280, 800);
+  await reload();
   await toggleInbox();
   assert.deepEqual(await visibility(), { panels: 'open', inbox: true, label: 'Hide inbox' });
   await reload();
@@ -170,15 +172,16 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.equal(reopened, 'open');
 
   const attention = await run(`
-    t.graph.hive.launches = Array.from({ length: 8 }, (_, i) => ({ id: 'failed-' + i, taskId: 't1', state: 'failed', error: 'Synthetic launch failure ' + i }));
+    t.graph.hive = { ...t.graph.hive, metaVersion: t.graph.hive.metaVersion + 1,
+      launches: Array.from({ length: 8 }, (_, i) => ({ id: 'failed-' + i, taskId: 't1', state: 'failed', error: 'Synthetic launch failure ' + i })) };
     t.redraw();
     await new Promise(r => setTimeout(r, 150));
     const head = document.querySelector('.hive-overview-head');
     head.scrollTop = head.scrollHeight;
     const box = head.getBoundingClientRect();
-    const last = head.querySelector('.hive-attention-item:last-child button').getBoundingClientRect();
+    const last = head.querySelector('.hive-attention-item:last-child button')?.getBoundingClientRect();
     return { count: head.querySelectorAll('.hive-attention-item').length, scrolled: head.scrollTop, headHeight: box.height,
-      lastVisible: last.top >= box.top && last.bottom <= box.bottom + 1,
+      lastVisible: Boolean(last && last.top >= box.top && last.bottom <= box.bottom + 1),
       mapHeight: document.querySelector('.hive-overview .hive-stage').getBoundingClientRect().height,
       panelHeight: document.querySelector('.hive-global-inbox').getBoundingClientRect().height };
   `);
@@ -187,7 +190,12 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.ok(attention.headHeight <= 800 * 0.4 + 1, 'attention header stays bounded');
   assert.ok(attention.mapHeight >= 300, 'long attention list leaves a usable map');
   assert.ok(Math.abs(attention.panelHeight - attention.mapHeight) < 1, 'inbox stays aligned beside the map with attention');
-  await run(`t.graph.hive.launches = []; t.redraw();`);
+  assert.equal(await run(`
+    t.graph.hive = { ...t.graph.hive, launches: [], metaVersion: t.graph.hive.metaVersion + 1 };
+    t.redraw();
+    await new Promise(r => setTimeout(r, 150));
+    return document.querySelectorAll('.hive-attention-item').length;
+  `), 0, 'synthetic failed launches are cleared before later checks');
 
   const overflowing = await run(`
     const list = document.querySelector('.hive-global-inbox-list');
