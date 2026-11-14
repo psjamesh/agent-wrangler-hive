@@ -1,3 +1,4 @@
+import { beforeSpawn, spawned } from './spawn-hooks.js';
 import { onArchive } from './archived-claims.js';
 import { workerLaunchContext } from './workers.js';
 import { WORK_LIMIT_SETTING } from './admission.js';
@@ -98,7 +99,7 @@ export function createManifest({ dir }) {
     skillsFor,
     hideTool,
     session: { onBeforeDispatch, onArchive },
-    hooks: { 'session.prepare': prepareSession, 'session.launchContext': async (args) => (await workerLaunchContext(args)) ?? queenLaunchContext(args) },
+    hooks: { 'session.beforeSpawn': beforeSpawn, 'session.spawned': spawned, 'session.prepare': prepareSession, 'session.launchContext': async (args) => (await workerLaunchContext(args)) ?? queenLaunchContext(args) },
     graph: ({ host }) => ({ hive: host.stores.hive.projection() }),
     sweeps: [{
       id: 'refresh',

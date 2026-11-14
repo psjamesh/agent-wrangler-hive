@@ -164,7 +164,7 @@ function messageItem({ m, cell, beads, graph, api, ui, ctx, target, replyKey }) 
         ui.selectConversationMessage?.(cell.id, m.threadId, null);
       }
     },
-    class: `hive-message hive-message-${m.author}${ui.conversationMessage?.(cell.id, m.threadId) === m.id ? ' is-conversation-selected' : ''}${ui.linkedMessage?.(cell.id, m.threadId)?.messageId === m.id ? ' is-link-target' : ''}`,
+    class: `hive-message hive-message-${m.author}${waitsFor(x => ui.ackOf(cell.id, x))(m) ? ' is-unread' : ''}${ui.conversationMessage?.(cell.id, m.threadId) === m.id ? ' is-conversation-selected' : ''}${ui.linkedMessage?.(cell.id, m.threadId)?.messageId === m.id ? ' is-link-target' : ''}`,
     dataset: { id: m.id },
   },
     h('div', { class: 'hive-message-head' },
@@ -212,44 +212,10 @@ function beneath(hive, top) {
 }
 
 export function renderRelatedBeads(related, renderChip) {
-  const restoreFocus = related.el.contains?.(document.activeElement);
-  related.expanded = false;
+  const focused = related.el.contains?.(document.activeElement) ? document.activeElement?.dataset.focusKey : null;
   const ids = [...related.ids];
-  const label = h('span', { class: 'hive-muted' }, ids.length ? 'Related beads: ' : 'No related beads in this hive.');
-  if (ids.length <= 3) {
-    related.expanded = false;
-    related.el.replaceChildren(label, ...ids.map(renderChip));
-    return;
-  }
-  const panel = h('div', { class: 'hive-related-overflow', role: 'region', 'aria-label': 'More related beads' }, ...ids.slice(3).map(renderChip));
-  const toggle = h('button', { type: 'button', class: 'hive-link-btn hive-related-toggle', 'data-focus-key': 'related-toggle' });
-  const update = () => {
-    panel.hidden = !related.expanded;
-    toggle.setAttribute('aria-expanded', String(Boolean(related.expanded)));
-    toggle.textContent = related.expanded ? 'Show fewer' : `+${ids.length - 3} more`;
-  };
-  toggle.addEventListener('click', e => {
-    e.stopPropagation();
-    related.expanded = !related.expanded;
-    update();
-    toggle.focus({ preventScroll: true });
-  });
-  const row = h('div', { class: 'hive-related-summary' }, label, ...ids.slice(0, 3).map(renderChip), toggle);
-  const wrapper = h('div', { class: 'hive-related-disclosure', onclick: e => e.stopPropagation(), onkeydown: e => {
-    if (e.key !== 'Escape' || !related.expanded) return;
-    e.preventDefault();
-    e.stopPropagation();
-    related.expanded = false;
-    update();
-    toggle.focus({ preventScroll: true });
-  }, onfocusout: e => {
-    if (!e.relatedTarget || wrapper.contains(e.relatedTarget)) return;
-    related.expanded = false;
-    update();
-  } }, row, panel);
-  update();
-  related.el.replaceChildren(wrapper);
-  if (restoreFocus) toggle.focus({ preventScroll: true });
+  related.el.replaceChildren(h('span', { class: 'hive-muted' }, ids.length ? 'Related beads: ' : 'No related beads in this hive.'), ...ids.map(renderChip));
+  if (focused) [...related.el.querySelectorAll('button')].find(chip => chip.dataset.focusKey === focused)?.focus({ preventScroll: true });
 }
 
 export function relatedBeads(hive, cell, topic, messages, messageId = null) {
@@ -507,7 +473,7 @@ function renderTopics({ cell, hive, graph, api, ui, ctx }) {
   const out = listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selected, epoch });
   if (inbox) {
     Object.assign(out, inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot, epoch, kind: inbox }));
-    out.head.insertBefore(out.search, out.head.querySelector('.hive-inbox-filters'));
+    out.head.querySelector('.hive-inbox-toolbar').insertBefore(out.search, out.head.querySelector('.hive-inbox-filters'));
   }
   return out;
 }
@@ -638,7 +604,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
     }
     rows.push({
       key: `message:${cell.id}:${group[0].id}`, cellId: cell.id, threadId: m.threadId,
-      title: t?.title || 'Topic no longer kept', at: group[0].at, count: n, id: m.id,
+      title: t?.title || 'Topic no longer kept', at: group[0].at, count: n, unreadCount: kind === 'human' ? n : 0, id: m.id,
       author: authorName(graph, cell, m), preview: m.text.replace(/\s+/g, ' ').slice(0, 200),
       texts: group.map(x => x.text), sessionLinks: group.map(x => x.sessionLink).filter(Boolean),
       hive: messageContextLabel(m, cell, beads, members), link: hiveLink(cell.id, m.threadId, group[0].id),
@@ -694,8 +660,8 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selec
   const what = inbox ? (inbox === 'human' ? 'Waiting for you' : 'Waiting for the queen') : 'Topics';
   const head = h('div', { class: `hive-topics-head${inbox ? ' hive-inbox-head' : ''}` },
     cell.inbox ? h('div', { class: 'hive-inbox-totals' }, inboxTotals({ needs: needsRows({ hive, graph, ui }, [cell]).length, human: waitingCount(cell, hive, ui, 'human') })) : null,
-    inboxHead(cell, hive, graph, ui),
-    h('span', { class: 'hive-muted' }, inbox || all || !scope ? `${inbox ? what : 'All topics'} in this hive` : [`${what} about `, h('strong', {}, scopeName), ' (and its items)']),
+    inbox ? h('div', { class: 'hive-inbox-toolbar' }, inboxHead(cell, hive, graph, ui)) : inboxHead(cell, hive, graph, ui),
+    !inbox ? h('span', { class: 'hive-muted' }, all || !scope ? 'All topics in this hive' : [`${what} about `, h('strong', {}, scopeName), ' (and its items)']) : null,
     scope && !inbox ? toggle : null,
     hint && !inbox ? h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setAllTopics(cell.id, true) }, `${hint} in other topics`) : null);
   const list = h('ol', { class: 'hive-topics', 'aria-label': 'Topics' });
@@ -857,15 +823,33 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
       h('button', { type: 'button', class: 'hive-link-btn', disabled: ctx.busy('hive-thread-rename'), onclick: save }, 'Save'),
       h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setForm('renameTopic', null) }, 'Cancel'));
   } else {
-    titleEl = h('span', { class: 'hive-topic-name' }, h('strong', {}, t.title), ' ',
-      cell.enabled ? h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setForm('renameTopic', { cellId: cell.id, threadId: t.id, value: t.title }) }, 'Rename') : null);
+    titleEl = h('span', { class: 'hive-topic-name', title: t.title }, h('strong', {}, t.title));
   }
   const relations = ui.relationsFor(cell.id, t.id, epoch, hive.metaVersion) || (cell.topicRelations ? cell.topicRelations[t.id] || { references: [] } : t);
   const related = { ids: relatedBeads(hive, cell, relations, msgs, ui.conversationMessage?.(cell.id, t.id)), el: h('div', { class: 'hive-conversation-relations', 'aria-label': 'Related beads' }) };
+  const summary = h('summary', { 'data-focus-key': `topic-details:${key}` }, 'Details');
+  const details = h('details', {
+    class: 'hive-topic-details',
+    open: ui.form('topicDetails')?.key === key && ui.form('topicDetails').open,
+    ontoggle: () => ui.patchForm('topicDetails', { key, open: details.open }),
+    onclick: e => e.stopPropagation(),
+    onkeydown: e => {
+      if (e.key !== 'Escape' || !details.open) return;
+      e.preventDefault();
+      e.stopPropagation();
+      details.open = false;
+      ui.patchForm('topicDetails', { key, open: false });
+      summary.focus({ preventScroll: true });
+    },
+  }, summary, h('div', { class: 'hive-topic-details-panel' },
+    h('strong', { class: 'hive-topic-full-title' }, t.title),
+    h('div', { class: 'hive-topic-details-actions' },
+      h('span', { class: 'hive-muted' }, `About: ${contextLabel(t, cell, beads)}`),
+      cell.enabled ? h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setForm('renameTopic', { cellId: cell.id, threadId: t.id, value: t.title }) }, 'Rename') : null),
+    related.el));
   const head = h('div', { class: 'hive-topics-head hive-thread-head', onclick: () => ui.selectConversationMessage?.(cell.id, t.id, null) },
     h('button', { type: 'button', class: 'hive-link-btn', 'data-focus-key': `topics-back:${cell.id}`, onclick: () => ui.closeThread(cell.id) }, '← Topics'),
-    titleEl,
-    h('span', { class: 'hive-chip hive-topic-context' }, contextLabel(t, cell, beads)), related.el);
+    titleEl, details);
   let list = h('ol', { class: 'hive-messages', 'aria-label': `Messages in ${t.title}` });
   related.updateHive = next => { hive = next; };
   related.refresh = () => {

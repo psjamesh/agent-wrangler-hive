@@ -44,7 +44,7 @@ export function messageRows(ctx, cells, kind) {
       const first = group[0], last = group.at(-1);
       rows.push({
         key: `message:${cell.id}:${first.id}`, cellId: cell.id, hive: cellName(graph, cell), title: titles.get(first.threadId) || 'Topic no longer kept',
-        at: first.at, count: group.length, author: messageAuthor(graph, cell, last), preview: oneLine(last.text, 200),
+        at: first.at, count: group.length, unreadCount: kind === 'human' ? group.length : 0, author: messageAuthor(graph, cell, last), preview: oneLine(last.text, 200),
         sessionLinks: group.map(m => m.sessionLink).filter(Boolean), texts: group.map(m => m.text), beadIds: group.map(m => m.context?.beadId || m.beadId).filter(Boolean), threadId: first.threadId,
         link: hiveLink(cell.id, first.threadId, first.id),
       });
@@ -86,7 +86,9 @@ export function orderInboxTopics(ctx, cells, rows) {
       needsCount: topic?.needsCount ?? row.needsCount, unreadCount: topic?.unreadCount ?? row.count,
     };
   };
-  return [...rows].sort((a, b) => compareTopics(priority(a), priority(b)) || a.key.localeCompare(b.key));
+  return rows.map(row => ({
+    ...row, unreadCount: priorities.get(row.cellId)?.get(row.threadId)?.unreadCount ?? row.unreadCount ?? 0,
+  })).sort((a, b) => compareTopics(priority(a), priority(b)) || a.key.localeCompare(b.key));
 }
 
 export function inboxRows(ctx, cells, kind) {
@@ -102,7 +104,7 @@ export function remoteRows(ctx, cells, remote, kind) {
     const cell = byId.get(r.cellId);
     if (!cell) continue;
     rows.push({
-      key: r.key, threadId: r.threadId, cellId: cell.id, hive: cellName(graph, cell), title: r.title || 'Topic no longer kept', at: r.at, lastAt: r.lastAt, count: r.count,
+      key: r.key, threadId: r.threadId, cellId: cell.id, hive: cellName(graph, cell), title: r.title || 'Topic no longer kept', at: r.at, lastAt: r.lastAt, count: r.count, unreadCount: kind === 'human' ? r.count : 0,
       texts: [r.last?.text, r.snippet, r.preview].filter(Boolean), sessionLinks: r.sessionLinks || [r.last?.sessionLink].filter(Boolean),
       author: messageAuthor(graph, cell, r.last), snippet: r.snippet, preview: r.preview, link: hiveLink(cell.id, r.threadId, r.firstId),
     });
@@ -172,7 +174,8 @@ export function globalInbox(ctx, cells) {
   const box = inboxSearchBox(ui, query, rows, found);
   return h('div', { class: 'hive-dock hive-global-dock' },
     h('section', { class: 'hive-panel hive-conversation hive-global-inbox', tabindex: '-1', 'data-focus-key': 'panel:global-inbox', 'data-scroll-key': 'panel:global-inbox', 'aria-label': 'Inbox across all hives', 'data-pane': 'conversation' },
-      h('h3', {}, 'Inbox'), h('div', { class: 'hive-inbox-totals' }, inboxTotals(counts)), box, filters, list));
+      h('div', { class: 'hive-inbox-heading' }, h('h3', {}, 'Inbox'), h('div', { class: 'hive-inbox-totals' }, inboxTotals(counts))),
+      h('div', { class: 'hive-inbox-toolbar' }, box, filters), list));
 }
 
 
@@ -190,7 +193,7 @@ export function inboxFilters(view, counts, select, key = 'global-inbox') {
 
 export function inboxRow(ctx, r, { query = '', open, id = r.key, action, showContext = true } = {}) {
   const props = open ? { type: 'button', onclick: () => open(r) } : { href: r.link };
-  return h('li', { class: 'hive-topic hive-inbox-item', dataset: { id } },
+  return h('li', { class: `hive-topic hive-inbox-item${r.unreadCount > 0 ? ' is-unread' : ''}`, dataset: { id } },
     h(open ? 'button' : 'a', { ...props, class: 'hive-topic-btn', 'data-focus-key': `global-inbox-item:${r.key}` },
       h('span', { class: 'hive-topic-line' },
         h('strong', { class: 'hive-topic-title' }, query ? marked(r.title, query) : r.title),
@@ -208,7 +211,7 @@ export function inboxSearchBox(ui, query, rows, found, cellId) {
   const searching = searchTerms(query).length > 0;
   const input = h('input', {
     type: 'search', class: 'hive-input hive-inbox-search-input', autocomplete: 'off', spellcheck: 'false', value: query, maxlength: '200',
-    placeholder: 'Search topics, messages and bead ids', 'aria-label': 'Search the inbox', 'data-focus-key': 'global-inbox-search',
+    placeholder: 'Search inbox', title: 'Search topics, messages and bead ids', 'aria-label': 'Search the inbox', 'data-focus-key': 'global-inbox-search',
     oninput: (e) => { if (!e.isComposing) ui.setGlobalInboxQuery(input.value, cellId); },
     onkeydown: (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); ui.setGlobalInboxQuery('', cellId); } },
   });

@@ -7,6 +7,7 @@
   --hive-fill: color-mix(in srgb, var(--hive-honey) 42%, var(--surface));
   --hive-cap: color-mix(in srgb, var(--hive-honey) 18%, var(--surface-2));
   --hive-message-link: color-mix(in srgb, var(--fg) 80%, var(--accent, var(--fg)));
+  --hive-unread-bg: #202c3d;
   --hive-ink: color-mix(in srgb, var(--hive-honey) 50%, var(--fg));
   --hive-line: color-mix(in srgb, var(--fg-muted, var(--fg)) 70%, transparent);
   --hive-tile: var(--surface);
@@ -30,6 +31,8 @@
   font-variant-numeric: tabular-nums;
   overflow: auto;
 }
+
+body.light .hive-root { --hive-unread-bg: #edf3fc; }
 
 .hive-region { display: contents; }
 
@@ -719,7 +722,9 @@
 .hive-pm-glyph { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .hive-pm-person .hive-pm-bg { fill: var(--hive-pm-person); stroke: var(--hive-pm-person); }
 .hive-pm-person .hive-pm-glyph { stroke: var(--hive-pm-person-ink); }
+.hive-pm-review-working .hive-pm-bg,
 .hive-pm-busy .hive-pm-bg { fill: var(--hive-pm-busy); stroke: var(--hive-pm-busy); }
+.hive-pm-review-working .hive-pm-glyph,
 .hive-pm-busy .hive-pm-glyph { stroke: var(--hive-pm-busy-ink); }
 .hive-pm-waiting .hive-pm-line { stroke: var(--hive-pm-waiting); stroke-width: 2; }
 .hive-pm-done .hive-pm-bg { fill: color-mix(in srgb, var(--hive-pm-done) 18%, var(--surface)); stroke: var(--hive-pm-done); }
@@ -1015,6 +1020,7 @@
 
 .hive-message { position: relative; padding: 8px 0; border-bottom: 1px solid var(--border-muted, var(--border)); }
 .hive-message:last-child { border-bottom: none; }
+.hive-message.is-unread { background: var(--hive-unread-bg); }
 .hive-message-human { border-left: 3px solid var(--hive-comb); padding-left: 10px; }
 .hive-message-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
 .hive-quote { color: var(--fg-muted, var(--fg)); font-size: 12.5px; border-left: 3px solid var(--border); padding-left: 8px; margin: 2px 0; overflow-wrap: anywhere; }
@@ -1079,7 +1085,16 @@
 .hive-composer-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 
 .hive-topics-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 6px; font-size: 12.5px; flex: 0 0 auto; }
-.hive-thread-head { font-size: 13.5px; }
+.hive-conversation:has(.hive-thread-head) > h3 { display: none; }
+.hive-thread-head { position: relative; flex-wrap: nowrap; min-height: 28px; font-size: 13.5px; }
+.hive-thread-head > .hive-link-btn { flex: 0 0 auto; }
+.hive-thread-head .hive-topic-name { display: block; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hive-thread-head .hive-topic-rename { flex: 1 1 auto; }
+.hive-topic-details { flex: 0 0 auto; }
+.hive-topic-details > summary { cursor: pointer; padding: 4px; }
+.hive-topic-details-panel { position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; right: 0; max-height: min(320px, 45dvh); overflow: auto; overscroll-behavior: contain; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); box-shadow: 0 4px 12px #0004; }
+.hive-topic-full-title { display: block; overflow-wrap: anywhere; }
+.hive-topic-details-actions { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; margin: 8px 0; }
 .hive-topic-name, .hive-topic-rename { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; overflow-wrap: anywhere; }
 .hive-topic-rename .hive-topic-title-input { width: auto; flex: 1 1 12em; }
 .hive-topics {
@@ -1106,7 +1121,8 @@
   border-radius: 6px;
   cursor: pointer;
 }
-.hive-topic-btn:hover { background: var(--hive-wax); }
+.hive-topic.is-unread .hive-topic-btn { background: var(--hive-unread-bg); }
+.hive-topic .hive-topic-btn:hover { background: var(--hive-wax); }
 .hive-topic-line { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
 .hive-topic-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .hive-topic.is-unread .hive-topic-title { font-weight: 700; }
@@ -1561,8 +1577,8 @@
 
 .hive-pm-untracked .hive-pm-line { stroke: var(--warn-fg, #b45309); }
 
-.hive-pm-review-working .hive-pm-line { stroke: var(--success-fg, #16803c); }
-.hive-pm-review-pending .hive-pm-line { stroke: var(--warn-fg, #b45309); }
+.hive-pm-review-pending .hive-pm-bg { fill: var(--warn-fg, #b45309); stroke: var(--warn-fg, #b45309); }
+.hive-pm-review-pending .hive-pm-glyph { stroke: var(--bar-on, var(--surface)); }
 
 .hive-message.is-link-target {
   outline: 2px solid var(--accent, #d5a93b);
@@ -1642,13 +1658,7 @@ dialog.hive-confirm:not([open]) { display: none; }
 .hive-request-option-label { font-weight: 600; }
 .hive-request-option-description { color: var(--fg-muted, var(--fg)); font-size: 12px; }
 
-.hive-related-disclosure { position: relative; width: 100%; min-width: 0; }
-.hive-related-summary { display: flex; gap: 5px; align-items: center; min-width: 0; }
-.hive-related-summary > .hive-muted, .hive-related-toggle { flex: 0 0 auto; white-space: nowrap; }
-.hive-related-summary > .hive-chip { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hive-related-overflow { position: absolute; z-index: 5; top: calc(100% + 5px); left: 0; right: 0; display: flex; flex-wrap: wrap; gap: 5px; max-height: min(180px, 30vh); overflow: auto; overscroll-behavior: contain; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); box-shadow: 0 4px 12px #0004; }
-.hive-related-overflow[hidden] { display: none; }
-.hive-related-overflow > .hive-chip { max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+.hive-conversation-relations > .hive-chip { max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
 .hive-hex.is-search-match .hive-conversation-ring { stroke: #70c7d4; stroke-width: 2.5; stroke-dasharray: 5 4; }
 body.light .hive-hex.is-search-match .hive-conversation-ring { stroke: #186879; }
 .hive-hex.is-search-dim { opacity: 0.22; }
@@ -1720,10 +1730,20 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .hive-inbox-search-clear { position: absolute; top: 3px; right: 3px; width: 24px; height: 24px; padding: 0; font: inherit; line-height: 1; color: var(--fg-muted, var(--fg)); background: none; border: 0; border-radius: 4px; cursor: pointer; visibility: hidden; }
 .hive-inbox-search-input:not(:placeholder-shown) + .hive-inbox-search-clear { visibility: visible; }
 .hive-inbox-search-clear:hover { background: var(--hive-wax); color: var(--fg); }
-.hive-inbox-search-status { flex: 1 1 12em; min-height: 1.4em; font-size: 12px; }
+.hive-inbox-search-status { flex: 1 1 12em; font-size: 12px; }
+.hive-inbox-search-status:empty { display: none; }
 .hive-search-hit { color: inherit; background: var(--hive-fill); border-bottom: 2px solid var(--hive-comb); border-radius: 2px; }
 
 .hive-inbox-totals { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .hive-needs-count { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
 
 .hive-inbox-session-links { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 8px; }
+
+.hive-inbox-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.hive-inbox-heading h3 { margin: 0; }
+.hive-inbox-heading .hive-inbox-totals { font-size: 12.5px; color: var(--fg-muted, var(--fg)); }
+.hive-inbox-toolbar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; min-width: 0; }
+.hive-inbox-toolbar > .hive-inbox-search { flex: 1 1 170px; min-width: 0; }
+.hive-inbox-toolbar > .hive-inbox-filters { flex: 0 1 auto; min-height: 30px; }
+.hive-inbox-head { gap: 6px; }
+.hive-topics-head > .hive-inbox-toolbar { flex: 1 1 auto; }

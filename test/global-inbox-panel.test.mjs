@@ -195,7 +195,8 @@ test('cell Inbox search stays in the cell and zero filter badges are absent', t 
   assert.match(panel.querySelector('.hive-inbox-item').textContent, /Database/);
   assert.equal(panel.querySelector('.hive-inbox-search-input').value, 'SQLite');
   const head = panel.querySelector('.hive-inbox-head');
-  assert.ok(head.children.indexOf(head.querySelector('.hive-inbox-search')) < head.children.indexOf(head.querySelector('.hive-inbox-filters')));
+  const toolbar = head.querySelector('.hive-inbox-toolbar');
+  assert.ok(toolbar.children.indexOf(head.querySelector('.hive-inbox-search')) < toolbar.children.indexOf(head.querySelector('.hive-inbox-filters')));
   assert.equal(panel.querySelector('.hive-inbox').querySelector('.hive-topic-context'), null);
   assert.equal(panel.querySelector('.hive-search-hit').textContent, 'SQLite');
   assert.deepEqual(panel.querySelector('.hive-inbox-filters').querySelectorAll('.hive-inbox-count').map(e => e.textContent), ['1']);
