@@ -11,6 +11,12 @@ import { createBeads, claimBead, finishBead, readyBeads, reconcileForAgent, upda
 import { buildGraph, actorFor } from '../server/bead-model.js';
 
 const raw = (id, parent = 'root', extra = {}) => ({ id, title: id, status: 'open', assignee: null, metadata: { hive_kind: 'work' }, dependencies: parent ? [{ issue_id: id, depends_on_id: parent, type: 'parent-child' }] : [], ...extra });
+function withAttachmentStorage(t, f) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hive-context-images-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  f.rt.paths = { ...f.rt.paths, root };
+  return f;
+}
 function fixture(limit = 1) {
   let doc = { cells: { cell: { id: 'cell', taskId: 'task', rootBeadId: 'root', enabled: true, queenSessionId: 'queen' }, other: { id: 'other', taskId: 'other-task', rootBeadId: 'other-root', enabled: true, queenSessionId: 'queen2' } }, bindings: {}, operations: {}, launches: {}, workerLaunches: {}, reviews: {}, conversation: {}, threads: {}, inbox: {}, beadLayout: {}, arrangeAspect: {}, workstreamColours: {}, archived: {}, restoreNotices: {}, restoring: {} };
   const live = { root: raw('root', null, { metadata: { hive_kind: 'goal' } }), a: raw('a'), b: raw('b'), 'other-root': raw('other-root', null, { metadata: { hive_kind: 'goal' } }), c: raw('c', 'other-root') };
@@ -207,9 +213,9 @@ test('abandon fences a late dispatch and releases only the reservation, never a 
 
 
 
-test('context exposes global capacity, drift and ordinary untracked sessions from current state', async () => {
+test('context exposes global capacity, drift and ordinary untracked sessions from current state', async t => {
   const { buildContext } = await import('../server/tools.js');
-  const f = fixture(2);
+  const f = withAttachmentStorage(t, fixture(2));
   f.live.a.assignee = 'aw:queen'; f.live.a.status = 'in_progress';
   f.live.c.assignee = 'aw:queen2'; f.live.c.status = 'in_progress';
   f.live.b.status = 'in_progress';
@@ -222,9 +228,9 @@ test('context exposes global capacity, drift and ordinary untracked sessions fro
   assert.equal(out.beads.find((b) => b.bead_id === 'b').untracked, true);
 });
 
-test('context lists dormant claim holders even when more than 60 sessions are bound', async () => {
+test('context lists dormant claim holders even when more than 60 sessions are bound', async t => {
   const { buildContext } = await import('../server/tools.js');
-  const f = fixture(2);
+  const f = withAttachmentStorage(t, fixture(2));
   f.live.a.assignee = 'aw:holder'; f.live.a.status = 'in_progress';
   f.board.set('holder', { sessionId: 'holder', taskId: 'task', status: 'idle', dormant: true });
   f.doc().bindings.cell = Array.from({ length: 70 }, (_, i) => ({ id: `bind-${i}`, sessionId: `extra-${i}`, beadId: 'b', role: 'worker', active: true }));
@@ -730,11 +736,11 @@ test('a reviewer unbound at the final export cannot record a verdict', async () 
   assert.equal(f.doc().reviews[out.review_id].state, 'cancelled');
 });
 
-test('context and map project the review wait on the work bead and track reviewer activity without owner drift', async () => {
+test('context and map project the review wait on the work bead and track reviewer activity without owner drift', async t => {
   const { buildContext } = await import('../server/tools.js');
   const { projectForGraph } = await import('../server/projection.js');
   const { primaryKind, beadTile } = await import('../public/cell-view.js');
-  const f = fixture(1); reviewFixture(f); await dispatchFixture(f);
+  const f = withAttachmentStorage(t, fixture(1)); reviewFixture(f); await dispatchFixture(f);
   const out = await reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'Review races' });
   f.live.a.status = 'in_progress'; await f.rt.snapshots.refresh();
   const projected = () => projectForGraph({ runtime: f.rt, snapshot: { graph: f.rt.snapshots.graph, revision: 1 } });
@@ -1211,8 +1217,8 @@ for (const caller of ['queen', 'coordinator', 'worker']) {
   });
 }
 
-test('context attention includes every open bead with a recorded wait only in its cell', async () => {
-  const f = statusFixture();
+test('context attention includes every open bead with a recorded wait only in its cell', async t => {
+  const f = withAttachmentStorage(t, statusFixture());
   f.live.root.metadata.hive_waiting_for = 'Goal prerequisite';
   f.live.a.metadata.hive_waiting_for = 'External prerequisite';
   f.live.b.status = 'blocked';

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { imageSources, sourceToFrame } from './clipboard-images.js';
 import { imageComposer, imageDraft, messageImages } from './attachments.js';
+import { requestCard, requestList } from './requests.js';
 
 class Element {
   constructor(tag) { this.tagName = tag; this.children = []; this.attributes = {}; this.events = {}; this.style = {}; this.dataset = {}; this.classList = { add() {}, remove() {} }; }
@@ -9,6 +10,7 @@ class Element {
   addEventListener(k, fn) { (this.events[k] ||= []).push(fn); }
   fire(k, props = {}) { const e = { preventDefault() { this.prevented = true; }, stopPropagation() {}, ...props }; for (const fn of this.events[k] || []) fn(e); this['on' + k]?.(e); return e; }
   append(...nodes) { this.children.push(...nodes); for (const n of nodes) if (n instanceof Element) { n.parent = this; n.isConnected = true; } }
+  querySelectorAll(selector) { return descendants(this).slice(1).filter(el => el.tagName === selector); }
   replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
   showModal() { this.open = true; }
   close() { this.open = false; this.fire('close'); }
@@ -124,4 +126,37 @@ test('retained textarea and composer paste/drop handlers stage each image once a
   root.fire('drop', { dataTransfer: { types: ['Files'], files: [png()] } });
   await settle();
   assert.equal(imageDraft(ui, key).frames().length, 2);
+});
+
+
+for (const list of [false, true]) test(`request images render in ${list ? 'Needs you list' : 'card'} and open the original in the shared viewer`, async t => {
+  dom(t);
+  const ui = { draftFor: () => '' }, sent = [];
+  const ctx = { busy: () => false, send(msg, options) { sent.push(msg); options.onReply({ ok: true, mime: 'image/png', dataBase64: 'AQ==' }); } };
+  const r = { id: 'hreq_image', messageId: 'msg_image', title: 'Review settings', body: 'See attached screenshot.', audience: 'human', state: 'open', attachments: [{ file: 'screen.png', alt: 'Settings before the change' }] };
+  const cell = { id: 'cell', requests: { [r.id]: r } };
+  const root = list ? requestList({ cell, kind: 'needs', ui, ctx }) : requestCard(r, { cell, ui, ctx });
+  await settle();
+  const images = descendants(root).filter(el => el.tagName === 'img');
+  assert.equal(images.length, 1);
+  assert.equal(images[0].attributes.alt, 'Settings before the change');
+  assert.deepEqual(sent, [{ type: 'hive-image', cellId: 'cell', messageId: 'msg_image', file: 'screen.png', full: false }]);
+  const thumb = descendants(root).find(el => el.attributes['aria-label'] === 'Open Settings before the change');
+  thumb.fire('click'); await settle();
+  assert.equal(sent.at(-1).full, true);
+  assert.equal(sent.at(-1).messageId, r.messageId);
+  const dialog = document.body.children[0];
+  assert.equal(dialog.open, true);
+  assert.equal(descendants(dialog).find(el => el.tagName === 'img').attributes.alt, 'Settings before the change');
+  dialog.fire('keydown', { key: 'Escape' });
+  assert.equal(dialog.isConnected, false);
+});
+
+test('private queen-stage request cards do not load images in human views', async t => {
+  dom(t);
+  let count = 0;
+  const r = { id: 'private', audience: 'queen', attachments: [{ file: 'screen.png' }] };
+  assert.equal(requestCard(r, { cell: { id: 'cell' }, ui: {}, ctx: { send() { count++; } } }), null);
+  await settle();
+  assert.equal(count, 0);
 });
