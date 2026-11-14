@@ -1791,80 +1791,53 @@ test('topic updates retain unchanged rows but replace revised acknowledgement ha
   assert.equal(f.sent.at(-1).rev, 2);
 });
 
-test('a hive-wide topic with 35 related beads keeps three chips and expands without replacing messages', async t => {
+test('topic details keep rename and every related bead reachable without replacing messages', async t => {
   const f = fixture(t);
   const { renderRelatedBeads } = await import('./conversation.js');
-  const related = { ids: new Set(Array.from({ length: 35 }, (_, i) => `hive-${i}`)), el: document.createElement('div') };
-  const located = [];
-  const chip = id => {
-    const el = document.createElement('button');
-    el.textContent = id;
-    el.addEventListener('click', () => located.push(id));
-    return el;
-  };
-  const topic = { id: 'wide', title: 'Hive-wide', retained: 1 };
+  const topic = { id: 'wide', title: 'A full topic title', retained: 1, beadId: 'hive-one' };
   f.cell.threads = [topic];
   f.cell.messages = [{ id: 'message', threadId: topic.id, author: 'human', text: 'Readable message', at: 1 }];
   f.ui.setAllTopics(f.cell.id, true);
   f.ui.openThreadFor(f.cell.id, topic.id);
   const out = f.draw(), message = out.list.firstChild;
   out.list.scrollTop = 150;
-  renderRelatedBeads(related, chip);
-  const row = related.el.querySelector('.hive-related-summary');
-  const panel = related.el.querySelector('.hive-related-overflow');
-  const toggle = related.el.querySelector('.hive-related-toggle');
-  assert.equal(row.querySelectorAll('button').length, 4);
-  assert.equal(toggle.textContent, '+32 more');
-  assert.equal(toggle.attributes['aria-expanded'], 'false');
-  assert.equal(panel.hidden, true);
-  toggle.fire('click', { stopPropagation() {} });
-  assert.equal(toggle.attributes['aria-expanded'], 'true');
-  assert.equal(panel.hidden, false);
-  assert.equal(panel.querySelectorAll('button').length, 32);
-  panel.querySelectorAll('button').at(-1).fire('click', { stopPropagation() {} });
+  const details = out.head.querySelector('details');
+  assert.ok(details);
+  assert.equal(details.open, undefined);
+  assert.equal(details.querySelector('summary').textContent, 'Details');
+  assert.match(details.textContent, /A full topic title/);
+  out.related.ids = new Set(Array.from({ length: 35 }, (_, i) => `hive-${i}`));
+  const located = [];
+  renderRelatedBeads(out.related, id => {
+    const chip = document.createElement('button');
+    chip.textContent = id;
+    chip.addEventListener('click', () => located.push(id));
+    return chip;
+  });
+  assert.equal(out.related.el.querySelectorAll('button').length, 35);
+  out.related.el.querySelectorAll('button').at(-1).fire('click', { stopPropagation() {} });
   assert.deepEqual(located, ['hive-34']);
-  panel.fire('keydown', { key: 'Escape', stopPropagation() {} });
-  assert.equal(panel.hidden, true);
-  assert.equal(document.activeElement, toggle);
-  toggle.fire('click', { stopPropagation() {} });
-  toggle.fire('click', { stopPropagation() {} });
-  assert.equal(panel.hidden, true);
+  details.open = true;
+  details.fire('toggle');
+  assert.equal(f.draw().head.querySelector('details').attributes.open, '');
+  details.fire('keydown', { key: 'Escape', stopPropagation() {} });
+  assert.equal(details.open, false);
+  assert.equal(document.activeElement, details.querySelector('summary'));
+  details.querySelectorAll('button').find(b => b.textContent === 'Rename').fire('click', { stopPropagation() {} });
+  assert.equal(f.draw().head.querySelector('input').value, topic.title);
   assert.equal(out.list.firstChild, message);
   assert.equal(out.list.scrollTop, 150);
-  assert.match(message.textContent, /Readable message/);
-  related.ids = new Set(['hive-1', 'hive-2']);
-  renderRelatedBeads(related, chip);
-  assert.equal(related.el.querySelector('.hive-related-toggle'), null);
-  assert.equal(related.el.querySelectorAll('button').length, 2);
+  out.head.querySelectorAll('button').find(b => b.textContent === '← Topics').fire('click');
+  assert.equal(f.ui.openThread(f.cell.id), null);
 });
 
-for (const count of [0, 1, 3]) test(`related beads keep the existing short display for ${count} beads`, async t => {
+for (const count of [0, 1, 3, 35]) test(`topic details expose all ${count} related beads`, async t => {
   fixture(t);
   const { renderRelatedBeads } = await import('./conversation.js');
   const related = { ids: new Set(Array.from({ length: count }, (_, i) => `hive-${i}`)), el: document.createElement('div') };
   renderRelatedBeads(related, id => { const chip = document.createElement('button'); chip.textContent = id; return chip; });
-  assert.equal(related.el.querySelector('.hive-related-toggle'), null);
   assert.equal(related.el.querySelectorAll('button').length, count);
   if (!count) assert.match(related.el.textContent, /No related beads/);
-});
-
-test('related-bead redraw closes the disclosure and keeps keyboard focus usable', async t => {
-  fixture(t);
-  const { renderRelatedBeads } = await import('./conversation.js');
-  const related = { ids: new Set(['one', 'two', 'three', 'four']), el: document.createElement('div') };
-  const chip = id => { const el = document.createElement('button'); el.textContent = id; return el; };
-  renderRelatedBeads(related, chip);
-  let toggle = related.el.querySelector('.hive-related-toggle');
-  toggle.fire('click', { stopPropagation() {} });
-  assert.equal(document.activeElement, toggle);
-  related.el.querySelector('.hive-related-overflow').querySelector('button').focus();
-  renderRelatedBeads(related, chip);
-  toggle = related.el.querySelector('.hive-related-toggle');
-  assert.equal(related.el.querySelector('.hive-related-overflow').hidden, true);
-  assert.equal(document.activeElement, toggle);
-  let stopped = false;
-  related.el.querySelector('.hive-related-disclosure').fire('click', { stopPropagation() { stopped = true; } });
-  assert.equal(stopped, true);
 });
 
 const withdrawBtn = (root, label) => root.querySelectorAll('button').filter((b) => b.textContent === label);
