@@ -1,9 +1,10 @@
+import { compareTopics } from './topic-order.js';
 import { h, relativeTime, markdown, sessionReference } from './dom.js';
 import { hiveLink } from './deep-links.js';
 import { needsHuman, requestAuthor } from './requests.js';
 import { cellName } from './model.js';
 import { filterRows, highlightParts, searchTerms, snippetFor } from './inbox-search.js';
-import { waitingMessages, waitingCount, topicTitles, messageAuthor } from './conversation.js';
+import { waitingMessages, waitingCount, topicTitles, topicPriorities, messageAuthor } from './conversation.js';
 
 export const GLOBAL_FILTERS = [['human', 'Inbox'], ['queen', 'Waiting for queen']];
 
@@ -76,9 +77,21 @@ export function mergeRows(messages, requests) {
   return [...rows.values()].sort(rowOrder);
 }
 
+export function orderInboxTopics(ctx, cells, rows) {
+  const priorities = new Map(cells.map(cell => [cell.id, topicPriorities(cell, ctx.hive, ctx.ui)]));
+  const priority = row => {
+    const topic = priorities.get(row.cellId)?.get(row.threadId);
+    return {
+      id: `${row.cellId}:${row.threadId || row.key}`, lastAt: topic?.lastAt ?? row.lastAt ?? row.at,
+      needsCount: topic?.needsCount ?? row.needsCount, unreadCount: topic?.unreadCount ?? row.count,
+    };
+  };
+  return [...rows].sort((a, b) => compareTopics(priority(a), priority(b)) || a.key.localeCompare(b.key));
+}
+
 export function inboxRows(ctx, cells, kind) {
-  if (kind === 'queen') return messageRows(ctx, cells, kind);
-  return mergeRows(messageRows(ctx, cells, 'human'), needsRows(ctx, cells));
+  const rows = kind === 'queen' ? messageRows(ctx, cells, kind) : mergeRows(messageRows(ctx, cells, 'human'), needsRows(ctx, cells));
+  return orderInboxTopics(ctx, cells, rows);
 }
 
 export function remoteRows(ctx, cells, remote, kind) {
@@ -89,7 +102,7 @@ export function remoteRows(ctx, cells, remote, kind) {
     const cell = byId.get(r.cellId);
     if (!cell) continue;
     rows.push({
-      key: r.key, threadId: r.threadId, cellId: cell.id, hive: cellName(graph, cell), title: r.title || 'Topic no longer kept', at: r.at, count: r.count,
+      key: r.key, threadId: r.threadId, cellId: cell.id, hive: cellName(graph, cell), title: r.title || 'Topic no longer kept', at: r.at, lastAt: r.lastAt, count: r.count,
       texts: [r.last?.text, r.snippet, r.preview].filter(Boolean), sessionLinks: r.sessionLinks || [r.last?.sessionLink].filter(Boolean),
       author: messageAuthor(graph, cell, r.last), snippet: r.snippet, preview: r.preview, link: hiveLink(cell.id, r.threadId, r.firstId),
     });
@@ -111,8 +124,8 @@ export function searchedInbox(ctx, cells, query, remoteState) {
     human = mergeRows(messages, requests).filter(r => matched.has(threadKey(r))).map(r => ({ ...r, snippet: r.snippet || snippetFor(r.texts || [], query) }));
   }
   const lists = {
-    human,
-    queen: remote ? remoteRows(ctx, cells, remote, 'queen') : filterRows(messageRows(ctx, cells, 'queen'), query),
+    human: orderInboxTopics(ctx, cells, human),
+    queen: orderInboxTopics(ctx, cells, remote ? remoteRows(ctx, cells, remote, 'queen') : filterRows(messageRows(ctx, cells, 'queen'), query)),
   };
   return { lists, pending, failed, truncated: Boolean(remote?.truncated) };
 }
