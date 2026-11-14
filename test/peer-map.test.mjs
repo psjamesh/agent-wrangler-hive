@@ -153,7 +153,12 @@ test('pointer preview and drop save the same snapped subtree, while keyboard rem
   assert.equal(f.sent.length,0);
   f.options().onDrop('child',target);
   assert.equal(f.sent.length,1);
-  for (const [id, position] of Object.entries(preview.moves)) assert.deepEqual(f.sent[0].positions[id],position);
+  const kids = activeKids(f.beads), hidden = new Set(['b']);
+  const args = { kids, rootId: 'root', saved: f.saved, hidden, yieldIds: hidden, detachedPinned: f.detached() };
+  const expected = planMove({ ...args, layout: layoutCell(args), id: 'child', target: preview.target });
+  assert.equal(expected.ok, true, expected.reason);
+  assert.deepEqual(f.sent[0].positions, expected.positions);
+  assert.ok(f.sent[0].positions.b, 'the saved batch includes the hidden carried member');
 });
 
 test('hive hiding a contact saves the smallest child translation before toggling closed work off', () => {

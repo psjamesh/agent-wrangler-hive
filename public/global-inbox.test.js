@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createUi } from './client.js';
-import { inboxRows, needsRows, messageRows } from './global-inbox.js';
+import { inboxRows, needsRows, messageRows, searchedInbox } from './global-inbox.js';
 import { parseHiveLink } from './deep-links.js';
 
 const request = (id, over = {}) => ({ id, audience: 'human', state: 'open', title: `Request ${id}`, body: 'Pick one', createdAt: 10, threadId: `t_${id}`, messageId: `m_${id}`, requesterSessionId: 's1', ...over });
@@ -50,6 +50,23 @@ test('the global inbox defaults to Inbox', () => {
   assert.equal(ui.globalInboxView(), 'queen');
   ui.setGlobalInboxView('nonsense');
   assert.equal(ui.globalInboxView(), 'human');
+});
+
+test('unread tint state distinguishes queen messages from human messages awaiting an answer', () => {
+  const a = cell('a', {
+    messages: [
+      { id: 'q1', threadId: 'missing', at: 1, author: 'session', text: 'Queen update', ack: { required: true, state: null, rev: 0 } },
+      { id: 'h1', threadId: 'question', at: 2, author: 'human', text: 'Question', response: { required: true, answers: [] } },
+    ],
+    inbox: { human: { ids: ['q1'], count: 1 }, queen: { ids: ['h1'], count: 1 } },
+  });
+  const context = ctx([a]);
+  assert.equal(inboxRows(context, [a], 'human')[0].unreadCount, 1);
+  assert.equal(inboxRows(context, [a], 'queen')[0].unreadCount, 0);
+  const remote = { human: [{ key: 'q', cellId: 'a', threadId: 'remote', count: 2, last: {} }], queen: [{ key: 'h', cellId: 'a', threadId: 'question', count: 1, last: {} }] };
+  const result = searchedInbox(context, [a], 'update', { remote });
+  assert.equal(result.lists.human[0].unreadCount, 2);
+  assert.equal(result.lists.queen[0].unreadCount, 0);
 });
 
 test('rows past the first page are reported as more waiting in that hive', () => {

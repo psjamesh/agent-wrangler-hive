@@ -1,7 +1,7 @@
 import { createWatchdog } from './watchdog.js';
-import { workLimit } from './admission.js';
+import { workLimit, helperSlots } from './admission.js';
 import { reconcileRequests, notifyQueen, notifyResolution } from './requests.js';
-import { trackingKey } from './tracking.js';
+import { reconcileInactiveBindings, trackingKey } from './tracking.js';
 import { cleanupOrphanAttachments } from './attachments.js';
 import { hivePaths } from './data-dir.js';
 import { MetadataStore } from './metadata-store.js';
@@ -145,10 +145,11 @@ export class HiveRuntime {
 
   projection() {
     this.watchdog?.schedule();
+    reconcileInactiveBindings(this, this.host);
     if (this.host && this.metadata.available) reconcileRequests(this, this.host);
     this.migrateRegions();
     const snap = this.snapshots.current;
-    const key = `${snap.revision}:${this.metadata.version}:${this.beads.status.checkedAt}:${this.beads.status.state}:${trackingKey(this)}:${workLimit(this)}`;
+    const key = `${snap.revision}:${this.metadata.version}:${this.beads.status.checkedAt}:${this.beads.status.state}:${trackingKey(this)}:${workLimit(this)}:${[...helperSlots(this).keys()].join(',')}`;
     if (this._projection.key !== key) {
       this._projection = { key, value: projectForGraph({ runtime: this, snapshot: snap }) };
     }

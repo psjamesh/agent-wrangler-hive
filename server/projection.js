@@ -1,3 +1,4 @@
+import { liveClaimant } from './tracking.js';
 import { capacity, capacitySlots } from './admission.js';
 import { needsHuman } from './requests.js';
 import { waitingProjection } from './waiting.js';
@@ -106,7 +107,7 @@ export function projectForGraph({ runtime, snapshot }) {
       ...waitingProjection(runtime, cell, ids),
       regionAttachments: geometry?.attachments || {},
       detachedWorkstreams: geometry?.detachedHeads || [],
-      bindings: (doc.bindings[cell.id] || []).filter((b) => b.active),
+      bindings: (doc.bindings[cell.id] || []).filter((b) => b.active && (!runtime.host?.sessions?.get || liveClaimant(runtime.host, b.sessionId))),
       beadLayout: doc.beadLayout[cell.id] || {},
       ...(layoutWarning ? { layoutWarning } : {}),
       arrangeAspect: doc.arrangeAspect[cell.id] ?? null,
@@ -124,9 +125,9 @@ export function projectForGraph({ runtime, snapshot }) {
   for (const cell of Object.values(cells)) cell.occupiedCount = 0;
   let outside = 0;
   for (const id of occupied) {
-    let bead = beads[id];
+    let bead = beads[slots.helpers.get(id)?.beadId || id];
     const seen = new Set();
-    let cellId;
+    let cellId = slots.helpers.get(id)?.cellId;
     while (bead && !seen.has(bead.id)) {
       seen.add(bead.id);
       cellId = cellRoots.get(bead.id);
