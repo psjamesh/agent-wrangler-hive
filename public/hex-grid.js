@@ -216,12 +216,19 @@ const REL_Y = 0.8;
 const REL_HALF = 7.5;
 export const MARK_R = 7.5;
 export const MARK_STROKE = 1.2;
-// The robot and person are Lucide's `bot` and `user` glyphs (ISC licence; see
-// the README), the same geometry as Agent Wrangler's robot and the Needs You
-// person. They are drawn at their own 24-unit proportions, scaled uniformly so
+// The robot, person and review use Lucide's `bot`, `user` and `search-check`
+// glyphs (ISC licence; see the README).
+// They are drawn at their own 24-unit proportions, scaled uniformly so
 // the whole stroke stays inside the disc with room to spare.
 const LUCIDE_SCALE = 0.48;
+const SEARCH_CHECK = [
+  ['path', { d: 'm8 11 2 2 4-4' }],
+  ['circle', { cx: '11', cy: '11', r: '8' }],
+  ['path', { d: 'm21 21-4.3-4.3' }],
+];
 const LUCIDE = {
+  'review-working': SEARCH_CHECK,
+  'review-pending': SEARCH_CHECK,
   busy: [
     ['path', { d: 'M12 8V4H8' }],
     ['rect', { width: '16', height: '12', x: '4', y: '8', rx: '2' }],
@@ -238,8 +245,6 @@ const LUCIDE = {
 const PRIMARY_SHAPES = {
   external: [['path', { d: 'M-3,3 L3,-3 M-1,-3 H3 V1', class: 'hive-pm-line' }]],
   'in-progress': [['path', { d: 'M0,-4 A4,4 0 1,1 -4,0', class: 'hive-pm-line' }]],
-  'review-working': [['circle', { cx: '-1', cy: '-1', r: '2.8', class: 'hive-pm-line' }], ['path', { d: 'M1,1 L4.4,4.4 M-2,-1 L-1,0 L0.5,-1.8', class: 'hive-pm-line' }]],
-  'review-pending': [['circle', { cx: '-1', cy: '-1', r: '2.8', class: 'hive-pm-line' }], ['path', { d: 'M1,1 L4.4,4.4', class: 'hive-pm-line' }]],
   'recorded-wait': [['path', { d: 'M-3.2,-4 L3.2,-4 L3.2,-2.5 L-3.2,2.5 L-3.2,4 L3.2,4 L3.2,2.5 L-3.2,-2.5 Z', class: 'hive-pm-line' }]],
   pickup: [['path', { d: 'M-3.5,0 L-0.5,3 L4,-3 M-4,-4 L-4,-1 M1,4 L4,4 L4,1', class: 'hive-pm-line' }]],
   untracked: [['path', { d: 'M0,-4 L4.5,4 L-4.5,4 Z M0,-1.5 L0,1 M0,2.4 L0,2.5', class: 'hive-pm-line' }]],
