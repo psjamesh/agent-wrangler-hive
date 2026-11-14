@@ -1,3 +1,4 @@
+import { createWatchdogNotifications } from './watchdog-notifications.js';
 import { createDrafts, DRAFT_PREFIX, DRAFT_TEXT_MAX } from './ui-drafts.js';
 import { capacityLimit } from './capacity-control.js';
 import { createRequestNotifications, answerRequestOption } from './requests.js';
@@ -30,6 +31,7 @@ const FOLLOW_SLACK_PX = 40;
 const state = {
   api: null,
   requestNotifications: null,
+  watchdogNotifications: null,
   bees: null,
   beePending: null,
   graph: null,
@@ -1278,6 +1280,7 @@ const overview = {
       state.graph = graph;
       if ('history' in graph) state.history = graph.history || [];
       state.requestNotifications?.(graph.hive);
+      state.watchdogNotifications?.(graph.hive);
       settlePlacements();
     }
     state.root = el;
@@ -1321,6 +1324,7 @@ const overview = {
 export default {
   register(registrar) {
     state.api = registrar.api;
+    state.watchdogNotifications = createWatchdogNotifications(state.api, { read: () => load('watchdogEpisodes', []), write: v => save('watchdogEpisodes', v) });
     state.requestNotifications = createRequestNotifications(state.api, { read: () => load('requestEpisodes', []), write: v => save('requestEpisodes', v), answer: (r, optionId) => answerRequestOption(r, optionId, { ui: state.ui, ctx: { send, notice, onError: () => { globalThis.location.hash = hiveLink(r.cellId, r.threadId, r.messageId); } } }) });
     state.ui = createUi();
     const saved = readScrollState(globalThis.window?.location?.hash);

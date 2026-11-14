@@ -306,7 +306,7 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
     for (const cell of rt.metadata.cells()) {
       const flags = collectWatchdog(rt, host, cell, now(), index);
       const previous = cell.watchdogFlags || {};
-      const next = Object.fromEntries(flags.map(flag => [flag.id, previous[flag.id] || { ...flag, noticed: {} }]));
+      const next = Object.fromEntries(flags.map(flag => [flag.id, previous[flag.id] || { ...flag, episodeAt: now(), noticed: {} }]));
       if (Object.keys(previous).some(id => !next[id]) || flags.some(flag => !previous[flag.id])) changes.set(cell.id, next);
       const queen = cell.queenSessionId;
       const key = `${queen}:${cell.queenGeneration || 0}`;

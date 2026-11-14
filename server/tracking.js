@@ -21,6 +21,7 @@ export function isUntracked(host, graph, bead) {
 export function trackingKey(rt) {
   return Object.values(rt.snapshots.current.graph.beads).filter((b) => b.ownerSessionId)
     .map((b) => `${b.ownerSessionId}:${liveClaimant(rt.host, b.ownerSessionId)}`).join('|')
+    + Object.values(rt.metadata.read().workerLaunches || {}).map(l => { const s = rt.host?.sessions?.get?.(l.sessionId); return `|${l.id}:${s?.status}:${s?.archived}`; }).join('')
     + Object.values(rt.metadata.read().reviews || {}).map((r) => { const s = rt.host?.sessions?.get?.(r.reviewerSessionId); return `|${r.id}:${s?.status}:${s?.archived}`; }).join('');
 }
 
@@ -53,4 +54,22 @@ export function ungovernedDescendants(rt, host, cell, openBeads = []) {
     out.push({ session_id: s.sessionId, spawned_by: s.spawnedBy, origin_session_id: origin, task_id: s.taskId || null, in_cell_task: s.taskId === cell.taskId, status: s.status, note: 'Started by a cell participant outside Hive; it holds no claim, review or binding. Reconcile it: bind it to a bead, or leave it deliberately untracked. Hive does not claim it for anyone.' });
   }
   return out;
+}
+
+export function reconcileInactiveBindings(rt, host) {
+  if (!host?.sessions?.get || rt.metadata.error) return;
+  const stale = new Set(Object.values(rt.metadata.read().bindings || {}).flat().filter(b => {
+    const session = host.sessions.get(b.sessionId);
+    return b.active && session && (session.archived || session.status === 'exited');
+  }).map(b => b.sessionId));
+  if (!stale.size) return;
+  rt.metadata.mutate(d => {
+    for (const list of Object.values(d.bindings || {})) for (const b of list) {
+      if (b.active && stale.has(b.sessionId)) {
+        b.active = false;
+        b.unboundAt = Date.now();
+        b.unboundReason = 'Session archived or exited';
+      }
+    }
+  });
 }

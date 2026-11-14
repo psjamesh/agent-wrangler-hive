@@ -1,7 +1,7 @@
 import { createWatchdog } from './watchdog.js';
 import { workLimit } from './admission.js';
 import { reconcileRequests, notifyQueen, notifyResolution } from './requests.js';
-import { trackingKey } from './tracking.js';
+import { reconcileInactiveBindings, trackingKey } from './tracking.js';
 import { cleanupOrphanAttachments } from './attachments.js';
 import { hivePaths } from './data-dir.js';
 import { MetadataStore } from './metadata-store.js';
@@ -145,6 +145,7 @@ export class HiveRuntime {
 
   projection() {
     this.watchdog?.schedule();
+    reconcileInactiveBindings(this, this.host);
     if (this.host && this.metadata.available) reconcileRequests(this, this.host);
     this.migrateRegions();
     const snap = this.snapshots.current;

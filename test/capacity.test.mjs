@@ -133,3 +133,63 @@ test('summary categories partition reviewed, closed and status-only work without
   }
   assert.equal(hive.cells.one.occupiedCount, 2);
 });
+
+
+test('capacity drops gone claimants and bound reservations as sessions change', t => {
+  const { rt } = fixture(t);
+  const sessions = { worker: { status: 'working' }, reviewer: { status: 'idle' } };
+  rt.host = { sessions: { get: id => sessions[id] } };
+  rt.metadata.mutate(d => {
+    d.reviews.r = { workBeadId: 'b', state: 'in_review', reviewerSessionId: 'reviewer' };
+    d.workerLaunches.l = { beadId: 'a', state: 'claimed', sessionId: 'worker' };
+  });
+  assert.equal(rt.projection().capacity.used, 3);
+  sessions.worker.archived = true;
+  assert.equal(rt.projection().capacity.used, 1);
+  sessions.reviewer.status = 'exited';
+  assert.equal(rt.projection().capacity.used, 0);
+  sessions.worker.archived = false;
+  sessions.worker.status = 'exited';
+  assert.equal(capacity(rt).used, 0);
+  sessions.worker.status = 'idle';
+  assert.equal(rt.projection().capacity.used, 2);
+});
+
+test('projection cleans existing archived and exited bindings but preserves dormant waiters', t => {
+  const { rt } = fixture(t);
+  const sessions = { worker: { archived: true }, exited: { status: 'exited' }, waiting: { status: 'idle', dormant: true } };
+  rt.host = { sessions: { get: id => sessions[id] } };
+  rt.metadata.mutate(d => {
+    d.bindings.one = Object.keys(sessions).map(sessionId => ({ sessionId, beadId: 'a', role: 'worker', active: true }));
+  });
+  assert.deepEqual(rt.projection().cells.one.bindings.map(b => b.sessionId), ['waiting']);
+  const bindings = rt.metadata.read().bindings.one;
+  assert.equal(bindings[0].active, false);
+  assert.equal(bindings[1].active, false);
+  assert.ok(bindings[0].unboundAt);
+  const version = rt.metadata.version;
+  rt.projection();
+  assert.equal(rt.metadata.version, version);
+});
+
+test('cached capacity follows a launch-only session exiting', t => {
+  const { rt, setGraph } = fixture(t);
+  setGraph([raw('root'), raw('a', 'root')]);
+  const session = { status: 'working' };
+  rt.host = { sessions: { get: id => id === 'launching' ? session : null } };
+  rt.metadata.mutate(d => { d.workerLaunches.l = { beadId: 'a', state: 'binding', sessionId: 'launching' }; });
+  assert.equal(rt.projection().capacity.used, 1);
+  session.status = 'exited';
+  assert.equal(rt.projection().capacity.used, 0);
+});
+
+test('an uncertain launch keeps its fence until the session is confirmed gone', t => {
+  const { rt, setGraph } = fixture(t);
+  setGraph([raw('root'), raw('a', 'root')]);
+  let session = null;
+  rt.host = { sessions: { get: () => session } };
+  rt.metadata.mutate(d => { d.workerLaunches.l = { beadId: 'a', state: 'uncertain', sessionId: 'launching' }; });
+  assert.equal(rt.projection().capacity.used, 1);
+  session = { status: 'exited' };
+  assert.equal(rt.projection().capacity.used, 0);
+});

@@ -1,5 +1,6 @@
 import { buildGraph, descendantIds, GROUP_KINDS } from './bead-model.js';
 import { HiveError } from './ops.js';
+import { liveClaimant } from './tracking.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 
 export const WORK_LIMIT_SETTING = 'maxClaimedWork';
@@ -26,15 +27,19 @@ export function hiveWorkIds(rt, graph) {
 export function capacitySlots(rt, graph, reserve = []) {
   const scope = hiveWorkIds(rt, graph);
   const charge = (id) => id;
-  const claimed = new Set([...scope].filter((id) => graph.beads[id].status === 'in_progress' && graph.beads[id].assignee).map(charge));
+  const reservationActive = (sid) => {
+    const session = rt.host?.sessions?.get?.(sid);
+    return !session || (!session.archived && session.status !== 'exited');
+  };
+  const claimed = new Set([...scope].filter((id) => graph.beads[id].status === 'in_progress' && graph.beads[id].assignee && (!rt.host?.sessions?.get || liveClaimant(rt.host, graph.beads[id].ownerSessionId))).map(charge));
   const roots = new Set(rt.metadata.cells().map((c) => c.rootBeadId));
   const counts = (id) => typeof id === 'string' && !roots.has(id) && graph.beads[id]?.kind !== 'external' && !GROUP_KINDS.has(graph.beads[id]?.kind);
   const reserved = new Set(Object.values(rt.metadata.read().workerLaunches || {})
-    .filter((l) => RESERVED_LAUNCH_STATES.has(l.state) && counts(l.beadId)).map((l) => charge(l.beadId)));
+    .filter((l) => RESERVED_LAUNCH_STATES.has(l.state) && reservationActive(l.sessionId) && counts(l.beadId)).map((l) => charge(l.beadId)));
   for (const op of Object.values(rt.metadata.read().operations)) {
     if (op.kind === 'claim' && ['pending', 'uncertain', 'partial'].includes(op.state) && counts(op.intent?.beadId)) reserved.add(charge(op.intent.beadId));
   }
-  const reviews = new Set(Object.values(rt.metadata.read().reviews || {}).filter((r) => OPEN_REVIEW_STATES.has(r.state) && counts(r.workBeadId)).map((r) => r.workBeadId));
+  const reviews = new Set(Object.values(rt.metadata.read().reviews || {}).filter((r) => OPEN_REVIEW_STATES.has(r.state) && reservationActive(r.reviewerSessionId) && counts(r.workBeadId)).map((r) => r.workBeadId));
   for (const id of reviews) reserved.add(id);
   for (const id of reserve) if (counts(id)) reserved.add(charge(id));
   return { claimed, reserved, reviews };
