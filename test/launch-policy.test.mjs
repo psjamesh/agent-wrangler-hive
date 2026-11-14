@@ -219,7 +219,7 @@ test('sessions spawned outside Hive by participants are flagged, governed ones a
   ];
   f.host.sessions.list = () => all;
   const out = ungovernedDescendants(f.rt, f.host, f.doc().cells.cell, []);
-  assert.deepEqual(out.map((s) => [s.session_id, s.in_cell_task]), [['rogue-same', true], ['rogue-other', false]]);
+  assert.deepEqual(out.map((s) => [s.session_id, s.in_cell_task]), [['rogue-same', true], ['rogue-other', false], ['gone', true]]);
 });
 
 test('every host.sessions.spawn call in the server goes through the launch policy', async () => {
@@ -315,6 +315,6 @@ test('descendants are found transitively across tasks, through exited intermedia
     { sessionId: 'loop-b', spawnedBy: 'loop-a', taskId: 'x', status: 'working' },
   ];
   const out = ungovernedDescendants(f.rt, f.host, f.doc().cells.cell, []);
-  assert.deepEqual(out.map((s) => s.session_id), ['child', 'grandchild', 'orphan-gc']);
+  assert.deepEqual(out.map((s) => s.session_id), ['child', 'grandchild', 'dead-mid', 'orphan-gc']);
   assert(out.every((s) => s.origin_session_id === 'queen' || s.origin_session_id === 'queen'));
 });

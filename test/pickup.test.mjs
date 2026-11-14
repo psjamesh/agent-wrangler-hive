@@ -545,3 +545,48 @@ test('dormant live claimants continue to hold capacity against pickup', async ()
   assert.equal(capacity(f.rt).used, 1);
   assert.equal(Object.keys(f.doc().pickupAttempts).length, 0);
 });
+
+for (const fields of [{ dormant: true }, { status: 'dormant' }, { managed: false }, { archived: true }, { status: 'exited' }]) {
+  test(`inactive untracked descendant stays visible without holding pickup: ${JSON.stringify(fields)}`, async () => {
+    const f = pickupFixture();
+    f.board.set('stray', { sessionId: 'stray', spawnedBy: 'queen', status: 'idle', ...fields });
+    f.host.sessions.list = () => [...f.board.values()];
+    const { ungovernedDescendants } = await import('../server/tracking.js');
+    assert.equal(ungovernedDescendants(f.rt, f.host, f.doc().cells.cell)[0].session_id, 'stray');
+    const marked = await arm(f);
+    assert.equal(marked.pickup.state, 'ready');
+    await run(f);
+    assert.equal(f.spawned.length, 1);
+  });
+}
+
+test('arming and repeated arming return every hold reason and live blocking session id', async () => {
+  const f = pickupFixture();
+  f.host.sessions.list = () => [...f.board.values()];
+  f.board.set('live-stray', { sessionId: 'live-stray', spawnedBy: 'queen', status: 'idle', managed: true });
+  f.live.a.metadata.hive_waiting_for = 'Await external approval';
+  await f.rt.snapshots.refresh();
+  for (let i = 0; i < 2; i++) {
+    const { pickup: state } = await arm(f);
+    assert.equal(state.state, 'queued');
+    assert.equal(state.eligible, false);
+    assert.match(state.reason, /live-stray/);
+    assert.ok(state.reasons.includes('Await external approval'));
+    assert.deepEqual(state.blocking_session_ids, ['live-stray']);
+  }
+  await run(f); assert.equal(f.spawned.length, 0);
+  const disarmed = await pickup.setPickup(f.rt, f.host, f.actor(), { bead_id: 'a', ready: false });
+  assert.equal(disarmed.pickup.state, 'unmarked');
+});
+
+test('pickup reports simultaneous cell holds together', async () => {
+  const f = pickupFixture(); await arm(f);
+  f.host.sessions.list = () => [...f.board.values()];
+  f.board.set('live-stray', { sessionId: 'live-stray', spawnedBy: 'queen', status: 'working' });
+  f.host.tasks.get = () => ({ archived: true });
+  f.doc().launches.transition = { cellId: 'cell', state: 'uncertain' };
+  const state = pickup.pickupState(f.rt, f.host, f.doc().cells.cell, f.graph().beads.a);
+  assert.ok(state.reasons.includes('Task is missing or archived'));
+  assert.ok(state.reasons.includes('Queen transition needs reconciliation'));
+  assert.ok(state.reasons.some(reason => reason.includes('live-stray')));
+});

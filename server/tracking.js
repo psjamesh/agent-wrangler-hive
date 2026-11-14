@@ -26,7 +26,9 @@ export function trackingKey(rt) {
     + Object.values(rt.metadata.read().reviews || {}).map((r) => { const s = rt.host?.sessions?.get?.(r.reviewerSessionId); return `|${r.id}:${s?.status}:${s?.archived}`; }).join('');
 }
 
-const GONE = (s) => !s || s.archived || s.status === 'exited';
+export function hasLiveTerminal(session) {
+  return Boolean(session && !session.archived && !session.dormant && session.managed !== false && !['exited', 'dormant'].includes(session.status));
+}
 
 export function ungovernedDescendants(rt, host, cell, openBeads = []) {
   if (typeof host?.sessions?.list !== 'function') return [];
@@ -49,10 +51,10 @@ export function ungovernedDescendants(rt, host, cell, openBeads = []) {
   };
   const out = [];
   for (const s of all) {
-    if (governed.has(s.sessionId) || GONE(s)) continue;
+    if (governed.has(s.sessionId)) continue;
     const origin = fromParticipant(s);
     if (!origin) continue;
-    out.push({ session_id: s.sessionId, spawned_by: s.spawnedBy, origin_session_id: origin, task_id: s.taskId || null, in_cell_task: s.taskId === cell.taskId, status: s.status, note: 'Started by a cell participant outside Hive; it holds no claim, review or binding. Reconcile it: bind it to a bead, or leave it deliberately untracked. Hive does not claim it for anyone.' });
+    out.push({ session_id: s.sessionId, spawned_by: s.spawnedBy, origin_session_id: origin, task_id: s.taskId || null, in_cell_task: s.taskId === cell.taskId, status: s.status, live: hasLiveTerminal(s), note: 'Started by a cell participant outside Hive; it holds no claim, review or binding. Reconcile it: bind it to a bead, or leave it deliberately untracked. Hive does not claim it for anyone.' });
   }
   return out;
 }
