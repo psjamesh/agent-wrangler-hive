@@ -1,3 +1,4 @@
+import { setCodexApprovals } from './codex-policy.js';
 import { setPickup } from './pickup.js';
 import { setWatchdogSettings } from './watchdog.js';
 import { setReviewPolicy } from './review-policy.js';
@@ -144,6 +145,8 @@ const launch = humanHandler('hive-queen-launch', ({ msg, host, rt }) => launchQu
 
 const watchdogSettings = humanHandler('hive-watchdog-settings', ({ msg, rt }) => setWatchdogSettings(rt, { cellId: str(msg.cellId, 80), settings: msg.settings }));
 
+const codexApprovalsH = humanHandler('hive-codex-approvals', ({ msg, rt }) => setCodexApprovals(rt, { cellId: str(msg.cellId, 80), value: msg.value }));
+
 const reviewPolicyH = humanHandler('hive-review-policy', ({ msg, rt }) => setReviewPolicy(rt, { cellId: str(msg.cellId, 80), policy: msg.policy }));
 
 const setInstructions = humanHandler('hive-cell-instructions', ({ msg, rt }) => ops.setQueenInstructions(rt, { cellId: str(msg.cellId, 80), instructions: msg.instructions }));
@@ -276,4 +279,4 @@ const pickupH = humanHandler('hive-bead-pickup', async ({ msg, host, rt }) => {
   return setPickup(rt, host, actor, { bead_id: msg.beadId, ready: msg.ready, profile: msg.profile, rearm: msg.rearm, reason: msg.reason, expected_token: msg.expectedToken });
 });
 
-export const configHandlers = [pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, setInstructions, watchdogSettings, reviewPolicyH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];
+export const configHandlers = [pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];
