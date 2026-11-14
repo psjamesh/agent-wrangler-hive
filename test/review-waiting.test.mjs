@@ -41,7 +41,7 @@ for (const terminal of ['approved', 'changes_requested', 'cancelled']) test(`pro
   const tile = tileFor(hive);
   assert.equal(model.cellCounts(hive, f.cell).in_review, 0);
   assert.equal(model.cellCounts(hive, f.cell).in_progress, 0);
-  assert.equal(tile.marks.length, 0);
+  assert.deepEqual(tile.marks.map(m => m.kind), terminal === 'approved' ? ['approved'] : []);
   assert.match(tile.title, /Open/);
   assert.doesNotMatch(tile.ariaLabel, /Outside fix|In review/);
 });
