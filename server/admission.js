@@ -25,15 +25,17 @@ export function hiveWorkIds(rt, graph) {
 
 // Core sends no completion notification for failed launches or later hook refusals.
 // Expire transient admissions so those launches cannot hold capacity indefinitely.
-export function helperSlots(rt, now = Date.now()) {
+export function helperSlots(rt, graph = rt.snapshots.graph, now = Date.now()) {
   const slots = new Map();
+  const liveCells = new Set(rt.metadata.cells().filter(c => c.enabled && !c.snapshot).map(c => c.id));
+  const eligible = (cellId, beadId) => liveCells.has(cellId) && graph.beads[beadId] && graph.beads[beadId].status !== 'closed';
   for (const [id, admission] of rt.spawnAdmissions || []) {
     if (now - admission.at >= 10 * 60 * 1000) rt.spawnAdmissions.delete(id);
-    else slots.set(`helper:${id}`, admission);
+    else if (eligible(admission.cellId, admission.beadId)) slots.set(`helper:${id}`, admission);
   }
   for (const [cellId, list] of Object.entries(rt.metadata.read().bindings || {})) {
     for (const b of list) {
-      if (!b.active || !b.autoEnrolled) continue;
+      if (!b.active || !b.autoEnrolled || !eligible(cellId, b.beadId)) continue;
       const session = rt.host?.sessions.get(b.sessionId);
       if (session && !session.archived && session.status !== 'exited') slots.set(`helper:${b.sessionId}`, { beadId: b.beadId, cellId });
     }
@@ -55,7 +57,7 @@ export function capacitySlots(rt, graph, reserve = []) {
   const reviews = new Set(Object.values(rt.metadata.read().reviews || {}).filter((r) => OPEN_REVIEW_STATES.has(r.state) && counts(r.workBeadId)).map((r) => r.workBeadId));
   for (const id of reviews) reserved.add(id);
   for (const id of reserve) if (counts(id)) reserved.add(charge(id));
-  const helpers = helperSlots(rt);
+  const helpers = helperSlots(rt, graph);
   for (const id of helpers.keys()) reserved.add(id);
   return { claimed, reserved, reviews, helpers };
 }

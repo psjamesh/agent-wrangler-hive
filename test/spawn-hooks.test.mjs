@@ -4,6 +4,7 @@ import { fixture } from './ownership.test.mjs';
 import { createManifest } from '../server/manifest.js';
 import { capacity } from '../server/admission.js';
 import { attachmentsFor } from '../server/bead-sessions.js';
+import { projectForGraph } from '../server/projection.js';
 
 async function setup(limit = 3) {
   const f = fixture(limit);
@@ -55,12 +56,56 @@ test('unrelated parents and Hive extension launches are left to their existing a
   assert.equal(capacity(f.rt).used, 1);
 });
 
-test('a host without spawn hooks keeps the existing launch context and preparation behaviour', async () => {
+test('preparation and launch context remain independent of helper admission', async () => {
   const f = await setup();
   await f.manifest.hooks['session.prepare']({ sessionId: 'legacy', taskId: 'task', spawnedBy: 'parent', host: f.host });
   assert.ok(f.rt.pendingParticipants.get('legacy'));
   assert.equal(await f.manifest.hooks['session.launchContext']({ sid: 'legacy', task: { id: 'task' }, reason: 'spawn', host: f.host }), undefined);
   assert.equal(capacity(f.rt).used, 1);
+});
+
+test('closing the parent bead releases an idle helper and its projected capacity', async () => {
+  const f = await setup();
+  const { data } = await f.before();
+  f.board.set('child', { sessionId: 'child', status: 'idle' });
+  await f.spawned({ sessionId: 'child', data });
+  f.rt.paths = { beadsWorkspace: '.scratch' };
+  const projected = () => projectForGraph({ runtime: f.rt, snapshot: { graph: f.rt.snapshots.graph, revision: 1 } });
+  assert.equal(capacity(f.rt).used, 2);
+  assert.equal(projected().cells.cell.occupiedCount, 2);
+  f.live.a.status = 'closed';
+  f.live.a.assignee = '';
+  await f.rt.snapshots.refresh();
+  assert.equal(capacity(f.rt).used, 0);
+  assert.equal(projected().cells.cell.occupiedCount, 0);
+});
+
+test('pending and bound helpers require an open bead and live cell', async () => {
+  for (const bound of [false, true]) for (const state of ['missing', 'closed', 'snapshot', 'disabled']) {
+    const f = await setup();
+    const { data } = await f.before();
+    if (bound) {
+      f.board.set('child', { sessionId: 'child', status: 'idle' });
+      await f.spawned({ sessionId: 'child', data });
+    }
+    assert.equal(capacity(f.rt).reserved, 1);
+    if (state === 'missing') delete f.live.a;
+    if (state === 'closed') { f.live.a.status = 'closed'; f.live.a.assignee = ''; }
+    if (state === 'snapshot') f.rt.metadata.mutate(d => { d.cells.cell.snapshot = true; });
+    if (state === 'disabled') f.rt.metadata.mutate(d => { d.cells.cell.enabled = false; });
+    await f.rt.snapshots.refresh();
+    assert.equal(capacity(f.rt).reserved, 0, `${bound ? 'bound' : 'pending'} helper: ${state}`);
+  }
+});
+
+test('queen helpers on the open cell root remain charged', async () => {
+  const f = await setup();
+  const { data } = await f.before({ spawnedBy: 'queen' });
+  assert.equal(data.beadId, 'root');
+  assert.equal(capacity(f.rt).used, 2);
+  f.board.set('child', { sessionId: 'child', status: 'idle' });
+  await f.spawned({ sessionId: 'child', data });
+  assert.equal(capacity(f.rt).used, 2);
 });
 
 test('aborted launch admissions expire because core has no failed-launch notification', async () => {
