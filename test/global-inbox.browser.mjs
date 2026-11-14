@@ -271,8 +271,9 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.ok(cellInbox.archived.includes('Archived worker'));
   assert.equal(cellInbox.zeros, false);
   const checkCellLayout = async () => {
-    const layout = await run(`const panel = document.querySelector('.hive-conversation'); const search = document.querySelector('.hive-global-search').getBoundingClientRect(); const filters = panel.querySelector('.hive-inbox-filters').getBoundingClientRect(); return { above: search.bottom <= filters.top, width: search.width, input: document.querySelector('.hive-inbox-search-input').getBoundingClientRect().width, count: document.querySelectorAll('input[type="search"]').length, context: panel.querySelectorAll('.hive-inbox .hive-topic-context').length };`);
-    assert.equal(layout.above, true);
+    await run(`if (document.querySelector('.hive-map-search').hidden) document.querySelector('.hive-search-open').click();`);
+    const layout = await run(`const panel = document.querySelector('.hive-conversation'); const search = document.querySelector('.hive-map-search').getBoundingClientRect(); const filters = panel.querySelector('.hive-inbox-filters').getBoundingClientRect(); return { inside: document.querySelector('.hive-canvas').contains(document.querySelector('.hive-map-search')), width: search.width, input: document.querySelector('.hive-inbox-search-input').getBoundingClientRect().width, count: document.querySelectorAll('input[type="search"]').length, context: panel.querySelectorAll('.hive-inbox .hive-topic-context').length };`);
+    assert.equal(layout.inside, true);
     assert.equal(layout.count, 1);
     assert.ok(layout.input > 100 && layout.input <= layout.width);
     assert.equal(layout.context, 0);

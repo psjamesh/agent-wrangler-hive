@@ -716,11 +716,12 @@ export function renderHexMap({
 
   autoButton = h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-auto', onclick: () => autoFit.toggle() }, 'Auto-fit');
   autoFit.refresh();
+  const viewOptions = h('div', { class: 'hive-control-group', role: 'group', 'aria-label': 'View options' }, autoButton, viewControls);
   const tools = h('div', { class: 'hive-zoom', role: 'group', 'aria-label': 'Map view' },
     h('div', { class: 'hive-control-group', role: 'group', 'aria-label': 'Zoom' },
       h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-icon', 'aria-label': 'Zoom out', title: 'Zoom out (−)', onclick: () => zoomCentre(0.8) }, '−'),
       h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-icon', 'aria-label': 'Zoom in', title: 'Zoom in (+)', onclick: () => zoomCentre(1.25) }, '+')),
-    h('div', { class: 'hive-control-group', role: 'group', 'aria-label': 'View options' }, autoButton, viewControls),
+    viewOptions,
     actions.flat(Infinity).some(Boolean) ? h('div', { class: 'hive-control-group', role: 'group', 'aria-label': 'Map actions' }, actions) : null);
   el.append(tools);
 
@@ -762,7 +763,7 @@ export function renderHexMap({
   };
   el.hiveTileRect = (tileId) => el.querySelector(`[data-tile-id="${CSS.escape(tileId)}"]`)?.getBoundingClientRect() || null;
   apply();
-  return { el, highlightReference };
+  return { el, highlightReference, viewControls: viewOptions };
 }
 
 function wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, zoomAt, suspend }) {

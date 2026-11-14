@@ -608,6 +608,7 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   justify-content: center;
   gap: 5px;
 }
+.hive-quiet-btn[hidden] { display: none; }
 .hive-quiet-btn[aria-pressed="true"]:hover { box-shadow: inset 0 0 0 2px var(--surface-2); }
 .hive-zoom-btn[aria-pressed]::before,
 .hive-quiet-btn[aria-pressed]::before { content: '\25cb'; }
@@ -1413,7 +1414,7 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   .hive-overview { padding: 12px 14px; flex: 0 0 auto; }
   .hive-overview .hive-stage { flex: 0 0 auto; height: 62vh; min-height: 300px; }
   .hive-overhead .hive-head-actions { margin-left: 0; }
-  .hive-stage-hint { right: 12px; bottom: 48px; }
+  .hive-stage-hint { right: 12px; bottom: 100px; }
   .hive-inspector-slot { padding: 0 14px 12px; }
 }
 
@@ -1692,7 +1693,7 @@ dialog.hive-confirm:not([open]) { display: none; }
 body.light .hive-hex.is-search-match .hive-conversation-ring { stroke: #186879; }
 .hive-hex.is-search-dim { opacity: 0.22; }
 .hive-hex.is-search-current .hive-hex-ring { stroke: var(--fg); stroke-width: 2; }
-.hive-map-search { position: absolute; top: 10px; left: 10px; box-sizing: border-box; max-width: calc(100% - 20px); padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 12.5px; overflow-wrap: anywhere; }
+.hive-map-search { position: absolute; top: 10px; left: 10px; box-sizing: border-box; max-width: calc(100% - 20px); padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 12.5px; overflow-wrap: anywhere; max-height: calc(100% - 120px); overflow: auto; z-index: 2; }
 .hive-map-search[hidden] { display: none; }
 .hive-search-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
 .hive-search-row .hive-input { width: auto; height: 30px; min-width: 0; max-width: 100%; padding: 0 9px; }
@@ -1781,9 +1782,6 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .hive-pickup .hive-field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
 .hive-pickup input, .hive-pickup select { max-width: 100%; }
 
-.hive-global-search { flex: none; padding: 6px 12px; width: 100%; box-sizing: border-box; }
-.hive-global-search .hive-inbox-search-field { display: block; width: min(100%, 36rem); }
-.hive-global-search input { width: 100%; }
 
 .hive-overview-head { flex-shrink: 0; }
 .hive-root[data-layout="small"] .hive-overview-head { min-height: max-content; }
