@@ -5,6 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { MetadataStore } from '../server/metadata-store.js';
 import * as requests from '../server/requests.js';
+import { attachmentsInbox, messageDir, readAttachment, MAX_IMAGE_BYTES, cleanupOrphanAttachments } from '../server/attachments.js';
+import { cellContextConversation, humanConversationDoc } from '../server/conversation.js';
+import { resolveCaller } from '../server/access.js';
+import { configHandlers } from '../server/handlers.js';
 
 const queen = '11111111-1111-4111-8111-111111111111';
 const worker = '22222222-2222-4222-8222-222222222222';
@@ -964,4 +968,93 @@ for (const action of ['read', 'reaction', 'reply']) test(`${action} acknowledges
   check(0, 1);
   await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Yes', receipt: `fyi-${action}` });
   check(0, 0);
+});
+
+
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nGQAAAAASUVORK5CYII=', 'base64');
+async function imageFixture(t) {
+  const f = fixture(t), inbox = await attachmentsInbox(f.rt, 'cell');
+  const put = (file, bytes = PNG) => fs.writeFileSync(path.join(inbox, file), bytes);
+  put('screen.png');
+  return { ...f, inbox, put };
+}
+async function humanImage(f, r) {
+  let reply;
+  await configHandlers.find(h => h.type === 'hive-image').handler({ cellId: 'cell', messageId: r.messageId, file: 'screen.png', full: true }, f.host, out => { reply = out; });
+  return reply;
+}
+
+for (const role of ['queen', 'worker', 'reviewer', 'helper']) test(`${role} request stores original images, retains them on forwarding and survives restart`, async t => {
+  const f = await imageFixture(t), caller = role === 'queen' ? queen : worker;
+  if (role === 'reviewer' || role === 'helper') f.rt.metadata.mutate(d => { d.bindings.cell = [{ sessionId: worker, role, active: true }]; });
+  const r = await f.create(caller, { attachments: [{ file: 'screen.png', alt: 'Settings before the change' }] });
+  const message = f.rt.metadata.read().conversation.cell.find(m => m.id === r.messageId);
+  assert.deepEqual(r.attachments, [{ file: 'screen.png', alt: 'Settings before the change', mime: 'image/png' }]);
+  assert.deepEqual(message.attachments, r.attachments);
+  assert.deepEqual(fs.readFileSync(path.join(messageDir(f.rt, 'cell', r.messageId), 'screen.png')), PNG);
+  fs.unlinkSync(path.join(f.inbox, 'screen.png'));
+  if (role !== 'queen') {
+    assert.equal((await humanImage(f, r)).missing, true);
+    assert.equal(humanConversationDoc(f.rt.metadata.read(), 'cell').conversation.cell.length, 0);
+    assert.deepEqual(requests.requestContext(f.rt, resolveCaller(f.rt, f.host, queen, 'cell')).input_requests[0].attachments, r.attachments);
+    const forwarded = await requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(r) });
+    assert.equal(forwarded.id, r.id);
+    assert.equal(forwarded.messageId, r.messageId);
+    assert.deepEqual(forwarded.attachments, r.attachments);
+  }
+  f.rt.metadata = new MetadataStore({ file: f.rt.metadata.file });
+  await cleanupOrphanAttachments(f.rt);
+  const got = await humanImage(f, r);
+  assert.equal(got.mime, 'image/png');
+  assert.deepEqual(Buffer.from(got.dataBase64, 'base64'), PNG);
+  assert.deepEqual(requests.listMine(f.rt, f.host, caller)[0].attachments, r.attachments);
+});
+
+test('request attachments reject invalid files atomically with the shared validation', async t => {
+  const f = await imageFixture(t);
+  f.put('bad.png', Buffer.from('<svg/>'));
+  f.put('large.png', Buffer.alloc(MAX_IMAGE_BYTES + 1));
+  fs.symlinkSync(path.join(f.inbox, 'screen.png'), path.join(f.inbox, 'link.png'));
+  fs.mkdirSync(path.join(f.inbox, 'dir.png'));
+  for (const [file, error] of [['../screen.png', /bare/], ['absent.png', /could not read/], ['bad.png', /magic/], ['large.png', /5 MB/], ['link.png', /regular/], ['dir.png', /regular/]]) {
+    await assert.rejects(f.create(worker, { attachments: [{ file: 'screen.png' }, { file }] }), error);
+    assert.deepEqual(Object.keys(f.rt.metadata.read().requests), []);
+    assert.equal(f.rt.metadata.read().conversation.cell?.length || 0, 0);
+    assert.deepEqual(fs.readdirSync(path.dirname(f.inbox)), ['inbox']);
+  }
+  for (const attachments of [null, {}, Array(5).fill({ file: 'screen.png' })]) await assert.rejects(f.create(worker, { attachments }), /at most 4/);
+});
+
+test('failed request metadata commit removes adopted files and leaves no request', async t => {
+  const f = await imageFixture(t), mutate = f.rt.metadata.mutate.bind(f.rt.metadata);
+  f.rt.metadata.mutate = fn => mutate(d => { fn(d); throw new Error('disk failed'); });
+  await assert.rejects(f.create(worker, { attachments: [{ file: 'screen.png' }] }), /disk failed/);
+  assert.deepEqual(Object.keys(f.rt.metadata.read().requests), []);
+  assert.deepEqual(fs.readdirSync(path.dirname(f.inbox)), ['inbox']);
+});
+
+test('dedupe retries and text updates preserve request images without reopening inbox files', async t => {
+  const f = await imageFixture(t), args = { dedupe_key: 'image', attachments: [{ file: 'screen.png' }] };
+  const r = await f.create(worker, args);
+  fs.unlinkSync(path.join(f.inbox, 'screen.png'));
+  const same = await f.create(worker, args);
+  assert.equal(same.revision, r.revision);
+  const revised = await f.create(worker, { dedupe_key: 'image', title: 'Updated question' });
+  assert.deepEqual(revised.attachments, r.attachments);
+  assert.deepEqual((await readAttachment(f.rt, 'cell', r.messageId, 'screen.png')).bytes, PNG);
+  await assert.rejects(f.create(worker, { ...args, attachments: [{ file: 'other.png' }] }), /new request/);
+});
+
+test('bead-scoped worker context exposes the attachments inbox', async t => {
+  const f = await imageFixture(t);
+  const context = await cellContextConversation(f.rt, f.host, resolveCaller(f.rt, f.host, worker, 'cell'), { bead_id: 'work' });
+  assert.equal(context.attachments_inbox, f.inbox);
+});
+
+test('request attachment adoption rechecks membership and cleans up if the caller leaves', async t => {
+  const f = await imageFixture(t);
+  f.rt.attachmentHelperStarted = action => { if (action === 'adopt') f.members.get(worker).taskId = 'elsewhere'; };
+  await assert.rejects(f.create(worker, { attachments: [{ file: 'screen.png' }] }), /not in that active Hive/);
+  assert.deepEqual(Object.keys(f.rt.metadata.read().requests), []);
+  assert.deepEqual(fs.readdirSync(path.dirname(f.inbox)), ['inbox']);
 });

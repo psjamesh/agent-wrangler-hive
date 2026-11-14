@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +13,7 @@ import { configHandlers } from './handlers.js';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nGQAAAAASUVORK5CYII=', 'base64');
 const JPG = Buffer.from([255, 216, 255, 0]);
 async function fixture(t) {
-  const root = fs.mkdtempSync(path.join('/private/tmp', 'hive-security-test-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hive-security-test-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const metadata = new MetadataStore({ file: path.join(root, 'metadata.json') });
   const cell = { id: 'cell_review', enabled: true, queenSessionId: '11111111-1111-4111-8111-111111111111' };

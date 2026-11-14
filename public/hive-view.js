@@ -1,10 +1,11 @@
+import { globalSearchBox } from './global-inbox.js';
 import { renderRelatedBeads } from './conversation.js';
 import { confirmHive } from './confirm-dialog.js';
 import { allSettings, settingsButton } from './settings-view.js';
 import { capacityControl } from './capacity-control.js';
 import { subtreeMembers } from './region-attachments.js';
 import { hiddenWork } from './region-visibility.js';
-import { bindMapSearch, searchReveals } from './map-search.js';
+import { bindMapSearch, searchReveals, rankBeads } from './map-search.js';
 import { mapInputs } from './view-inputs.js';
 import { h, syncChildren } from './dom.js';
 import { renderHexMap, fitLines } from './hex-grid.js';
@@ -726,6 +727,7 @@ export function renderHive(ctx) {
       cached.map.querySelector('.hive-canvas')?.hiveRefreshSearch?.(ctx);
       body = cached.map;
     }
+    panels.header.append?.(globalSearchBox(ui, e => cached.map?.querySelector('.hive-canvas')?.hiveSearchKey?.(e)));
     const top = syncChildren(cached.top, [panels.header, body, panels.tabs, panels.info], ctx.beforeReplace);
     return {
       top,
@@ -743,6 +745,15 @@ export function renderHive(ctx) {
   }
   const sig = mapInputs(ctx, null);
   if (cached.sig !== sig) { disposeMap(cached.map); cached.map = overviewMap(ctx, cells, { retiredCount, showRetired }); cached.sig = sig; }
+  const query = ui.searchQuery?.() || '';
+  for (const tile of cached.map.querySelectorAll('[data-tile-id]')) {
+    const c = hive.cells[tile.dataset.tileId];
+    const ids = c ? Object.values(hive.beads).filter(b => b.id === c.rootBeadId || belongsTo(hive.beads, b, c.rootBeadId)) : [];
+    const hit = rankBeads(ids, query).length > 0 || (query.trim() && `${c ? cellName(graph, c) : ''} ${hive.beads[c?.rootBeadId]?.title || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
+    tile.classList.toggle('is-search-match', Boolean(query.trim()) && Boolean(hit));
+    tile.classList.toggle('is-search-dim', Boolean(query.trim()) && !hit);
+  }
+
   const top = syncChildren(cached.top, [
     h('div', { class: 'hive-overview-head' },
       h('header', { class: 'hive-overhead' },
@@ -756,6 +767,7 @@ export function renderHive(ctx) {
           h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => openCellDialog(ui, 'adopt', 'open-adopt'), 'data-focus-key': 'open-adopt', 'aria-haspopup': 'dialog' }, 'Add existing task'),
           settingsButton(ctx)),
         allSettings(ctx)),
+      globalSearchBox(ui),
       noticesEl(ctx),
       attentionEl(ctx)),
     cached.map,
@@ -774,4 +786,13 @@ function disposeMap(map) { map?.querySelector('.hive-canvas')?.hiveDisposeView?.
 export function disposeHiveView(ui) {
   disposeMap(hiveViews.get(ui)?.map);
   hiveViews.delete(ui);
+}
+
+function belongsTo(beads, bead, root) {
+  const seen = new Set();
+  for (let b = bead; b && !seen.has(b.id); b = beads[b.parentId]) {
+    if (b.id === root) return true;
+    seen.add(b.id);
+  }
+  return false;
 }

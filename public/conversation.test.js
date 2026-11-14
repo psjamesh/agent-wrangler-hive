@@ -2005,7 +2005,7 @@ for (const view of ['topics', 'cell', 'global', 'cell-search', 'global-search'])
   const { globalInbox } = await import('./global-inbox.js');
   const f = orderedTopicsFixture(t);
   if (view !== 'topics') f.ui.setInboxView(f.cell.id, 'human');
-  if (view.includes('search')) f.ui.setGlobalInboxQuery('unread', view.startsWith('cell') ? f.cell.id : undefined);
+  if (view.includes('search')) f.ui.setSearchQuery('unread', view.startsWith('cell') ? f.cell.id : undefined);
   const list = () => view.startsWith('global') ? globalInbox({
     hive: f.hive, ui: f.ui, graph: { sessions: [] }, api: {},
   }, [f.cell]).querySelector('.hive-global-inbox-list') : f.draw().list;
@@ -2052,13 +2052,13 @@ for (const view of ['cell', 'global', 'cell-search', 'global-search']) test(`${v
   const { globalInbox } = await import('./global-inbox.js');
   const f = orderedTopicsFixture(t);
   f.ui.setInboxView(f.cell.id, 'human');
-  if (view.includes('search')) f.ui.setGlobalInboxQuery('e', view.startsWith('cell') ? f.cell.id : undefined);
+  if (view.includes('search')) f.ui.setSearchQuery('e', view.startsWith('cell') ? f.cell.id : undefined);
   const list = () => view.startsWith('cell') ? f.draw().list : globalInbox({
     hive: f.hive, ui: f.ui, graph: { sessions: [] }, api: {},
   }, [f.cell]).querySelector('.hive-global-inbox-list');
-  assert.deepEqual(topicTitlesIn(list()), ['needs-old', 'needs-new', 'unread-old', 'unread-new']);
+  assert.deepEqual(topicTitlesIn(list()), ['needs-old', 'needs-new', 'unread-old', 'unread-new', ...(view.includes('search') ? ['read-old', 'read-new'] : [])]);
   f.cell.requests['needs-old'].state = 'withdrawn';
-  assert.deepEqual(topicTitlesIn(list()), ['needs-new', 'unread-old', 'unread-new', 'needs-old']);
+  assert.deepEqual(topicTitlesIn(list()), ['needs-new', 'unread-old', 'unread-new', 'needs-old', ...(view.includes('search') ? ['read-old', 'read-new'] : [])]);
 });
 
 test('scoped topic hint counts unread messages and topics waiting for you independently', t => {
@@ -2116,4 +2116,61 @@ test('remote Inbox search orders topics by last activity even without loaded sum
   ], queen: [] };
   const result = searchedInbox(context, [f.cell], 'needle', { remote });
   assert.deepEqual(result.lists.human.map(row => row.threadId), ['old', 'new']);
+});
+
+
+test('request conversation message renders its images exactly once inside the request card', async t => {
+  const f = fixture(t);
+  const attachments = [{ file: 'screen.png', alt: 'Settings preview' }];
+  const r = { id: 'hreq_image', messageId: 'msg_image', title: 'Review settings', body: 'See screenshot.', audience: 'human', state: 'open', attachments };
+  f.cell.requests = { [r.id]: r };
+  f.cell.threads = [{ id: thr, title: r.title, count: 1, retained: 1, lastAt: 10 }];
+  f.cell.messages = [{ id: r.messageId, requestId: r.id, attachments, author: 'session', sessionId: 'queen', text: r.title, threadId: thr, at: 10, n: 1 }];
+  f.ui.setAllTopics(f.cell.id, true);
+  f.draw();
+  f.ui.openThreadFor(f.cell.id, thr, f.cell.threads[0]);
+  const out = f.draw();
+  const thumbs = descendants(out.list).filter(el => el.attributes['aria-label'] === 'Open Settings preview');
+  assert.equal(thumbs.length, 1);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.sent.filter(frame => frame.type === 'hive-image').length, 1);
+});
+
+for (const query of ['Topic', 'hive-one', 'Topic m1']) test(`opening a topic preserves matching context for search ${query}`, t => {
+  const f = topicFixture(t, ['m1', 'm2', 'm3']);
+  f.ui.closeThread(f.cell.id);
+  f.cell.threads[0].beadId = 'hive-one';
+  f.ui.setSearchQuery(query);
+  const topics = f.draw();
+  assert.equal(topics.list.querySelectorAll('.hive-topic').length, 1);
+  assert.match(topics.head.querySelector('.hive-inbox-search-status').textContent, /1 topic matches/);
+  if (query === 'Topic') assert.equal(topics.list.querySelector('.hive-search-hit').textContent, 'Topic');
+  topics.list.querySelector('.hive-topic-btn').fire('click');
+  const out = f.draw();
+  assert.equal(out.list.querySelectorAll('.hive-message').length, query === 'Topic m1' ? 1 : 4);
+  assert.doesNotMatch(out.list.textContent, /No messages match/);
+});
+
+test('sending a filtered reply does not mark hidden newer messages read', t => {
+  const f = topicFixture(t, ['m1', 'm2', 'm3']);
+  f.ui.setSearchQuery('m1');
+  const out = f.draw();
+  assert.deepEqual(out.list.querySelectorAll('.hive-message').map(e => e.dataset.id), ['m1']);
+  assert.equal(f.send(out).readThrough, null);
+  f.replies.at(-1).onReply({ ok: true });
+  assert.equal(f.ui.readMarks(f.cell.id).threads[thr], undefined);
+});
+
+test('filtered history keeps its bridge when no message after the gap matches', t => {
+  const f = topicFixture(t, []);
+  const old = { ...queen('old', 1, READ), text: 'needle in history' };
+  f.ui.addHistory(f.cell.id, thr, f.hive.metaEpoch, { messages: [old], more: false, anchorN: 2 });
+  f.ui.setSearchQuery('needle');
+  const out = f.draw();
+  assert.deepEqual(out.list.querySelectorAll('.hive-message').map(e => e.dataset.id), ['old']);
+  const bridge = out.list.querySelectorAll('button').find(e => e.textContent === 'Load the messages in between');
+  assert.ok(bridge);
+  bridge.fire('click');
+  assert.equal(f.sent.at(-1).type, 'hive-thread-history');
+  assert.equal(f.sent.at(-1).before, 'm1');
 });

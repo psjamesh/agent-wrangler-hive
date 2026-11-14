@@ -1,7 +1,7 @@
 import { needsHuman } from '../public/request-state.js';
 import { sessionReference } from './session-links.js';
 import { requestOptions, requireOptionsForChoices } from './request-options.js';
-import { removeAttachmentBatch } from './attachments.js';
+import { adoptAttachments, removeAttachments, removeAttachmentBatch } from './attachments.js';
 import { pruneConversation, audienceConversationDoc, preserveRequestAudience, preservePublicSequence } from './conversation.js';
 import { isHumanRequest, maySeeRequest } from './request-visibility.js';
 import { newId } from './metadata-store.js';
@@ -122,7 +122,7 @@ export function reconcileRequests(rt, host, { now = Date.now(), startup = false,
   }
 }
 export async function createRequest(rt, host, id, args) {
-  const actor = member(rt, host, id, args.cell_id);
+  let actor = member(rt, host, id, args.cell_id);
   reconcileRequests(rt, host);
   const title = bounded(args.title, 'title', 200, true), body = bounded(args.body, 'body', 20000, true);
   const kind = args.kind || 'question';
@@ -143,6 +143,11 @@ export async function createRequest(rt, host, id, args) {
   const sessionLink = sessionReference(host, args) || old?.sessionLink;
   requireOptionsForChoices({ kind: args.kind || old?.kind || 'question', body }, options);
   if (old) {
+    if (args.attachments !== undefined) {
+      const submitted = Array.isArray(args.attachments) && args.attachments.map(a => ({ file: a?.file, alt: a?.alt ?? a?.file }));
+      const retained = (old.attachments || []).map(a => ({ file: a.file, alt: a.alt }));
+      if (JSON.stringify(submitted) !== JSON.stringify(retained)) fail('Dedupe updates retain their images. Use a new request to change attachments.');
+    }
     if ((args.bead_id && args.bead_id !== old.beadId) || (threadId && threadId !== old.threadId) || (replyTo && replyTo !== old.replyTo)) fail('A dedupe update cannot move request context.');
     const nextKind = args.kind || old.kind;
     const expiresAt = args.expires_at === undefined ? old.expiresAt : args.expires_at;
@@ -172,40 +177,55 @@ export async function createRequest(rt, host, id, args) {
     if (matching.length === 1) topic = matching[0];
   }
   if (bead && topic?.beadId && topic.beadId !== bead.id) fail('Topic and bead context disagree.');
-  const q = queenRoute(host, actor.cell);
   const at = Date.now(), rid = newId('hreq'), mid = newId('msg'), tid = topic?.id || newId('thr');
-  const r = {
-    id: rid, cellId: actor.cell.id, requesterSessionId: id, ...(sessionLink ? { sessionLink } : {}), title, body, kind, options, allowFreeText: true, blocking: args.blocking === true, dedupeKey: key || null,
-    beadId: bead?.id || topic?.beadId || target?.beadId || null, ...(replyTo ? { replyTo } : {}), threadId: tid, messageId: mid, createdAt: at, updatedAt: at, expiresAt: args.expires_at || null,
-    state: 'open', audience: !q || q === id ? 'human' : 'queen', routeReason: q ? null : 'no-queen', warning: q ? null : 'No queen in this hive',
-    queenSessionId: q, queenGeneration: actor.cell.queenGeneration || 0, routeRevision: 1, contentRevision: 1, revision: 1, answer: null,
-    queenNotification: { state: 'pending', attempts: [] }, delivery: null,
-  };
-  let removed = [];
-  rt.metadata.mutate(d => {
-    d.requests[rid] = r;
-    d.threads[r.cellId] ||= {};
-    const t = topic ? d.threads[r.cellId][tid] : (d.threads[r.cellId][tid] = { id: tid, cellId: r.cellId, title, titleBy: id, beadId: r.beadId, createdAt: at, createdBy: id, count: 0, origin: 'request', requestId: rid });
-    preservePublicSequence(d, r.cellId, t);
-    t.hasRequests = true;
-    t.count++; t.lastAt = at; t.lastMessageId = mid;
-    const message = { id: mid, cellId: r.cellId, author: 'session', role: actor.role, sessionId: id, requestId: rid, text: title, at, threadId: tid, beadId: r.beadId, context: r.beadId ? { beadId: r.beadId, title: bead?.title || null } : null, n: t.count, ...(replyTo ? { replyTo } : {}) };
-    if (actor.role === 'queen' && target?.author === 'human') {
-      const human = d.conversation[r.cellId].find(m => m.id === replyTo);
-      human.response ||= { required: true, answers: [] };
-      human.response.answers.push({ messageId: mid, sessionId: id, at });
-      if (!human.acknowledgedAt) {
-        human.acknowledgedAt = at;
-        human.acknowledgedBy = id;
+  const kept = args.attachments === undefined ? [] : await adoptAttachments(rt, actor.cell.id, mid, args.attachments);
+  let r, removed = [];
+  try {
+    actor = member(rt, host, id, actor.cell.id);
+    const q = queenRoute(host, actor.cell);
+    if (key && values(rt).some(r => r.cellId === actor.cell.id && r.requesterSessionId === id && r.dedupeKey === key && r.state === 'open')) fail('A request with this dedupe key was created while reading images. Retry the request.', 'conflict');
+    const active = values(rt).filter(r => r.state === 'open' || (r.state === 'answered' && r.delivery?.state !== 'delivered'));
+    if (active.filter(r => r.requesterSessionId === id).length >= OPEN_PER_SESSION || active.length >= OPEN_TOTAL) fail('Native request limit reached. Settle existing requests before creating more.', 'refused');
+    if (args.bead_id) requireBeadAccess(rt, actor, args.bead_id);
+    const visibleNow = audienceConversationDoc(rt.metadata.read(), actor.cell.id, actor);
+    if (topic && !visibleNow.threads[actor.cell.id]?.[topic.id]) fail('The request topic is no longer available.', 'conflict');
+    if (replyTo && !visibleNow.conversation[actor.cell.id]?.some(m => m.id === replyTo)) fail('The request target is no longer available.', 'conflict');
+    r = {
+      attachments: kept,
+      id: rid, cellId: actor.cell.id, requesterSessionId: id, ...(sessionLink ? { sessionLink } : {}), title, body, kind, options, allowFreeText: true, blocking: args.blocking === true, dedupeKey: key || null,
+      beadId: bead?.id || topic?.beadId || target?.beadId || null, ...(replyTo ? { replyTo } : {}), threadId: tid, messageId: mid, createdAt: at, updatedAt: at, expiresAt: args.expires_at || null,
+      state: 'open', audience: !q || q === id ? 'human' : 'queen', routeReason: q ? null : 'no-queen', warning: q ? null : 'No queen in this hive',
+      queenSessionId: q, queenGeneration: actor.cell.queenGeneration || 0, routeRevision: 1, contentRevision: 1, revision: 1, answer: null,
+      queenNotification: { state: 'pending', attempts: [] }, delivery: null,
+    };
+    rt.metadata.mutate(d => {
+      d.requests[rid] = r;
+      d.threads[r.cellId] ||= {};
+      const t = topic ? d.threads[r.cellId][tid] : (d.threads[r.cellId][tid] = { id: tid, cellId: r.cellId, title, titleBy: id, beadId: r.beadId, createdAt: at, createdBy: id, count: 0, origin: 'request', requestId: rid });
+      preservePublicSequence(d, r.cellId, t);
+      t.hasRequests = true;
+      t.count++; t.lastAt = at; t.lastMessageId = mid;
+      const message = { id: mid, attachments: kept, cellId: r.cellId, author: 'session', role: actor.role, sessionId: id, requestId: rid, text: title, at, threadId: tid, beadId: r.beadId, context: r.beadId ? { beadId: r.beadId, title: bead?.title || null } : null, n: t.count, ...(replyTo ? { replyTo } : {}) };
+      if (actor.role === 'queen' && target?.author === 'human') {
+        const human = d.conversation[r.cellId].find(m => m.id === replyTo);
+        human.response ||= { required: true, answers: [] };
+        human.response.answers.push({ messageId: mid, sessionId: id, at });
+        if (!human.acknowledgedAt) {
+          human.acknowledgedAt = at;
+          human.acknowledgedBy = id;
+        }
+        message.answers = [replyTo];
+        const inbox = (d.inbox[r.cellId] ||= { enabledAt: at });
+        inbox.rev = (Number.isInteger(inbox.rev) ? inbox.rev : 0) + 1;
       }
-      message.answers = [replyTo];
-      const inbox = (d.inbox[r.cellId] ||= { enabledAt: at });
-      inbox.rev = (Number.isInteger(inbox.rev) ? inbox.rev : 0) + 1;
-    }
-    (d.conversation[r.cellId] ||= []).push(message);
-    prune(d);
-    removed = pruneConversation(d, r.cellId);
-  });
+      (d.conversation[r.cellId] ||= []).push(message);
+      prune(d);
+      removed = pruneConversation(d, r.cellId);
+    });
+  } catch (error) {
+    await removeAttachments(rt, actor.cell.id, mid);
+    throw error;
+  }
   rt.changed();
   await removeAttachmentBatch(rt, r.cellId, removed);
   ready(rt);

@@ -250,6 +250,8 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.deepEqual(searched, { rows: 1, needs: '1', count: '2', mark: 'SQLite' });
 
   await run(`document.querySelector('[data-tile-id="alpha"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise(r => setTimeout(r, 200)); document.querySelector('[data-focus-key="inbox:alpha:human"]').click();`);
+  assert.equal(await run(`return document.querySelector('.hive-inbox-search-input').value;`), 'SQLite');
+  await run(`document.querySelector('[aria-label="Clear search"]').click();`);
   const cellInbox = await run(`
     const panel = document.querySelector('.hive-conversation');
     return { filters: [...panel.querySelectorAll('.hive-inbox-filter')].map(e => e.textContent), totals: panel.querySelector('.hive-inbox-totals').textContent,
@@ -269,10 +271,10 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.ok(cellInbox.archived.includes('Archived worker'));
   assert.equal(cellInbox.zeros, false);
   const checkCellLayout = async () => {
-    const layout = await run(`const panel = document.querySelector('.hive-conversation'); const search = panel.querySelector('.hive-inbox-search').getBoundingClientRect(); const filters = panel.querySelector('.hive-inbox-filters').getBoundingClientRect(); const head = panel.querySelector('.hive-inbox-head').getBoundingClientRect(); return { above: search.bottom <= filters.top, width: search.width, input: panel.querySelector('.hive-inbox-search-input').getBoundingClientRect().width, head: head.width, context: panel.querySelectorAll('.hive-inbox .hive-topic-context').length };`);
+    const layout = await run(`const panel = document.querySelector('.hive-conversation'); const search = document.querySelector('.hive-global-search').getBoundingClientRect(); const filters = panel.querySelector('.hive-inbox-filters').getBoundingClientRect(); return { above: search.bottom <= filters.top, width: search.width, input: document.querySelector('.hive-inbox-search-input').getBoundingClientRect().width, count: document.querySelectorAll('input[type="search"]').length, context: panel.querySelectorAll('.hive-inbox .hive-topic-context').length };`);
     assert.equal(layout.above, true);
-    assert.ok(Math.abs(layout.width - layout.head) < 2);
-    assert.ok(Math.abs(layout.input - layout.width) < 2);
+    assert.equal(layout.count, 1);
+    assert.ok(layout.input > 100 && layout.input <= layout.width);
     assert.equal(layout.context, 0);
   };
   await checkCellLayout();
@@ -294,7 +296,7 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.equal(await run(`return Boolean(document.querySelector('[aria-label="Topics"]'));`), true);
 
   await run(`[...document.querySelectorAll('.hive-inbox-filter')].find(e => e.textContent.startsWith('Inbox')).click(); const input = document.querySelector('.hive-inbox-search-input'); input.value = 'retry'; input.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); document.querySelector('[aria-label="Show all hives"]').click(); await new Promise(r => setTimeout(r, 200));`);
-  assert.equal(await run(`return document.querySelector('.hive-inbox-search-input').value;`), 'SQLite');
+  assert.equal(await run(`return document.querySelector('.hive-inbox-search-input').value;`), 'retry');
   await run(`document.querySelector('[data-tile-id="alpha"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise(r => setTimeout(r, 200));`);
   assert.equal(await run(`return document.querySelector('.hive-inbox-search-input').value;`), 'retry');
 
