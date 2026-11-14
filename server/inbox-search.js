@@ -27,6 +27,7 @@ function indexOf(rt, cellId) {
       built[kind].push({
         group,
         title: threadIn(records, group[0].threadId)?.title || null,
+        lastAt: threadIn(records, group[0].threadId)?.lastAt,
         texts: group.map((m) => m.text),
         beadIds: group.map((m) => contextOf(m)?.beadId).filter(Boolean),
       });
@@ -48,12 +49,12 @@ export function searchInbox(rt, { cellIds, query }) {
     try { refuseSnapshot(cell); } catch { continue; }
     const built = indexOf(rt, cellId);
     for (const kind of ['human', 'queen']) {
-      for (const { group, title, texts, beadIds } of built[kind]) {
+      for (const { group, title, lastAt, texts, beadIds } of built[kind]) {
         if (!topicMatches({ title, texts, beadIds }, text)) continue;
         if (out[kind].length >= INBOX_SEARCH_MAX) { truncated = true; break; }
         const last = group.at(-1);
         out[kind].push({
-          cellId, threadId: group[0].threadId || null, firstId: group[0].id, title, at: group[0].at, count: group.length,
+          cellId, threadId: group[0].threadId || null, firstId: group[0].id, title, lastAt, at: group[0].at, count: group.length,
           sessionLinks: group.map(m => m.sessionLink).filter(Boolean),
           last: { author: last.author, sessionId: last.sessionId || null, role: last.role || null },
           snippet: snippetFor(texts, text),

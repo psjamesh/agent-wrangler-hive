@@ -74,3 +74,14 @@ test('remote search carries session actions from earlier messages in a topic', (
   const out = searchInbox(runtime, { cellIds: ['a'], query: 'needle' });
   assert.deepEqual(out.human[0].sessionLinks, [sessionLink]);
 });
+
+test('server search includes topic last activity beyond the waiting messages', () => {
+  const threadId = 'thr_000000000001';
+  const runtime = rt({ a: [
+    sm('waiting', threadId, 'needle', { at: 1 }),
+    hm('later', threadId, 'Later activity', { at: 50 }),
+  ] }, { a: { [threadId]: { id: threadId, title: 'Topic', lastAt: 50 } } });
+  const result = searchInbox(runtime, { cellIds: ['a'], query: 'needle' });
+  assert.equal(result.human[0].at, 1);
+  assert.equal(result.human[0].lastAt, 50);
+});
