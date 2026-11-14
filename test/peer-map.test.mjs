@@ -90,7 +90,7 @@ function mapFixture({contact=false,enclosed=false,hiveHidingStart=true,related=n
   const renderCode = source.slice(source.indexOf('export function renderHive('), source.indexOf('\nexport function disposeHiveView')).replace('export ', '');
   const call = cached ? 'renderHive(ctx);' : 'cellMap(ctx, cell, related);';
   vm.runInNewContext(`${code}\n${renderCode}\n${call}`, sandbox);
-  const hiveToggle = () => options.overlay.flat(Infinity).find((item) => item?.['data-focus-key'] === 'hide-done:cell');
+  const hiveToggle = () => options.viewControls.flat(Infinity).find((item) => item?.['data-focus-key'] === 'hide-done:cell');
   return { element, hiveToggle, saved, beads, cell, ctx, located, tileNodes: () => tileNodes, mapRenders: () => mapRenders, detached: () => detached, options: () => options, menu: () => menu, form, sent, callbacks, render: () => vm.runInNewContext(call, sandbox) };
 }
 
@@ -266,12 +266,12 @@ test('hive toggle hides every region and restores all done work', () => {
   for (const callback of f.callbacks.splice(0)) callback?.();
   f.render();
   assert.deepEqual(Array.from(f.options().items, (item) => item.id), ['parent']);
-  assert.equal(f.hiveToggle()['aria-pressed'], 'true');
+  assert.equal(f.hiveToggle()['aria-pressed'], 'false');
   f.hiveToggle().onclick({ clientX: 10, clientY: 10 });
   if (f.form.confirm) { f.render(); f.menu().onConfirm(); }
   for (const callback of f.callbacks.splice(0)) callback?.();
   f.render();
-  assert.equal(f.hiveToggle()['aria-pressed'], 'false');
+  assert.equal(f.hiveToggle()['aria-pressed'], 'true');
   assert.deepEqual(Array.from(f.options().items, (item) => item.id).sort(), ['a', 'b', 'block', 'child', 'parent']);
 });
 
@@ -314,7 +314,7 @@ test('hive reveal confirmation can be cancelled without changing visibility', ()
   f.menu().onClose();
   f.render();
   assert.equal(f.sent.length, sent);
-  assert.equal(f.hiveToggle()['aria-pressed'], 'true');
+  assert.equal(f.hiveToggle()['aria-pressed'], 'false');
 });
 
 test('conversation relations mark visible tiles and label hidden beads without revealing them', () => {
@@ -421,7 +421,7 @@ test('retained hive map redraws global Hide done and Show done without placement
   assert.equal(f.ctx.ui.form('wsMenu'), null);
   f.render();
   assert.equal(f.options().items.some(item => item.id === 'parent'), false);
-  assert.equal(f.hiveToggle()['aria-pressed'], 'true');
+  assert.equal(f.hiveToggle()['aria-pressed'], 'false');
   assert.equal(f.mapRenders(), builds + 1);
   f.hiveToggle().onclick({ clientX: 10, clientY: 10 });
   assert.equal(f.ctx.ui.hideDoneForHive('cell'), false);
@@ -429,7 +429,7 @@ test('retained hive map redraws global Hide done and Show done without placement
   assert.equal(f.ctx.ui.form('wsMenu'), null);
   f.render();
   assert.equal(f.options().items.some(item => item.id === 'parent'), true);
-  assert.equal(f.hiveToggle()['aria-pressed'], 'false');
+  assert.equal(f.hiveToggle()['aria-pressed'], 'true');
   assert.equal(f.mapRenders(), builds + 2);
 });
 

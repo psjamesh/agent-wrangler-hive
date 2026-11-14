@@ -227,23 +227,6 @@ export function inboxRow(ctx, r, { query = '', open, id = r.key, action, showCon
     rowSessionLinks(ctx, r), action);
 }
 
-export function globalSearchBox(ui, onKeyDown) {
-  const query = ui.searchQuery?.() || '';
-  const searching = searchTerms(query).length > 0;
-  const input = h('input', {
-    type: 'search', class: 'hive-input hive-inbox-search-input', autocomplete: 'off', spellcheck: 'false', value: query, maxlength: '200',
-    placeholder: 'Search Hive', title: 'Search beads, topics and messages', 'aria-label': 'Search Hive', 'data-focus-key': 'global-inbox-search',
-    oninput: (e) => { if (!e.isComposing) ui.setSearchQuery(input.value); },
-    onkeydown: (e) => { onKeyDown?.(e); if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); ui.setSearchQuery(''); } },
-  });
-  const clear = h('button', {
-    type: 'button', class: 'hive-inbox-search-clear', 'aria-label': 'Clear search', title: 'Clear search (Esc)', 'data-focus-key': 'global-inbox-search-clear',
-    tabindex: searching ? null : '-1', 'aria-hidden': searching ? null : 'true', onclick: () => { ui.setSearchQuery(''); },
-  }, '×');
-  return h('div', { class: 'hive-global-search', role: 'search' },
-    h('div', { class: 'hive-inbox-search-field' }, input, clear));
-}
-
 export function searchStatus(query, rows, found) {
   const status = !searchTerms(query).length || !found ? '' : found.failed ? 'Searching loaded messages only: the full search failed.'
     : `${rows.length} topic${rows.length === 1 ? '' : 's'} match${rows.length === 1 ? 'es' : ''}${found.pending ? ' · searching all messages…' : ''}${found.truncated ? ' · first matches only' : ''}`;
