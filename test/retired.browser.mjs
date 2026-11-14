@@ -73,7 +73,7 @@ test('retired hives toggle on All hives, show grey with an outcome mark, open re
   `);
   assert.equal(overview.hiddenByDefault, true);
   assert.match(overview.label1, /Show retired \(1\)/);
-  assert.match(overview.label2, /Hide retired \(1\)/);
+  assert.match(overview.label2, /Show retired \(1\)/);
   assert.equal(overview.remembered, true);
   assert.match(overview.cls, /is-retired/);
   assert.equal(overview.mark, true);

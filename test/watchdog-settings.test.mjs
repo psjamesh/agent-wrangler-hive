@@ -13,7 +13,7 @@ test('per-hive watchdog form shows defaults, saves all values and reports server
   const cell = { id: 'one' };
   let tree = draw(ctx, cell);
   let inputs = walk(tree).filter(el => el.tag === 'input');
-  assert.deepEqual(Array.from(inputs, i => i.attrs.value), [30, 30, 60, 30, 24, 7, 30, 30, 10]);
+  assert.deepEqual(Array.from(inputs, i => i.attrs.value), [30, 30, 60, 30, 24, 7, 30, 30, 5, 10]);
   inputs[0].attrs.oninput({ target: { value: '15' } });
   inputs[1].attrs.oninput({ target: { value: '5' } });
   tree = draw(ctx, cell); tree.attrs.onsubmit({ preventDefault() {} });

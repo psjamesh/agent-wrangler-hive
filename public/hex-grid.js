@@ -350,7 +350,7 @@ export function renderHexMap({
   viewKey, size, items, occupied = new Set(), bounds, selectedId = null, ariaLabel, maxFit = 1.4,
   relations = null, describe = null,
   onClick, onActivate, onSelect, onMove, onDrop = null, onDragStart = () => {}, onBackground,
-  onDragState = () => {}, claimDrag = null, overlay = [], outlines = [],
+  onDragState = () => {}, claimDrag = null, overlay = [], viewControls = [], actions = [], outlines = [],
   dragGroup = null, movePreview = null, onContextMenu = null,
   tile = null, className = '', previousPositions = null, storage = null,
 }) {
@@ -468,7 +468,8 @@ export function renderHexMap({
       saveMapView(viewKey, view);
       autoButton.textContent = paused ? 'Auto-fit paused' : 'Auto-fit';
       autoButton.setAttribute('aria-pressed', String(enabled));
-      autoButton.title = paused ? 'Auto-fit paused by pan or zoom; click to resume' : enabled ? 'Turn auto-fit off' : 'Turn auto-fit on';
+      autoButton.setAttribute('data-paused', String(paused));
+      autoButton.title = paused ? 'Auto-fit paused by pan or zoom; resume auto-fit (0)' : enabled ? 'Turn auto-fit off' : 'Turn auto-fit on (0)';
     },
   });
   const suspend = () => { cancelAnimationFrame(tween); autoFit.suspend(); };
@@ -710,15 +711,18 @@ export function renderHexMap({
     if (evt.key === 'Escape' && !focusTip.hidden) { evt.preventDefault(); hideFocusTip(); }
     else if (evt.key === '+' || evt.key === '=') { evt.preventDefault(); zoomCentre(1.25); }
     else if (evt.key === '-' || evt.key === '_') { evt.preventDefault(); zoomCentre(0.8); }
-    else if (evt.key === '0') { evt.preventDefault(); autoFit.resume(); }
+    else if (evt.key === '0') { evt.preventDefault(); if (autoButton.getAttribute('aria-pressed') === 'false') autoFit.toggle(); else autoFit.resume(); }
   });
 
-  autoButton = h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-fit hive-zoom-auto', onclick: () => autoFit.toggle() }, 'Auto-fit');
+  autoButton = h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-auto', onclick: () => autoFit.toggle() }, 'Auto-fit');
   autoFit.refresh();
+  const viewOptions = h('div', { class: 'hive-control-group', role: 'group', 'aria-label': 'View options' }, autoButton, viewControls);
   const tools = h('div', { class: 'hive-zoom', role: 'group', 'aria-label': 'Map view' },
-    h('button', { type: 'button', class: 'hive-zoom-btn', 'aria-label': 'Zoom out', title: 'Zoom out (−)', onclick: () => zoomCentre(0.8) }, '−'),
-    h('button', { type: 'button', class: 'hive-zoom-btn', 'aria-label': 'Zoom in', title: 'Zoom in (+)', onclick: () => zoomCentre(1.25) }, '+'),
-    h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-fit', title: 'Fit everything in view (0)', onclick: () => { autoFit.resume(); } }, 'Fit'), autoButton);
+    h('div', { class: 'hive-control-group', role: 'group', 'aria-label': 'Zoom' },
+      h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-icon', 'aria-label': 'Zoom out', title: 'Zoom out (−)', onclick: () => zoomCentre(0.8) }, '−'),
+      h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-icon', 'aria-label': 'Zoom in', title: 'Zoom in (+)', onclick: () => zoomCentre(1.25) }, '+')),
+    viewOptions,
+    actions.flat(Infinity).some(Boolean) ? h('div', { class: 'hive-control-group', role: 'group', 'aria-label': 'Map actions' }, actions) : null);
   el.append(tools);
 
   let observer = null;
@@ -759,7 +763,7 @@ export function renderHexMap({
   };
   el.hiveTileRect = (tileId) => el.querySelector(`[data-tile-id="${CSS.escape(tileId)}"]`)?.getBoundingClientRect() || null;
   apply();
-  return { el, highlightReference };
+  return { el, highlightReference, viewControls: viewOptions };
 }
 
 function wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, zoomAt, suspend }) {
