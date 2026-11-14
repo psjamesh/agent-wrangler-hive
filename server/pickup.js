@@ -146,6 +146,7 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
   if (typeof mark.armToken !== 'string' || !mark.profile || typeof mark.profileRevision !== 'string') reasons.push('Readiness record or worker profile is invalid');
   if (mark.briefDigest !== briefDigest(bead, cell?.id)) reasons.push('The executable brief changed; rearm after review');
   if (checkVersion && (!receipt(rt, bead)?.nativeVersion || receipt(rt, bead).nativeVersion !== bead.updatedAt)) reasons.push('Native version changed or arming receipt is unconfirmed; reconcile and rearm');
+  const reconciliationReasons = [...reasons];
   reasons.push(...structuralPickupReasons(rt, graph, bead, { launchId, ownOperationId }));
   if (!launchId) {
     const usage = capacity(rt, graph);
@@ -155,7 +156,7 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
       if (rate.reason) reasons.push(rate.reason);
     }
   }
-  return { ...base, eligible: !reasons.length, state: reasons.length ? 'queued' : 'ready', blocking_session_ids: blockingSessions, reason: reasons[0] || 'Ready for pickup', reasons };
+  return { ...base, eligible: !reasons.length, state: reasons.length ? 'queued' : 'ready', blocking_session_ids: blockingSessions, reconciliation_reasons: reconciliationReasons, reason: reasons[0] || 'Ready for pickup', reasons };
 }
 
 export function assertPickupAuthorization(rt, host, launch, graph, { ownOperationId = null, checkVersion = true } = {}) {

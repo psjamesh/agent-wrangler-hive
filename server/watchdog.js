@@ -128,8 +128,8 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     if (bead.pickup?.armed) {
       const state = pickupState(rt, host, cell, bead, rt.snapshots.graph, { now });
       const anchor = cell.pickupHoldAnchors?.[bead.id];
-      if (state.state === 'queued' && anchor?.token === bead.pickup.armToken && now - anchor.at >= settings.pickupHeldMinutes * 60000) {
-        add('pickup_held', bead.id, [bead.pickup.armToken, state.reasons], anchor.at,
+      if (state.state === 'queued' && state.reconciliation_reasons.length && anchor?.token === bead.pickup.armToken && now - anchor.at >= settings.pickupHeldMinutes * 60000) {
+        add('pickup_held', bead.id, bead.pickup.armToken, anchor.at,
           `Automatic pickup is held: ${state.reasons.join('; ')}. Reconcile the holds or disarm the mark.`,
           { bead_id: bead.id, reasons: state.reasons, session_ids: state.blocking_session_ids });
       }
@@ -248,7 +248,9 @@ function syncPickupHoldAnchors(rt, host, now) {
     const ids = cell.enabled && !cell.snapshot && cell.rootBeadId && beads[cell.rootBeadId] ? descendantIds(beads, cell.rootBeadId) : new Set();
     for (const id of ids) {
       const bead = beads[id];
-      if (bead.status === 'closed' || !bead.pickup?.armed || pickupState(rt, host, cell, bead, rt.snapshots.graph, { now }).state !== 'queued') continue;
+      if (bead.status === 'closed' || !bead.pickup?.armed) continue;
+      const state = pickupState(rt, host, cell, bead, rt.snapshots.graph, { now });
+      if (state.state !== 'queued' || !state.reconciliation_reasons.length) continue;
       const prior = cell.pickupHoldAnchors?.[id];
       next[id] = prior?.token === bead.pickup.armToken ? prior : { token: bead.pickup.armToken, at: now };
     }
