@@ -50,7 +50,7 @@ window.t = {
 };
 </script></body></html>`;
 
-test('splitter is a 12px hairline; real keyboard and mouse input resize it, and a drag released outside the hit area still ends cleanly', { skip: chrome ? false : 'Set HIVE_TEST_CHROME to a Chrome binary' }, async (t) => {
+test('splitter is a 12px gap with a line only during interaction; real keyboard and mouse input resize it, and a drag released outside the hit area still ends cleanly', { skip: chrome ? false : 'Set HIVE_TEST_CHROME to a Chrome binary' }, async (t) => {
   const server = http.createServer(async (req, res) => {
     if (req.url === '/') { res.setHeader('Content-Type', 'text/html'); res.end(page); return; }
     if (!/^\/public\/[\w.-]+$/.test(req.url)) { res.writeHead(404).end(); return; }
@@ -117,7 +117,7 @@ test('splitter is a 12px hairline; real keyboard and mouse input resize it, and 
   const rest = await snapshot();
   assert.equal(rest.gap, 12);
   assert.equal(rest.dividerWidth, 12);
-  assert.equal(rest.line.width, '1px');
+  assert.equal(rest.line.width, '0px');
   assert.equal(rest.hit, '20px');
 
   await key('Tab', 'Tab', 9);
@@ -132,7 +132,7 @@ test('splitter is a 12px hairline; real keyboard and mouse input resize it, and 
   await key('ArrowRight', 'ArrowRight', 39);
   await call('Runtime.evaluate', { expression: 'document.activeElement.blur()' });
   const blurred = await snapshot();
-  assert.equal(blurred.line.width, '1px');
+  assert.equal(blurred.line.width, '0px');
   assert.equal(blurred.panelWidth, rest.panelWidth);
 
   const { x, y, width, height } = blurred.bounds;
@@ -160,7 +160,7 @@ test('splitter is a 12px hairline; real keyboard and mouse input resize it, and 
 
   const overview = (await call('Runtime.evaluate', { expression: 'window.t.overview()', returnByValue: true })).result.value;
   assert.equal(overview.position, 'relative');
-  assert.equal(overview.before, '1px');
+  assert.equal(overview.before, '0px');
   assert.equal(overview.after, '20px');
   assert.equal(overview.gap, 12);
   const ox = overview.item.x + overview.item.width / 2, oy = overview.item.y + overview.item.height / 2;

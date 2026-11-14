@@ -4,7 +4,7 @@ This page lists exactly what Hive relies on from Agent Wrangler and from Beads. 
 
 ## Agent Wrangler host API
 
-The manifest declares `engines.wranglerApi: ^1.71.0`. Hive needs the read-only `links:read` capability introduced in host API 1.70.0. Earlier hosts reject this build as incompatible. The session context and view also use the live `status` and `waitingReason` projections introduced in 1.59.0.
+The manifest declares `engines.wranglerApi: ^1.79.0`. Hive needs metadata-only `host.mail.list` from host API 1.79.0 and the read-only `links:read` capability introduced in host API 1.70.0. Earlier hosts reject this build as incompatible. The session context and view also use the live `status` and `waitingReason` projections introduced in 1.59.0.
 
 ### Capabilities
 
@@ -13,6 +13,7 @@ The manifest declares `engines.wranglerApi: ^1.71.0`. Hive needs the read-only `
 | `tasks:read` | `host.tasks.get`, `forSession` and `adhocId`: cell titles, participation and adoption checks. |
 | `tasks:write` | `host.tasks.create`: the task behind a new cell. Hive never renames, reassigns or archives tasks. |
 | `sessions:read` | `host.sessions.get` and `forTask`: queen nomination checks, binding checks and the session list in `hive_context`. |
+| `mail:read` | `host.mail.list(sessionId)`: sender and timestamp metadata for holder activity, without message bodies or excerpts. |
 | `sessions:spawn` | `host.sessions.spawn`: launching a human-requested queen, or a queen/coordinator-requested tracked worker or reviewer. |
 | `sessions:archive` | `host.sessions.archive(id, { cascade: false })`: only when the human ticks Archive these sessions too while retiring a hive. Each session is archived on its own and failures are reported without blocking the retirement. |
 | `deliver` | `host.deliver`: human messages and activation briefs for the queen. |
@@ -54,7 +55,7 @@ Hive uses no task-pane or task-body replacement API and no task-selection API. I
 ### Rules Hive relies on
 
 - **Identity.** `caller` (an MCP tool) and `sessionId` (a hook) are AW's advisory local identities. Every tool handler checks the caller's participation in the cell, and the cell of every bead id it is given. Hiding a tool is only a convenience. This model is for one local machine; a remote Hive service would need authenticated identities.
-- **Delegation lineage.** Tracked delegation uses `hive_spawn_worker` and `host.sessions.spawn`. The host does not let extensions set agent `spawnedBy`; Hive records `requestedBy` durably and passes `parentSession` for board nesting. A worker's binding gives it participation before its first action. Hive passes `disallowedTools: ['mcp__agent-wrangler__spawn_session', 'mcp__agent-wrangler__spawn_workflow', 'mcp__agent-wrangler__schedule_session', 'mcp__agent-wrangler__update_schedule']` for every Claude queen, worker and reviewer launch (`server/launch-policy.js`); the host persists it across fork and resume and rejects nonempty lists for Codex and Gemini, which therefore stay unrestricted. Sessions nominated rather than launched keep their existing options. Ordinary spawns by participants outside Hive are reported by `hive_context.attention.untracked_descendants` from `host.sessions.list()` and `spawnedBy`; they are never claimed automatically.
+- **Delegation lineage.** Tracked delegation uses `hive_spawn_worker` and `host.sessions.spawn`. The host does not let extensions set agent `spawnedBy`; Hive records `requestedBy` durably and passes `parentSession` for board nesting. A worker's binding gives it participation before its first action. Hive adds no tool deny list to Claude, Codex or Gemini launches (`server/launch-policy.js`). Sessions nominated rather than launched keep their existing options. Ordinary spawns by participants outside Hive are reported by `hive_context.attention.untracked_descendants` from `host.sessions.list()` and `spawnedBy`; they are never claimed automatically.
 - **Queen handoff.** `hive_handoff_queen` reserves a launch record with the source queen and generation, then calls `host.sessions.spawn` without `parentSession`. `onBeforeDispatch` installs the successor only if the generation is unchanged; the `session.launchContext` hook refuses a superseded, abandoned or replaced queen before its first action.
 - **Launch binding.** A UI launch stores a launch record first, then calls `host.sessions.spawn({ taskId, intent, ext: { hive: { launchId } } })`. `onBeforeDispatch` receives `{ launchId }` as Hive's narrowed `ext` slice and records the new session id as queen before the skill gate or the agent's first tool call. AW saves the session entry only after that hook, so a missing entry is not proof of failure:
   - while the launch is still running in this process, Hive refuses to settle it;

@@ -1,8 +1,8 @@
+import { isHumanRequest as visibleToHuman, needsHuman } from './request-state.js';
 import { h, markdown, relativeTime, sessionReference } from './dom.js';
 import { hiveLink } from './deep-links.js';
+export { needsHuman } from './request-state.js';
 
-const visibleToHuman = r => r && (r.audience === 'human' || (r.audience === 'route-repair' && Boolean(r.forwarded || r.routeReason === 'no-queen')));
-export const needsHuman = r => visibleToHuman(r) && (r.state === 'open' || (r.state === 'answered' && r.delivery?.state !== 'delivered'));
 const forms = new WeakMap();
 function formFor(ui, r) {
   if (!forms.has(ui)) forms.set(ui, new Map());

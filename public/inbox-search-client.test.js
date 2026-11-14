@@ -76,12 +76,14 @@ test('a new metadata epoch with identical counters refetches and drops the old e
   assert.equal(sent.length, 3);
 });
 
-test('a scheduled search is cancelled by choosing Needs you or leaving the panel', async () => {
+test('legacy Needs you selection opens Inbox and leaving cancels a scheduled search', async () => {
   const { sent, ui } = setup();
   ui.setGlobalInboxQuery('widget');
   ui.setGlobalInboxView('human');
   ui.askGlobalInboxSearch(['a'], '1', 'e');
   ui.setGlobalInboxView('needs');
+  assert.equal(ui.globalInboxView(), 'human');
+  ui.cancelGlobalInboxSearch();
   await wait(260);
   assert.equal(sent.length, 0);
   ui.setGlobalInboxView('human');
@@ -116,4 +118,26 @@ test('replies from an old epoch are ignored once a new epoch is seen, even befor
     assert.equal(sent.length, 2);
     Object.assign(globalThis, saved);
   }
+});
+
+test('each cell search keeps its query and remote replies separate from All hives', async () => {
+  const { sent, ui, answer } = setup();
+  ui.setGlobalInboxQuery('global');
+  ui.setGlobalInboxQuery('alpha', 'a');
+  ui.setGlobalInboxQuery('beta', 'b');
+  assert.equal(ui.globalInboxQuery(), 'global');
+  assert.equal(ui.globalInboxQuery('a'), 'alpha');
+  assert.equal(ui.globalInboxQuery('b'), 'beta');
+  assert.equal(ui.globalInboxQuery('c'), '');
+  ui.askGlobalInboxSearch(['a', 'b'], '1', 'e');
+  ui.askGlobalInboxSearch(['a'], '1', 'e', 'a');
+  await wait(260);
+  assert.deepEqual(sent.map(s => s.query), ['global', 'alpha']);
+  answer(1, { human: [{ key: 'alpha-result' }] });
+  answer(0, { human: [{ key: 'global-result' }] });
+  assert.equal(ui.askGlobalInboxSearch(['a', 'b'], '1', 'e').remote.human[0].key, 'global-result');
+  assert.equal(ui.askGlobalInboxSearch(['a'], '1', 'e', 'a').remote.human[0].key, 'alpha-result');
+  ui.setGlobalInboxQuery('', 'a');
+  assert.equal(ui.globalInboxQuery(), 'global');
+  assert.equal(ui.globalInboxQuery('b'), 'beta');
 });

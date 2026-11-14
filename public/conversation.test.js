@@ -376,14 +376,14 @@ function busyInbox(t) {
   f.ui.setAllTopics(f.cell.id, true);
   f.rows = (kind) => {
     f.ui.setInboxView(f.cell.id, kind);
-    return f.draw().list.children.filter((li) => li.dataset?.id).map((li) => ({ id: li.dataset.id, title: li.querySelector('.hive-topic-title').textContent, waiting: li.querySelector('.hive-unread').textContent }));
+    return f.draw().list.children.filter((li) => li.dataset?.id).map((li) => ({ id: li.dataset.id, title: li.querySelector('.hive-topic-title').textContent, waiting: li.querySelector('.hive-unread')?.textContent || null }));
   };
   return f;
 }
 
 test('the Inbox lists a topic with several waiting messages once, with how many wait and the newest of them', (t) => {
   const f = busyInbox(t);
-  assert.deepEqual(f.rows('human'), [{ id: 'm3', title: 'Topic', waiting: '3' }, { id: 'm4', title: 'Other', waiting: '1' }]);
+  assert.deepEqual(f.rows('human'), [{ id: 'm3', title: 'Topic', waiting: '3' }, { id: 'm4', title: 'Other', waiting: null }]);
   assert.deepEqual(f.rows('queen'), [{ id: 'h2', title: 'Topic', waiting: '2' }]);
 });
 
@@ -1182,7 +1182,7 @@ test('Inbox follows server membership after a thread acknowledgement and Undo', 
   assert.deepEqual(f.shown(), []);
   f.cell.inbox.human = { count: 1, ids: ['m2'], rev: 3 };
   assert.deepEqual(f.shown(), ['m2']);
-  assert.equal(f.draw().list.querySelector('.hive-unread').textContent, '1');
+  assert.equal(f.draw().list.querySelector('.hive-unread'), null);
 });
 
 for (const recovery of ['sample', 'reopen']) test(`failed auto-read is re-armed for a later ${recovery} without a retry loop`, t => {
@@ -1492,10 +1492,11 @@ function nativeFixture(t, audience = 'human') {
   f.ui.setAllTopics(f.cell.id, true);
   return { ...f, id };
 }
-test('Needs you filter shows canonical request with a dedicated answer and preserves draft on revision change', t => {
+test('merged Inbox opens the canonical request topic and preserves its answer draft on revision change', t => {
   const f = nativeFixture(t);
-  const filter = descendants(f.draw().head).find(el => el.tagName === 'button' && el.textContent.startsWith('Needs you'));
+  const filter = descendants(f.draw().head).find(el => el.tagName === 'button' && el.textContent.startsWith('Inbox'));
   assert.ok(filter); filter.fire('click');
+  f.draw().list.querySelector('.hive-topic-btn').fire('click');
   let out = f.draw();
   assert.match(out.list.textContent, /Keep compatibility/);
   const text = out.list.querySelector('textarea');
@@ -1519,17 +1520,15 @@ test('Waiting for queen contains only human messages, never native worker reques
   assert.equal(out.list.querySelector('textarea'), null);
 });
 
-test('request filters keep selection scope with an explicit show-all escape and full-cell counts', t => {
+test('merged Inbox includes needs across the cell despite a bead selection', t => {
   const f = nativeFixture(t);
   f.ui.setAllTopics(f.cell.id, false);
   f.cell.requests[f.id].beadId = 'hive-two';
   f.ui.setInboxView(f.cell.id, 'needs');
-  let out = f.draw();
-  assert.doesNotMatch(out.list.textContent, /Keep compatibility/);
-  const all = descendants(out.list).find(el => el.tagName === 'button' && /Show all in this hive/.test(el.textContent));
-  assert.ok(all); all.fire('click');
-  out = f.draw();
-  assert.match(out.list.textContent, /Keep compatibility/);
+  const out = f.draw();
+  assert.equal(f.ui.inboxView(f.cell.id), 'human');
+  assert.match(out.list.textContent, /API decision/);
+  assert.equal(out.head.querySelector('.hive-inbox-filters').querySelector('.hive-inbox-count').textContent, '1');
 });
 
 test('rail badge uses host-supported numeric counts even when request metadata is unavailable', t => {
@@ -1730,7 +1729,7 @@ for (const source of ['manual', 'auto-read']) test(`${source} callbacks keep cou
     f.cell.messages = [other]; f.cell.threads = [otherTopic];
     f.ui.closeThread(f.cell.id); f.ui.setAllTopics(f.cell.id, true);
   };
-  const count = () => Number(f.draw().head.querySelectorAll('.hive-inbox-count')[1].textContent);
+  const count = () => Number(f.draw().head.querySelector('.hive-inbox-filters').querySelector('.hive-inbox-count')?.textContent || 0);
   hideOlder();
   assert.equal(count(), 1);
   f.cell.inbox.human = inbox([original, { ...other, ack: { required: true, state: null, rev: 2 } }]);
@@ -1921,4 +1920,198 @@ test('a withdrawn message offers no Send to queen or Send again, and the list\'s
   f.ui.setForm(`withdrawn:${f.cell.id}`, { id: 'h2', text: 'h2' });
   f.cell.messages = f.cell.messages.map((m) => (m.id === 'h2' ? { ...m, response: { required: true, answers: [] } } : m));
   assert.ok(!f.draw().list.textContent.includes('Withdrawn: h2'));
+});
+
+for (const [name, patch, waiting] of [
+  ['open human', {}, true],
+  ['private queen', { audience: 'queen' }, false],
+  ['no queen', { audience: 'route-repair', routeReason: 'no-queen' }, true],
+  ['forwarded repair', { audience: 'route-repair', forwarded: true }, true],
+  ['private repair', { audience: 'route-repair', routeReason: 'unavailable' }, false],
+  ['answered and delivered', { state: 'answered', delivery: { state: 'delivered' } }, false],
+  ['answer delivery failed', { state: 'answered', delivery: { state: 'failed' } }, true],
+  ['answer delivery pending', { state: 'answered', delivery: { state: 'pending' } }, true],
+  ['withdrawn', { state: 'withdrawn' }, false],
+  ['resolved', { state: 'resolved' }, false],
+]) test(`topic badge follows human request routing: ${name}`, t => {
+  const f = nativeFixture(t);
+  Object.assign(f.cell.requests[f.id], patch);
+  const list = f.draw().list;
+  assert.equal(descendants(list).some(el => el.attributes.class === 'hive-chip' && el.textContent === 'Request'), false);
+  const badge = list.querySelector('.hive-unread');
+  if (waiting) {
+    assert.equal(badge?.textContent, '1');
+    assert.match(list.querySelector('.hive-topic').attributes.class, /is-unread/);
+    assert.match(badge.attributes.class, /is-needs-you/);
+    assert.equal(badge.attributes['aria-label'], '1 request waiting for you');
+  } else assert.equal(badge, null);
+});
+
+for (const state of ['answered', 'withdrawn']) test(`topic badge clears after request is ${state} and preserves unread count`, t => {
+  const f = nativeFixture(t);
+  const request = f.cell.requests[f.id];
+  f.cell.requests.second = { ...request, id: 'second' };
+  assert.equal(f.draw().list.querySelector('.hive-unread')?.textContent, '2');
+  delete f.cell.requests.second;
+  f.cell.messages.push({ id: 'unread', threadId: thr, author: 'session', sessionId: 'queen', role: 'queen', text: 'Please read', at: 2, n: 2, ack: { required: true, state: null, rev: 0 } });
+  let badge = f.draw().list.querySelector('.hive-unread');
+  assert.equal(badge.textContent, '1');
+  assert.match(badge.attributes.class, /is-needs-you/);
+  assert.equal(badge.attributes['aria-label'], '1 unread; 1 request waiting for you');
+  Object.assign(request, { state, delivery: { state: 'delivered' } });
+  badge = f.draw().list.querySelector('.hive-unread');
+  assert.equal(badge.textContent, '1');
+  assert.doesNotMatch(badge.attributes.class, /is-needs-you/);
+  assert.equal(badge.attributes['aria-label'], '1 unread');
+  f.cell.messages.pop();
+  assert.equal(f.draw().list.querySelector('.hive-unread'), null);
+});
+
+test('Inbox drops answered or withdrawn request rows while delivery repair still waits', t => {
+  const f = nativeFixture(t);
+  f.ui.setInboxView(f.cell.id, 'human');
+  const request = f.cell.requests[f.id];
+  assert.match(f.draw().list.textContent, /API decision/);
+  Object.assign(request, { state: 'answered', delivery: { state: 'failed' } });
+  assert.match(f.draw().list.textContent, /API decision/);
+  request.delivery.state = 'delivered';
+  assert.doesNotMatch(f.draw().list.textContent, /API decision/);
+  request.state = 'open';
+  assert.match(f.draw().list.textContent, /API decision/);
+  request.state = 'withdrawn';
+  assert.doesNotMatch(f.draw().list.textContent, /API decision/);
+});
+
+test('topic request badges keep unread totals and stay scoped to the request topic', t => {
+  const f = nativeFixture(t);
+  f.cell.threads.push({ id: 'other', title: 'Other topic', beads: [], count: 0, retained: 0, lastAt: 1 });
+  f.cell.messages.push(...[2, 3].map(n => ({ id: `unread-${n}`, threadId: thr, author: 'session', sessionId: 'queen', role: 'queen', text: 'Please read', at: n, n, ack: { required: true, state: null, rev: 0 } })));
+  const badges = descendants(f.draw().list).filter(el => (el.attributes.class || '').split(' ').includes('hive-unread'));
+  assert.equal(badges.length, 1);
+  assert.equal(badges[0].textContent, '2');
+  assert.equal(badges[0].attributes['aria-label'], '2 unread; 1 request waiting for you');
+});
+
+function orderedTopicsFixture(t) {
+  const f = fixture(t);
+  f.ui.setAllTopics(f.cell.id, true);
+  const topics = [
+    ['read-new', 20], ['unread-new', 40], ['needs-new', 60],
+    ['read-old', 10], ['unread-old', 30], ['needs-old', 50],
+  ];
+  f.cell.threads = topics.map(([id, lastAt]) => ({ id, title: id, beads: [], count: 1, retained: 1, lastAt }));
+  f.cell.messages = topics.filter(([id]) => !id.startsWith('read')).map(([id], i) => ({
+    id: `m-${id}`, threadId: id, author: 'session', sessionId: 'queen', role: 'queen',
+    text: id, at: i + 1, n: i + 1, ack: { required: true, state: null, rev: 0 },
+  }));
+  f.cell.requests = Object.fromEntries(['needs-new', 'needs-old'].map((id, i) => [id, {
+    id, threadId: id, audience: 'human', state: 'open', title: id, body: 'Choose',
+    createdAt: 2 - i, requesterSessionId: 'queen',
+  }]));
+  f.cell.inbox = {
+    human: { count: 4, ids: f.cell.messages.map(m => m.id), rev: 1 },
+    queen: { count: 0, ids: [], rev: 1 },
+  };
+  return f;
+}
+
+const topicTitlesIn = list => list.querySelectorAll('.hive-topic-title').map(el => el.textContent);
+
+test('topic comparator groups needs, unread and read, oldest activity first with stable ties', async () => {
+  const { compareTopics } = await import('./topic-order.js');
+  const entries = [
+    { id: 'read', lastAt: 1 }, { id: 'unread', unreadCount: 2, lastAt: 2 },
+    { id: 'needs-b', needsCount: 1, lastAt: 4 }, { id: 'needs-a', needsCount: 2, unreadCount: 3, lastAt: 4 },
+  ];
+  assert.deepEqual(entries.sort(compareTopics).map(t => t.id), ['needs-a', 'needs-b', 'unread', 'read']);
+  assert.equal(compareTopics(entries[0], entries[0]), 0);
+});
+
+test('Topics groups waiting, unread and read topics by oldest last activity in each group', t => {
+  const f = orderedTopicsFixture(t);
+  assert.deepEqual(topicTitlesIn(f.draw().list), ['needs-old', 'needs-new', 'unread-old', 'unread-new', 'read-old', 'read-new']);
+});
+
+for (const state of ['answered', 'withdrawn']) test(`Topics reorders live after a request is ${state} and messages are read`, t => {
+  const f = orderedTopicsFixture(t);
+  assert.equal(topicTitlesIn(f.draw().list)[0], 'needs-old');
+  Object.assign(f.cell.requests['needs-old'], { state, delivery: { state: state === 'answered' ? 'failed' : 'delivered' } });
+  if (state === 'answered') {
+    assert.equal(topicTitlesIn(f.draw().list)[0], 'needs-old', 'delivery repair still needs the human');
+    f.cell.requests['needs-old'].delivery.state = 'delivered';
+  }
+  assert.deepEqual(topicTitlesIn(f.draw().list), ['needs-new', 'unread-old', 'unread-new', 'needs-old', 'read-old', 'read-new']);
+  const message = f.cell.messages.find(m => m.threadId === 'unread-old');
+  f.ui.noteAck(f.cell.id, message.id, { required: true, state: { kind: 'seen' }, rev: 1 });
+  assert.deepEqual(topicTitlesIn(f.draw().list), ['needs-new', 'unread-new', 'needs-old', 'read-old', 'read-new', 'unread-old']);
+});
+
+for (const view of ['cell', 'global', 'cell-search', 'global-search']) test(`${view} Inbox orders topics by last activity and reorders after requests settle`, async t => {
+  const { globalInbox } = await import('./global-inbox.js');
+  const f = orderedTopicsFixture(t);
+  f.ui.setInboxView(f.cell.id, 'human');
+  if (view.includes('search')) f.ui.setGlobalInboxQuery('e', view.startsWith('cell') ? f.cell.id : undefined);
+  const list = () => view.startsWith('cell') ? f.draw().list : globalInbox({
+    hive: f.hive, ui: f.ui, graph: { sessions: [] }, api: {},
+  }, [f.cell]).querySelector('.hive-global-inbox-list');
+  assert.deepEqual(topicTitlesIn(list()), ['needs-old', 'needs-new', 'unread-old', 'unread-new']);
+  f.cell.requests['needs-old'].state = 'withdrawn';
+  assert.deepEqual(topicTitlesIn(list()), ['needs-new', 'unread-old', 'unread-new', 'needs-old']);
+});
+
+test('scoped topic hint counts unread messages and topics waiting for you independently', t => {
+  const f = orderedTopicsFixture(t);
+  f.ui.setAllTopics(f.cell.id, false);
+  f.cell.threads.forEach(topic => { topic.beadId = topic.id === 'read-old' ? 'hive-one' : 'hive-two'; topic.beads = [topic.beadId]; });
+  f.cell.requests.extra = { ...f.cell.requests['needs-old'], id: 'extra' };
+  f.cell.requests.hidden = { ...f.cell.requests['needs-old'], id: 'hidden', threadId: 'read-new', audience: 'queen' };
+  const hint = () => f.draw().head.querySelectorAll('button').find(el => el.textContent.includes('in other topics'));
+  assert.equal(hint().textContent, '4 unread and 2 waiting for you in other topics');
+  f.cell.messages = [];
+  f.cell.inbox.human = { count: 0, ids: [], rev: 2 };
+  assert.equal(hint().textContent, '2 waiting for you in other topics');
+  for (const request of Object.values(f.cell.requests)) request.state = 'withdrawn';
+  assert.equal(hint(), undefined);
+});
+
+test('Show older topics merges loaded pages into the same order without changing the cursor', t => {
+  const f = orderedTopicsFixture(t);
+  f.cell.threadsTruncated = true;
+  f.cell.threadsAfter = { id: 'read-old', at: 10 };
+  const out = f.draw();
+  out.list.querySelectorAll('button').find(el => el.textContent === 'Show older topics').fire('click');
+  assert.deepEqual(f.sent.at(-1).after, f.cell.threadsAfter);
+  f.replies.at(-1).onReply({ ok: true, threads: [
+    { id: 'earlier', title: 'Earlier read topic', beads: [], count: 1, retained: 1, lastAt: 5 },
+  ], more: false, after: null });
+  assert.deepEqual(topicTitlesIn(f.draw().list), ['needs-old', 'needs-new', 'unread-old', 'unread-new', 'Earlier read topic', 'read-old', 'read-new']);
+});
+
+for (const view of ['cell', 'global']) test(`${view} Waiting for queen uses the same topic groups and last activity order`, async t => {
+  const { globalInbox } = await import('./global-inbox.js');
+  const f = orderedTopicsFixture(t);
+  const questions = f.cell.threads.map((topic, i) => ({
+    id: `h-${topic.id}`, threadId: topic.id, author: 'human', text: 'Question', at: i + 1,
+    response: { required: true, answers: [] },
+  }));
+  f.cell.messages.push(...questions);
+  f.cell.inbox.queen = { count: questions.length, ids: questions.map(m => m.id), rev: 1 };
+  f.ui.setInboxView(f.cell.id, 'queen');
+  f.ui.setGlobalInboxView('queen');
+  const list = view === 'cell' ? f.draw().list : globalInbox({
+    hive: f.hive, ui: f.ui, graph: { sessions: [] }, api: {},
+  }, [f.cell]).querySelector('.hive-global-inbox-list');
+  assert.deepEqual(topicTitlesIn(list), ['needs-old', 'needs-new', 'unread-old', 'unread-new', 'read-old', 'read-new']);
+});
+
+test('remote Inbox search orders topics by last activity even without loaded summaries', async t => {
+  const { searchedInbox } = await import('./global-inbox.js');
+  const f = fixture(t);
+  const context = { hive: f.hive, ui: f.ui, graph: { sessions: [] } };
+  const remote = { human: [
+    { key: 'new', cellId: f.cell.id, threadId: 'new', title: 'Needle new', firstId: 'n', at: 1, lastAt: 30, count: 1, last: {} },
+    { key: 'old', cellId: f.cell.id, threadId: 'old', title: 'Needle old', firstId: 'o', at: 2, lastAt: 20, count: 1, last: {} },
+  ], queen: [] };
+  const result = searchedInbox(context, [f.cell], 'needle', { remote });
+  assert.deepEqual(result.lists.human.map(row => row.threadId), ['old', 'new']);
 });

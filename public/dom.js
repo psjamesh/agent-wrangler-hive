@@ -53,6 +53,7 @@ export function markdown(api, text, references = null) {
   for (const a of el.querySelectorAll('a[href]')) {
     const sessionId = sessionLinkId(a.getAttribute('href'));
     if (sessionId) {
+      references?.onSessionReference?.({ sessionId, label: a.textContent, bare: a.textContent === a.getAttribute('href') });
       const available = references?.sessions ? references.sessions.some(s => s.sessionId === sessionId && !s.archived) : sessionLinkAvailable(sessionId);
       if (!available) { a.replaceWith(document.createTextNode(a.textContent)); continue; }
       a.removeAttribute('target');

@@ -67,19 +67,27 @@ test('starting a drag focuses the separator for immediate keyboard resizing', ()
   assert.equal(f.attrs['aria-valuenow'], '520');
 });
 
-test('splitter is a 12px hairline column with no grid gap and a widened hit area', async () => {
+test('splitter is a 12px gap with no column gap and a widened hit area', async () => {
   const { readFile } = await import('node:fs/promises');
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
   const grid = css.match(/\.hive-root\[data-view\^="cell"\] \{[^}]*\}/)[0];
   assert.match(grid, /grid-template-columns: minmax\(0, 1fr\) 12px var\(--hive-panel-width/);
   assert.match(grid, /gap: 10px 0;/);
   const open = '\\.hive-root\\[data-panels="open"\\] ';
-  assert.match(css, new RegExp(open + '\\.hive-divider::before \\{[^}]*width: 1px;'));
+  assert.match(css, new RegExp(open + '\\.hive-divider::before \\{[^}]*width: 0;'));
   assert.match(css, new RegExp(open + '\\.hive-divider::after \\{[^}]*inset: 0 -4px;'));
   assert.match(css, new RegExp(open + '\\.hive-divider\\[data-dragging\\]::before \\{ width: 3px;'));
   assert.match(css, new RegExp(open + '\\.hive-divider:focus-visible::before'));
   assert.match(css, new RegExp('@media \\(forced-colors: active\\) \\{[^@]*' + open + '\\.hive-divider::before \\{ background: CanvasText; \\}[^@]*' + open + '\\.hive-divider:hover::before[^{]*\\{ background: Highlight; \\}'));
   assert.equal(/(^|\n)\s*\.hive-divider(:[\w-]+)*::(before|after)/.test(css), false);
-  assert.match(css, /\.hive-root\[data-view="overview"\]\[data-panels="open"\] \{[^}]*minmax\(0, 1fr\) 12px var\(--hive-panel-width[^}]*gap: 0;/);
+  assert.match(css, /\.hive-root\[data-view="overview"\]\[data-panels="open"\] \{[^}]*minmax\(0, 1fr\) 12px var\(--hive-panel-width[^}]*gap: 12px 0;/);
   assert.match(css, /\.hive-root\[data-view="overview"\]\[data-panels="open"\] \.hive-divider \{[^}]*position: relative;/);
+});
+
+test('the open overview header is bounded and scrollable so attention cannot consume the map', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const head = css.match(/\.hive-root\[data-view="overview"\]\[data-panels="open"\] \.hive-overview-head \{[^}]*\}/)[0];
+  assert.match(head, /max-height: 40vh;/);
+  assert.match(head, /overflow: auto;/);
 });

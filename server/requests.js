@@ -1,3 +1,4 @@
+import { needsHuman } from '../public/request-state.js';
 import { sessionReference } from './session-links.js';
 import { requestOptions, requireOptionsForChoices } from './request-options.js';
 import { removeAttachmentBatch } from './attachments.js';
@@ -9,6 +10,7 @@ import { isSessionId } from './bead-model.js';
 import { HiveError } from './ops.js';
 import { safeDeliver } from './sessions.js';
 import { hiveLink } from '../public/deep-links.js';
+export { needsHuman } from '../public/request-state.js';
 
 export const OPEN_PER_SESSION = 20;
 const OPEN_TOTAL = 1000;
@@ -55,9 +57,6 @@ function get(rt, id) {
 }
 const link = r => hiveLink(r.cellId, r.threadId, r.messageId);
 const present = r => ({ ...r, link: link(r), next_step: r.state === 'open' ? `${r.audience === 'queen' ? `Queued with queen ${r.queenSessionId}; the human has not been asked.` : 'The human has been asked.'} ${r.blocking ? 'End this turn and recover the answer with hive_list_my_requests or its delivery notice.' : 'Continue independent work and recover with hive_list_my_requests.'}` : 'Recover the attributed answer or resolution with hive_list_my_requests.' });
-export function needsHuman(r) {
-  return isHumanRequest(r) && (r.state === 'open' || (r.state === 'answered' && r.delivery?.state !== 'delivered'));
-}
 function prune(d) {
   const closed = Object.values(d.requests).filter(r => r.state === 'resolved' || (r.state === 'answered' && r.delivery?.state === 'delivered')).sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id));
   for (const r of closed.slice(HISTORY_CAP)) {

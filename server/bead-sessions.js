@@ -27,7 +27,7 @@ export function holdsBead(rt, host, sessionId, beadId) {
 
 export function attachmentsFor(rt, host, beadId) {
   const doc = rt.metadata.read();
-  const reviews = Object.values(doc.reviews || {});
+  const reviews = Object.values(doc.reviews || {}).filter((r) => r.workBeadId === beadId);
   const out = [];
   const seen = new Set();
   for (const list of Object.values(doc.bindings || {})) {
@@ -41,7 +41,7 @@ export function attachmentsFor(rt, host, beadId) {
         session_id: b.sessionId, role: apiRole(b.role), launched_by: b.boundBy || null, started_at: b.at || null,
         ended_at: b.unboundAt || (live ? null : (s?.archivedAt || b.at || null)), live,
         agent: s?.agent || null, model: s?.model || null, effort: s?.effort || null,
-        ...(review ? { review_id: review.id, review_state: review.state, round: reviews.filter((r) => r.workBeadId === beadId).findIndex((r) => r.id === review.id) + 1, same_provider: review.policy?.sameProvider ?? null, override_reason: review.policy?.overrideReason || null } : {}),
+        ...(review ? { review_id: review.id, review_state: review.state, round: reviews.slice(0, reviews.indexOf(review)).reduce((n, r) => n + (r.round || 1), review.round || 1), same_provider: review.policy?.sameProvider ?? null, override_reason: review.policy?.overrideReason || null } : {}),
       });
     }
   }

@@ -1,3 +1,6 @@
+import { safeDeliver } from './sessions.js';
+import { prRepository } from './pr-labels.js';
+import { availableSessionHref } from './session-links.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 import { holdsBead } from './bead-sessions.js';
 import { assertCurrent } from './lifetime.js';
@@ -112,6 +115,26 @@ export function workerBeforeDispatch({ sessionId, ext, host }) {
   return true;
 }
 
+async function notifyClosedBeadWake(rt, host, launchId, sid, beadId) {
+  assertCurrent(rt, host);
+  const launch = rt.metadata.read().workerLaunches[launchId];
+  const cell = rt.metadata.cell(launch.cellId);
+  const queen = cell?.queenSessionId;
+  if (!cell?.enabled || cell.snapshot || !queen || queen === sid || !host.sessions.get(queen) || host.sessions.get(queen).archived) return;
+  const urls = [...new Set((host.links?.get?.(sid) || []).filter(link => link.type === 'pr' && prRepository(link.url)).map(link => link.url))].sort();
+  if (!urls.length) return;
+  const key = JSON.stringify([queen, cell.queenGeneration || 0, beadId, urls]);
+  if (launch.closedBeadWakeNotices?.[key]) return;
+  rt.metadata.mutate(d => {
+    const rec = d.workerLaunches[launchId];
+    (rec.closedBeadWakeNotices ||= {})[key] = { state: 'sending', at: Date.now() };
+  });
+  const href = availableSessionHref(host, sid);
+  const result = await safeDeliver(host, queen, `[Hive] Refused wake for session ${sid}: bead ${beadId} is closed. Linked PRs: ${urls.join(', ')}. Relink the PR to its current owner or remove the stale session link. ${href ? `[Open session](${href})` : ''}`, rt);
+  assertCurrent(rt, host);
+  rt.metadata.mutate(d => { Object.assign(d.workerLaunches[launchId].closedBeadWakeNotices[key], result, { finishedAt: Date.now() }); });
+}
+
 export async function workerLaunchContext({ sid, task, ext, reason, host }) {
   if (['assign', 'adopt'].includes(reason)) return;
   const rt = host?.stores?.hive;
@@ -124,6 +147,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
     let reserved = false;
     let held = null;
     let target = null;
+    let closedTarget = false;
     try {
       if (!rt) throw new HiveError('Hive is unavailable for this worker launch.');
       const initial = ['dispatch', 'spawn'].includes(reason);
@@ -140,6 +164,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
         const { launch: l, requester } = current;
         held = initial || l.role !== 'worker' ? null : heldOpenBead(rt, graph, sid, l);
         target = held || l.beadId;
+        closedTarget = !initial && graph.beads[target]?.status === 'closed';
         try {
           const access = requireBeadAccess(rt, requester, target);
           if (access.cell.id !== l.cellId) throw new HiveError('The worker bead moved to another cell.');
@@ -188,6 +213,10 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
         try { recordLaunchFailure(rt, launchId, err); }
         catch (recordError) { rt.log(`hive: could not record refused relaunch: ${recordError.message}`); }
       }
+      if (closedTarget) {
+        try { await notifyClosedBeadWake(rt, host, launchId, sid, target); }
+        catch (noticeError) { rt.log(`hive: could not notify queen of refused wake: ${noticeError.message}`); }
+      }
       return { refuse: `Hive refused worker startup: ${err.message}` };
     }
   });
@@ -225,7 +254,7 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     if (l.state !== 'reserved') throw new HiveError('This launch was cancelled or changed before dispatch.', 'conflict');
     reviewForLaunch(rt, l, { initial: true });
     const baseIntent = l.reviewId ? `You are the reviewer of Hive bead ${l.beadId} in cell ${l.cellId}; its builder keeps the claim. Your reviewer binding is made before your first action. Report to session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}` : `You own Hive bead ${l.beadId} in cell ${l.cellId}. Its claim and binding are made before your first action. Use hive_context and the hive-worker skill. Report to queen/coordinator session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}`;
-    const delegation = launchRestriction(opts.agent) === 'denied' ? 'Delegate only through Hive: spawn_session, spawn_workflow, schedule_session and update_schedule are denied to you; use hive_spawn_worker where your role allows it, or ask the queen. ' : 'Delegate only through Hive (hive_spawn_worker where your role allows it, or ask the queen); do not use spawn_session, spawn_workflow or schedule_session, which Hive cannot restrict for this provider and which leave the session untracked. ';
+    const delegation = 'Delegate only through Hive (hive_spawn_worker where your role allows it, or ask the queen); do not use spawn_session, spawn_workflow or schedule_session; they leave the session untracked. ';
     const intent = `${baseIntent}\n\nUse the hive-worker skill. Start with hive_context({ scope: "bead", bead_id: "${l.beadId}", cell_id: "${l.cellId}" }) for your bounded work context.\n\nHive task: ${l.taskId}. When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Worker/reviewer requests go to this hive's queen and remain out of human views until forwarded; human step-in is not supported. Recover with hive_list_my_requests and withdraw with hive_withdraw_request when answered elsewhere. ${delegation}Launch helpers into this same resolved task; ancestry alone does not enroll them. Missing native tools require a membership check or refreshed agent terminal.`;
     dispatched = true;
     assertCurrent(rt, host);

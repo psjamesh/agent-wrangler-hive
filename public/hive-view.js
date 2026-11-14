@@ -29,7 +29,6 @@ import {
 
 const BEAD_SIZE = 60;
 const CELL_SIZE = 92;
-const BACK_EDGE = 48;
 
 function firstLine(text) {
   return String(text || '').split('\n').find((l) => l.trim())?.trim() || '';
@@ -323,6 +322,7 @@ function overviewMap(ctx, shown) {
   const enter = (id) => ui.openCell(id, map?.el.hiveTileRect(id) || null);
   map = renderHexMap({
     viewKey: 'overview',
+    storage: api?.storage,
     size: CELL_SIZE,
     tile: hiveTile(CELL_SIZE),
     className: 'is-hives',
@@ -539,6 +539,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
   const keyOpen = Boolean(ui.form('key'));
   const map = renderHexMap({
     viewKey: `cell:${cell.id}`,
+    storage: api?.storage,
     previousPositions: previous?.hiveTilePositions,
     size: BEAD_SIZE,
     items,
@@ -589,15 +590,12 @@ function cellMap(ctx, cell, related = null, previous = null) {
       if (plan.same) return;
       save(plan);
     },
-    onBackground: ({ x }) => {
-      if (x < BACK_EDGE) ui.closeCell();
-      else if (selected) ui.selectBead(null);
+    onBackground: () => {
+      if (selected) ui.selectBead(null);
     },
     onDragState: (on) => ui.setDragging(on),
     claimDrag: api?.claimDrag ? (el) => api.claimDrag(el) : null,
     overlay: [
-      h('div', { class: 'hive-back-edge', 'aria-hidden': 'true' }),
-      h('button', { type: 'button', class: 'hive-back-tab', onclick: () => ui.closeCell(), 'aria-label': 'Back to all hives', title: 'Back to all hives. Clicking the empty left edge also goes back.' }, '‹'),
       cell.snapshot ? null : h('div', { class: 'hive-stage-tools' },
         h('button', {
           type: 'button',
@@ -672,15 +670,6 @@ function cellMap(ctx, cell, related = null, previous = null) {
   map.el.hiveConnectRelated = connectRelated;
   connectRelated(related);
   if (ctx.beadReference) ctx.beadReference.highlight = map.highlightReference;
-  map.el.classList.add('has-back-edge');
-  const edge = (evt) => {
-    const r = map.el.getBoundingClientRect();
-    const on = evt.clientX - r.left < BACK_EDGE && !map.el.classList.contains('is-panning')
-      && evt.target.closest?.('svg') && !evt.target.closest('[data-tile-id]');
-    map.el.classList.toggle('is-back-edge', !!on);
-  };
-  map.el.addEventListener('pointermove', edge);
-  map.el.addEventListener('pointerleave', () => map.el.classList.remove('is-back-edge'));
   return h('section', { class: 'hive-stage', 'aria-label': 'Work map' }, map.el);
 }
 
@@ -697,7 +686,7 @@ export function renderHive(ctx) {
   const cells = showRetired ? allCells : allCells.filter((c) => !c.retired || c.occupiedCount > 0);
   const focusedId = ui.cellId();
   const cell = focusedId ? hive.cells[focusedId] : null;
-  if (focusedId || cells.length === 0 || !ui.dockOpen()) ui.cancelGlobalInboxSearch?.();
+  if (focusedId || cells.length === 0 || !ui.globalInboxOpen()) ui.cancelGlobalInboxSearch?.();
   if (focusedId && !cell && ui.pendingCell() === focusedId) {
     return {
       top: h('div', { class: 'hive-cellview' },
@@ -713,6 +702,7 @@ export function renderHive(ctx) {
   if (cell) {
     let cached = hiveViews.get(ui);
     if (!cached || cached.cellId !== cell.id) {
+      disposeMap(cached?.map);
       cached = { cellId: cell.id, beadReference: {} };
       hiveViews.set(ui, cached);
     }
@@ -727,6 +717,7 @@ export function renderHive(ctx) {
     else {
       const sig = mapInputs(ctx, cell);
       if (cached.sig !== sig || cached.map?.parentNode !== cached.top || ui.form('wsMenu')) {
+        disposeMap(cached.map);
         cached.map = cellMap(cellCtx, cell, panels.related, cached.map?.querySelector('.hive-canvas'));
         cached.sig = mapInputs(ctx, cell);
         cached.related = panels.related;
@@ -748,29 +739,31 @@ export function renderHive(ctx) {
   const total = cells.reduce((n, c) => n + cellCounts(hive, c).total, 0);
   let cached = hiveViews.get(ui);
   if (!cached || cached.cellId !== null) {
+    disposeMap(cached?.map);
     cached = { cellId: null, top: h('div', { class: 'hive-overview' }) };
     hiveViews.set(ui, cached);
   }
   const sig = mapInputs(ctx, null);
-  if (cached.sig !== sig) { cached.map = overviewMap(ctx, cells); cached.sig = sig; }
+  if (cached.sig !== sig) { disposeMap(cached.map); cached.map = overviewMap(ctx, cells); cached.sig = sig; }
   const top = syncChildren(cached.top, [
-    h('header', { class: 'hive-overhead' },
-      h('span', { class: 'hive-mark', 'aria-hidden': 'true' }),
-      h('h2', { class: 'hive-title' }, 'All hives'),
-      capacityControl(ctx),
-      h('span', { class: 'hive-counts' }, `${cells.length} hive${cells.length === 1 ? '' : 's'}, ${total} bead${total === 1 ? '' : 's'}`),
-      cells.length ? h('button', { type: 'button', class: 'hive-quiet-btn', 'aria-pressed': ui.dockOpen() ? 'true' : 'false', onclick: () => ui.setDockOpen(!ui.dockOpen()), 'data-focus-key': 'global-inbox-toggle' }, ui.dockOpen() ? 'Hide inbox' : 'Show inbox') : null,
-      retiredCount ? h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => ui.setShowRetired(!showRetired), 'aria-pressed': showRetired ? 'true' : 'false', 'data-focus-key': 'show-retired', title: showRetired ? 'Hide retired hives from this map' : 'Show retired hives on this map' }, showRetired ? `Hide retired (${retiredCount})` : `Show retired (${retiredCount})`) : null,
-      h('div', { class: 'hive-head-actions' },
-        h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openCellDialog(ui, 'new', 'open-new'), 'data-focus-key': 'open-new', 'aria-haspopup': 'dialog' }, 'New hive'),
-        h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => openCellDialog(ui, 'adopt', 'open-adopt'), 'data-focus-key': 'open-adopt', 'aria-haspopup': 'dialog' }, 'Add existing task'),
-        settingsButton(ctx)),
-      allSettings(ctx)),
-    noticesEl(ctx),
-    attentionEl(ctx),
+    h('div', { class: 'hive-overview-head' },
+      h('header', { class: 'hive-overhead' },
+        h('span', { class: 'hive-mark', 'aria-hidden': 'true' }),
+        h('h2', { class: 'hive-title' }, 'All hives'),
+        capacityControl(ctx),
+        h('span', { class: 'hive-counts' }, `${cells.length} hive${cells.length === 1 ? '' : 's'}, ${total} bead${total === 1 ? '' : 's'}`),
+        cells.length ? h('button', { type: 'button', class: 'hive-quiet-btn', 'aria-pressed': ui.globalInboxOpen() ? 'true' : 'false', onclick: () => ui.setGlobalInboxOpen(!ui.globalInboxOpen()), 'data-focus-key': 'global-inbox-toggle' }, ui.globalInboxOpen() ? 'Hide inbox' : 'Show inbox') : null,
+        retiredCount ? h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => ui.setShowRetired(!showRetired), 'aria-pressed': showRetired ? 'true' : 'false', 'data-focus-key': 'show-retired', title: showRetired ? 'Hide retired hives from this map' : 'Show retired hives on this map' }, showRetired ? `Hide retired (${retiredCount})` : `Show retired (${retiredCount})`) : null,
+        h('div', { class: 'hive-head-actions' },
+          h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openCellDialog(ui, 'new', 'open-new'), 'data-focus-key': 'open-new', 'aria-haspopup': 'dialog' }, 'New hive'),
+          h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => openCellDialog(ui, 'adopt', 'open-adopt'), 'data-focus-key': 'open-adopt', 'aria-haspopup': 'dialog' }, 'Add existing task'),
+          settingsButton(ctx)),
+        allSettings(ctx)),
+      noticesEl(ctx),
+      attentionEl(ctx)),
     cached.map,
     cellDialog(ctx)], ctx.beforeReplace);
-  const panelsOpen = cells.length > 0 && ui.dockOpen();
+  const panelsOpen = cells.length > 0 && ui.globalInboxOpen();
   return {
     top,
     bottom: panelsOpen ? globalInbox(ctx, cells) : null,
@@ -779,4 +772,9 @@ export function renderHive(ctx) {
   };
 }
 
-export function disposeHiveView(ui) { hiveViews.delete(ui); }
+function disposeMap(map) { map?.querySelector('.hive-canvas')?.hiveDisposeView?.(); }
+
+export function disposeHiveView(ui) {
+  disposeMap(hiveViews.get(ui)?.map);
+  hiveViews.delete(ui);
+}
