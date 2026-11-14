@@ -1,9 +1,8 @@
 import { h } from './dom.js';
-import { sessionLabel, sessionsInTask } from './model.js';
+import { handoverFields, handoverError } from './handover-fields.js';
 import { launchFields, launchSummary, instructionsField } from './widgets.js';
 
 const FORM = 'cell-dialog';
-const LAUNCH_NEW = '__launch';
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
 let seq = 0;
@@ -52,9 +51,7 @@ export function cellDialog(ctx) {
   // another task.
   const taskGone = Boolean(v.taskId) && !tasks.some((t) => t.id === v.taskId);
   const taskId = taskGone ? '' : v.taskId || '';
-  const members = taskId ? sessionsInTask(graph, taskId) : [];
-  const launching = mode === 'new' || (Boolean(taskId) && v.queen === LAUNCH_NEW);
-  const nominating = mode === 'adopt' && Boolean(taskId) && v.queen && v.queen !== LAUNCH_NEW && members.some((s) => s.sessionId === v.queen);
+  const launching = mode === 'new' || Boolean(taskId);
   const kind = mode === 'new' ? 'hive-cell-create' : 'hive-cell-adopt';
   // A create or adopt still in flight blocks another, even from a dialog
   // reopened after Cancel: the old request may yet create its task.
@@ -73,23 +70,22 @@ export function cellDialog(ctx) {
     if (cur.pending || inFlight()) return;
     const typed = cur.instructions?.trim() || '';
     const instructions = mode === 'new' ? typed : (typed || undefined);
-    const queen = { agent: cur.agent, model: cur.model, effort: cur.effort, autoCompactTokens: cur.autoCompactTokens, cwd: cur.cwd };
+    const sourceError = handoverError(hive, cur, mode === 'new' ? null : taskId);
+    if (sourceError) return fail(sourceError);
+    const queen = { handoverSourceSessionId: cur.handoverSourceSessionId || '', archiveSourceAfterHandover: cur.archiveSourceAfterHandover !== false, agent: cur.agent, model: cur.model, effort: cur.effort, autoCompactTokens: cur.autoCompactTokens, cwd: cur.cwd };
     let msg;
     if (mode === 'new') {
       if (!cur.name?.trim()) return fail('Give the hive a name.');
       msg = { type: kind, name: cur.name, goal: cur.goal || '', acceptance: cur.acceptance || '', instructions, queen };
     } else {
       if (!taskId) return fail('Choose a task.');
-      if (!launching && !nominating) return fail('Choose the queen: a session on this task, or launch a new one.');
       msg = {
         type: kind,
         taskId,
         goal: cur.goal || '',
         acceptance: cur.acceptance || '',
         instructions,
-        queenSessionId: nominating ? cur.queen : null,
-        queen: launching ? queen : null,
-        sendBrief: cur.brief !== false,
+        queen,
       };
     }
     const reqId = nextId();
@@ -106,13 +102,11 @@ export function cellDialog(ctx) {
         if (!mine) {
           ctx.notice(`${what} (closed earlier) finished: the hive was added. Open it from All hives.`, { severity: 'info' });
           if (frame.rootError) ctx.notice(`Its goal was not created: ${frame.rootError}`, { severity: 'error' });
-          if (frame.brief && frame.brief.state !== 'delivered') ctx.notice(`Its queen was nominated; the activation brief is ${frame.brief.state}${frame.brief.error ? `: ${frame.brief.error}` : ''}.`);
           if (frame.launchError) ctx.notice(`Its queen did not launch: ${frame.launchError}. Launch it again from the hive; the task is kept.`, { severity: 'error' });
           return;
         }
         ui.setForm(FORM, null);
         if (frame.rootError) ctx.notice(`The hive was added, but its goal was not created: ${frame.rootError}`, { severity: 'error' });
-        if (frame.brief && frame.brief.state !== 'delivered') ctx.notice(`The queen was nominated; the activation brief is ${frame.brief.state}${frame.brief.error ? `: ${frame.brief.error}` : ''}.`);
         if (frame.launchError) ctx.notice(`The hive was added, but its queen did not launch: ${frame.launchError}. Launch it again from the hive; the task is kept.`, { severity: 'error' });
         if (mode === 'new') ui.openCell(frame.cellId);
         else {
@@ -159,24 +153,19 @@ export function cellDialog(ctx) {
       field('Name', h('input', { type: 'text', required: true, maxlength: '200', value: v.name || '', oninput: (e) => patch({ name: e.target.value }), 'data-focus-key': 'dialog-name', 'data-autofocus': '' })),
       field('Goal', h('textarea', { rows: '2', value: v.goal || '', placeholder: 'Optional. The outcome you want; you can refine it with the queen.', oninput: (e) => patch({ goal: e.target.value }), 'data-focus-key': 'dialog-goal' })),
       queenRow,
+      handoverFields(hive, v, set),
       how,
       more,
     ]
     : [
       tasks.length
-        ? field('Task', h('select', { onchange: (e) => set({ taskId: e.target.value, queen: '' }), 'data-focus-key': 'dialog-task', 'data-autofocus': '' },
+        ? field('Task', h('select', { onchange: (e) => set({ taskId: e.target.value, handoverSourceSessionId: '', archiveSourceAfterHandover: true }), 'data-focus-key': 'dialog-task', 'data-autofocus': '' },
           h('option', { value: '', selected: !taskId }, 'Choose a task…'),
           tasks.map((t) => h('option', { value: t.id, selected: t.id === taskId }, t.name))),
         taskGone ? 'The task you chose is no longer available. Choose a task and its queen again.' : null)
         : h('p', { class: 'hive-muted', 'data-autofocus': '', tabindex: '-1' }, 'Every task on the board is already a hive.'),
-      tasks.length && taskId ? field('Queen', h('select', { onchange: (e) => set({ queen: e.target.value }), 'data-focus-key': 'dialog-queen' },
-        h('option', { value: '' }, 'Choose…'),
-        members.map((s) => h('option', { value: s.sessionId, selected: s.sessionId === v.queen }, sessionLabel(graph, s.sessionId))),
-        h('option', { value: LAUNCH_NEW, selected: v.queen === LAUNCH_NEW }, 'Launch a new queen')),
-      members.length ? 'Nominating keeps that session running with its own instructions; Hive\'s are added.' : 'No session is on this task yet, so launch a new queen.') : null,
-      nominating ? h('label', { class: 'hive-check' }, h('input', { type: 'checkbox', checked: v.brief !== false, onchange: (e) => set({ brief: e.target.checked }), 'data-focus-key': 'dialog-brief' }), ' Send it an activation brief (it is not restarted)') : null,
-      nominating ? h('p', { class: 'hive-muted hive-dialog-hint' }, 'It keeps its conversation and instructions. If its agent is already running, Hive\'s skills and tools may appear only after you restart or resume that agent\'s terminal; the hive will show an Open queen session link. This does not restart Agent Wrangler.') : null,
       queenRow,
+      taskId ? handoverFields(hive, v, set, taskId) : null,
       tasks.length ? how : null,
       tasks.length ? more : null,
     ];
@@ -206,7 +195,7 @@ export function cellDialog(ctx) {
   h('div', { class: 'hive-dialog-body', dataset: { scrollKey: 'cell-dialog' } },
     h('p', { class: 'hive-muted hive-dialog-lead' }, mode === 'new'
       ? 'Creates a task on the board and launches its queen. If the launch fails, the task is kept and you launch again from the hive.'
-      : 'Turns a task already on the board into a hive, with a queen you choose. Once active, the queen maps the task\'s existing work into beads and links its sessions; existing sessions are not turned into beads automatically.'),
+      : 'Turns a task already on the board into a hive, and launches a new queen. Once active, the queen maps the task\'s existing work into beads and links its sessions; existing sessions are not turned into beads automatically.'),
     body),
   !v.pending && inFlight() ? h('p', { class: 'hive-dialog-note', role: 'status' }, 'An earlier request is still running. You can submit once it finishes; its outcome appears as a notice.') : null,
   v.error ? h('p', { class: 'hive-dialog-error', role: 'alert' }, v.error) : null,

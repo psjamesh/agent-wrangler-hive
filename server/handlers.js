@@ -8,7 +8,7 @@ import { beadDetail, searchBeads } from './bead-detail.js';
 import { searchInbox } from './inbox-search.js';
 import * as ops from './ops.js';
 import { checkRetire, retireCell, reopenCell } from './retire.js';
-import { launchQueen, reconcileLaunch, sendActivationBrief } from './sessions.js';
+import { launchQueen, reconcileLaunch, sendActivationBrief, validateHandoverSource } from './sessions.js';
 import { checkWorkstream, completeWorkstream, archiveWorkstream, showWorkstream, reopenWorkstream, dismissRestoreNotice } from './workstreams.js';
 import { recordHumanInput, recordHumanReaction, deliver, markReceived, renameThread, resolveDeepLink, threadHistory, threadList, topicRelations, inboxPage, acknowledgeMessage, autoReadMessages, undoAcknowledge, withdrawMessage, undoWithdraw, humanConversationDoc } from './conversation.js';
 
@@ -64,12 +64,13 @@ function str(v, max = 200) {
 const createCell = humanHandler('hive-cell-create', async ({ msg, host, rt }) => {
   if (!msg.queen || typeof msg.queen !== 'object') throw new HumanError('A new cell needs its queen: give the launch settings.');
   const queen = pickLaunch(msg.queen);
+  validateHandoverSource(host, queen.handoverSourceSessionId, null, true);
   const out = await ops.createCell(rt, host, { name: msg.name, goal: msg.goal, acceptance: msg.acceptance, instructions: instructionsOf(msg), position: msg.position });
   if (out.rootError) {
     out.launchError = 'The queen was not launched because the cell goal was not created. Reconcile the goal, then launch the queen from the cell.';
   } else {
     try {
-      out.launch = await launchQueen(rt, host, { cellId: out.cellId, ...queen });
+      out.launch = await launchQueen(rt, host, { cellId: out.cellId, ...queen, allowCrossTaskSource: true });
     } catch (err) {
       out.launchError = err.message;
     }
@@ -80,7 +81,8 @@ const createCell = humanHandler('hive-cell-create', async ({ msg, host, rt }) =>
 // `intent` is the older one-off launch note; it is still passed to that launch
 // only. Saved queen instructions travel separately as `instructions`.
 function pickLaunch(q = {}) {
-  return { cwd: str(q.cwd, 4096), agent: str(q.agent, 40), model: str(q.model, 120), effort: str(q.effort, 40), autoCompactTokens: compactTokens(q.autoCompactTokens), intent: str(q.intent, 20000) };
+  if (q.archiveSourceAfterHandover !== undefined && typeof q.archiveSourceAfterHandover !== 'boolean') throw new HumanError('Archive source after handover must be a checkbox value.');
+  return { cwd: str(q.cwd, 4096), agent: str(q.agent, 40), model: str(q.model, 120), effort: str(q.effort, 40), autoCompactTokens: compactTokens(q.autoCompactTokens), intent: str(q.intent, 20000), handoverSourceSessionId: q.handoverSourceSessionId, archiveSourceAfterHandover: q.archiveSourceAfterHandover };
 }
 
 // Unset or empty is the agent's default. Anything else must be a whole number
@@ -98,15 +100,13 @@ function instructionsOf(msg) {
 }
 
 const adoptTask = humanHandler('hive-cell-adopt', async ({ msg, host, rt }) => {
-  const launching = msg.queen && typeof msg.queen === 'object';
-  if (!msg.queenSessionId && !launching) throw new HumanError('Choose the cell\'s queen: nominate a session on the task, or launch a new one.');
-  const queen = msg.queenSessionId ? null : pickLaunch(msg.queen);
+  if (msg.queenSessionId) throw new HumanError('Launch a new queen instead of nominating an existing session.');
+  if (!msg.queen || typeof msg.queen !== 'object') throw new HumanError('Launch a new queen: give the launch settings.');
+  const queen = pickLaunch(msg.queen);
+  validateHandoverSource(host, queen.handoverSourceSessionId, msg.taskId);
   const out = await ops.adoptTask(rt, host, { taskId: str(msg.taskId, 80), goal: msg.goal, acceptance: msg.acceptance, instructions: instructionsOf(msg), rootBeadId: str(msg.rootBeadId, 80), position: msg.position });
   if (out.rootError) {
-    out.launchError = 'The queen was not set up because the cell goal was not created. Reconcile the goal, then nominate or launch the queen from the cell.';
-  } else if (msg.queenSessionId) {
-    out.queen = ops.nominateQueen(rt, host, { cellId: out.cellId, sessionId: str(msg.queenSessionId, 128) });
-    if (msg.sendBrief) out.brief = await sendActivationBrief(rt, host, { cellId: out.cellId });
+    out.launchError = 'The queen was not set up because the cell goal was not created. Reconcile the goal, then launch the queen from the cell.';
   } else {
     try {
       out.launch = await launchQueen(rt, host, { cellId: out.cellId, ...queen });
@@ -132,11 +132,8 @@ const reopen = humanHandler('hive-cell-reopen', ({ msg, rt }) => reopenCell(rt, 
 const moveCell = humanHandler('hive-cell-move', ({ msg, rt }) => ops.moveCell(rt, { cellId: str(msg.cellId, 80), position: msg.position }));
 const moveBeads = humanHandler('hive-bead-move', ({ msg, rt }) => ops.moveBeads(rt, { cellId: str(msg.cellId, 80), positions: msg.positions, aspect: msg.aspect, base: msg.base, stack: msg.stack }));
 
-const nominate = humanHandler('hive-queen-nominate', async ({ msg, host, rt }) => {
-  if (msg.instructions !== undefined) ops.setQueenInstructions(rt, { cellId: str(msg.cellId, 80), instructions: msg.instructions });
-  const out = ops.nominateQueen(rt, host, { cellId: str(msg.cellId, 80), sessionId: str(msg.sessionId, 128) });
-  if (msg.sendBrief) out.brief = await sendActivationBrief(rt, host, { cellId: out.cellId });
-  return out;
+const nominate = humanHandler('hive-queen-nominate', () => {
+  throw new HumanError('Launch a new queen instead of nominating an existing session.');
 });
 
 const brief = humanHandler('hive-queen-brief', async ({ msg, host, rt }) => ({ brief: await sendActivationBrief(rt, host, { cellId: str(msg.cellId, 80) }) }));

@@ -505,18 +505,6 @@ export function refuseSnapshot(cell) {
   if (cell?.snapshot) throw new HiveError(`Cell ${cell.id} is a captured snapshot: it is read only and its sessions cannot be reached from here.`, 'snapshot');
 }
 
-export function nominateQueen(rt, host, { cellId, sessionId }) {
-  const cell = rt.metadata.cell(cellId);
-  if (!cell) throw new HiveError(`Unknown cell ${cellId}.`);
-  refuseSnapshot(cell);
-  if (!isSessionId(sessionId)) throw new HiveError('Choose a session.');
-  const session = host.sessions.get(sessionId);
-  if (!session || session.archived) throw new HiveError('Choose a live session.');
-  if (session.taskId !== cell.taskId) throw new HiveError('The queen must be a session in this cell\'s task.');
-  rt.metadata.mutate((d) => recordQueen(d, cellId, sessionId, Date.now(), 'nominated'));
-  return { cellId, queenSessionId: sessionId };
-}
-
 // The human settles only an interrupted cell creation, after checking the
 // board for the task it names.
 export async function resolveOperation(rt, { opId, note }, actor) {

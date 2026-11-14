@@ -140,6 +140,11 @@ test('queen handoff launches a top-level fenced successor with the policy and no
   assert.equal('parentSession' in call, false);
   assert.equal(call.taskId, 'task');
   assert.match(call.intent, /Finish the API work/);
+  assert.equal(call.autoCompactTokens, 250000);
+  const launch = f.doc().launches[out.launch_id];
+  assert.equal(launch.handoverSourceSessionId, null);
+  assert.equal(launch.archiveSourceAfterHandover, false);
+  assert.match(call.intent, /no handover, no archive/);
   assert.match(call.intent, /hive_context first/);
   assert.equal(out.installed, true);
   assert.equal(f.doc().cells.cell.queenSessionId, out.successor_session_id);
