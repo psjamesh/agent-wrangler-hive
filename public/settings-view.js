@@ -84,14 +84,53 @@ function notificationSetting({ ui, api }) {
     form.error ? h('p', { role: 'alert' }, form.error) : null);
 }
 
+const sections = { hive: ['general', 'agents', 'lifecycle', 'advanced'], all: ['general', 'advanced'] };
+const sectionKey = tab => `hive:settings-section:${tab}`;
+
+function savedSection(tab) {
+  try { return localStorage.getItem(sectionKey(tab)); } catch { return null; }
+}
+
+export function advancedSettings(ui, scope, summary, ...children) {
+  const key = `settings-advanced:${scope}`;
+  return h('details', {
+    class: 'hive-settings-advanced', open: Boolean(ui.form('settings')?.[key]),
+    ontoggle: event => {
+      const open = event.target.open;
+      if (Boolean(ui.form('settings')?.[key]) !== open) ui.patchForm('settings', { [key]: open });
+    },
+  }, h('summary', { 'data-focus-key': `settings-advanced:${scope}` }, 'Advanced',
+    h('span', { class: 'hive-settings-summary' }, summary)), ...children);
+}
+
 export function settingsModal(ctx, cell = null, thisHive = () => null) {
   const { ui } = ctx;
   const form = ui.form('settings');
   if (!form) return null;
   const local = cell && !cell.snapshot;
   const tab = local && form.tab !== 'all' ? 'hive' : 'all';
+  const selected = form[`section:${tab}`] || savedSection(tab);
+  const section = sections[tab].includes(selected) ? selected : 'general';
+  const selectSection = id => {
+    ui.setForm('settings', { ...ui.form('settings'), [`section:${tab}`]: id });
+    try { localStorage.setItem(sectionKey(tab), id); } catch { }
+    requestAnimationFrame(() => document.querySelector(`[data-focus-key="settings-section-${tab}-${id}"]`)?.focus());
+  };
+  const sectionButton = id => h('button', {
+    type: 'button', role: 'tab', class: 'hive-tab', id: `hive-settings-section-${tab}-${id}`,
+    'aria-selected': String(section === id), 'aria-controls': 'hive-settings-section-panel',
+    tabindex: section === id ? '0' : '-1', 'data-focus-key': `settings-section-${tab}-${id}`,
+    onclick: () => selectSection(id),
+    onkeydown: event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const ids = sections[tab];
+      selectSection(event.key === 'Home' ? ids[0] : event.key === 'End' ? ids.at(-1)
+        : ids[(ids.indexOf(id) + (event.key === 'ArrowLeft' ? ids.length - 1 : 1)) % ids.length]);
+    },
+  }, id[0].toUpperCase() + id.slice(1));
   const keys = ['global-capacity', 'global-bd', 'global-notifications',
-    ...(cell ? [`goal:${cell.id}`, `instructions:${cell.id}`, `watchdog:${cell.id}`, `codex-approvals:${cell.id}`, `review-policy:${cell.id}`] : [])];
+    ...(cell ? [`settings-rename:${cell.id}`, `goal:${cell.id}`, `instructions:${cell.id}`, `watchdog:${cell.id}`, `codex-approvals:${cell.id}`, `review-policy:${cell.id}`] : [])];
   const saving = () => keys.some(key => ui.form(key)?.saving || ui.form(key)?.pending) || ctx.bees.saving?.();
   const close = (restore = true) => {
     if (saving()) return false;
@@ -99,7 +138,7 @@ export function settingsModal(ctx, cell = null, thisHive = () => null) {
     ui.setForm('global-capacity', null);
     ui.setForm('global-bd', null);
     ui.setForm('global-notifications', null);
-    if (cell) ui.setForm(`goal:${cell.id}`, null);
+    if (cell) { ui.setForm(`settings-rename:${cell.id}`, null); ui.setForm(`goal:${cell.id}`, null); }
     if (restore) requestAnimationFrame(() => (document.querySelector(`[data-focus-key="${form.returnKey || 'open-settings'}"]`) || document.querySelector('[data-focus-key="open-settings"]'))?.focus());
     return true;
   };
@@ -118,7 +157,7 @@ export function settingsModal(ctx, cell = null, thisHive = () => null) {
     onkeydown: e => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
       if (e.key !== 'Tab') return;
-      const controls = [...e.currentTarget.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')].filter(el => !el.disabled && el.getAttribute('tabindex') !== '-1' && (el.offsetParent !== null || el === document.activeElement));
+      const controls = [...e.currentTarget.querySelectorAll('button, input, select, textarea, summary, a[href], [tabindex]')].filter(el => !el.disabled && el.getAttribute('tabindex') !== '-1' && (el.offsetParent !== null || el === document.activeElement));
       if (!controls.length) return;
       const index = controls.indexOf(document.activeElement);
       if (index === -1 || (e.shiftKey ? index === 0 : index === controls.length - 1)) { e.preventDefault(); controls[e.shiftKey ? controls.length - 1 : 0].focus(); }
@@ -128,6 +167,13 @@ export function settingsModal(ctx, cell = null, thisHive = () => null) {
     h('button', { type: 'button', class: 'hive-quiet-btn', disabled: saving(), 'data-autofocus': '', 'data-focus-key': 'settings-close', onclick: close }, 'Close')),
   h('div', { class: 'hive-tabs', role: 'tablist', 'aria-label': 'Settings scope' }, local ? tabButton('hive', 'This hive') : null, tabButton('all', 'All hives')),
   h('div', { class: 'hive-dialog-body', id: 'hive-settings-panel', role: 'tabpanel', 'aria-labelledby': `hive-settings-tab-${tab}`, dataset: { scrollKey: `settings:${tab}` } },
-    tab === 'hive' ? thisHive(() => close(false)) : [capacityEditor(ctx), ctx.bees.slider('all'),
-      h('p', { class: 'hive-muted' }, 'Bees are decoration and mean nothing about the work. Reduced-motion settings stop them.'), bdSetting(ctx), notificationSetting(ctx)])));
+    h('div', { class: 'hive-tabs hive-settings-sections', role: 'tablist', 'aria-label': 'Settings section' }, sections[tab].map(sectionButton)),
+    h('div', { id: 'hive-settings-section-panel', role: 'tabpanel', 'aria-labelledby': `hive-settings-section-${tab}-${section}`, dataset: { scrollKey: `settings:${tab}:${section}` } },
+      tab === 'hive' ? thisHive(() => close(false), section)
+        : section === 'advanced' ? advancedSettings(ui, 'all', `bd: ${ctx.api?.settings?.()?.bdPath || 'Automatic'}`, bdSetting(ctx),
+          h('button', { type: 'button', class: 'hive-quiet-btn', disabled: ui.form('global-bd')?.saving,
+            onclick: () => ui.setForm('global-bd', { ...ui.form('global-bd'), value: '', saved: false, error: null }) }, 'Reset to defaults'),
+          h('p', { class: 'hive-muted' }, 'Reset clears the draft path. Save path to apply it.'))
+          : [capacityEditor(ctx), notificationSetting(ctx), ctx.bees.slider('all'),
+            h('p', { class: 'hive-muted' }, 'Bees are decoration and mean nothing about the work. Reduced-motion settings stop them.')]))));
 }

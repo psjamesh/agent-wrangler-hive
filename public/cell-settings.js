@@ -1,10 +1,10 @@
 import { h } from './dom.js';
 import { cellName } from './model.js';
 
-export function cellTitle({ graph, ui, send }, cell) {
+export function cellTitle({ graph, ui, send }, cell, prefix = 'rename') {
   const name = cellName(graph, cell);
-  const key = `rename:${cell.id}`;
-  const focusKey = `rename-open:${cell.id}`;
+  const key = `${prefix}:${cell.id}`;
+  const focusKey = `${prefix}-open:${cell.id}`;
   const focus = target => requestAnimationFrame(() => document.querySelector(`[data-focus-key="${target}"]`)?.focus());
   const draft = ui.form(key);
   if (cell.snapshot || cell.retired) return h('span', {}, name);

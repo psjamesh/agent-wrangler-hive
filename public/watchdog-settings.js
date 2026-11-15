@@ -13,12 +13,20 @@ const fields = [
   ['humanWaitMinutes', 'Waiting on the human with no open request (minutes)', 10],
 ];
 
+function threshold(cell, name, fallback) {
+  return cell.watchdogSettings?.[name]
+    ?? (name === 'idleMinutes' ? cell.watchdogSettings?.workerMinutes : null) ?? fallback;
+}
+
+export function watchdogSummary(cell) {
+  return fields.map(([name, label, fallback]) => `${label.replace(/ \(.*$/, '')}: ${threshold(cell, name, fallback)}${name.endsWith('Hours') ? 'h' : name.endsWith('Days') ? 'd' : 'm'}`).join(' · ');
+}
+
 export function watchdogSettingsForm({ ui, send }, cell) {
   const key = `watchdog:${cell.id}`;
   let draft = ui.form(key);
   if (!draft) {
-    draft = Object.fromEntries(fields.map(([name, , fallback]) => [name, cell.watchdogSettings?.[name]
-      ?? (name === 'idleMinutes' ? cell.watchdogSettings?.workerMinutes : null) ?? fallback]));
+    draft = Object.fromEntries(fields.map(([name, , fallback]) => [name, threshold(cell, name, fallback)]));
     ui.setForm(key, draft);
   }
   return h('form', {
@@ -33,7 +41,7 @@ export function watchdogSettingsForm({ ui, send }, cell) {
       });
     },
   },
-  h('h4', {}, 'Settings'),
+  h('h4', {}, 'Watchdog'),
   h('p', { class: 'hive-muted' }, 'Watchdog thresholds for this hive. New flags wake the queen once; quiet checks never wake it.'),
   ...fields.map(([name, label]) => {
     const id = `hive-watchdog-${cell.id}-${name}`;
@@ -45,5 +53,9 @@ export function watchdogSettingsForm({ ui, send }, cell) {
   }),
   draft.error ? h('p', { class: 'hive-error', role: 'alert' }, draft.error) : null,
   draft.saved ? h('p', { role: 'status' }, 'Watchdog settings saved.') : null,
-  h('button', { type: 'submit', class: 'hive-btn', disabled: draft.saving }, draft.saving ? 'Saving…' : 'Save watchdog settings'));
+  h('div', { class: 'hive-actions' },
+    h('button', { type: 'submit', class: 'hive-btn', disabled: draft.saving }, draft.saving ? 'Saving…' : 'Save watchdog settings'),
+    h('button', { type: 'button', class: 'hive-quiet-btn', disabled: draft.saving,
+      onclick: () => ui.setForm(key, { ...ui.form(key), ...Object.fromEntries(fields.map(([name, , fallback]) => [name, fallback])), saved: false, error: '' }) }, 'Reset to defaults')),
+  h('p', { class: 'hive-muted' }, 'Reset changes the draft. Save watchdog settings to apply it.'));
 }

@@ -2,10 +2,10 @@ import { cellTitle, cellGoalForm } from './cell-settings.js';
 import { codexApprovalsForm } from './codex-approvals.js';
 import { handoverFields, handoverError } from './handover-fields.js';
 import { pickupDetails } from './pickup.js';
-import { watchdogSettingsForm } from './watchdog-settings.js';
+import { watchdogSettingsForm, watchdogSummary } from './watchdog-settings.js';
 import { reviewPolicyForm } from './review-policy.js';
 import { confirmHive, promptHive } from './confirm-dialog.js';
-import { settingsModal, settingsButton } from './settings-view.js';
+import { settingsModal, settingsButton, advancedSettings } from './settings-view.js';
 import { openCellPopover, disposeCellPopover } from './cell-popover.js';
 import { capacityControl } from './capacity-control.js';
 import { waitingItems, cellWaitingItems, waitingSection, openWaitingMenu } from './waiting-view.js';
@@ -499,7 +499,7 @@ function cellHeader(ctx, cell, root) {
         isRetired(cell) ? h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openReopen(ctx, cell), 'data-focus-key': `reopen-open:${cell.id}` }, 'Reopen hive…') : (cell.enabled || cell.snapshot ? null : h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => send({ type: 'hive-cell-enable', cellId: cell.id }) }, 'Turn on')),
         cell.enabled && !cell.snapshot ? closedButton(ctx, cell) : null,
         settingsButton(ctx, cell))),
-    settingsModal(ctx, cell, leave => hiveSettings(ctx, cell, leave)),
+    settingsModal(ctx, cell, (leave, section) => hiveSettings(ctx, cell, leave, section)),
     attentionEl(ctx, { cellId: cell.id }),
     noticesEl(ctx));
 }
@@ -510,19 +510,22 @@ export function openQueenPopover(ctx, cell, anchor) {
       : h('p', { class: 'hive-muted' }, isRetired(current) ? 'This hive is retired. Reopen it to manage its queen.' : 'Turn the hive on to manage its queen.'));
 }
 
-export function hiveSettings(ctx, cell, leave = () => true) {
+export function hiveSettings(ctx, cell, leave = () => true, section = null) {
   const { send } = ctx;
   const retire = () => { if (leave()) openRetire(ctx, cell); };
   const reopen = () => { if (leave()) openReopen(ctx, cell); };
+  const show = id => section === null || section === id;
+  const editable = !cell.snapshot && !isRetired(cell);
+  if (isRetired(cell) && ['agents', 'advanced'].includes(section)) return h('p', { class: 'hive-muted' }, 'Reopen the hive in Lifecycle to change these settings.');
   return [
-    cellGoalForm(ctx, cell),
-    cell.snapshot || isRetired(cell) ? null : queenInstructions(ctx, cell),
-    cell.snapshot || isRetired(cell) ? null : watchdogSettingsForm(ctx, cell),
-    cell.snapshot || isRetired(cell) ? null : codexApprovalsForm(ctx, cell),
-    cell.snapshot || isRetired(cell) ? null : h('p', { class: 'hive-muted' }, 'Automatic pickup starts ready-marked work whenever global work capacity is available. Each mark carries its worker profile. Maximum active workers controls concurrency; starts are limited to one per hive and two overall per minute.'),
-    cell.snapshot || isRetired(cell) ? null : reviewPolicyForm(ctx, cell),
-    cell.snapshot ? null : h('section', {},
-      h('h4', {}, 'Hive'),
+    show('general') ? [h('div', { class: 'hive-settings-name' }, h('span', {}, 'Name'), cellTitle(ctx, cell, 'settings-rename')), cellGoalForm(ctx, cell),
+      editable ? queenInstructions(ctx, cell) : null] : null,
+    show('advanced') && editable ? advancedSettings(ctx.ui, cell.id, watchdogSummary(cell), watchdogSettingsForm(ctx, cell)) : null,
+    !show('agents') || !editable ? null : codexApprovalsForm(ctx, cell),
+    !show('agents') || !editable ? null : h('p', { class: 'hive-muted' }, 'Automatic pickup starts ready-marked work whenever global work capacity is available. Each mark carries its worker profile. Maximum active workers controls concurrency; starts are limited to one per hive and two overall per minute.'),
+    !show('agents') || !editable ? null : reviewPolicyForm(ctx, cell),
+    !show('lifecycle') || cell.snapshot ? null : h('section', {},
+      h('h4', {}, 'Lifecycle'),
       isRetired(cell)
         ? [h('p', { class: 'hive-muted' }, `Retired as ${cell.retired.outcome}${cell.retired.at ? `, ${relativeTime(cell.retired.at)}` : ''}: ${cell.retired.summary}`),
           h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: reopen }, 'Reopen hive…')]
