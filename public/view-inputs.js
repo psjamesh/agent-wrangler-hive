@@ -1,5 +1,6 @@
 import { queenNeedsAttention } from './model.js';
 import { cellWaitingItems } from './waiting-model.js';
+import { closedKey } from './workstream-view.js';
 
 const names = graph => (graph?.sessions || []).map(s => [s.sessionId, s.name, s.label, s.lastLabel]);
 const beadNames = hive => Object.values(hive.beads).map(b => [b.id, b.title, b.parentId]);
@@ -21,7 +22,7 @@ export function mapInputs(ctx, cell) {
   const { hive, ui } = ctx;
   return JSON.stringify([
     cell ? [cell.id, cell.rootBeadId, cell.beadLayout, cell.arrangeAspect, cell.archived,
-      cell.layoutWarning, cell.bindings, cell.snapshot, cell.workstreamColours, cell.workstreamShades] : Object.values(hive.cells).map(c => [c.id, c.taskId, c.enabled, c.retired, c.rootBeadId, c.queenSessionId, c.bindings,
+      cell.layoutWarning, cell.bindings, cell.snapshot, cell.workstreamColours, cell.workstreamShades, Boolean(ui.form(closedKey(cell.id)))] : Object.values(hive.cells).map(c => [c.id, c.taskId, c.enabled, c.retired, c.rootBeadId, c.queenSessionId, c.bindings,
       c.position, c.snapshot, c.inbox?.human?.count, c.inbox?.queen?.count, c.requestCounts?.human, c.launch, c.occupiedCount]),
     Object.values(hive.beads).map(b => [b.id, b.parentId, b.title, b.kind, b.status, b.ownerSessionId,
       b.createdAt, b.pickup?.state, b.pickup?.armToken, b.pickup?.reason, b.outcome, b.assignee, b.untracked, b.waitingFor, b.reviewState, b.reviewWorking, b.closeReason, b.closedReason, cell ? null : b.goal]),
