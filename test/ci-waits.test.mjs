@@ -298,3 +298,9 @@ test('transient worker errors do not consume the wait; recovery wakes the same o
   f.board.get('queen').status = 'idle'; await reconcileCiWaits(f.rt, f.host, NOW + 3000);
   assert.equal(f.delivered.length, 1);
 });
+
+test('a merged snapshot with ambiguous or missing check evidence requires reconciliation', () => {
+  for (const statusCheckRollup of [null, [{ name: 'test' }, { name: 'test' }], [{ name: 'test', status: 'IN_PROGRESS' }]]) {
+    assert.equal(evaluateCiWait(wait({ target: 'check', checkName: 'test' }), snapshot({ state: 'merged', statusCheckRollup }), NOW).outcome, 'reconciliation-required');
+  }
+});

@@ -44,12 +44,12 @@ function evaluateObservation(wait, observed, now) {
   }
   const unfinished = () => merged ? { outcome: 'reconciliation-required' } : {};
   let rows = observed.statusCheckRollup;
-  if (!Array.isArray(rows)) return { unavailable: 'Shared check rollup is unavailable.' };
+  if (!Array.isArray(rows)) return merged ? unfinished() : { unavailable: 'Shared check rollup is unavailable.' };
   if (!rows.length) return unfinished();
   if (wait.target === 'check') {
     rows = rows.filter(row => (row?.name || row?.context) === wait.checkName);
     if (!rows.length) return unfinished();
-    if (rows.length !== 1) return { unavailable: `Selected check ${wait.checkName} is ambiguous; choose a unique check name.` };
+    if (rows.length !== 1) return merged ? unfinished() : { unavailable: `Selected check ${wait.checkName} is ambiguous; choose a unique check name.` };
   }
   const outcomes = rows.map(row => row && checkOutcome(row));
   if (wait.desiredOutcome === 'completed' && outcomes.some(outcome => !outcome)) return unfinished();
