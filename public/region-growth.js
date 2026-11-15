@@ -1,6 +1,6 @@
 import { key, neighbour, landscapeOffsets, blockedPoints, restPoints, occupiedIn } from './hex-layout.js';
 import { freeShifts, inRange, span, nearestFree } from './hex-search.js';
-import { attachmentState, subtreeMembers, regionBoundary, attachedCandidates, nearestTarget, preservesAttachments } from './region-attachments.js';
+import { attachmentTopology, attachmentState, subtreeMembers, regionBoundary, attachedCandidates, nearestTarget, preservesAttachments } from './region-attachments.js';
 
 export function growAttachedRegion({ members, todo, layout, kids, taken, aspect, carried, automatic, hidden }) {
   const head = members[0], parent = layout.regionParents[head];
@@ -10,6 +10,7 @@ export function growAttachedRegion({ members, todo, layout, kids, taken, aspect,
   let top = head;
   while (layout.regionParents[top]) top = layout.regionParents[top];
   const family = subtreeMembers(layout, kids, top);
+  const topology = attachmentTopology(layout, kids, layout.groupHeads.filter(id => family.has(id)));
   const rank = (a,b,anchor) => span({q:a.q-anchor.q,r:a.r-anchor.r}) - span({q:b.q-anchor.q,r:b.r-anchor.r}) ||
     3 * ((a.q-anchor.q+(a.r-anchor.r)/2)/aspect)**2 + 2.25*(a.r-anchor.r)**2 -
     3 * ((b.q-anchor.q+(b.r-anchor.r)/2)/aspect)**2 - 2.25*(b.r-anchor.r)**2 || a.r-b.r || a.q-b.q;
@@ -42,7 +43,7 @@ export function growAttachedRegion({ members, todo, layout, kids, taken, aspect,
     return true;
   };
   const attachedPlacement = (shape, busy, anchor) => {
-    const state = attachmentState(layout,kids,positions,hidden);
+    const state = attachmentState(layout,kids,positions,hidden,topology);
     const border = state.familyBounds.get(head);
     let best = null;
     for (const candidate of attachedCandidates(shape,border,anchor)) {
@@ -74,16 +75,17 @@ export function growAttachedRegion({ members, todo, layout, kids, taken, aspect,
     const anchor=positions[head]||positions[placed[0]];
     const group=subtreeMembers(layout,kids,head);
     const border=regionBoundary([...group].filter((id)=>positions[id]&&!hidden.has(id)).map((id)=>positions[id]));
-    const baseline=attachmentState(layout,kids,positions,hidden);
+    const baseline=attachmentState(layout,kids,positions,hidden,topology);
     const valid=(p)=>preservesAttachments(layout,kids,{...positions,[id]:p},hidden,null,hidden,baseline);
-    const ranked=[...border.frontier.values()].filter((p)=>!occupiedIn(taken,key(p))&&valid(p)).sort((a,b)=>rank(a,b,anchor));
-    const spots=ranked.some((p)=>!taken.has(key(p)))?ranked.filter((p)=>!taken.has(key(p))):ranked;
-    if (spots.length) {
-      positions[id]=spots[0];taken.add(key(spots[0]));
+    const ranked=[...border.frontier.values()].filter((p)=>!occupiedIn(taken,key(p)))
+      .sort((a,b)=>Number(taken.has(key(a)))-Number(taken.has(key(b)))||rank(a,b,anchor));
+    const spot=ranked.find(valid);
+    if (spot) {
+      positions[id]=spot;taken.add(key(spot));
     } else {
       const own=new Set([...family].filter((id)=>positions[id]).map((id)=>key(positions[id])));
-      const candidates=[...border.frontier.values()].filter((p)=>!own.has(key(p))&&valid(p)).sort((a,b)=>rank(a,b,anchor));
-      if (!candidates.length || !shifted({[id]:candidates[0]})) detached([id], anchor);
+      const candidate=[...border.frontier.values()].filter((p)=>!own.has(key(p))).sort((a,b)=>rank(a,b,anchor)).find(valid);
+      if (!candidate || !shifted({[id]:candidate})) detached([id], anchor);
     }
     placed.push(id);
   }
