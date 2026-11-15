@@ -1,3 +1,4 @@
+import { settleClosedBeadWait } from './ci-waits.js';
 import { requireStructuredWait, waitStatus } from './link-waits.js';
 import { consumePickup, managedPickupReceipt, pickupState } from './pickup.js';
 import { storedRole, apiRole, holdsBead } from './bead-sessions.js';
@@ -1376,6 +1377,7 @@ export async function finishBead(rt, actor, input) {
       throw new BeadsError(err.code === 'uncertain' ? 'uncertain' : 'partial',
         `The summary and evidence were recorded, but closing ${id} ${err.code === 'uncertain' ? 'has an unknown outcome' : 'was refused'}: ${err.message}`);
     }
+    settleClosedBeadWait(rt, id);
     workstreamRefresh = markWorkstreamRefresh(rt, cell, normalized, opId);
     try {
       await rt.beads.update(id, { outcome, waitingFor: '', nextAction: '' }, who);
@@ -1453,7 +1455,10 @@ export function finishGroup(rt, { cell, id, outcome, summary, add = [], who }) {
         if (problems.length) throw new HiveError(`${id} was not finished. ${problems.join(' ')}`, 'refused');
       }, step => {
         phase.applied = true;
-        if (step === 1) workstreamRefresh = markWorkstreamRefresh(rt, cell, normalizeIssue(fresh), opId);
+        if (step === 1) {
+          settleClosedBeadWait(rt, id);
+          workstreamRefresh = markWorkstreamRefresh(rt, cell, normalizeIssue(fresh), opId);
+        }
       });
     } catch (err) {
       if (err instanceof HiveError || !phase.applied) throw err;

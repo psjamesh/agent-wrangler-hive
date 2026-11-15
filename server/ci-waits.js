@@ -84,6 +84,17 @@ export function evaluateCiWait(wait, observed, now = Date.now()) {
 
 function waitFor(rt, beadId) { return rt.metadata.read().ciWaits?.[beadId]; }
 
+export function settleClosedBeadWait(rt, beadId, now = Date.now()) {
+  const wait = waitFor(rt, beadId);
+  if (!wait || wait.acknowledgedAt) return;
+  rt.metadata.mutate(doc => {
+    const saved = doc.ciWaits[beadId];
+    if (saved.state === 'pending') Object.assign(saved, { state: 'resolved', outcome: 'cancelled', resolvedAt: now });
+    Object.assign(saved, { acknowledgedAt: now, settledReason: 'Bead closed' });
+  });
+  rt.changed();
+}
+
 export function reportCiWait(rt, host, actor, args, now = Date.now()) {
   const { bead, cell, role } = requireBeadAccess(rt, actor, args.bead_id);
   if (!['queen', 'coordinator'].includes(role) && bead.ownerSessionId !== actor.sessionId) throw new HiveError('Only the claimant, queen or coordinator can report a CI wait.');
@@ -157,6 +168,10 @@ async function reconcilePass(rt, host, now) {
   if (!isCurrent(rt, host) || rt.metadata.error || rt.snapshots.hierarchyCurrent === false || rt.snapshots.current?.error || !rt.snapshots.current?.loadedAt || rt.beads?.status?.state !== 'ready') return;
   for (const initial of Object.values(rt.metadata.read().ciWaits || {})) {
     if (!isCurrent(rt, host)) return;
+    if (rt.snapshots.graph.beads[initial.beadId]?.status === 'closed') {
+      settleClosedBeadWait(rt, initial.beadId, now);
+      continue;
+    }
     const cell = rt.metadata.cell(initial.cellId);
     if (!cell?.enabled || cell.snapshot || initial.acknowledgedAt) continue;
     let wait = waitFor(rt, initial.beadId);
@@ -202,7 +217,7 @@ export function ciWaitSuppresses(rt, host, bead, now = Date.now()) {
 export function ciWaitAttention(rt, cell, now = Date.now()) {
   const flags = [];
   for (const wait of Object.values(rt.metadata.read().ciWaits || {})) {
-    if (wait.cellId !== cell.id || wait.acknowledgedAt) continue;
+    if (wait.cellId !== cell.id || wait.acknowledgedAt || rt.snapshots.graph.beads[wait.beadId]?.status === 'closed') continue;
     const add = (kind, reason) => flags.push({ kind, wait_id: wait.id, bead_id: wait.beadId, session_id: wait.sessionId, since: wait.resolvedAt || wait.createdAt, reason });
     const problem = ownerProblem(rt, rt.host, wait);
     if (wait.state === 'pending') {
