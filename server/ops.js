@@ -1068,7 +1068,7 @@ export async function updateBead(rt, actor, input) {
     });
   }).then((out) => {
     const result = { op_id: out.opId, bead_id: id, updated: Object.keys(patch) };
-    if (patch.waitingFor !== undefined) {
+    if (patch.waitingFor !== undefined || patch.nextAction !== undefined) {
       const doc = rt.metadata.read();
       const merged = applied || { ...bead, ...patch };
       const waits = humanWaitText(merged);

@@ -1150,6 +1150,7 @@ function statusFixture() {
   f.rt.beads.update = async (id, patch, who, check) => {
     check?.({ issues: Object.values(f.live), errors: [] });
     if (patch.status !== undefined) f.live[id].status = patch.status;
+    if (patch.nextAction !== undefined) f.live[id].metadata.hive_next_action = patch.nextAction;
     if (patch.waitingFor !== undefined) f.live[id].metadata.hive_waiting_for = patch.waitingFor;
   };
   return f;
@@ -1738,6 +1739,22 @@ test('hive_update_bead warns when it blocks on the human with no open request, a
   assert.equal(unrelated.warning, undefined);
   f.doc().requests = { q: { id: 'q', cellId: 'cell', beadId: 'a', state: 'open' } };
   const asked = await updateBead(f.rt, actor, { bead_id: 'a', waiting_for: 'Human: choose' });
+  assert.equal(asked.warning, undefined);
+});
+
+test('hive_update_bead warns for next-action human waits but not queen or worker actions', async () => {
+  const f = statusFixture();
+  const actor = f.actor();
+  for (const next_action of ["Browser trials need the human's go-ahead", 'Needs human approval', 'Obtain the human’s decision', "Can't start trials until we get the human's go-ahead", 'Wait for human approval']) {
+    const out = await updateBead(f.rt, actor, { bead_id: 'a', next_action });
+    assert.match(out.warning, /hive_request_input/, next_action);
+  }
+  for (const next_action of ['Queen must approve the trials', 'Worker must decide', "Trials do not need the human's approval", '']) {
+    const out = await updateBead(f.rt, actor, { bead_id: 'a', next_action });
+    assert.equal(out.warning, undefined, next_action);
+  }
+  f.doc().requests = { q: { id: 'q', cellId: 'cell', beadId: 'a', state: 'open' } };
+  const asked = await updateBead(f.rt, actor, { bead_id: 'a', next_action: "Needs the human's approval" });
   assert.equal(asked.warning, undefined);
 });
 
