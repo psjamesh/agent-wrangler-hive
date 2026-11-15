@@ -1,5 +1,6 @@
 import { capturePanelState, restorePanelState } from './panel-state.js';
-import { queenNeedsAttention } from './model.js';
+import { cellMetrics } from './cell-metrics.js';
+import { overviewCells } from './model.js';
 import { createWatchdogNotifications } from './watchdog-notifications.js';
 import { createDrafts, DRAFT_PREFIX, DRAFT_TEXT_MAX } from './ui-drafts.js';
 import { capacityLimit } from './capacity-control.js';
@@ -1290,7 +1291,7 @@ const overview = {
   icon: HIVE_ICON,
   badge(graph) {
     if (graph?.hive?.metadataError) return 0;
-    return (graph?.hive?.requestCount || 0) + Object.values(graph?.hive?.cells || {}).filter(cell => queenNeedsAttention(graph, cell)).length;
+    return overviewCells(graph, graph?.hive).reduce((total, cell) => total + cellMetrics({ hive: graph.hive, graph }, cell).needs, 0);
   },
   mount(el, api) {
     state.api = api || state.api;

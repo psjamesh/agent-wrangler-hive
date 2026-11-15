@@ -17,7 +17,7 @@ import { layoutBase, stackable } from './layout-base.js';
 import { archiveHidden, activeKids } from './archive-layout.js';
 import { groupClosed, archiveReply, closedButton } from './workstream-view.js';
 import {
-  cellName, cellCounts, countsSentence, agentSummary, capturedAgentSummary, queenNeedsAttention, queenNotResponding, queenStopped, queenSuspended, sessionLabel,
+  overviewCells, cellName, cellCounts, countsSentence, agentSummary, capturedAgentSummary, queenNeedsAttention, queenNotResponding, queenStopped, queenSuspended, sessionLabel,
 } from './model.js';
 import { attentionEl, noticesEl } from './widgets.js';
 import { hiveTile } from './hive-shape.js';
@@ -664,7 +664,7 @@ const automaticPlacements = new WeakMap();
 
 export function renderHive(ctx) {
   const { hive, ui, graph } = ctx;
-  const allCells = Object.values(hive.cells).filter((c) => c.occupiedCount > 0 || c.snapshot || (graph?.tasks?.tasks?.some((t) => t.id === c.taskId && !t.archivedAt && !t.archived) ?? true));
+  const allCells = overviewCells(graph, hive);
   const retiredCount = allCells.filter((c) => c.retired && !c.occupiedCount).length;
   const showRetired = ui.showRetired?.() === true;
   const cells = showRetired ? allCells : allCells.filter((c) => !c.retired || c.occupiedCount > 0);
