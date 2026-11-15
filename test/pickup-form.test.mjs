@@ -26,7 +26,7 @@ test('pickup form saves one explicit profile and shows actionable server errors'
 
 test('pickup mark yields to activity, waits, review, input and closed states', () => {
   const ready = { status: 'open', pickup: { state: 'ready', armed: true } };
-  assert.equal(primaryKind(ready, [], []), 'pickup');
+  for (const state of ['ready', 'queued']) assert.equal(primaryKind({ ...ready, pickup: { armed: true, state } }, [], []), 'pickup');
   assert.match(markWords('pickup', ready), /Ready for pickup/);
   assert.equal(primaryKind(ready, [], ['working']), 'busy');
   assert.equal(primaryKind(ready, ['b'], []), 'waiting');
@@ -34,4 +34,20 @@ test('pickup mark yields to activity, waits, review, input and closed states', (
   assert.equal(primaryKind({ ...ready, reviewState: 'in_review' }, [], []), 'review-pending');
   assert.equal(primaryKind(ready, [], [], 1), 'person');
   assert.equal(primaryKind({ ...ready, status: 'closed' }, [], []), 'closed');
+});
+
+test('pickup uses an outline play glyph and the Key explains pickup and external marks', () => {
+  const source = fs.readFileSync(new URL('../public/hex-grid.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replaceAll('export ', '');
+  const mark = vm.runInNewContext(source + "\nprimaryMark('pickup', 'Ready for pickup')", { h });
+  const glyphs = walk(mark).filter(n => n.attrs.class === 'hive-pm-line');
+  assert.equal(glyphs.length, 1);
+  assert.equal(glyphs[0].attrs.d, 'M-3,-4 L4,0 L-3,4 Z');
+  const view = fs.readFileSync(new URL('../public/cell-view.js', import.meta.url), 'utf8').replace(/^import [\s\S]*?;\n/gm, '').replaceAll('export ', '');
+  for (const snapshot of [false, true]) {
+    const key = vm.runInNewContext(view + `\nlegend(${snapshot})`, { h, hexPath: () => '', primaryMark: kind => ({ tag: kind, attrs: {}, children: [] }) });
+    const words = walk(key).flatMap(n => n.children.filter(c => typeof c === 'string')).join(' ');
+    assert.match(words, /ready for automatic pickup/);
+    assert.match(words, /external: outside this hive \(teammate PR, release, vendor\)/);
+    assert.ok(walk(key).some(n => n.tag === 'external'));
+  }
 });
