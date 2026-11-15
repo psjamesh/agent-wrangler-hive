@@ -17,7 +17,8 @@ Follow Hive’s archive and handover rules: a closed PR alone does not authorize
 
 1. Call `hive_context` with `scope: "bead"`. It returns your bead, its parent chain and direct links, its visible topics and requests, and your own claims and bindings. Pass your brief's bead as `bead_id`; otherwise it defaults to your single claimed or bound bead. If there are several, supply `bead_id` explicitly. If you take part in several cells, pass `cell_id`. With no assigned bead, omit scope to find work; the full cell read remains the queen's default.
 2. A worker launched with `hive_spawn_worker` already owns its bead; verify it in context. A reviewer launched by `hive_request_review` instead has a reviewer binding on the work bead; verify it and leave the builder's claim in place. Otherwise claim your bead with `hive_claim_bead`. A claim records that your session is doing it. If someone else holds the bead, don't take it over: say so with `hive_publish` and wait for the queen.
-3. If your brief has no bead, use `hive_ready` to see what can start. Claim only what your brief lets you take on.
+3. Read the assigned repository’s `AGENTS.md` (and its `CLAUDE.md` import where applicable) and linked contribution/delivery guidance; use `CONTRIBUTING.md` when there is no agent entrypoint. Follow that repository’s test command, publication route and delivery authority over generic defaults, subject to higher-priority instructions and narrower task stop points. Do this before testing, committing or publishing; never infer one repository’s recipe from another.
+4. If your brief has no bead, use `hive_ready` to see what can start. Claim only what your brief lets you take on.
 
 ## While you work
 
