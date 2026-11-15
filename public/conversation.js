@@ -1,5 +1,4 @@
 import { inboxRows, needsRows, mergeRows, inboxRow, inboxFilters, inboxTotals, searchedInbox, searchStatus, marked, orderInboxTopics } from './global-inbox.js';
-import { compareTopics } from './topic-order.js';
 import { searchTerms, topicMatches } from './inbox-search.js';
 import { beadReferences } from './bead-references.js';
 import { requestCard, needsHuman } from './requests.js';
@@ -654,11 +653,10 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selec
   const matching = new Map((found?.lists.human || []).map(r => [r.threadId, r]));
   const candidates = new Map(topics.map(t => [t.id, t]));
   for (const [id, row] of matching) if (!candidates.has(id)) candidates.set(id, { id, title: row.title, lastAt: row.at, beads: row.beadIds || [] });
-  const priority = t => priorities.get(t.id) || { ...t, unreadCount: 0, needsCount: 0 };
   const shown = [...candidates.values()]
     .filter(t => matching.has(t.id) || topicMatches({ title: t.title, texts: [t.preview?.text], beadIds: [t.beadId, ...(t.beads || [])] }, query))
     .filter(t => all || inScope(t, scope))
-    .sort((a, b) => compareTopics(priority(a), priority(b)));
+    .sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0) || a.id.localeCompare(b.id));
   const outside = all ? [] : topics.filter(t => !inScope(t, scope)).map(t => priorities.get(t.id));
   const elsewhere = outside.reduce((n, t) => n + t.unreadCount, 0);
   const waitingElsewhere = outside.filter(t => t.needsCount).length;
