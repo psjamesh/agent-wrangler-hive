@@ -774,9 +774,8 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 .hive-pm-busy .hive-pm-bg { fill: var(--hive-pm-busy); stroke: var(--hive-pm-busy); }
 .hive-pm-review-working .hive-pm-glyph,
 .hive-pm-busy .hive-pm-glyph { stroke: var(--hive-pm-busy-ink); }
-.hive-pm-waiting .hive-pm-line { stroke: var(--hive-pm-waiting); stroke-width: 2; }
-.hive-pm-done .hive-pm-bg { fill: color-mix(in srgb, var(--hive-pm-done) 18%, var(--surface)); stroke: var(--hive-pm-done); }
-.hive-pm-done .hive-pm-line { stroke: var(--hive-pm-done); stroke-width: 1.8; }
+.hive-pm-waiting .hive-pm-line { stroke: var(--hive-pm-waiting); }
+.hive-pm-done .hive-pm-line { stroke: var(--hive-pm-done); }
 
 .hive-bead.hive-status-closed:not(.has-ws) .hive-hex-rim { stroke: var(--border-muted, var(--border)); }
 .hive-legend-st { display: inline-flex; align-items: center; gap: 3px; }

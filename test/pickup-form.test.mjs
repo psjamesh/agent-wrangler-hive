@@ -84,7 +84,7 @@ test('status styles use theme colours for quiet waits, blue review and green pic
   assert.doesNotMatch(css, /\.hive-pm-(?:waiting|review-pending|pickup)[^{]*\{[^}]*var\(--warn-fg/);
 });
 
-for (const kind of ['external', 'recorded-wait', 'untracked', 'pickup']) test(`${kind} is a bare glyph using the normal mark stroke`, () => {
+for (const kind of ['external', 'recorded-wait', 'untracked', 'pickup', 'in-progress', 'deferred', 'done', 'closed', 'waiting']) test(`${kind} is a bare glyph using the normal mark stroke`, () => {
   const source = fs.readFileSync(new URL('../public/hex-grid.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replaceAll('export ', '');
   const mark = vm.runInNewContext(source + `\nprimaryMark('${kind}', 'Mark', 10, 20, 0.8)`, { h });
   assert.ok(!walk(mark).some(n => n.attrs.class === 'hive-pm-bg'));
@@ -92,6 +92,12 @@ for (const kind of ['external', 'recorded-wait', 'untracked', 'pickup']) test(`$
   assert.ok(walk(mark).some(n => n.attrs.class === 'hive-pm-line'));
   const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
   assert.match(css, /\.hive-pm-line \{[^}]*stroke-width: 1\.5;/);
-  assert.doesNotMatch(css, /\.hive-pm-pickup \.hive-pm-line \{[^}]*stroke-width:/);
+  assert.doesNotMatch(css, /\.hive-pm-(?:pickup|in-progress|deferred|done|closed|waiting) \.hive-pm-line \{[^}]*stroke-width:/);
   assert.doesNotMatch(css, /\.hive-pm-(?:external|recorded-wait) \.hive-pm-line/);
+});
+
+for (const kind of ['person', 'busy', 'review-working', 'review-pending']) test(`${kind} keeps its filled background`, () => {
+  const source = fs.readFileSync(new URL('../public/hex-grid.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replaceAll('export ', '');
+  const mark = vm.runInNewContext(source + `\nprimaryMark('${kind}', 'Mark')`, { h });
+  assert.ok(walk(mark).some(n => n.attrs.class === 'hive-pm-bg'));
 });

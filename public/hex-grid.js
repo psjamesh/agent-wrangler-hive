@@ -258,7 +258,7 @@ const PRIMARY_SHAPES = {
   done: [['path', { d: 'M-3.6,0.2 L-1.1,2.8 L3.8,-2.6', class: 'hive-pm-line' }]],
   closed: [['path', { d: 'M-3.4,0 L3.4,0', class: 'hive-pm-line' }]],
   waiting: [['path', { d: 'M-3.6,-3.6 L3.6,3.6 M3.6,-3.6 L-3.6,3.6', class: 'hive-pm-line' }]],
-  deferred: [['rect', { x: '-3.2', y: '-3.6', width: '2.2', height: '7.2', rx: '0.6', class: 'hive-pm-fill' }], ['rect', { x: '1', y: '-3.6', width: '2.2', height: '7.2', rx: '0.6', class: 'hive-pm-fill' }]],
+  deferred: [['path', { d: 'M-2.1,-3.6 V3.6 M2.1,-3.6 V3.6', class: 'hive-pm-line' }]],
 };
 
 function markShapes(kind) {
@@ -298,7 +298,7 @@ export function primaryMark(kind, title, x = 0, y = 0, scale = 1) {
   if (!shapes) return null;
   return h('svg:g', { class: `hive-pm hive-pm-${kind}`, transform: `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${scale.toFixed(2)})` },
     h('svg:title', {}, title),
-    ['waiting', 'approved', 'external', 'recorded-wait', 'untracked', 'pickup'].includes(kind) ? null : h('svg:circle', { r: String(MARK_R), class: 'hive-pm-bg' }),
+    ['waiting', 'approved', 'external', 'recorded-wait', 'untracked', 'pickup', 'in-progress', 'deferred', 'done', 'closed'].includes(kind) ? null : h('svg:circle', { r: String(MARK_R), class: 'hive-pm-bg' }),
     shapes);
 }
 
