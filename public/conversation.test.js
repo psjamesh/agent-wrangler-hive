@@ -2301,3 +2301,23 @@ test('following after a released reveal removes trailing space and shows the new
   assert.equal(space, '');
   assert.equal(out.list.lastChild.getBoundingClientRect().bottom, 250);
 });
+
+test('approval cards show the pinned revision and changed version without adding answer gates', t => {
+  const f = fixture(t);
+  const subjectPin = { kind: 'document', url: 'https://example.com/design', revision: 'revision-7' };
+  const r = { id: 'hreq_pin', title: 'Approve design', body: 'Review design', state: 'open', audience: 'human', kind: 'approval', revision: 1, routeRevision: 1, subjectPin, subjectObservation: { revision: 'revision-8' } };
+  const draw = request => requestCard(request, { cell: f.cell, ui: f.ui, ctx: f.ctx });
+  let card = draw(r);
+  assert.match(card.textContent, /Requested version revision-7, now revision-8/);
+  assert.equal(card.querySelector('a').attributes.href, subjectPin.url);
+  assert.equal(card.querySelector('button').attributes.disabled, undefined);
+  card = draw({ ...r, state: 'answered', answer: { author: 'human', text: 'Approved', subjectPin }, delivery: { state: 'delivered' } });
+  assert.match(card.textContent, /Approval was for revision-7, now revision-8/);
+  assert.match(card.textContent, /Approved/);
+  card = draw({ ...r, subjectObservation: { revision: 'revision-7' } });
+  assert.match(card.textContent, /revision-7/);
+  assert.doesNotMatch(card.textContent, /now revision/);
+  card = draw({ ...r, subjectPin: { kind: 'document', path: 'docs/design.md', revision: 'revision-7' } });
+  assert.match(card.textContent, /docs\/design.md/);
+  assert.equal(card.querySelector('a'), null);
+});

@@ -1,4 +1,4 @@
-import { isHumanRequest as visibleToHuman, needsHuman } from './request-state.js';
+import { isHumanRequest as visibleToHuman, needsHuman, requestSubjectText } from './request-state.js';
 import { h, markdown, relativeTime, sessionReference } from './dom.js';
 import { messageImages } from './attachments.js';
 import { hiveLink, openHiveLink } from './deep-links.js';
@@ -56,6 +56,7 @@ export function requestCard(r, { cell, graph, api, ui, ctx }) {
     h('h4', {}, r.title),
     h('p', { class: 'hive-muted' }, `${author} · ${relativeTime(r.createdAt)} · ${r.state === 'open' ? r.audience === 'queen' ? 'Worker request · Waiting for queen' : 'Needs you' : r.state}`),
     r.warning ? h('p', { class: 'hive-warning' }, r.warning) : null,
+    r.subjectPin ? h('p', { class: r.subjectObservation?.revision && r.subjectObservation.revision !== r.subjectPin.revision ? 'hive-warning' : 'hive-muted' }, r.subjectPin.url ? h('a', { href: r.subjectPin.url, target: '_blank', rel: 'noopener noreferrer' }, requestSubjectText(r)) : `${r.subjectPin.path} · ${requestSubjectText(r)}`) : null,
     md(r.body),
     messageImages({ id: r.messageId, attachments: r.attachments }, cell, ui, ctx),
     sessionLinks.length ? h('p', { class: 'hive-session-links' }, sessionLinks.map((link, i) => [i ? ' · ' : null, sessionReference(graph, link)])) : null,

@@ -7,6 +7,7 @@ const valid = {
   hive_set_pickup: { bead_id: 'a', ready: true, profile: { agent: 'claude', model: 'sonnet', effort: 'medium', cwd: '/tmp/fake-repo' } },
   hive_request_input: { title: 'Choose an option', body: 'Which option?', kind: 'decision', bead_id: 'a', thread_id: 'thread', blocking: true, dedupe_key: 'choice', expires_at: 2000000000000 },
   hive_list_my_requests: {},
+  hive_observe_request_subject: { request_id: 'hreq_123456789abc', revision: 'revision-8' },
   hive_withdraw_request: { request_id: 'hreq_123456789abc', reason: 'Answered in chat' },
   hive_answer_request: { request_id: 'hreq_123456789abc', revision: 1, route_revision: 1, text: 'Proceed' },
   hive_forward_request: { request_id: 'hreq_123456789abc', revision: 1, route_revision: 1, recommendation: 'Proceed' },

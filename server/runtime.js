@@ -3,7 +3,7 @@ import { observeLinkWaits } from './link-waits.js';
 import { createPickupDispatcher } from './pickup.js';
 import { createWatchdog } from './watchdog.js';
 import { workLimit, helperSlots } from './admission.js';
-import { reconcileRequests, notifyQueen, notifyResolution } from './requests.js';
+import { reconcileRequests, notifyQueen, notifyResolution, startRequestSubjects, reconcileRequestSubjects } from './requests.js';
 import { reconcileInactiveBindings, trackingKey } from './tracking.js';
 import { cleanupOrphanAttachments } from './attachments.js';
 import { hivePaths } from './data-dir.js';
@@ -77,6 +77,7 @@ export class HiveRuntime {
       this.log(`hive: could not give old messages topics: ${err.message}`);
     }
     try { reconcileRequests(this, host, { startup: true }); } catch (err) { this.log(`hive: requests unavailable: ${err.message}`); }
+    this.stopRequestSubjects = startRequestSubjects(this, host);
     this.recheck()
       .then(() => (this.metadata.lifetime.isCurrent(host) ? recover(this, host) : null))
       .then((recovered) => {
@@ -94,6 +95,7 @@ export class HiveRuntime {
         await notifyQueen(this, this.host, r.id);
         await notifyResolution(this, this.host, r.id);
       }
+      await reconcileRequestSubjects(this, this.host);
     }
     const recovered = await recover(this, this.host);
     if (recovered !== true || !this.metadata.lifetime.isCurrent()) return;
@@ -111,6 +113,7 @@ export class HiveRuntime {
     this.metadata.lifetime.stop();
     this.prLabels?.stop();
     this.stopCiObservations?.();
+    this.stopRequestSubjects?.();
     this.watchdog?.stop();
     this.host = null;
   }

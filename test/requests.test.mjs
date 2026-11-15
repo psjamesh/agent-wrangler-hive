@@ -1090,3 +1090,193 @@ test('requests cannot adopt another session or legacy shared inbox files', async
   assert.equal(fs.existsSync(path.join(queenInbox, 'queen.png')), true);
   assert.deepEqual(Object.keys(f.rt.metadata.read().requests), []);
 });
+
+const docPin = { kind: 'document', url: 'https://example.com/design', revision: 'revision-7' };
+const prPin = { kind: 'pr', url: 'https://github.com/example/project/pull/1', revision: 'a'.repeat(40) };
+
+test('approval subject pins survive forwarding, human receipt, delivery and reload', async t => {
+  const f = fixture(t), r = await f.create(worker, { kind: 'approval', subject_pin: docPin });
+  assert.deepEqual(r.subjectPin, docPin);
+  const forwarded = await requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(r) });
+  const answered = await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(forwarded), text: 'Approved', receipt: 'pin-answer' });
+  assert.deepEqual(answered.answer.subjectPin, docPin);
+  assert.match(f.sent.at(-1).text, /revision-7/);
+  const loaded = new MetadataStore({ file: f.rt.metadata.file });
+  assert.deepEqual(loaded.read().requests[r.id].answer.subjectPin, docPin);
+});
+
+test('subject pins validate exact revisions and cannot be silently retargeted by dedupe', async t => {
+  const f = fixture(t);
+  for (const subject_pin of [null, {}, { ...docPin, url: 'javascript:alert(1)' }, { ...docPin, revision: ' ' }, { ...prPin, revision: 'abc1234' }]) {
+    await assert.rejects(f.create(queen, { kind: 'approval', subject_pin }), /subject_pin/);
+  }
+  const r = await f.create(queen, { kind: 'approval', subject_pin: docPin, dedupe_key: 'pin' });
+  assert.equal((await f.create(queen, { kind: 'approval', dedupe_key: 'pin' })).id, r.id);
+  await assert.rejects(f.create(queen, { kind: 'approval', subject_pin: { ...docPin, revision: 'revision-8' }, dedupe_key: 'pin' }), /new request/);
+  assert.deepEqual(f.rt.metadata.read().requests[r.id].subjectPin, docPin);
+});
+
+test('document changes retain human answer and notify the queen once per observed change', async t => {
+  const f = fixture(t), r = await f.create(queen, { kind: 'approval', subject_pin: docPin });
+  await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Approved', receipt: 'pin-answer' });
+  f.sent.length = 0;
+  const report = revision => requests.observeRequestSubject(f.rt, f.host, queen, { request_id: r.id, revision });
+  const changed = await report('revision-8');
+  assert.deepEqual(changed.answer.subjectPin, docPin);
+  assert.equal(changed.subjectObservation.revision, 'revision-8');
+  assert.equal(changed.state, 'answered');
+  assert.equal(changed.answer.text, 'Approved');
+  assert.equal(f.sent[0].id, queen);
+  assert.match(f.sent[0].text, /Approval was for revision-7, now revision-8/);
+  await report('revision-8');
+  assert.equal(f.sent.length, 1);
+  assert.equal(requests.requestContext(f.rt, { cell: f.rt.metadata.cell('cell'), role: 'queen', sessionId: queen }).recent_input_requests[0].subjectObservation.revision, 'revision-8');
+  await report('revision-7');
+  assert.equal(f.rt.metadata.read().requests[r.id].subjectObservation.revision, 'revision-7');
+});
+
+test('only the requester or current queen can report a document revision', async t => {
+  const f = fixture(t), r = await f.create(worker, { kind: 'approval', subject_pin: docPin });
+  f.members.get(other).taskId = 'task';
+  await assert.rejects(requests.observeRequestSubject(f.rt, f.host, other, { request_id: r.id, revision: 'revision-8' }), /requester|queen/);
+  const changed = await requests.observeRequestSubject(f.rt, f.host, worker, { request_id: r.id, revision: 'revision-8' });
+  const forwarded = await requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(changed) });
+  const answered = await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(forwarded), text: 'Proceed', receipt: 'changed-before-answer' });
+  assert.deepEqual(answered.answer.subjectPin, docPin);
+  assert.equal(answered.subjectObservation.revision, 'revision-8');
+});
+
+test('shared PR observations report changed heads, ignore stale/errors and recover at startup', async t => {
+  const f = fixture(t), r = await f.create(queen, { kind: 'approval', subject_pin: prPin });
+  await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Approved', receipt: 'pr-answer' });
+  let observed = { url: prPin.url, headSha: 'b'.repeat(40), fetchedAt: Date.now(), state: 'open' };
+  f.host.links = { prObservation: () => observed };
+  const listeners = new Map();
+  f.host.events = { on(name, fn) { listeners.set(name, fn); return () => listeners.delete(name); } };
+  const stop = requests.startRequestSubjects(f.rt, f.host);
+  await listeners.get('pr:observation')();
+  const current = () => f.rt.metadata.read().requests[r.id];
+  assert.equal(current().subjectObservation.revision, 'b'.repeat(40));
+  assert.deepEqual(current().answer.subjectPin, prPin);
+  const count = f.sent.length;
+  await listeners.get('pr:observation')();
+  assert.equal(f.sent.length, count);
+  observed = { ...observed, headSha: 'c'.repeat(40), fetchedAt: Date.now() - 600000 };
+  await listeners.get('pr:observation')();
+  assert.equal(current().subjectObservation.revision, 'b'.repeat(40));
+  observed = { ...observed, fetchedAt: Date.now(), lastError: 'offline' };
+  await listeners.get('pr:observation')();
+  assert.equal(current().subjectObservation.revision, 'b'.repeat(40));
+  observed = { ...observed, lastError: null };
+  await requests.reconcileRequestSubjects(f.rt, f.host);
+  assert.equal(current().subjectObservation.revision, 'c'.repeat(40));
+  stop();
+  assert.equal(listeners.size, 0);
+});
+
+test('subject change delivery failures persist and a successor queen receives the mismatch', async t => {
+  const f = fixture(t), r = await f.create(queen, { kind: 'approval', subject_pin: docPin });
+  await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'No', receipt: 'subject-declined' });
+  f.host.deliver = async () => ({ mode: 'error', outcome: 'unknown', error: 'May have arrived' });
+  const changed = await requests.observeRequestSubject(f.rt, f.host, queen, { request_id: r.id, revision: 'revision-8' });
+  assert.equal(changed.subjectNotification.state, 'uncertain');
+  const context = requests.requestContext(f.rt, { cell: f.rt.metadata.cell('cell'), role: 'queen', sessionId: queen });
+  assert.equal(context.approval_subject_changes_total, 1);
+  assert.equal(context.approval_subject_changes[0].notification.state, 'uncertain');
+  assert.equal(changed.answer.text, 'No');
+  f.rt.metadata.mutate(d => { d.cells.cell.queenSessionId = worker; d.cells.cell.queenGeneration++; });
+  const sent = [];
+  f.host.deliver = async (id, text) => { sent.push({ id, text }); return { mode: 'live' }; };
+  await requests.reconcileRequestSubjects(f.rt, f.host);
+  await requests.reconcileRequestSubjects(f.rt, f.host);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].id, worker);
+});
+
+test('native request tools accept optional pins and document observation reports', async t => {
+  const f = fixture(t), { workTools } = await import('../server/tools.js');
+  const ask = workTools.find(x => x.name === 'hive_request_input');
+  const result = await ask.handler({ host: f.host, caller: queen }, { title: 'Review design', body: 'Approve this revision?', kind: 'approval', subject_pin: docPin });
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.structuredContent.subjectPin, docPin);
+  const report = workTools.find(x => x.name === 'hive_observe_request_subject');
+  assert.ok(report);
+  const changed = await report.handler({ host: f.host, caller: queen }, { request_id: result.structuredContent.id, revision: 'revision-8' });
+  assert.equal(changed.structuredContent.subjectObservation.revision, 'revision-8');
+});
+
+test('PR subject changes ignore out-of-order observations and stop with retired runtime', async t => {
+  const f = fixture(t), r = await f.create(queen, { kind: 'approval', subject_pin: prPin });
+  const at = Date.now() - 10000;
+  let observed = { url: prPin.url, headSha: 'b'.repeat(40), fetchedAt: at, state: 'open' };
+  f.host.links = { prObservation: () => observed };
+  await requests.reconcileRequestSubjects(f.rt, f.host);
+  observed = { ...observed, headSha: 'c'.repeat(40), fetchedAt: at - 1 };
+  await requests.reconcileRequestSubjects(f.rt, f.host);
+  assert.equal(f.rt.metadata.read().requests[r.id].subjectObservation.revision, 'b'.repeat(40));
+  const version = f.rt.metadata.version;
+  f.rt.metadata.lifetime.stop();
+  observed = { ...observed, fetchedAt: Date.now() };
+  await requests.reconcileRequestSubjects(f.rt, f.host);
+  assert.equal(f.rt.metadata.version, version);
+});
+
+test('answering an already changed subject neither repins nor repeats the change notice', async t => {
+  const f = fixture(t), r = await f.create(queen, { kind: 'approval', subject_pin: docPin });
+  const changed = await requests.observeRequestSubject(f.rt, f.host, queen, { request_id: r.id, revision: 'revision-8' });
+  const notices = () => f.sent.filter(m => /approval subject changed/.test(m.text));
+  assert.equal(notices().length, 1);
+  const answered = await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(changed), text: 'Proceed', receipt: 'observed-before-answer' });
+  assert.deepEqual(answered.answer.subjectPin, docPin);
+  assert.equal(notices().length, 1);
+  const returned = await requests.observeRequestSubject(f.rt, f.host, queen, { request_id: r.id, revision: 'revision-7' });
+  assert.equal(returned.subjectObservation.revision, 'revision-7');
+  await requests.observeRequestSubject(f.rt, f.host, queen, { request_id: r.id, revision: 'revision-8' });
+  assert.equal(notices().length, 2);
+});
+
+test('local document path pins retain their revision without fetching or linking a file URL', async t => {
+  const f = fixture(t), subject_pin = { kind: 'document', path: 'docs/design.md', revision: 'revision-3' };
+  const r = await f.create(queen, { kind: 'approval', subject_pin });
+  const answered = await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Approved', receipt: 'path-answer' });
+  assert.deepEqual(answered.answer.subjectPin, subject_pin);
+  assert.match(f.sent.at(-1).text, /docs\/design.md/);
+  const changed = await requests.observeRequestSubject(f.rt, f.host, queen, { request_id: r.id, revision: 'revision-4' });
+  assert.equal(changed.subjectObservation.revision, 'revision-4');
+});
+
+test('unchanged PR observations do not invalidate an outstanding human answer revision', async t => {
+  const f = fixture(t), r = await f.create(queen, { kind: 'approval', subject_pin: prPin });
+  let fetchedAt = Date.now() - 1000;
+  f.host.links = { prObservation: () => ({ url: prPin.url, headSha: prPin.revision, fetchedAt, state: 'open' }) };
+  await requests.reconcileRequestSubjects(f.rt, f.host);
+  fetchedAt++;
+  await requests.reconcileRequestSubjects(f.rt, f.host);
+  assert.equal(f.rt.metadata.read().requests[r.id].revision, r.revision);
+  const answered = await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Approved', receipt: 'unchanged-pin' });
+  assert.deepEqual(answered.answer.subjectPin, prPin);
+});
+
+test('subject reconciliation through raw and proxied runtimes shares one notification in flight', async t => {
+  const f = fixture(t), r = await f.create(queen, { kind: 'approval', subject_pin: docPin });
+  let release, count = 0;
+  f.host.deliver = async () => { count++; await new Promise(resolve => { release = resolve; }); return { mode: 'live' }; };
+  const first = requests.observeRequestSubject(f.rt, f.host, queen, { request_id: r.id, revision: 'revision-8' });
+  const proxy = new Proxy(f.rt, {});
+  const second = requests.observeRequestSubject(proxy, f.host, queen, { request_id: r.id, revision: 'revision-8' });
+  release();
+  await Promise.all([first, second]);
+  assert.equal(count, 1);
+});
+
+test('forwarding during a subject notification retains its delivery receipt', async t => {
+  const f = fixture(t), r = await f.create(worker, { kind: 'approval', subject_pin: docPin });
+  let release;
+  f.host.deliver = async () => { await new Promise(resolve => { release = resolve; }); return { mode: 'live' }; };
+  const report = requests.observeRequestSubject(f.rt, f.host, worker, { request_id: r.id, revision: 'revision-8' });
+  const current = f.rt.metadata.read().requests[r.id];
+  await requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(current) });
+  release();
+  const changed = await report;
+  assert.equal(changed.subjectNotification.state, 'delivered');
+});

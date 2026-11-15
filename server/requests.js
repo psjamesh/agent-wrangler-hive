@@ -1,4 +1,6 @@
-import { needsHuman } from '../public/request-state.js';
+import { needsHuman, requestSubjectText } from '../public/request-state.js';
+import { isCurrent, runtimeKey } from './lifetime.js';
+import { prRepository } from './pr-labels.js';
 import { sessionReference } from './session-links.js';
 import { requestOptions, requireOptionsForChoices } from './request-options.js';
 import { adoptAttachments, removeAttachments, removeAttachmentBatch } from './attachments.js';
@@ -10,13 +12,13 @@ import { isSessionId } from './bead-model.js';
 import { HiveError } from './ops.js';
 import { safeDeliver } from './sessions.js';
 import { hiveLink } from '../public/deep-links.js';
-import { runtimeKey } from './lifetime.js';
 export { needsHuman } from '../public/request-state.js';
 
 export const OPEN_PER_SESSION = 20;
 const OPEN_TOTAL = 1000;
 const HISTORY_CAP = 500;
 const deliveries = new WeakMap();
+const subjectPasses = new WeakMap();
 const values = rt => Object.values(rt.metadata.read().requests || {});
 const fail = (message, code = 'invalid') => { throw new HiveError(message, code); };
 const bounded = (v, name, max, required = false) => {
@@ -24,6 +26,22 @@ const bounded = (v, name, max, required = false) => {
   if (typeof v !== 'string' || (required && !v.trim()) || v.length > max) fail(`${name} must be ${required ? 'nonempty ' : ''}text of at most ${max} characters.`);
   return v.trim();
 };
+function subjectPin(value) {
+  if (value === undefined) return undefined;
+  if (!value || !['pr', 'document'].includes(value.kind)) fail('subject_pin needs kind pr or document.');
+  const revision = bounded(value.revision, 'subject_pin.revision', 200, true);
+  if (value.kind === 'document' && value.path !== undefined) {
+    if (value.url !== undefined) fail('subject_pin needs either a document path or URL, not both.');
+    return { kind: value.kind, path: bounded(value.path, 'subject_pin.path', 2000, true), revision };
+  }
+  if (value.path !== undefined) fail('subject_pin.path is only supported for documents.');
+  const url = bounded(value.url, 'subject_pin.url', 2000, true);
+  let parsed;
+  try { parsed = new URL(url); } catch { fail('subject_pin.url must be an HTTP(S) URL.'); }
+  if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) fail('subject_pin.url must be an HTTP(S) URL without credentials.');
+  if (value.kind === 'pr' && (!prRepository(url) || !/^[a-f0-9]{40}$/i.test(revision))) fail('subject_pin for a PR needs its canonical GitHub URL and full head SHA.');
+  return { kind: value.kind, url, revision: value.kind === 'pr' ? revision.toLowerCase() : revision };
+}
 function ready(rt) {
   rt.metadata.lifetime?.assertCurrent();
   if (rt.metadata.error) fail(rt.metadata.error, 'metadata-unavailable');
@@ -116,7 +134,7 @@ export function reconcileRequests(rt, host, { now = Date.now(), startup = false,
         });
       }
     }
-    if (startup) for (const field of ['delivery', 'queenNotification', 'resolutionDelivery']) {
+    if (startup) for (const field of ['delivery', 'queenNotification', 'resolutionDelivery', 'subjectNotification']) {
       const current = get(rt, r.id);
       if (current[field]?.state === 'pending' && current[field].attempts?.length) update(rt, r.id, x => { x[field].state = 'uncertain'; x[field].error = 'Interrupted delivery; check receipt before retrying.'; });
     }
@@ -132,6 +150,9 @@ export async function createRequest(rt, host, id, args) {
   if (args.allow_free_text !== undefined && typeof args.allow_free_text !== 'boolean') fail('allow_free_text must be a boolean.');
   const key = bounded(args.dedupe_key, 'dedupe_key', 120);
   const old = key && values(rt).find(r => r.cellId === actor.cell.id && r.requesterSessionId === id && r.dedupeKey === key && r.state === 'open');
+  const pin = subjectPin(args.subject_pin);
+  if ((pin || old?.subjectPin) && (args.kind || old?.kind || kind) !== 'approval') fail('subject_pin is only supported for approval requests.');
+  if (old && pin && JSON.stringify(pin) !== JSON.stringify(old.subjectPin)) fail('A subject pin cannot change in a dedupe update. Use a new request.');
   const visible = audienceConversationDoc(rt.metadata.read(), actor.cell.id, actor);
   const topics = visible.threads[actor.cell.id] || {};
   const replyTo = bounded(args.reply_to, 'reply_to', 80);
@@ -193,6 +214,7 @@ export async function createRequest(rt, host, id, args) {
     if (replyTo && !visibleNow.conversation[actor.cell.id]?.some(m => m.id === replyTo)) fail('The request target is no longer available.', 'conflict');
     r = {
       attachments: kept,
+      ...(pin ? { subjectPin: pin } : {}),
       id: rid, cellId: actor.cell.id, requesterSessionId: id, ...(sessionLink ? { sessionLink } : {}), title, body, kind, options, allowFreeText: true, blocking: args.blocking === true, dedupeKey: key || null,
       beadId: bead?.id || topic?.beadId || target?.beadId || null, ...(replyTo ? { replyTo } : {}), threadId: tid, messageId: mid, createdAt: at, updatedAt: at, expiresAt: args.expires_at || null,
       state: 'open', audience: !q || q === id ? 'human' : 'queen', routeReason: q ? null : 'no-queen', warning: q ? null : 'No queen in this hive',
@@ -231,6 +253,7 @@ export async function createRequest(rt, host, id, args) {
   await removeAttachmentBatch(rt, r.cellId, removed);
   ready(rt);
   if (r.audience === 'queen') await notifyQueen(rt, host, rid);
+  await reconcileRequestSubjects(rt, host);
   return present(get(rt, rid));
 }
 async function send(rt, host, id, field, target, body) {
@@ -246,17 +269,17 @@ async function sendOnce(rt, host, id, field, target, body) {
   const prior = r[field];
   if (prior?.state === 'delivered') return r;
   const attemptId = newId('attempt');
-  update(rt, id, x => { x[field] = { state: 'pending', attempts: [...(x[field]?.attempts || []), { id: attemptId, at: Date.now(), sessionId: target }].slice(-10) }; });
+  update(rt, id, x => { x[field] = { ...x[field], state: 'pending', attempts: [...(x[field]?.attempts || []), { id: attemptId, at: Date.now(), sessionId: target }].slice(-10) }; });
   const outcome = await safeDeliver(host, target, body, rt);
   ready(rt);
-  if (get(rt, id).routeRevision !== routeRevision || get(rt, id)[field]?.attempts?.at(-1)?.id !== attemptId) return get(rt, id);
+  if ((field !== 'subjectNotification' && get(rt, id).routeRevision !== routeRevision) || get(rt, id)[field]?.attempts?.at(-1)?.id !== attemptId) return get(rt, id);
   return update(rt, id, x => { x[field] = { ...x[field], ...outcome }; });
 }
 export async function notifyQueen(rt, host, id) {
   reconcileRequests(rt, host, { requestId: id });
   const r = get(rt, id);
   if (r.state !== 'open' || r.audience !== 'queen' || r.queenNotification.state !== 'pending' || r.queenNotification.attempts.length) return r;
-  return send(rt, host, id, 'queenNotification', r.queenSessionId, `[Hive request ${r.id}] ${r.title}\n${r.body}${(r.options || []).map(o => `\n- ${o.id}: ${o.label}${o.description ? ` — ${o.description}` : ''}`).join('')}\n${link(r)}\nCall hive_context. Answer within your authority with hive_answer_request or forward this same id with hive_forward_request; do not create a second standard request.`);
+  return send(rt, host, id, 'queenNotification', r.queenSessionId, `[Hive request ${r.id}] ${r.title}\n${r.body}${(r.options || []).map(o => `\n- ${o.id}: ${o.label}${o.description ? ` — ${o.description}` : ''}`).join('')}\n${r.subjectPin ? `${requestSubjectText(r)}\nSubject: ${r.subjectPin.url || r.subjectPin.path}\n` : ''}${link(r)}\nCall hive_context. Answer within your authority with hive_answer_request or forward this same id with hive_forward_request; do not create a second standard request.`);
 }
 function queenRequest(rt, host, callerId, args) {
   caller(rt, host, callerId);
@@ -284,14 +307,17 @@ async function answer(rt, host, r, args, author, sessionId = null) {
   const saved = update(rt, r.id, x => {
     x.state = 'answered'; x.closedAt = Date.now(); x.receipt = args.receipt || null;
     x.answer = { optionId, text, author, sessionId, at: Date.now(), contentRevision: x.contentRevision, inputRevision: r.revision, inputRouteRevision: r.routeRevision };
+    if (x.subjectPin) x.answer.subjectPin = structuredClone(x.subjectPin);
     x.delivery = { state: 'pending', attempts: [] };
   });
-  return deliverAnswer(rt, host, saved);
+  await deliverAnswer(rt, host, saved);
+  await reconcileRequestSubjects(rt, host);
+  return get(rt, r.id);
 }
 async function deliverAnswer(rt, host, r) {
   const target = session(host, r.requesterSessionId);
   if (!target || target.archived) return update(rt, r.id, x => { x.delivery.state = 'failed'; x.delivery.error = 'Requester is missing or archived. The answer remains available in Hive.'; });
-  return send(rt, host, r.id, 'delivery', r.requesterSessionId, `[Hive request ${r.id}: answered by ${r.answer.author}] ${r.title}\n${r.answer.optionId ? `Choice: ${(r.options || []).find(o => o.id === r.answer.optionId)?.label || r.answer.optionId} (${r.answer.optionId})${r.answer.text ? `\nNote: ${r.answer.text}` : ''}` : r.answer.text}\n${link(r)}\nThis is an attributed ${r.answer.author} answer.`);
+  return send(rt, host, r.id, 'delivery', r.requesterSessionId, `[Hive request ${r.id}: answered by ${r.answer.author}] ${r.title}\n${r.answer.optionId ? `Choice: ${(r.options || []).find(o => o.id === r.answer.optionId)?.label || r.answer.optionId} (${r.answer.optionId})${r.answer.text ? `\nNote: ${r.answer.text}` : ''}` : r.answer.text}\n${r.subjectPin ? `${requestSubjectText(r)}\nSubject: ${r.subjectPin.url || r.subjectPin.path}\n` : ''}${link(r)}\nThis is an attributed ${r.answer.author} answer.`);
 }
 export async function answerRequest(rt, host, id, args) {
   const previous = get(rt, args.request_id);
@@ -348,7 +374,16 @@ export async function retryDelivery(rt, host, args) {
 export function requestContext(rt, actor, { bead_id } = {}) {
   const all = values(rt).filter(r => r.cellId === actor.cell.id && (!bead_id || r.beadId === bead_id || rt.metadata.read().threads?.[actor.cell.id]?.[r.threadId]?.beadId === bead_id));
   const queued = actor.role === 'queen' ? all.filter(r => r.state === 'open' && r.audience === 'queen') : [];
-  return { my_requests: all.filter(r => r.requesterSessionId === actor.sessionId).slice(-50).map(r => ({ ...r, link: link(r) })), ...(actor.role === 'queen' ? { input_requests: queued.slice(0, 50).map(r => ({ ...r, link: link(r) })), input_requests_total: queued.length, recent_input_requests: all.filter(r => r.state !== 'open' || r.audience !== 'queen').slice(-50).map(r => ({ ...r, link: link(r) })) } : {}) };
+  const changed = all.filter(r => r.state !== 'resolved' && r.subjectPin && r.subjectObservation && r.subjectObservation.revision !== r.subjectPin.revision);
+  return {
+    my_requests: all.filter(r => r.requesterSessionId === actor.sessionId).slice(-50).map(r => ({ ...r, link: link(r) })),
+    ...(actor.role === 'queen' ? {
+      input_requests: queued.slice(0, 50).map(r => ({ ...r, link: link(r) })), input_requests_total: queued.length,
+      recent_input_requests: all.filter(r => r.state !== 'open' || r.audience !== 'queen').slice(-50).map(r => ({ ...r, link: link(r) })),
+      approval_subject_changes: changed.slice(-50).map(r => ({ request_id: r.id, bead_id: r.beadId, subject_pin: r.answer?.subjectPin || r.subjectPin, current: r.subjectObservation, notification: r.subjectNotification, text: requestSubjectText(r), link: link(r) })),
+      approval_subject_changes_total: changed.length,
+    } : {}),
+  };
 }
 
 export async function notifyResolution(rt, host, id) {
@@ -357,4 +392,80 @@ export async function notifyResolution(rt, host, id) {
   const target = session(host, r.requesterSessionId);
   if (!target || target.archived) return update(rt, id, x => { x.resolutionDelivery.state = 'failed'; x.resolutionDelivery.error = 'Requester unavailable; recover the resolution in Hive.'; });
   return send(rt, host, id, 'resolutionDelivery', r.requesterSessionId, `[Hive request ${r.id}: ${r.resolution.reason}] ${r.title}\nClosed without an answer; no approval was given.\n${link(r)}`);
+}
+
+function observeSubject(rt, r, revision, at) {
+  const previous = r.subjectObservation;
+  if (previous?.at >= at) return;
+  if ((previous?.revision || r.subjectPin.revision) === revision) {
+    rt.metadata.mutate(d => { d.requests[r.id].subjectObservation = { revision, at }; });
+    return;
+  }
+  update(rt, r.id, x => {
+    x.subjectObservation = { revision, at };
+    delete x.subjectNotification;
+  });
+}
+
+export async function observeRequestSubject(rt, host, id, args) {
+  const r = get(rt, args.request_id);
+  const actor = member(rt, host, id, r.cellId);
+  if (id !== r.requesterSessionId && actor.role !== 'queen') fail('Only the requester or current queen may report a subject revision.', 'access');
+  if (r.subjectPin?.kind !== 'document') fail('Explicit revision reports require a document subject pin. PR heads come from core observations.');
+  const revision = bounded(args.revision, 'revision', 200, true);
+  if (r.subjectObservation?.revision !== revision) observeSubject(rt, r, revision, Math.max(Date.now(), (r.subjectObservation?.at || 0) + 1));
+  await reconcileRequestSubjects(rt, host);
+  return present(get(rt, r.id));
+}
+
+async function subjectPass(rt, host) {
+  if (!isCurrent(rt, host) || rt.metadata.error) return;
+  for (const initial of values(rt)) {
+    if (!isCurrent(rt, host)) return;
+    const cell = rt.metadata.cell(initial.cellId);
+    if (!initial.subjectPin || !cell?.enabled || cell.snapshot || initial.state === 'resolved') continue;
+    let r = get(rt, initial.id);
+    if (r.subjectPin.kind === 'pr') {
+      let observed;
+      try { observed = host.links?.prObservation?.(r.subjectPin.url); } catch {}
+      const at = typeof observed?.fetchedAt === 'number' ? observed.fetchedAt : Date.parse(observed?.fetchedAt) || 0;
+      if (observed?.url === r.subjectPin.url && !observed.lastError && at > 0 && Date.now() - at <= 180000 && at <= Date.now()
+        && /^[a-f0-9]{40}$/i.test(observed.headSha || '')) {
+        observeSubject(rt, r, observed.headSha.toLowerCase(), at);
+        r = get(rt, r.id);
+      }
+    }
+    const pin = r.answer?.subjectPin || r.subjectPin;
+    if (!r.subjectObservation || r.subjectObservation.revision === pin.revision) continue;
+    const target = queenRoute(host, cell);
+    if (!target) continue;
+    const episode = r.subjectObservation.revision;
+    if (r.subjectNotification?.episode !== episode || r.subjectNotification?.sessionId !== target) r = update(rt, r.id, x => {
+      x.subjectNotification = { episode, sessionId: target, state: 'pending', attempts: [] };
+    });
+    if (r.subjectNotification.state !== 'pending' || r.subjectNotification.attempts.length) continue;
+    await send(rt, host, r.id, 'subjectNotification', target, `[Hive approval subject changed: ${r.id}] ${r.title}\n${requestSubjectText(r)}\nSubject: ${pin.url || pin.path}\n${link(r)}\nThe answer and its pinned subject are retained. This notice adds no approval gate. Read hive_context to reconcile the change.`);
+  }
+}
+
+export function reconcileRequestSubjects(rt, host = rt.host) {
+  const key = runtimeKey(rt);
+  const active = subjectPasses.get(key);
+  if (active) { active.again = true; return active.promise; }
+  const entry = { again: true };
+  entry.promise = (async () => {
+    while (entry.again) {
+      entry.again = false;
+      await subjectPass(rt, host);
+    }
+  })().finally(() => subjectPasses.delete(key));
+  subjectPasses.set(key, entry);
+  return entry.promise;
+}
+
+export function startRequestSubjects(rt, host) {
+  const reconcile = () => reconcileRequestSubjects(rt, host).catch(err => rt.log?.(`hive: approval subject reconciliation failed: ${err.message}`));
+  const stop = host.events?.on('pr:observation', reconcile);
+  void reconcile();
+  return () => stop?.();
 }
