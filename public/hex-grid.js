@@ -133,10 +133,8 @@ function clampZoom(k) {
 
 const ASCENT = 0.78;
 const DESCENT = 0.24;
-// The selection and focus ring sits just inside the rim, and text may use
-// everything inside the ring's inner edge less TEXT_PAD.
-const RING = 0.945;
-const RING_STROKE = 2;
+const CONTENT_INSET = 0.945;
+const CONTENT_STROKE = 2;
 const TEXT_PAD = 1.5;
 
 // Half the hexagon's width at height y, for a pointy-top hexagon of radius r.
@@ -305,11 +303,11 @@ export function primaryMark(kind, title, x = 0, y = 0, scale = 1) {
 }
 
 // Where the mark's centre sits: low in the tile, with its whole circle,
-// stroke included, MARK_CLEAR px inside the selection ring's inner edge. For
+// stroke included, MARK_CLEAR px inside the content boundary. For
 // a pointy-top hexagon the lower sloping edges bind first.
 const MARK_CLEAR = 4;
 function markY(radius, scale) {
-  const apothem = (radius * RING - RING_STROKE / 2) * (SQRT3 / 2);
+  const apothem = (radius * CONTENT_INSET - CONTENT_STROKE / 2) * (SQRT3 / 2);
   const envelope = (MARK_R + MARK_STROKE / 2) * scale;
   return (apothem - envelope - MARK_CLEAR * scale) / (SQRT3 / 2);
 }
@@ -319,14 +317,14 @@ const GHOST_CAP = 3500;
 const SQRT3 = Math.sqrt(3);
 
 // The default tile: a pointy-top hexagon. A tile gives its outline, optional
-// faces drawn under the rim, its inner ring, the half-width text may use at
+// faces drawn under the rim, its selection ring, the half-width text may use at
 // each height, the default text band, where the relationship mark sits and
 // where the status mark sits.
 export function hexTile(radius) {
-  const textR = radius * RING - RING_STROKE / 2 - 0.5;
+  const textR = radius * CONTENT_INSET - CONTENT_STROKE / 2 - 0.5;
   return {
     d: hexPath(radius),
-    ring: hexPath(radius * RING),
+    ring: hexPath(radius),
     half: (y) => halfWidth(y, textR),
     top: -textR * 0.84,
     bottom: textR * 0.84,
@@ -539,8 +537,8 @@ export function renderHexMap({
     h('svg:path', { d: shape, class: 'hive-hex-shape' }),
     form.faces ? h('svg:g', { class: 'hive-faces', 'aria-hidden': 'true', 'clip-path': `url(#${id}-faces)` }, form.faces.map((f) => h('svg:path', { d: f.d, class: f.className }))) : null,
     h('svg:path', { d: shape, class: 'hive-hex-rim' }),
-    h('svg:path', { d: form.ring, class: 'hive-hex-ring' }),
     h('svg:path', { d: shape, class: 'hive-conversation-ring', 'aria-hidden': 'true' }),
+    h('svg:path', { d: form.ring, class: 'hive-hex-ring' }),
     label.text);
     const mark = relations ? h('svg:g', { class: 'hive-rel-mark', transform: `translate(0 ${form.relY.toFixed(1)})` },
       h('svg:title', {}, ''),
