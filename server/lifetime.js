@@ -38,3 +38,7 @@ export function assertCurrent(rt, host) {
 export function isCurrent(rt, host) {
   return rt?.metadata?.lifetime?.isCurrent(host) ?? true;
 }
+
+export function runtimeKey(rt) {
+  return rt?.metadata ?? rt;
+}

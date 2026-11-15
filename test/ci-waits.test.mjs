@@ -250,6 +250,22 @@ test('retry-wake refuses a send active in this process without discarding its re
   assert.equal(calls, 1); assert.equal(f.doc().ciWaits.a.wake.state, 'delivered');
 });
 
+test('retry-wake through a host store proxy refuses a send the raw runtime has in flight', async () => {
+  const f = fixture(); f.observe(snapshot());
+  const proxy = new Proxy(f.rt, { get(target, key) { const value = Reflect.get(target, key, target); return typeof value === 'function' ? (...a) => value.apply(target, a) : value; } });
+  let finish, calls = 0;
+  const delivery = new Promise(resolve => { finish = resolve; });
+  f.host.deliver = () => { calls++; return delivery; };
+  const registration = reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  const id = f.doc().ciWaits.a.id;
+  let rejection;
+  try { reportCiWait(proxy, f.host, f.actor(), { bead_id: 'a', state: 'retry-wake', wait_id: id }, NOW + 1000); }
+  catch (err) { rejection = err; }
+  finish({ mode: 'live' }); await registration;
+  assert.match(rejection?.message || '', /in.flight|active|sending/i);
+  assert.equal(calls, 1);
+});
+
 for (const target of ['checks', 'check', 'mergeable', 'merge']) {
   test(`expected-head merge preserves the ${target} outcome`, () => {
     const selected = wait({ target, ...(target === 'check' ? { checkName: 'test' } : {}) });

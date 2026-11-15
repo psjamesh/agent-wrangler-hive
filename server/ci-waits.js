@@ -1,7 +1,7 @@
 import { requireBeadAccess } from './access.js';
 import { HiveError } from './ops.js';
 import { newId } from './metadata-store.js';
-import { isCurrent } from './lifetime.js';
+import { isCurrent, runtimeKey } from './lifetime.js';
 import { prRepository } from './pr-labels.js';
 import { safeDeliver } from './sessions.js';
 
@@ -92,7 +92,7 @@ export function reportCiWait(rt, host, actor, args, now = Date.now()) {
   if (['acknowledge', 'retry-wake', 'cancel-wait'].includes(args.state)) {
     if (!current || args.wait_id !== current.id) throw new HiveError('Use the current exact wait_id from hive_context.');
     if (args.state !== 'cancel-wait' && current.state !== 'resolved') throw new HiveError('Only a resolved wait can be acknowledged or its wake retried.');
-    if (args.state === 'retry-wake' && activeWakes.get(rt)?.has(current.id)) throw new HiveError('Wake delivery is still in flight; reconcile its receipt before retrying.');
+    if (args.state === 'retry-wake' && activeWakes.get(runtimeKey(rt))?.has(current.id)) throw new HiveError('Wake delivery is still in flight; reconcile its receipt before retrying.');
     if (args.state === 'retry-wake' && (current.acknowledgedAt || !['failed', 'uncertain', 'sending'].includes(current.wake?.state))) throw new HiveError('Only a failed or uncertain unacknowledged wake can be retried.');
     rt.metadata.mutate(doc => {
       const saved = doc.ciWaits[bead.id];
@@ -134,8 +134,8 @@ function ownerProblem(rt, host, wait) {
 async function deliverWake(rt, host, wait, now) {
   if (wait.acknowledgedAt || wait.wake || ownerProblem(rt, host, wait)) return;
   rt.metadata.mutate(doc => { doc.ciWaits[wait.beadId].wake = { state: 'sending', at: now }; });
-  const sending = activeWakes.get(rt) || new Set();
-  activeWakes.set(rt, sending);
+  const sending = activeWakes.get(runtimeKey(rt)) || new Set();
+  activeWakes.set(runtimeKey(rt), sending);
   sending.add(wait.id);
   let timer;
   let receipt;
@@ -180,7 +180,7 @@ async function reconcilePass(rt, host, now) {
 }
 
 export function reconcileCiWaits(rt, host = rt.host, now = Date.now()) {
-  const active = inflight.get(rt);
+  const active = inflight.get(runtimeKey(rt));
   if (active) { active.again = true; active.now = now; return active.promise; }
   const entry = { again: true, now };
   entry.promise = (async () => {
@@ -188,8 +188,8 @@ export function reconcileCiWaits(rt, host = rt.host, now = Date.now()) {
       entry.again = false;
       await reconcilePass(rt, host, entry.now);
     }
-  })().finally(() => inflight.delete(rt));
-  inflight.set(rt, entry);
+  })().finally(() => inflight.delete(runtimeKey(rt)));
+  inflight.set(runtimeKey(rt), entry);
   return entry.promise;
 }
 
@@ -212,7 +212,7 @@ export function ciWaitAttention(rt, cell, now = Date.now()) {
     } else {
       if (wait.outcome === 'overdue') add('ci_wait_overdue', 'CI wait deadline passed; worker must reconcile the selected target.');
       if (problem || ['unavailable', 'reconciliation-required'].includes(wait.outcome)) add('ci_wait_unavailable', problem || wait.observerProblem || 'Merged PR does not establish the selected check outcome; reconcile its retained evidence.');
-      if (!activeWakes.get(rt)?.has(wait.id) && (problem || ['sending', 'uncertain', 'failed'].includes(wait.wake?.state) || !wait.wake)) add('ci_wait_delivery', 'Finished CI wait needs queen attention: worker wake is unavailable or uncertain. Inspect the worker before retry-wake with the exact wait_id.');
+      if (!activeWakes.get(runtimeKey(rt))?.has(wait.id) && (problem || ['sending', 'uncertain', 'failed'].includes(wait.wake?.state) || !wait.wake)) add('ci_wait_delivery', 'Finished CI wait needs queen attention: worker wake is unavailable or uncertain. Inspect the worker before retry-wake with the exact wait_id.');
       else if (now - (wait.wake.at || wait.resolvedAt) >= ACK_MS) add('ci_wait_unacknowledged', 'Finished CI wait has no worker acknowledgement. Inspect the worker and reconcile its continuation.');
     }
   }

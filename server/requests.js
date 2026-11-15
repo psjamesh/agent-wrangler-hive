@@ -10,6 +10,7 @@ import { isSessionId } from './bead-model.js';
 import { HiveError } from './ops.js';
 import { safeDeliver } from './sessions.js';
 import { hiveLink } from '../public/deep-links.js';
+import { runtimeKey } from './lifetime.js';
 export { needsHuman } from '../public/request-state.js';
 
 export const OPEN_PER_SESSION = 20;
@@ -233,8 +234,8 @@ export async function createRequest(rt, host, id, args) {
   return present(get(rt, rid));
 }
 async function send(rt, host, id, field, target, body) {
-  if (!deliveries.has(rt)) deliveries.set(rt, new Set());
-  const active = deliveries.get(rt), key = `${id}:${field}`;
+  if (!deliveries.has(runtimeKey(rt))) deliveries.set(runtimeKey(rt), new Set());
+  const active = deliveries.get(runtimeKey(rt)), key = `${id}:${field}`;
   if (active.has(key)) fail('A delivery is already in progress.', 'busy');
   active.add(key);
   try { return await sendOnce(rt, host, id, field, target, body); }
