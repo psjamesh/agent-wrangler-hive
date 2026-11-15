@@ -61,9 +61,19 @@ export function subtreeMembers(layout, kids, headId) {
   return new Set([...seen].filter((id) => onMap.has(id)));
 }
 
-export function attachmentState(layout, kids, positions = layout.positions, hidden = new Set()) {
-  const heads = new Set(layout.groupHeads || []);
+export function attachmentTopology(layout, kids, headIds = layout.groupHeads || []) {
+  const heads = new Set(headIds);
   const parents = layout.regionParents || Object.fromEntries([...kids].flatMap(([parent, children]) => children.filter((b) => heads.has(b.id)).map((b) => [b.id, heads.has(parent) ? parent : null])));
+  const branches = new Map();
+  for (const head of heads) {
+    if (!parents[head]) continue;
+    for (const id of [head, parents[head]]) if (!branches.has(id)) branches.set(id, subtreeMembers(layout, kids, id));
+  }
+  return { heads, parents, branches };
+}
+
+export function attachmentState(layout, kids, positions = layout.positions, hidden = new Set(), topology = attachmentTopology(layout, kids)) {
+  const { heads, parents, branches } = topology;
   const groups = new Map([...heads].map((id) => [id, []]));
   for (const id of layout.order) {
     const head = layout.parentHead?.[id];
@@ -73,8 +83,8 @@ export function attachmentState(layout, kids, positions = layout.positions, hidd
   for (const head of heads) {
     const parent = parents[head];
     if (!parent) continue;
-    const ownBranch = subtreeMembers(layout,kids,head);
-    const family = subtreeMembers(layout,kids,parent);
+    const ownBranch = branches.get(head);
+    const family = branches.get(parent);
     const allowed = new Map();
     for (const id of family) {
       if (ownBranch.has(id) || hidden.has(id) || !positions[id]) continue;
@@ -102,12 +112,13 @@ export function attachmentState(layout, kids, positions = layout.positions, hidd
     }
     attachments[head]={parentId:parent,status,via};
   }
-  return { parents, groups, familyBounds, attachments };
+  return { parents, groups, familyBounds, attachments, topology };
 }
 
 export function preservesAttachments(layout, kids, positions, hidden = new Set(), requireHead = null, beforeHidden = hidden, baseline = null) {
-  const before = baseline?.attachments || attachmentState(layout, kids, layout.positions, beforeHidden).attachments;
-  const after = attachmentState(layout, kids, positions, hidden).attachments;
+  const state = baseline || attachmentState(layout, kids, layout.positions, beforeHidden);
+  const before = state.attachments;
+  const after = attachmentState(layout, kids, positions, hidden, state.topology).attachments;
   return Object.entries(after).every(([head, state]) => state.status !== 'detached' || (before[head]?.status === 'detached' && head !== requireHead));
 }
 

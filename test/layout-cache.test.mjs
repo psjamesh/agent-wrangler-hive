@@ -26,6 +26,71 @@ const small = () => {
   return input;
 };
 
+test('cold and added-bead layouts match the original exhaustive full layout', () => {
+  const expected = JSON.parse(fs.readFileSync(new URL('./fixtures/layout-growth-positions.json', import.meta.url)));
+  const { layout } = cachedLayout(), input = syntheticCell('equivalence-root');
+  const points = result => result.order.map(id => [result.positions[id].q, result.positions[id].r]);
+  assert.equal(JSON.stringify(points(layout(input))), JSON.stringify(expected.cold));
+  const parent = `${input.rootId}-stream-1-nested-1`;
+  input.kids.get(parent).push({ id: `${parent}-new`, parentId: parent, kind: 'work', createdAt: '2026-11-02' });
+  const changed = layout(input);
+  assert.equal(JSON.stringify(points(changed)), JSON.stringify(expected.structural));
+  const full = cachedLayout().layout(input);
+  assert.equal(JSON.stringify(changed), JSON.stringify(full));
+});
+
+test('open boundary growth stops checking attachments after the preferred valid placement', () => {
+  let checks = 0;
+  const grow = vm.runInNewContext(`${source('region-growth')}\ngrowAttachedRegion`, {
+    ...hex, ...search, ...attachments,
+    preservesAttachments: (...args) => { checks++; return attachments.preservesAttachments(...args); },
+  });
+  const positions = { parent: { q: 0, r: 0 }, child: { q: 1, r: 0 } };
+  const layout = { positions, order: ['parent', 'child', 'new', 'next'], groupHeads: ['parent', 'child'], regionParents: { parent: null, child: 'parent' }, parentHead: { parent: 'parent', child: 'child', new: 'parent', next: 'parent' } };
+  grow({ members: ['parent', 'new', 'next'], todo: ['new', 'next'], layout, kids: new Map([['parent', [{ id: 'child' }, { id: 'new' }, { id: 'next' }]]]), taken: new Set(['0,0', '1,0']), aspect: 1.6, carried: {}, automatic: new Set(), hidden: new Set() });
+  assert.equal(checks, 2, 'only the first valid candidate per bead needs a full attachment check');
+  assert.equal(attachments.attachmentState(layout, new Map()).attachments.child.status, 'direct');
+});
+
+test('candidate checks reuse subtree membership from their attachment baseline', () => {
+  let reads = 0;
+  class Children extends Map {
+    get(id) { reads++; return super.get(id); }
+  }
+  const kids = new Children([['parent', [{ id: 'child' }, { id: 'new' }]]]);
+  const positions = { parent: { q: 0, r: 0 }, child: { q: 1, r: 0 } };
+  const layout = { positions, order: ['parent', 'child', 'new'], groupHeads: ['parent', 'child'], regionParents: { parent: null, child: 'parent' }, parentHead: { parent: 'parent', child: 'child', new: 'parent' } };
+  const baseline = attachments.attachmentState(layout, kids);
+  reads = 0;
+  for (let i = 0; i < 10; i++) {
+    assert.equal(attachments.preservesAttachments(layout, kids, { ...positions, new: { q: -1, r: 0 } }, new Set(), null, new Set(), baseline), true);
+  }
+  assert.equal(reads, 0, 'the hierarchy is unchanged between candidates');
+});
+
+test('growth in one family does not traverse unrelated workstreams', () => {
+  const reads = [];
+  class Children extends Map {
+    get(id) { reads.push(id); return super.get(id); }
+  }
+  const kids = new Children([['parent', [{ id: 'child' }, { id: 'new' }]], ['other', [{ id: 'other-child' }]]]);
+  const positions = { parent: { q: 0, r: 0 }, child: { q: 1, r: 0 }, other: { q: 100, r: 100 }, 'other-child': { q: 101, r: 100 } };
+  const layout = { positions, order: ['parent', 'child', 'new', 'other', 'other-child'], groupHeads: ['parent', 'child', 'other', 'other-child'], regionParents: { parent: null, child: 'parent', other: null, 'other-child': 'other' }, parentHead: { parent: 'parent', child: 'child', new: 'parent', other: 'other', 'other-child': 'other-child' } };
+  growth.growAttachedRegion({ members: ['parent', 'new'], todo: ['new'], layout, kids, taken: new Set(['0,0', '1,0', '100,100', '101,100']), aspect: 1.6, carried: {}, automatic: new Set(), hidden: new Set() });
+  assert.equal(reads.some(id => id.startsWith('other')), false);
+  assert.equal(attachments.attachmentState(layout, kids).attachments['other-child'].status, 'direct');
+});
+
+test('standalone workstreams need no subtree traversal for attachments', () => {
+  let reads = 0;
+  class Children extends Map {
+    get(id) { reads++; return super.get(id); }
+  }
+  const layout = { positions: { only: { q: 0, r: 0 } }, order: ['only'], groupHeads: ['only'], regionParents: { only: null }, parentHead: { only: 'only' } };
+  assert.deepEqual(attachments.attachmentState(layout, new Children()).attachments, {});
+  assert.equal(reads, 0);
+});
+
 test('unchanged value inputs reuse automatic placements across pushes and thread renders', () => {
   const { layout, calls } = cachedLayout(), input = small();
   const first = layout(input), count = calls();
@@ -80,7 +145,7 @@ test('growth passes one attachment baseline for all candidates of each placement
   const positions = { parent: { q: 0, r: 0 }, child: { q: 1, r: 0 } };
   const layout = { positions, order: ['parent', 'child', 'new', 'next'], groupHeads: ['parent', 'child'], regionParents: { parent: null, child: 'parent' }, parentHead: { parent: 'parent', child: 'child', new: 'parent', next: 'parent' } };
   grow({ members: ['parent', 'new', 'next'], todo: ['new', 'next'], layout, kids: new Map([['parent', [{ id: 'child' }, { id: 'new' }, { id: 'next' }]]]), taken: new Set(['0,0', '1,0']), aspect: 1.6, carried: {}, automatic: new Set(), hidden: new Set() });
-  assert.ok(baselines.length > 2);
+  assert.ok(baselines.length >= 2);
   assert.equal(before.length, 2, 'one baseline per bead placement');
   assert.ok(baselines.every(state => state && before.includes(state)));
   assert.equal(new Set(baselines).size, 2);
