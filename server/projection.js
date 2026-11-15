@@ -8,7 +8,23 @@ import { stackable } from '../public/layout-base.js';
 import { descendantIds } from './bead-model.js';
 import { SUPPORTED_BD } from './beads.js';
 import { archivedHere, archiveHidden, activeKids } from '../public/archive-layout.js';
-import { humanConversationDoc, threadIndex, threadSummary, threadRecords, ownThreads, byRecent, inboxSlice, linkedTargets, THREAD_PAGE, INBOX_BACKLOG } from './conversation.js';
+import { awaitingQueen, humanConversationDoc, threadIndex, threadSummary, threadRecords, ownThreads, byRecent, inboxSlice, linkedTargets, THREAD_PAGE, INBOX_BACKLOG } from './conversation.js';
+
+const stamp = value => typeof value === 'number' && Number.isFinite(value) ? value : Date.parse(value) || 0;
+
+export function queenResponseState(doc, cell) {
+  const messages = doc.conversation?.[cell.id] || [];
+  const pending = [
+    ...messages.filter(awaitingQueen).map(m => stamp(m.at)),
+    ...Object.values(doc.requests || {}).filter(r => r.cellId === cell.id && r.audience === 'queen' && r.state === 'open').map(r => stamp(r.createdAt)),
+  ].filter(at => at > 0);
+  const activity = [
+    ...messages.filter(m => m.sessionId === cell.queenSessionId).map(m => stamp(m.at)),
+    ...Object.values(doc.operations || {}).filter(op => op.actor === `aw:${cell.queenSessionId}` && op.state === 'applied').map(op => stamp(op.updatedAt)),
+    stamp(doc.workerActivity?.[cell.queenSessionId]),
+  ];
+  return { pendingSince: pending.length ? Math.min(...pending) : null, lastActivity: Math.max(0, ...activity) };
+}
 
 const THREAD_WINDOW = 40;
 const OPERATION_WINDOW = 50;
@@ -104,6 +120,7 @@ export function projectForGraph({ runtime, snapshot }) {
     cells[cell.id] = {
       ...cell,
       beadCount: ids.size,
+      queenResponse: queenResponseState(doc, cell),
       ...waitingProjection(runtime, cell, ids),
       regionAttachments: geometry?.attachments || {},
       detachedWorkstreams: geometry?.detachedHeads || [],

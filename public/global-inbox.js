@@ -2,7 +2,7 @@ import { compareTopics } from './topic-order.js';
 import { h, relativeTime, markdown, sessionReference } from './dom.js';
 import { hiveLink } from './deep-links.js';
 import { needsHuman, requestAuthor } from './requests.js';
-import { cellName, queenNeedsAttention } from './model.js';
+import { cellName, queenNeedsAttention, queenNotResponding } from './model.js';
 import { filterRows, highlightParts, searchTerms, snippetFor } from './inbox-search.js';
 import { inboxMessages, inboxMessageCount, topicTitles, topicPriorities, messageAuthor } from './conversation.js';
 
@@ -16,9 +16,12 @@ export function needsRows(ctx, cells) {
   const { graph } = ctx;
   const rows = [];
   for (const cell of cells) {
+    const unresponsive = queenNotResponding(graph, cell);
+    const title = unresponsive ? 'Queen not responding' : 'Queen needs attention';
+    const preview = unresponsive ? 'Pending input has had no queen activity. Open the queen session to check.' : 'The queen is waiting for input at its terminal.';
     if (queenNeedsAttention(graph, cell)) rows.push({
-      key: `queen:${cell.id}`, cellId: cell.id, hive: cellName(graph, cell), title: 'Queen needs attention', at: 0, hideTime: true,
-      preview: 'The queen is waiting for input at its terminal.', texts: ['Queen needs attention', 'The queen is waiting for input at its terminal.'], beadIds: [],
+      key: `queen:${cell.id}`, cellId: cell.id, hive: cellName(graph, cell), title, at: 0, hideTime: true,
+      preview, texts: [title, preview], beadIds: [],
       needsCount: 1, count: 0, sessionLinks: [{ sessionId: cell.queenSessionId, label: 'Open session' }],
       link: `#session=${encodeURIComponent(cell.queenSessionId)}`,
     });

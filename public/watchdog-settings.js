@@ -10,6 +10,7 @@ const fields = [
   ['untrackedMinutes', 'Untracked or finished-but-open work (minutes)', 30],
   ['waitGraceMinutes', 'Grace after a wait\'s named time (minutes)', 30],
   ['pickupHeldMinutes', 'Automatic pickup held (minutes)', 5],
+  ['queenResponseMinutes', 'Queen not responding (minutes)', 30],
   ['humanWaitMinutes', 'Waiting on the human with no open request (minutes)', 10],
 ];
 
@@ -42,7 +43,7 @@ export function watchdogSettingsForm({ ui, send }, cell) {
     },
   },
   h('h4', {}, 'Watchdog'),
-  h('p', { class: 'hive-muted' }, 'Watchdog thresholds for this hive. New flags wake the queen once; quiet checks never wake it.'),
+  h('p', { class: 'hive-muted' }, 'Watchdog thresholds for this hive. New flags wake the queen once; quiet checks never wake it. Queen not responding appears in Needs you when pending input has no queen activity for that long.'),
   ...fields.map(([name, label]) => {
     const id = `hive-watchdog-${cell.id}-${name}`;
     return h('label', { for: id, class: 'hive-field' }, label, h('input', {

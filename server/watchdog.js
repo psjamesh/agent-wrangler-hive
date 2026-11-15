@@ -12,7 +12,7 @@ import { GROUP_KINDS, descendantIds } from './bead-model.js';
 import { humanWaitText } from './human-wait.js';
 import { observedWorkerActivityIndex, workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
 
-export const WATCHDOG_DEFAULTS = Object.freeze({ workerMinutes: 30, idleMinutes: 30, reviewMinutes: 60, messageMinutes: 30, waitHours: 24, deferredDays: 7, untrackedMinutes: 30, waitGraceMinutes: 30, humanWaitMinutes: 10, pickupHeldMinutes: 5 });
+export const WATCHDOG_DEFAULTS = Object.freeze({ workerMinutes: 30, idleMinutes: 30, reviewMinutes: 60, messageMinutes: 30, queenResponseMinutes: 30, waitHours: 24, deferredDays: 7, untrackedMinutes: 30, waitGraceMinutes: 30, humanWaitMinutes: 10, pickupHeldMinutes: 5 });
 const DAY_MS = 86400000;
 const stamp = value => typeof value === 'number' && Number.isFinite(value) ? value : typeof value === 'string' ? Date.parse(value) || 0 : 0;
 export const watchdogSettings = cell => {
@@ -66,7 +66,7 @@ export function setWatchdogSettings(rt, { cellId, settings }) {
   refuseSnapshot(cell);
   if (!settings || typeof settings !== 'object' || Array.isArray(settings) || !Object.keys(settings).length
     || Object.entries(settings).some(([key, value]) => !Object.hasOwn(WATCHDOG_DEFAULTS, key) || !Number.isFinite(value) || value <= 0 || value > 525600)) {
-    throw new HiveError('Watchdog thresholds must be positive numbers up to 525600, using workerMinutes, idleMinutes, reviewMinutes, messageMinutes, waitHours, deferredDays, untrackedMinutes, waitGraceMinutes, humanWaitMinutes and pickupHeldMinutes.');
+    throw new HiveError('Watchdog thresholds must be positive numbers up to 525600, using workerMinutes, idleMinutes, reviewMinutes, messageMinutes, queenResponseMinutes, waitHours, deferredDays, untrackedMinutes, waitGraceMinutes, humanWaitMinutes and pickupHeldMinutes.');
   }
   rt.metadata.mutate(d => { d.cells[cellId].watchdogSettings = { ...watchdogSettings(cell), ...settings }; });
   return { cellId, settings: watchdogSettings(rt.metadata.cell(cellId)) };

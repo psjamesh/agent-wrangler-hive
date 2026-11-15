@@ -16,7 +16,7 @@ import { layoutBase, stackable } from './layout-base.js';
 import { archiveHidden, activeKids } from './archive-layout.js';
 import { openComplete, groupClosed, archiveReply, closedButton } from './workstream-view.js';
 import {
-  cellName, cellCounts, agentSummary, capturedAgentSummary, isDone, queenNeedsAttention, sessionLabel,
+  cellName, cellCounts, agentSummary, capturedAgentSummary, isDone, queenNeedsAttention, queenNotResponding, sessionLabel,
 } from './model.js';
 import { attentionEl, noticesEl } from './widgets.js';
 import { hiveTile } from './hive-shape.js';
@@ -49,7 +49,7 @@ function cellTile(ctx, cell) {
     queen = captured ? `Captured snapshot. ${captured.text}` : 'Captured snapshot';
   } else if (cell.queenSessionId) {
     const live = agentSummary(graph, [cell.queenSessionId], 'Queen');
-    queen = queenNeedsAttention(graph, cell) ? `Queen ${sessionLabel(graph, cell.queenSessionId)}: waiting for input` : live.text;
+    queen = queenNotResponding(graph, cell) ? `Queen ${sessionLabel(graph, cell.queenSessionId)}: not responding` : queenNeedsAttention(graph, cell) ? `Queen ${sessionLabel(graph, cell.queenSessionId)}: waiting for input` : live.text;
   } else {
     queen = launch ? launch.text : 'Setup incomplete: no queen';
     warn = true;

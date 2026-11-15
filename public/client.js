@@ -756,7 +756,7 @@ function signature(hive, graph) {
     .map((s) => `${s.sessionId}:${s.status}:${s.waitingReason || ''}:${s.exitOutput ? 'x' : ''}:${s.archived ? 'a' : ''}:${s.name || s.label || ''}`)
     .join('|');
   const names = (graph?.tasks?.tasks || []).map((t) => `${t.id}:${t.name}`).join('|');
-  return [hive.revision, hive.metaEpoch, hive.metaVersion, hive.backend.state, hive.backend.checkedAt, hive.metadataError || '', sessions, waitingGraphKey(graph), Object.values(hive.cells).some(c => c.pullRequests?.length) ? Math.floor(Date.now() / 60000) : '', names, state.uiVersion, state.pending.size, state.placements.length, beeLevel(), JSON.stringify(hive.capacity), JSON.stringify([hive.agents, hive.agentsError]), capacityLimit(state.api), state.api?.settings?.()?.requestNotifications !== false].join('#');
+  return [hive.revision, hive.metaEpoch, hive.metaVersion, hive.backend.state, hive.backend.checkedAt, hive.metadataError || '', sessions, waitingGraphKey(graph), Object.values(hive.cells).some(c => c.pullRequests?.length || c.queenResponse?.pendingSince) ? Math.floor(Date.now() / 60000) : '', names, state.uiVersion, state.pending.size, state.placements.length, beeLevel(), JSON.stringify(hive.capacity), JSON.stringify([hive.agents, hive.agentsError]), capacityLimit(state.api), state.api?.settings?.()?.requestNotifications !== false].join('#');
 }
 
 export function captureFocus(root) {
@@ -1289,6 +1289,9 @@ const overview = {
     document.addEventListener('visibilitychange', onVisible);
     globalThis.window?.addEventListener('focus', onVisible);
     state.lastSig = '';
+    clearInterval(state.responseClock);
+    state.responseClock = setInterval(rerender, 30000);
+    state.responseClock.unref?.();
     rerender();
     state.bees?.mount(el);
     state.bees?.sync();
@@ -1310,6 +1313,7 @@ const overview = {
   },
   unmount(el) {
     if (state.root === el) {
+      clearInterval(state.responseClock);
       cancelDeepLink();
       document.removeEventListener('visibilitychange', onVisible);
       globalThis.window?.removeEventListener('focus', onVisible);
