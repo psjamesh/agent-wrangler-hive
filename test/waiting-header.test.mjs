@@ -8,8 +8,9 @@ test('the cell-wide wait action includes unbound waits and remains available in 
   const source = fs.readFileSync(new URL('../public/cell-view.js', import.meta.url), 'utf8');
   const h = (tag, attrs, ...children) => ({ tag, attrs, children: children.flat(Infinity).filter(Boolean) });
   const name = 'A long hive name that must remain readable when the header is narrow';
+  let opened;
   const header = vm.runInNewContext(`(${source.match(/function cellHeader\([\s\S]*?\n}\n/)[0]})`, {
-    h, cellWaitingItems, cellTitle: () => h('button', { class: 'hive-title-btn', title: `Rename hive: ${name}` }, name), queenPill: () => null, headProgress: () => null,
+    h, cellWaitingItems, openWaitingMenu: (...args) => { opened = args; }, cellTitle: () => h('button', { class: 'hive-title-btn', title: `Rename hive: ${name}` }, name), queenPill: () => null, headProgress: () => null,
     hasPanels: () => false, closedButton: () => null,
     capacityControl: () => null, settingsModal: () => null, settingsButton: () => null, isRetired: () => false, retireKey: (id) => `retire:${id}`, openReopen() {},
     attentionEl: () => null, restoreNotices: () => null, noticesEl: () => null,
@@ -24,9 +25,17 @@ test('the cell-wide wait action includes unbound waits and remains available in 
   assert.equal(title.children[0], name);
   const action = all(header(ctx, cell, null)).find(n => n.attrs?.['data-focus-key'] === 'waiting-header');
   assert.equal(action.tag, 'button');
-  assert.equal(action.children[0], 'Needs you 2');
+  assert.equal(action.children[1], '2 need you');
+  assert.equal(action.attrs.class, 'hive-queen-pill hive-waiting');
+  assert.equal(action.children[0].attrs.class, 'hive-dot-inline hive-dot-needs');
+  assert.equal(action.children[0].attrs['aria-hidden'], 'true');
   assert.equal(typeof action.attrs.onclick, 'function');
   assert.equal(action.attrs['aria-haspopup'], 'dialog');
+  action.attrs.onclick({ currentTarget: action });
+  assert.equal(opened[0], ctx);
+  assert.equal(opened[1].length, 2);
+  assert.equal(opened[2], action);
+  assert.equal(opened[3].cellId, cell.id);
   cell.requests = {};
   ctx.graph.sessions = [];
   assert.equal(all(header(ctx, cell, null)).some(n => n.attrs?.['data-focus-key'] === 'waiting-header'), false);
