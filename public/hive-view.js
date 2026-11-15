@@ -341,7 +341,7 @@ function overviewMap(ctx, shown, { retiredCount, showRetired } = {}) {
     onDragState: (on) => ui.setDragging(on),
     claimDrag: api?.claimDrag ? (el) => api.claimDrag(el) : null,
     overlay: [
-      cells.length ? h('p', { class: 'hive-stage-hint' }, 'Click a hive to open its work. Drag hives to arrange them; drag the background to pan. A red person means the queen is waiting for input and a green robot means it is working; an idle queen has no mark.')
+      cells.length ? h('p', { class: 'hive-stage-hint' }, 'Drag hives to arrange; drag the background to pan.')
         : h('p', { class: 'hive-stage-empty' }, 'No hives yet. Create one, or add a task that is already on the board.'),
     ],
   });
