@@ -335,8 +335,7 @@ function overviewMap(ctx, shown, { retiredCount, showRetired } = {}) {
     onDragState: (on) => ui.setDragging(on),
     claimDrag: api?.claimDrag ? (el) => api.claimDrag(el) : null,
     overlay: [
-      cells.length ? h('p', { class: 'hive-stage-hint' }, 'Drag hives to arrange; drag the background to pan.')
-        : h('p', { class: 'hive-stage-empty' }, 'No hives yet. Create one, or add a task that is already on the board.'),
+      !cells.length ? h('p', { class: 'hive-stage-empty' }, 'No hives yet. Create one, or add a task that is already on the board.') : null,
     ],
   });
   bindMapSearch({ ctx, map, ids: cells.map(c => c.id), findMatches: (latest, query) => {

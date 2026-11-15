@@ -667,20 +667,6 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   .hive-control-group + .hive-control-group > :first-child { margin-left: 4px; }
 }
 
-.hive-stage-hint {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--fg-muted, var(--fg));
-  pointer-events: none;
-}
-
-.hive-overview .hive-zoom { bottom: 48px; }
-
 /* The key stays inside the map, bottom left, and opens upwards within it. */
 .hive-key {
   position: absolute;
