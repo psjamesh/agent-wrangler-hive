@@ -86,7 +86,7 @@ test('a permission failure is silent and deferred with backoff', async () => {
   f.failure = null;
   await f.sweep.run();
   assert.equal(f.calls.length, 1);
-  f.time = 60000;
+  f.time = 900000;
   await f.sweep.run();
   assert.deepEqual(f.labels, [{ name: 'hive' }]);
 });
@@ -166,7 +166,7 @@ test('stopping a sweep while a read is pending prevents edits', async () => {
   assert.equal(edits(f).length, 0);
 });
 
-test('a label creation permission failure backs off the whole repo and retries after one minute', async () => {
+test('a label creation permission failure backs off the whole repo and retries after fifteen minutes', async () => {
   const f = fixture({ labelExists: false });
   f.host.links.get = () => [PR, PR.replace('/42', '/43')].map(url => ({ type: 'pr', url }));
   const gh = f.gh;
@@ -181,7 +181,7 @@ test('a label creation permission failure backs off the whole repo and retries a
   await f.sweep.run();
   assert.equal(f.calls.length, 3);
   denyCreate = false;
-  f.time = 60000;
+  f.time = 900000;
   await f.sweep.run();
   assert.deepEqual(f.labels, [{ name: 'hive' }]);
   assert.equal(creates(f).length, 2);
@@ -240,14 +240,14 @@ test('an applier call without an eligibility check is a no-op', async () => {
 test('negative permission results retry with bounded exponential backoff', async () => {
   const f = fixture();
   f.failure = 'HTTP 403 permission denied';
-  await f.sweep.run();
+  await f.labeler.apply(PR, () => true);
   let attempts = 1;
   for (const seconds of [60, 120, 240, 480, 900, 900]) {
     f.time += seconds * 1000 - 1;
-    await f.sweep.run();
+    await f.labeler.apply(PR, () => true);
     assert.equal(f.calls.length, attempts);
     f.time++;
-    await f.sweep.run();
+    await f.labeler.apply(PR, () => true);
     assert.equal(f.calls.length, ++attempts);
   }
 });

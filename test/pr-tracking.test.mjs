@@ -395,3 +395,62 @@ test('failed rediscovery leaves terminal state confirmed instead of exposing sta
   assert.equal(f.doc.prLabels[PR].state, 'CLOSED');
   assert.ok(f.doc.prLabels[PR].observationError);
 });
+
+test('an unlinked identity replacement remains unlabelled and is attributed on a later session link', async () => {
+  const f = fixture();
+  f.links = [];
+  f.doc.prLabels[PR] = { url: PR, nodeId: 'old-node', source: 'session-link', sessionId: 'old', beadIds: ['old'], state: 'OPEN', status: 'labelled' };
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].status, 'unlabelled');
+  assert.equal(f.doc.prLabels[PR].labelledAt, null);
+  f.links = [PR];
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].status, 'labelled');
+  assert.equal(f.doc.prLabels[PR].sessionId, SID);
+  assert.deepEqual(f.additions, [PR]);
+});
+
+for (const terminal of ['MERGED', 'CLOSED']) {
+  test(`${terminal} pending labels get only one final attempt across restarts`, async () => {
+    const f = fixture();
+    f.states.set(PR, terminal);
+    let attempts = 0;
+    const start = () => { f.sweep = createPrLabelSweep({ runtime: f.runtime, host: f.host, now: () => f.time,
+      tracker: createPrTracker({ gh: f.gh, now: () => f.time }), labeler: { stop() {}, async apply() { attempts++; } } }); };
+    start();
+    await f.sweep.run();
+    assert.equal(f.doc.prLabels[PR].status, 'unlabelled');
+    assert.equal(f.doc.prLabels[PR].terminalLabelAttempted, true);
+    f.links = [];
+    for (let minute = 1; minute < 60; minute++) { f.time = minute * 60000; start(); await f.sweep.run(); }
+    assert.equal(attempts, 1);
+    f.states.set(PR, 'OPEN');
+    f.searchResults = [PR];
+    f.time = 3600000;
+    start(); await f.sweep.run();
+    assert.equal(attempts, 2, 'reopening resets attribution eligibility');
+  });
+}
+
+test('repo label configuration failure is persisted and gates every pending PR until retry', async () => {
+  const f = fixture();
+  f.links = [PR, OTHER];
+  f.states.set(OTHER, 'OPEN');
+  let edits = 0;
+  const gh = f.gh;
+  f.gh = async args => {
+    if (args[1] === 'edit') { edits++; throw new Error('HTTP 403 write access denied'); }
+    return gh(args);
+  };
+  f.restart();
+  await f.sweep.run();
+  assert.equal(edits, 1);
+  assert.match(f.doc.prLabelRepos['example/repo'].message, /403/);
+  f.time = 60000;
+  f.restart();
+  await f.sweep.run();
+  assert.equal(edits, 1, 'restart cannot fan out repository failures');
+  f.time = 900000;
+  await f.sweep.run();
+  assert.equal(edits, 2);
+});
