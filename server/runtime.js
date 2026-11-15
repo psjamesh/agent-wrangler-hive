@@ -1,3 +1,4 @@
+import { observeLinkWaits } from './link-waits.js';
 import { createPickupDispatcher } from './pickup.js';
 import { createWatchdog } from './watchdog.js';
 import { workLimit, helperSlots } from './admission.js';
@@ -45,6 +46,7 @@ export class HiveRuntime {
         if (!this.metadata.lifetime.isCurrent()) return;
         this.migrateRegions();
         this.reconcileColours();
+        try { observeLinkWaits(this); } catch (err) { this.log(`hive: could not observe dependency waits: ${err.message}`); }
         this.changed();
         if (this.host) reopenUnfinished(this);
       },

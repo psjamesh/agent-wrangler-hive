@@ -284,6 +284,8 @@ export function createPickupDispatcher({ runtime: rt, host, now = Date.now }) {
     if (!active() || rt.metadata.error || rt.beads.status.state !== 'ready') return;
     await rt.snapshots.refresh();
     if (!active() || rt.snapshots.current.error || rt.snapshots.hierarchyCurrent === false) return;
+    await rt.watchdog?.run();
+    if (!active()) return;
     await recoverPickupAttempts(rt, host);
     if (!active()) return;
     await notifyAttempts(rt, host);
