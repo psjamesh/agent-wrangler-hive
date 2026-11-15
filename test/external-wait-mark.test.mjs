@@ -14,15 +14,14 @@ function tileFor(prerequisites, status = 'open', snapshot = false) {
   }, new Map());
 }
 
-test('waiting on open external prerequisites adds one chain mark beside the cross', () => {
+test('waiting on open external prerequisites shows only the cross', () => {
   for (const snapshot of [false, true]) {
     const tile = tileFor([
       { id: 'external', kind: 'external', status: 'open' },
       { id: 'another', kind: 'external', status: 'in_progress' },
       { id: 'internal', kind: 'work', status: 'open' },
     ], 'deferred', snapshot);
-    assert.deepEqual(tile.marks.map(m => m.kind), ['waiting', 'external']);
-    assert.match(tile.marks[1].title, /Waiting on something outside this hive/i);
+    assert.deepEqual(tile.marks.map(m => m.kind), ['waiting']);
     assert.match(tile.title, /Waiting on something outside this hive/i);
     assert.match(tile.ariaLabel, /Waiting on something outside this hive/i);
   }
