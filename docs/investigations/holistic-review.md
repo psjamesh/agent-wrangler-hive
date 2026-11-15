@@ -12,11 +12,11 @@ Hive's record-keeping is sound: claims, journaled writes, link-derived waits, re
 2. **Product behaviour lives in prose that each agent must reproduce.** This covers the delivery recipe repeated in every pickup brief, a ten-step release procedure passed between queens in a handoff summary, and queen instructions that load personas contradicting Hive's own rules. Nothing checks that a fresh agent receives any of it.
 3. **Hive's view of the outside world is unreliable at exactly the points automation will depend on.** PR records are keyed by URL with a bead association that is never revised, and new PRs now collide with old ones. Free-text waits silence the watchdog. Closure, the only "delivered" signal, is unguarded.
 
-The plan under way targets the right area, but it is ordered expensive-first. It builds a core API, structured CI waits and an external delivery service, while three cheap levers would remove the queen from Hive delivery now:
+The plan under way targets the right area, but it is ordered expensive-first. It builds a core API, structured CI waits and an external delivery service, while three cheaper levers would remove the queen from most of Hive delivery:
 
-- require the `Test` check on Hive's main branch;
+- require the `test` check (from workflow `Test`) on Hive's main branch, enforced for administrators too;
 - let the builder merge its own approved PR;
-- turn on core's existing extension auto-update for Hive, which this installation already supports.
+- after a restart-survival check on a disposable instance, turn on core's existing extension auto-update for Hive, which this installation already supports. This is a deliberately weaker interim option: it follows the main branch head, not an exact CI-green SHA.
 
 Two items in the plan are harmful as scoped and were raised with the queen early:
 
@@ -29,14 +29,18 @@ Two items in the plan are harmful as scoped and were raised with the queen early
 | --- | --- | --- |
 | The queen was the bottleneck on every release | The only delivery path in the skills and docs is "the queen merges" (`skills/hive-worker/SKILL.md:45`, `skills/hive-queen/SKILL.md:98`, `docs/automatic-pickup.md:48`). The release recipe has ten steps: bump, test, commit, leak-check, push, open PR, merge, release the bead, ask the human, then stage, consent and restart through operator scripts. It travels in the current queen launch's handoff summary, not in Hive. Hive main has no required status checks, zero required approvals and auto-merge disabled, so the accepted policy's `auto` merge mode is unavailable. 17 Hive PRs merged on 15 Nov. #70 and #71 merged at 15:04–15:06, but their beads closed only at 15:29, together with #72's, after one install. Installs were batched through the queen. | Open. A1 and A2 do not remove the merge step. |
 | Scoped work sat unmarked while slots were free | Readiness is a per-bead queen act that needs a hand-written brief. No process, prompt or default decides it. The queen confirmed this to the human. At the snapshot, capacity was 10 of 16 while u03e, j543, grfu, 0ejw and xcbq had goals and acceptance but no mark. | Open. B targets it but is mis-scoped. |
-| A worker waiting on CI was never woken, and its wait hid it from the watchdog | Any non-empty `waiting_for` suppresses the aborted-turn, API-error, dormant-claim and idle-worker flags (`server/watchdog.js:201`, `:214`, `:222`, `:228`). Only `stale_wait` remains, after 24 hours, and it goes to the queen. Hive never wakes a worker. Core's pane notices need a session-scoped link, Auto-fix enabled, a status transition and a new head. | Open. C covers it, but behind a core dependency. |
+| A worker waiting on CI was never woken, and its wait hid it from the watchdog | Any non-empty `waiting_for` suppresses the aborted-turn, API-error, dormant-claim and idle-worker flags (`server/watchdog.js:201`, `:214`, `:222`, `:228`).
+
+For a plain, undated CI wait on an otherwise idle or sleeping worker, only `stale_wait` remains, after 24 hours, and it goes to the queen. Two other flags are not suppressed: `overdue_wait` fires when the wait text names a recognisable deadline that has passed (`:173-175`), and an exited or errored claimant is still flagged (`:210-212`).
+
+Hive never wakes a worker. Core's pane notices need a session-scoped link and Auto-fix enabled. They are deduplicated by status and head, so pending to passing on the same head does notify, but a rerun that ends in the same status on the same head stays silent. | Open. C covers it, but behind a core dependency. |
 | A builder closed its bead before merge, so a dependent started early | `finishBead` (`server/ops.js:1304`) checks reviews, children and prerequisites, but not associated PRs. Closing immediately resolves link waits and releases armed dependents. "Closed means delivered" is enforced only by skill text, while the mob-worker persona the queen's instructions require says to "complete autonomously". | Open. No bead covers a guard. |
 | The queen asked the human the same thing twice in different threads | Requests deduplicate only per requester and only on an explicit `dedupe_key` (`server/requests.js:132`). A forwarded worker request and the queen's own request on the same subject are two items, and `hive_publish` accepts any prose. The queen's default context is about 185 KB, so compaction and loss of what was already asked are likely. The specific instance was not in the 20-message window available to this review, so this is the mechanism, not a reproduced trace. | Partly addressed by guidance (#65). |
 | Private queen rules hid product behaviour | The standing-rules audit found 15 of 26 rules were product behaviour. Larger carriers remain outside its scope: every pickup mark holds a roughly 3 KB brief restating the delivery contract, and the handoff summary holds the release recipe and install-script locations. One script path in the current launch's handoff now points at a deleted temporary directory. The operator has since copied the scripts elsewhere, privately. | Open. |
 | Restarts stopped workers | Each install ends in core's board restart (`restart-server`), one per change. At least one worker (hive-c8dh's) was stopped by restarts on 14 Nov, and on 14 Nov the queen itself had to be replaced because its tool list predated a Hive release. The release-flow investigation's claim that panes survive restarts is an untested code reading; the record contradicts it at least once. Why the worker stopped is not established. | Open. hive-xcbq investigates stale tools only. |
 | `blocked` was hand-set and got stuck | Fixed. `blocked` writes are refused and waiting is derived from links (#66, #71; hive-eccw, hive-o0yk). | Fixed. |
 | A review couldn't be reopened after approval | `startReviewRound` requires a `changes_requested` verdict (`server/reviews.js:21`). A retained reviewer cannot review a new commit after approving. | Open (hive-j543). Matters less once A1 removes post-approval version bumps. |
-| False "open PR on closed bead" flags | Two causes. (a) Cached PR state lags a merge by up to one sweep; hive-u03e describes this. (b) The repository was recreated on 13 Nov, so PR numbers restarted. PR records are keyed by URL, a bead association is set once at discovery, and a known URL is never re-associated (`server/pr-label-discovery.js:38`, `:44`). New PRs #62, #77 and #78 are tied to beads closed on 12 Nov. #80 (n11m) and #81 (wvdf) were open on GitHub but recorded as MERGED against old beads. | (a) is in wvdf. (b) was unaddressed and was mailed to the queen. |
+| False "open PR on closed bead" flags | Two causes. (a) Cached PR state lags a merge by up to one sweep; hive-u03e describes this. (b) The repository was recreated on 13 Nov, so PR numbers restarted. PR records are keyed by URL, a bead association is set once at discovery, and a known URL is never re-associated (`server/pr-label-discovery.js:38`, `:44`). New PRs #62, #77 and #78 are tied to beads closed on 12 Nov. At about 16:00Z on 15 Nov, #80 (n11m) and #81 (wvdf) were open on GitHub but recorded as MERGED against old beads; #80 has since merged. | (a) is in wvdf. (b) was unaddressed and was mailed to the queen. |
 
 ## Claims tested
 
@@ -51,7 +55,15 @@ These claims hold:
 
 These are wrong or missing:
 
-- **Core's auto-update is dismissed as an interim option, yet it is available here now.** The running server is supervised by launchd with Git updates enabled, the global update mode is the default `notify`, and Hive is installed unpinned with `autoUpdate: false`. Turning that flag on installs main hourly and restarts on core's quiet test. That removes the queen from installs with no new code. The objection that it follows HEAD rather than an exact green SHA is weak when every main commit arrives through a reviewed, checked PR. It becomes moot once `Test` is a required check.
+- **Core's auto-update is available on this installation now.** The report rightly calls it the lowest-effort supported automation and lists its trade-offs. What it doesn't establish is that this host meets the preconditions: the running server is supervised by launchd with Git updates enabled, the global update mode is the default `notify`, and Hive is installed unpinned with `autoUpdate: false`. Turning that flag on installs main hourly and restarts on core's quiet test. That would remove the queen from installs with no new code.
+
+  The report's objections stand and must be accepted explicitly:
+  - The updater clones the branch head with no CI selection. A green PR head is not proof that the resulting main commit was tested.
+  - Required PR checks only narrow that gap if they are strict and cannot be bypassed. Today `enforce_admins` is off, the merging credential has admin rights, and no branch rules are active.
+  - Core installs before checking for quiet (`update-service.js` in core), and the install replaces the live asset directory. A long wait for a quiet moment therefore extends the window where new client files are served by an old server.
+  - Core's quietness test ignores interactive workers and in-flight MCP or Beads writes.
+
+  Treat it as a weaker interim option. Validate restart survival, in-flight writes and client/server generation mismatch on a disposable instance before enabling it on the live one.
 - **Restart cost is treated as secondary.** At 17 merges a day, "deploy each green SHA promptly, without batching" means 17 restarts a day, and each is today's worker-stopping failure. Installing the latest green SHA at the next quiet point is coalescing, not a release train. Its rule against batching should say so.
 - **Merge is assumed solved.** It is not: see the verdict.
 - **The quiesce, drain and generation-safe activation steps are core lifecycle work.** A2 (hive-wy10) links no core prerequisite.
@@ -113,7 +125,7 @@ It is also heavy for one operator: global rules with exact, `owner/*` and `*` ma
 | B, hive-nn3r: ready by default | Right goal. **Harmful as scoped.** (1) One `cwd` per hive is wrong for this cell, which spans the Hive repo, core and a fork. (2) A default profile carries none of the delivery contract that today's 3 KB briefs supply; the fallback intent is one sentence (`server/pickup.js:35`). (3) "Ready unless held" would start the old unprioritised backlog at once. (4) A bead handed back for merge is protected from re-pickup only by its `waiting_for` prose (`server/pickup.js:102`), which C plans to restructure. | Put profiles on the repository or workstream. Make ready-by-default apply to newly created beads. Exclude beads with an open PR or a delivery handoff by a structured check. Land the Hive `AGENTS.md` and the effective delivery rule first. |
 | C, hive-v829: structured CI and PR waits | Right defect, too broad, and placed behind a human-merged core PR and a core restart (hive-5jyw). | Split. **C0, now:** prose waits suppress watchdog flags only for a short grace period; Hive observes a bead's PR merging and finishes the handed-back bead or raises a precise flag. **C1, later and only if needed:** structured check and run waits for long-CI repositories, on 5jyw. |
 | hive-5jyw: expose core's PR observations | A sound core contract. | Keep it, but off the critical path once C is split. |
-| A2, hive-wy10: external delivery service | Solves a real problem at the highest cost, and depends on core lifecycle work it doesn't link. | Defer. Turn on core auto-update for Hive and measure. Build A2 only if hourly coalesced installs prove inadequate, and only after restart survival has been shown on a disposable instance. |
+| A2, hive-wy10: external delivery service | Solves a real problem at the highest cost, and depends on core lifecycle work it doesn't link. | Defer the service. Do its first validation step now: restart survival, in-flight writes and client/server generation on a disposable instance. Then turn on core auto-update for Hive as an accepted weaker interim, and build A2 only if hourly, branch-following installs prove inadequate. |
 
 ## Structural problems
 
@@ -131,25 +143,36 @@ It is also heavy for one operator: global rules with exact, `owner/*` and `*` ma
 
 1. **wvdf:** gate terminal skipping on PR identity, and clean up records from before the repository was recreated. *Risk if skipped:* live PRs permanently treated as merged.
 2. **nn3r:** rescope as above before more is built.
-3. **Human, repository setting:** make `Test` a required check on Hive main.
-4. **Human, install setting:** turn on core extension auto-update for Hive. Verify one cycle with a docs-only merge, then stop the queen's private stage, consent and restart scripts. *Risk:* follows HEAD; restarts land on core's quiet test rather than a full drain. That is no worse than today's manual restarts, which have no quiet test at all.
-5. **The builder merges its own Hive PR** after Hive's review approves that exact head and the required check is green, using `--match-head-commit`. Hive records the merge as evidence. The queen stops merging Hive PRs. *Risk:* a builder merging after unreviewed later commits. The head match prevents that.
+3. **Human, repository setting:** make `test` (from workflow `Test`) a required, strict check on Hive main, with enforcement for administrators. Without enforcement, the admin credential agents use can bypass it.
+4. **Validate restarts on a disposable instance:**
+   - does a working tmux worker survive with its claim, and can it still call MCP afterwards;
+   - is a write whose response was lost during the restart reconciled rather than duplicated;
+   - do new and existing board tabs receive assets that match the running server.
+
+   This was a precondition for A2 and is now a precondition for change 5. Run it with hive-xcbq.
+5. **Human, install setting, after change 4:** turn on core extension auto-update for Hive, then stop the queen's private stage, consent and restart scripts. *Accepted residual risk:*
+   - it deploys the main branch head, not a CI-selected SHA;
+   - it can serve new client assets to an old server until the quiet restart;
+   - its quiet test does not drain interactive work or in-flight writes.
+
+   Today's manual restarts share the last two risks and have no quiet test at all.
+6. **The builder merges its own Hive PR** after Hive's review approves that exact head and the required check is green, using `--match-head-commit`. Hive records the merge as evidence. The queen stops merging Hive PRs. *Risk:* a builder merging after unreviewed later commits. The head match prevents that.
 
 **P1: this week, small code**
 
-6. **C0:** prose `waiting_for` suppresses idle, dormant and aborted flags for a bounded grace period only, and Hive observes a PR merging for its handed-back bead and finishes it or raises `finished_open` precisely. This makes the "release to open, the queen claims, the queen finishes" handoff unnecessary for merge-boundary repositories. Order it after change 1.
-7. **Finish guard:** refuse `done` while a correctly associated PR is open, unless the repository's delivery rule says merge is not the boundary. Order it after change 1; it would misfire on colliding records otherwise.
-8. **Hive `AGENTS.md`** with a `CLAUDE.md` import, covering the public-repository rules, commit identity, test command, push route and delivery boundary. Shrink pickup briefs to bead-specific content.
-9. **Escalate an unresponsive queen to the human:** a Needs you item when watchdog flags have gone unactioned for a configurable time, or when the queen session has exited while armed work waits.
-10. **Trim the default queen context:** a digest instead of full pickup intents, and no terminal PR records unless asked.
+7. **C0:** prose `waiting_for` suppresses idle, dormant and aborted flags for a bounded grace period only, and Hive observes a PR merging for its handed-back bead and finishes it or raises `finished_open` precisely. This makes the "release to open, the queen claims, the queen finishes" handoff unnecessary for merge-boundary repositories. Order it after change 1.
+8. **Finish guard:** refuse `done` while a correctly associated PR is open, unless the repository's delivery rule says merge is not the boundary. Order it after change 1; it would misfire on colliding records otherwise.
+9. **Hive `AGENTS.md`** with a `CLAUDE.md` import, covering the public-repository rules, commit identity, test command, push route and delivery boundary. Shrink pickup briefs to bead-specific content.
+10. **Escalate an unresponsive queen to the human:** a Needs you item when watchdog flags have gone unactioned for a configurable time, or when the queen session has exited while armed work waits.
+11. **Trim the default queen context:** a digest instead of full pickup intents, and no terminal PR records unless asked.
 
 **P2: after the above**
 
-11. Revise the delivery-policy design down to a per-repository recipe (checkout, push route, merger, post-merge step), projected into bead context. Then build hive-snbv, hive-64or and hive-6k1u against the revision.
-12. hive-j543: only needed for design changes made after approval.
-13. C1 structured check waits on hive-5jyw, for long-CI repositories.
-14. A2, only if change 4 proves inadequate; first measure restart survival (with hive-xcbq).
-15. Header layout (hive-skst choices).
+12. Revise the delivery-policy design down to a per-repository recipe (checkout, push route, merger, post-merge step), projected into bead context. Then build hive-snbv, hive-64or and hive-6k1u against the revision.
+13. hive-j543: only needed for design changes made after approval.
+14. C1 structured check waits on hive-5jyw, for long-CI repositories.
+15. A2, only if change 5 proves inadequate.
+16. Header layout (hive-skst choices).
 
 ## Stop doing
 
@@ -166,8 +189,8 @@ It is also heavy for one operator: global rules with exact, `owner/*` and `*` ma
 | Choice | Options | Recommendation |
 | --- | --- | --- |
 | Who merges Hive PRs | Builder, after approved review and green required check; Hive server; queen (today); human | **Builder.** Smallest change that takes the queen out. A Hive-server merge is a larger, new GitHub-write capability. |
-| Required checks on Hive main | Require `Test`; leave unprotected | **Require `Test`.** It is the policy's own precondition for safe agent merges, and the check takes about 50 seconds. |
-| How Hive gets installed | Core auto-update now; build A2; a designated delivery worker | **Core auto-update now**, measured; A2 only on evidence. |
+| Required checks on Hive main | Require `test` (workflow `Test`), strict and enforced for administrators; leave unprotected | **Require it, enforced for administrators.** It is the policy's own precondition for safe agent merges, and the check takes about 50 seconds. Without admin enforcement, the agents' admin credential can bypass it. |
+| How Hive gets installed | Core auto-update after a disposable-instance restart check; build A2; a designated delivery worker; the queen (today) | **Core auto-update after the restart check**, accepted as weaker than exact-green delivery: it follows the branch head, and its quiet test does not drain work. A2 only on evidence. |
 | Scope of "ready by default" (B) | Per-repository profiles for new beads; per-hive default as specified; keep explicit marks only | **Per-repository, new beads only**, with structured exclusion of beads awaiting delivery. |
 | Delivery-policy design | Revise to a small per-repository recipe; implement as accepted | **Revise first.** The accepted text is partly superseded. |
 | CI waits (C) | Split: watchdog and merge-observation half now, structured waits later; full C now | **Split.** |
