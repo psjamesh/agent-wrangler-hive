@@ -682,6 +682,8 @@ for (const hazard of ['submitted', 'session', 'claim', 'binding', 'operation']) 
     if (hazard === 'operation') f.doc().operations.o = { beadIds: ['a'], state: 'uncertain' };
     f.doc().workerLaunches.lost = launch;
     f.doc().pickupAttempts[token] = { token, beadId: 'a', cellId: 'cell', launchId: 'lost' };
+    await run(f);
+    if (hazard === 'operation') f.doc().operations.o.state = 'applied';
     await run(f); await run(f);
     assert.equal(f.spawned.length, 0);
     assert.equal(f.doc().workerLaunches.lost.state, 'uncertain');
@@ -716,5 +718,25 @@ for (const problem of ['hierarchy', 'snapshot', 'profile']) {
     await run(f); await run(f);
     assert.equal(f.spawned.length, 1);
     assert.equal(f.actions.length, 1);
+  });
+}
+
+for (const change of ['cancelled', 'retryPending']) {
+  test(`pickup does not submit if ${change} changes during its last snapshot read`, async () => {
+    const f = pickupFixture(); await arm(f);
+    const original = f.rt.beads.loadSnapshot;
+    let reads = 0;
+    f.rt.beads.loadSnapshot = async opts => {
+      const graph = await original(opts);
+      if (++reads === 3) {
+        const launch = Object.values(f.doc().workerLaunches)[0];
+        if (change === 'cancelled') launch.state = 'cancelled';
+        else f.doc().pickupAttempts[launch.armToken].retryPending = true;
+      }
+      return graph;
+    };
+    await run(f);
+    assert.equal(f.spawned.length, 0);
+    assert.equal(f.actions.length, 0);
   });
 }

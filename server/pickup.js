@@ -95,7 +95,7 @@ export function consumePickup(doc, bead, fields = {}) {
 
 export function retryUnsubmittedPickup(doc, launch, bead, reason) {
   const attempt = doc.pickupAttempts?.[launch?.armToken];
-  if (!launch || launch.source !== 'automatic' || launch.startupPhase !== 'reserved' || launch.sessionId || launch.claimStarted
+  if (!launch || !['reserved', 'refused'].includes(launch.state) || launch.source !== 'automatic' || launch.startupPhase !== 'reserved' || launch.sessionId || launch.claimStarted
     || attempt?.launchId !== launch.id || attempt.retryPending || (attempt.retryCount || 0) >= MAX_PRESTART_RETRIES
     || bead?.pickup?.armToken !== launch.armToken || !bead.pickup.armed || bead.assignee || bead.status !== 'open'
     || Object.values(doc.bindings || {}).some(list => list.some(b => b.workerLaunchId === launch.id))

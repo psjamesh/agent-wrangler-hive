@@ -303,7 +303,11 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
       assertPickupAuthorization(rt, host, l, fresh);
     }
     assertCurrent(rt, host);
-    rt.metadata.mutate(d => { Object.assign(d.workerLaunches[launchId], { submittedAt: now(), startupPhase: 'submitted' }); });
+    rt.metadata.mutate(d => {
+      const current = d.workerLaunches[launchId];
+      if (current?.state !== 'reserved' || pickup && (d.pickupAttempts?.[current.armToken]?.launchId !== launchId || d.pickupAttempts[current.armToken].retryPending)) throw new HiveError('This launch was cancelled or changed before submission.', 'conflict');
+      Object.assign(current, { submittedAt: now(), startupPhase: 'submitted' });
+    });
     const baseIntent = l.reviewId ? `You are the reviewer of Hive bead ${l.beadId} in cell ${l.cellId}; its builder keeps the claim. Your reviewer binding is made before your first action. Report to session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}` : `You own Hive bead ${l.beadId} in cell ${l.cellId}. Its claim and binding are made before your first action. Use hive_context and the hive-worker skill. Report to queen/coordinator session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}`;
     const delegation = 'Delegate only through Hive (hive_spawn_worker where your role allows it, or ask the queen); do not use spawn_session, spawn_workflow or schedule_session; they leave the session untracked. ';
     const intent = `${baseIntent}\n\nUse the hive-worker skill. Start with hive_context({ scope: "bead", bead_id: "${l.beadId}", cell_id: "${l.cellId}" }) for your bounded work context.\n\nHive task: ${l.taskId}. When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Worker/reviewer requests go to this hive's queen and remain out of human views until forwarded; human step-in is not supported. Recover with hive_list_my_requests and withdraw with hive_withdraw_request when answered elsewhere. ${delegation}Launch helpers into this same resolved task; ancestry alone does not enroll them. Missing native tools require a membership check or refreshed agent terminal.`;
