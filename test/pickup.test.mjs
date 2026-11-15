@@ -590,3 +590,153 @@ test('pickup reports simultaneous cell holds together', async () => {
   assert.ok(state.reasons.includes('Queen transition needs reconciliation'));
   assert.ok(state.reasons.some(reason => reason.includes('live-stray')));
 });
+
+for (const problem of ['hierarchy', 'profile']) {
+  test(`pickup retries a pre-dispatch ${problem} refusal on a later complete pass`, async () => {
+    const f = pickupFixture(); await arm(f);
+    const token = f.live.a.metadata.hive_pickup.armToken;
+    const original = f.rt.beads.loadSnapshot;
+    let reads = 0;
+    f.rt.beads.loadSnapshot = async opts => {
+      const graph = await original(opts);
+      if (++reads === 3) {
+        if (problem === 'hierarchy') f.rt.snapshots.hierarchyCurrent = false;
+        else {
+          const launch = Object.values(f.doc().workerLaunches)[0];
+          launch.profileObservedAt = Date.now() - 61000;
+        }
+      }
+      return graph;
+    };
+    await run(f);
+    assert.equal(f.spawned.length, 0);
+    assert.equal(f.live.a.assignee, undefined);
+    assert.equal(f.doc().pickupAttempts[token].retryPending, true);
+    assert.equal(f.doc().pickupRates.starts.length, 0);
+    assert.equal(f.delivered.length, 0);
+    f.rt.snapshots.hierarchyCurrent = true;
+    const dispatcher = pickup.createPickupDispatcher({ runtime: f.rt, host: f.host, now: f.now });
+    await Promise.all([dispatcher.run(), dispatcher.run()]);
+    await run(f);
+    assert.equal(f.actions.length, 1);
+    assert.equal(f.spawned.length, 1);
+    assert.equal(f.live.a.metadata.hive_pickup.armToken, token);
+    assert.equal(f.live.a.assignee, 'aw:worker-1');
+  });
+}
+
+test('transient pre-dispatch retries are bounded across dispatcher replacements', async () => {
+  const f = pickupFixture(); await arm(f);
+  const original = f.rt.beads.loadSnapshot;
+  f.rt.beads.loadSnapshot = async opts => {
+    const graph = await original(opts);
+    for (const launch of Object.values(f.doc().workerLaunches)) launch.profileObservedAt = Date.now() - 61000;
+    return graph;
+  };
+  for (let i = 0; i < 6; i++) await run(f);
+  assert.equal(Object.values(f.doc().workerLaunches).length, 3);
+  assert.equal(f.spawned.length, 0);
+  assert.equal(f.delivered.length, 1);
+  assert.equal(pickup.pickupState(f.rt, f.host, f.doc().cells.cell, f.graph().beads.a).state, 'attention');
+});
+
+test('restart retries only a reservation durably known not to have been submitted', async () => {
+  const f = pickupFixture(); await arm(f);
+  const token = f.live.a.metadata.hive_pickup.armToken;
+  f.doc().workerLaunches.lost = { id: 'lost', cellId: 'cell', taskId: 'task', beadId: 'a', armToken: token, state: 'reserved', source: 'automatic', requestedBy: 'queen', role: 'worker', startupPhase: 'reserved' };
+  f.doc().pickupAttempts[token] = { token, beadId: 'a', cellId: 'cell', launchId: 'lost' };
+  await run(f); await run(f);
+  assert.equal(f.spawned.length, 1);
+  assert.equal(f.actions.length, 1);
+  assert.equal(f.doc().workerLaunches.lost.state, 'refused');
+});
+
+for (const problem of ['hierarchy', 'profile']) {
+  test(`a ${problem} refusal inside host startup cannot authorize another launch`, async () => {
+    const f = pickupFixture(); await arm(f);
+    const spawn = f.host.sessions.spawn;
+    f.host.sessions.spawn = async opts => {
+      if (problem === 'hierarchy') f.rt.snapshots.hierarchyCurrent = false;
+      else f.doc().workerLaunches[opts.ext.hive.workerLaunchId].profileObservedAt = Date.now() - 61000;
+      return spawn(opts);
+    };
+    await run(f);
+    f.rt.snapshots.hierarchyCurrent = true;
+    await run(f); await run(f);
+    assert.equal(f.spawned.length, 1);
+    assert.equal(f.actions.length, 0);
+    assert.equal(Object.values(f.doc().workerLaunches)[0].state, 'uncertain');
+    assert.equal(f.delivered.length, 1);
+  });
+}
+
+for (const hazard of ['submitted', 'session', 'claim', 'binding', 'operation']) {
+  test(`restart retains reconciliation when an unconfirmed reservation has ${hazard}`, async () => {
+    const f = pickupFixture(); await arm(f);
+    const token = f.live.a.metadata.hive_pickup.armToken;
+    const launch = { id: 'lost', cellId: 'cell', taskId: 'task', beadId: 'a', armToken: token, state: 'reserved', source: 'automatic', requestedBy: 'queen', role: 'worker', startupPhase: 'reserved' };
+    if (hazard === 'submitted') launch.startupPhase = 'submitted';
+    if (hazard === 'session') launch.sessionId = 'missing-session';
+    if (hazard === 'claim') launch.claimStarted = true;
+    if (hazard === 'binding') f.doc().bindings.cell = [{ beadId: 'a', workerLaunchId: 'lost', active: false }];
+    if (hazard === 'operation') f.doc().operations.o = { beadIds: ['a'], state: 'uncertain' };
+    f.doc().workerLaunches.lost = launch;
+    f.doc().pickupAttempts[token] = { token, beadId: 'a', cellId: 'cell', launchId: 'lost' };
+    await run(f);
+    if (hazard === 'operation') f.doc().operations.o.state = 'applied';
+    await run(f); await run(f);
+    assert.equal(f.spawned.length, 0);
+    assert.equal(f.doc().workerLaunches.lost.state, 'uncertain');
+  });
+}
+
+for (const problem of ['hierarchy', 'snapshot', 'profile']) {
+  test(`a ${problem} refusal before reservation keeps its retry budget`, async () => {
+    const f = pickupFixture(); await arm(f);
+    const refresh = f.rt.snapshots.refresh;
+    let refreshes = 0;
+    f.rt.snapshots.refresh = async () => {
+      const result = await refresh();
+      if (++refreshes === 2) {
+        if (problem === 'hierarchy') f.rt.snapshots.hierarchyCurrent = false;
+        if (problem === 'snapshot') f.rt.snapshots.current.error = 'partial read';
+      }
+      return result;
+    };
+    const list = f.host.agents.list;
+    let reads = 0;
+    f.host.agents.list = async () => {
+      const catalog = await list();
+      if (problem === 'profile' && ++reads === 2) f.advance(61000);
+      return catalog;
+    };
+    await run(f);
+    assert.equal(f.spawned.length, 0);
+    assert.equal(Object.values(f.doc().pickupAttempts)[0].retryPending, true);
+    f.rt.snapshots.hierarchyCurrent = true;
+    f.rt.snapshots.current.error = null;
+    await run(f); await run(f);
+    assert.equal(f.spawned.length, 1);
+    assert.equal(f.actions.length, 1);
+  });
+}
+
+for (const change of ['cancelled', 'retryPending']) {
+  test(`pickup does not submit if ${change} changes during its last snapshot read`, async () => {
+    const f = pickupFixture(); await arm(f);
+    const original = f.rt.beads.loadSnapshot;
+    let reads = 0;
+    f.rt.beads.loadSnapshot = async opts => {
+      const graph = await original(opts);
+      if (++reads === 3) {
+        const launch = Object.values(f.doc().workerLaunches)[0];
+        if (change === 'cancelled') launch.state = 'cancelled';
+        else f.doc().pickupAttempts[launch.armToken].retryPending = true;
+      }
+      return graph;
+    };
+    await run(f);
+    assert.equal(f.spawned.length, 0);
+    assert.equal(f.actions.length, 0);
+  });
+}

@@ -16,6 +16,11 @@ import { hasOpenRequest } from './human-wait.js';
 
 const UNSETTLED = new Set(['pending', 'partial', 'uncertain']);
 const ATTENTION = new Set(['uncertain', 'refused', 'abandoned', 'cancelled']);
+const MAX_PRESTART_RETRIES = 2;
+
+export function pickupReadUnavailable(message) {
+  return Object.assign(new HiveError(message, 'refused'), { pickupRetryable: true });
+}
 
 export function briefDigest(bead, cellId) {
   return crypto.createHash('sha256').update(JSON.stringify([cellId, bead.parentId, bead.kind, bead.goal, bead.acceptance, bead.nextAction])).digest('hex');
@@ -75,15 +80,30 @@ export function pickupCell(rt, graph, beadId) {
 
 export function pickupConsumed(doc, bead) {
   const token = bead.pickup?.armToken;
-  return token && doc.pickupAttempts?.[token];
+  const attempt = token && doc.pickupAttempts?.[token];
+  return attempt?.retryPending ? null : attempt;
 }
 
 export function consumePickup(doc, bead, fields = {}) {
   if (!bead) return;
   const token = bead.pickup?.armToken;
   (doc.defaultPickupSpent ||= {})[bead.id] ||= { at: Date.now(), ...fields };
-  if (!token || doc.pickupAttempts?.[token]) return;
-  (doc.pickupAttempts ||= {})[token] = { token, cellId: bead.pickup.cellId, beadId: bead.id, at: Date.now(), ...fields };
+  if (!token || pickupConsumed(doc, bead)) return;
+  const retryCount = doc.pickupAttempts?.[token]?.retryCount || 0;
+  (doc.pickupAttempts ||= {})[token] = { retryCount, token, cellId: bead.pickup.cellId, beadId: bead.id, at: Date.now(), ...fields };
+}
+
+export function retryUnsubmittedPickup(doc, launch, bead, reason) {
+  const attempt = doc.pickupAttempts?.[launch?.armToken];
+  if (!launch || !['reserved', 'refused'].includes(launch.state) || launch.source !== 'automatic' || launch.startupPhase !== 'reserved' || launch.sessionId || launch.claimStarted
+    || attempt?.launchId !== launch.id || attempt.retryPending || (attempt.retryCount || 0) >= MAX_PRESTART_RETRIES
+    || bead?.pickup?.armToken !== launch.armToken || !bead.pickup.armed || bead.assignee || bead.status !== 'open'
+    || Object.values(doc.bindings || {}).some(list => list.some(b => b.workerLaunchId === launch.id))
+    || Object.values(doc.operations || {}).some(o => UNSETTLED.has(o.state) && (o.beadIds?.includes(bead.id) || o.intent?.beadId === bead.id))) return false;
+  Object.assign(launch, { state: 'refused', error: reason, updatedAt: Date.now() });
+  Object.assign(attempt, { retryPending: true, retryCount: (attempt.retryCount || 0) + 1 });
+  if (doc.pickupRates?.starts) doc.pickupRates.starts = doc.pickupRates.starts.filter(s => s.launchId !== launch.id);
+  return true;
 }
 
 export function managedPickupReceipt(rt, before, after) {
@@ -266,12 +286,12 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
 export function assertPickupAuthorization(rt, host, launch, graph, { ownOperationId = null, checkVersion = true } = {}) {
   const cell = rt.metadata.cell(launch.cellId);
   if (!cell || (launch.taskId && cell.taskId !== launch.taskId) || cell.queenSessionId !== launch.authorizedBy || (cell.queenGeneration || 0) !== launch.queenGeneration) throw new HiveError('Pickup queen authority changed.', 'refused');
-  if (launch.profileObservedAt && Date.now() - launch.profileObservedAt > 60000) throw new HiveError('Pickup profile observation expired before startup.', 'refused');
+  if (launch.profileObservedAt && Date.now() - launch.profileObservedAt > 60000) throw pickupReadUnavailable('Pickup profile observation expired before startup.');
   const bead = graph.beads[launch.beadId];
   if (launch.profile && JSON.stringify(launch.profile) !== JSON.stringify(bead?.pickup?.profile)) throw new HiveError('Pickup profile changed.', 'refused');
   if (bead?.pickup?.armToken !== launch.armToken || bead.pickup.profileRevision !== launch.profileRevision) throw new HiveError('Pickup readiness or profile changed.', 'refused');
   const state = pickupState(rt, host, cell, bead, graph, { launchId: launch.id, ownOperationId, checkVersion, rates: false });
-  if (!state.eligible) throw new HiveError(state.reason, 'refused');
+  if (!state.eligible) throw state.reason === 'Current Beads hierarchy is incomplete' ? pickupReadUnavailable(state.reason) : new HiveError(state.reason, 'refused');
 }
 
 export function assertPickupClaimed(rt, host, launch, graph, sid) {
@@ -380,6 +400,8 @@ async function recoverPickupAttempts(rt, host) {
       if (session && !session.archived && bound && graph.beads[l.beadId]?.assignee === actorFor(l.sessionId)) {
         l.state = 'launched';
         l.recoveredAt = Date.now();
+      } else if (retryUnsubmittedPickup(d, l, graph.beads[l.beadId], 'Pickup startup confirmation is missing before host submission')) {
+        continue;
       } else {
         l.state = 'uncertain';
         l.error ||= 'Pickup startup confirmation is missing; reconcile this launch before rearming';
@@ -406,7 +428,7 @@ async function notifyAttempts(rt, host) {
   for (const attempt of Object.values(rt.metadata.read().pickupAttempts || {})) {
     assertCurrent(rt, host);
     const launch = rt.metadata.read().workerLaunches[attempt.launchId];
-    if (!launch || !ATTENTION.has(launch.state) || attempt.notice) continue;
+    if (!launch || !ATTENTION.has(launch.state) || attempt.notice || attempt.retryPending) continue;
     const queen = rt.metadata.cell(attempt.cellId)?.queenSessionId;
     if (!queen || !host.sessions.get(queen) || host.sessions.get(queen).archived) continue;
     rt.metadata.mutate(d => { d.pickupAttempts[attempt.token].notice = { state: 'sending', queen }; });
@@ -481,10 +503,11 @@ export function createPickupDispatcher({ runtime: rt, host, now = Date.now }) {
             });
           } else if (err.code !== 'busy') {
             rt.metadata.mutate(d => {
-              if (!d.pickupAttempts?.[bead.pickup.armToken]) {
+              if (!pickupConsumed(d, bead) && !err.pickupRetryScheduled) {
                 const id = newId('worker');
-                d.workerLaunches[id] = { id, cellId: cell.id, beadId: bead.id, state: 'refused', error: err.message, source: 'automatic' };
+                d.workerLaunches[id] = { id, cellId: cell.id, beadId: bead.id, armToken: bead.pickup.armToken, startupPhase: 'reserved', state: 'refused', error: err.message, source: 'automatic' };
                 consumePickup(d, bead, { launchId: id, source: 'automatic' });
+                if (err.pickupRetryable) retryUnsubmittedPickup(d, d.workerLaunches[id], bead, err.message);
               }
             });
           }

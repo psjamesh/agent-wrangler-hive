@@ -2,7 +2,7 @@ import { assertAllowedModel } from './review-policy.js';
 import { safeDeliver } from './sessions.js';
 import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
-import { assertPickupAuthorization, assertPickupClaimed, consumePickup, catalogHold } from './pickup.js';
+import { assertPickupAuthorization, assertPickupClaimed, consumePickup, catalogHold, pickupReadUnavailable, retryUnsubmittedPickup } from './pickup.js';
 import { reservePickupStart } from './launch-budget.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 import { holdsBead } from './bead-sessions.js';
@@ -270,7 +270,7 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     if (attach) await rt.snapshots.refresh();
     actor = coordinator(rt, host, actor, as);
     await rt.snapshots.refresh();
-    if (rt.snapshots.current.error) throw new HiveError('Cannot confirm current bead ownership or capacity.', 'refused');
+    if (rt.snapshots.current.error || pickup && rt.snapshots.hierarchyCurrent === false) throw pickup ? pickupReadUnavailable('Cannot confirm current bead ownership or capacity.') : new HiveError('Cannot confirm current bead ownership or capacity.', 'refused');
     const graph = await rt.beads.loadSnapshot({ all: true });
     actor = coordinator(rt, host, actor, as);
     const { bead, cell } = requireBeadAccess(rt, actor, input.bead_id);
@@ -281,12 +281,12 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     const automatic = pickup ? { ...pickup, source: 'automatic', profile: structuredClone(graph.beads[bead.id].pickup.profile), briefDigest: graph.beads[bead.id].pickup.briefDigest } : {};
     if (pickup) {
       assertPickupAuthorization(rt, host, { ...automatic, id: launchId, cellId: cell.id, beadId: bead.id }, graph);
-      if (now() - pickup.observedAt > 60000) throw new HiveError('Pickup profile observation is stale.', 'refused');
+      if (now() - pickup.observedAt > 60000) throw pickupReadUnavailable('Pickup profile observation is stale.');
     }
     rt.metadata.mutate((d) => {
       if (pickup) reservePickupStart(d, cell.id, launchId, now());
       consumePickup(d, graph.beads[bead.id], { launchId, source: pickup ? 'automatic' : 'manual' });
-      d.workerLaunches[launchId] = { id: launchId, cellId: cell.id, taskId: cell.taskId, beadId: bead.id, requestedBy: actor.sessionId, ...automatic, role, reviewId, sessionId: null, state: 'reserved', restriction: launchRestriction(opts.agent), createdAt: Date.now(), updatedAt: Date.now() };
+      d.workerLaunches[launchId] = { id: launchId, cellId: cell.id, taskId: cell.taskId, beadId: bead.id, requestedBy: actor.sessionId, ...automatic, role, reviewId, sessionId: null, state: 'reserved', startupPhase: 'reserved', restriction: launchRestriction(opts.agent), createdAt: Date.now(), updatedAt: Date.now() };
       if (reviewId) d.reviews[reviewId].launchId = launchId;
     });
   });
@@ -303,7 +303,11 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
       assertPickupAuthorization(rt, host, l, fresh);
     }
     assertCurrent(rt, host);
-    rt.metadata.mutate(d => { d.workerLaunches[launchId].submittedAt = now(); });
+    rt.metadata.mutate(d => {
+      const current = d.workerLaunches[launchId];
+      if (current?.state !== 'reserved' || pickup && (d.pickupAttempts?.[current.armToken]?.launchId !== launchId || d.pickupAttempts[current.armToken].retryPending)) throw new HiveError('This launch was cancelled or changed before submission.', 'conflict');
+      Object.assign(current, { submittedAt: now(), startupPhase: 'submitted' });
+    });
     const baseIntent = l.reviewId ? `You are the reviewer of Hive bead ${l.beadId} in cell ${l.cellId}; its builder keeps the claim. Your reviewer binding is made before your first action. Report to session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}` : `You own Hive bead ${l.beadId} in cell ${l.cellId}. Its claim and binding are made before your first action. Use hive_context and the hive-worker skill. Report to queen/coordinator session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}`;
     const delegation = 'Delegate only through Hive (hive_spawn_worker where your role allows it, or ask the queen); do not use spawn_session, spawn_workflow or schedule_session; they leave the session untracked. ';
     const intent = `${baseIntent}\n\nUse the hive-worker skill. Start with hive_context({ scope: "bead", bead_id: "${l.beadId}", cell_id: "${l.cellId}" }) for your bounded work context.\n\nHive task: ${l.taskId}. When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Worker/reviewer requests go to this hive's queen and remain out of human views until forwarded; human step-in is not supported. Recover with hive_list_my_requests and withdraw with hive_withdraw_request when answered elsewhere. ${delegation}Launch helpers into this same resolved task; ancestry alone does not enroll them. Missing native tools require a membership check or refreshed agent terminal.`;
@@ -325,9 +329,14 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     return { launch_id: launchId, bead_id: l.beadId, session_id: result.sessionId, capacity: capacity(rt) };
   } catch (err) {
     let state;
-    try { state = recordLaunchFailure(rt, launchId, err, dispatched); }
+    let retryScheduled = false;
+    try {
+      state = recordLaunchFailure(rt, launchId, err, dispatched);
+      if (!dispatched && pickup && err.pickupRetryable) retryScheduled = rt.metadata.mutate(d => retryUnsubmittedPickup(d, d.workerLaunches[launchId], rt.snapshots.graph.beads[input.bead_id], err.message));
+    }
     catch (recordError) { rt.log(`hive: could not record worker launch failure: ${recordError.message}`); }
     rt.changed();
+    if (retryScheduled) throw Object.assign(new HiveError(err.message, 'busy'), { pickupRetryScheduled: true });
     if (RETIRED_LAUNCH_STATES.has(state)) throw new HiveError(`Worker launch ${launchId} is ${state}: ${err.message}`, 'refused');
     if (!dispatched) throw new HiveError(`Worker launch ${launchId} did not dispatch: ${err.message}`, err.code || 'refused');
     throw new HiveError(`Worker launch ${launchId} is uncertain: ${err.message}. Do not spawn again; reconcile this launch first.`, 'uncertain');
