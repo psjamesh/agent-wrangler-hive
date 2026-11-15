@@ -101,7 +101,7 @@ test('Needs you row, session link and waiting marker agree without leaking priva
   assert.equal(queenNotResponding(graph, cell), false);
 });
 
-for (const state of [{ status: 'exited' }, { status: 'errored' }, { status: 'idle', archived: true }]) {
+for (const state of [{ status: 'idle', exitOutput: 'Process exited' }, { status: 'unknown', exitOutput: 'Process crashed' }, { status: 'idle', archived: true }]) {
   for (const input of ['human', 'request']) test(`stopped queen ${JSON.stringify(state)} with ${input} input appears once and clears on restart`, () => {
     const { cell, doc, graph } = fixture();
     if (input === 'human') doc.conversation.cell.push({ author: 'human', at: now, response: { required: true } });
@@ -114,15 +114,47 @@ for (const state of [{ status: 'exited' }, { status: 'errored' }, { status: 'idl
     const rows = needsRows(ctx, [cell]);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].title, 'Queen stopped');
-    assert.equal(rows[0].link, '#session=queen');
+    assert.equal(rows[0].link, '#view=ext:hive:overview&cell=cell');
+    assert.equal(rows[0].sessionLinks.length, state.archived ? 0 : 1);
     assert.equal(JSON.stringify(rows).includes('Private title'), false);
     assert.equal(cellWaitingItems(ctx, cell).length, 1);
     assert.equal(cellWaitingItems(ctx, cell)[0].title, 'Queen stopped');
     for (const patch of [{ enabled: false }, { snapshot: {} }, { retired: {} }, { queenResponse: {} }]) {
       assert.equal(queenNeedsAttention(graph, { ...cell, ...patch }), false);
     }
-    Object.assign(graph.sessions[0], { status: 'working', archived: false });
+    Object.assign(graph.sessions[0], { status: 'working', archived: false, exitOutput: null });
     assert.deepEqual(needsRows(ctx, [cell]), []);
     assert.deepEqual(cellWaitingItems(ctx, cell), []);
   });
 }
+
+for (const input of ['human', 'request']) test(`dormant queen grace and failed ${input} delivery`, t => {
+  let clock = now;
+  t.mock.method(Date, 'now', () => clock);
+  const { cell, doc, graph } = fixture();
+  const pending = input === 'human'
+    ? { author: 'human', at: now, response: { required: true }, delivery: { state: 'delivered', sessionId: 'queen' } }
+    : { cellId: 'cell', audience: 'queen', state: 'open', createdAt: now, queenSessionId: 'queen', queenNotification: { state: 'delivered' } };
+  if (input === 'human') doc.conversation.cell.push(pending);
+  else doc.requests.secret = pending;
+  Object.assign(graph.sessions[0], { status: 'idle', managed: false, dormant: true });
+  cell.queenResponse = queenResponseState(doc, cell);
+  const ctx = { graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
+  assert.deepEqual(needsRows(ctx, [cell]), []);
+  clock = now + 119999;
+  assert.deepEqual(needsRows(ctx, [cell]), []);
+  clock++;
+  assert.equal(needsRows(ctx, [cell])[0].title, 'Queen stopped or suspended');
+  assert.equal(needsRows(ctx, [cell])[0].link, '#session=queen');
+  assert.equal(cellWaitingItems(ctx, cell)[0].title, 'Queen stopped or suspended');
+  assert.equal(queenNotResponding(graph, cell, now + 3600000), false);
+  clock = now;
+  const delivery = input === 'human' ? pending.delivery : pending.queenNotification;
+  delivery.state = 'failed';
+  cell.queenResponse = queenResponseState(doc, cell);
+  assert.equal(needsRows(ctx, [cell])[0].title, 'Queen stopped or suspended');
+  Object.assign(graph.sessions[0], { status: 'working', managed: true, dormant: false });
+  assert.deepEqual(needsRows(ctx, [cell]), []);
+  Object.assign(graph.sessions[0], { status: 'idle', managed: false });
+  assert.deepEqual(needsRows(ctx, [cell]), []);
+});

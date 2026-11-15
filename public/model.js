@@ -27,22 +27,27 @@ export function sessionsInTask(graph, taskId) {
 export function queenNotResponding(graph, cell, now = Date.now()) {
   if (!cell.enabled || cell.snapshot || cell.retired) return false;
   const queen = sessionNode(graph, cell.queenSessionId);
-  if (!queen || queen.archived || queen.status !== 'idle' || !cell.queenResponse?.pendingSince) return false;
+  if (!queen || queen.archived || queenStopped(graph, cell, now) || queen.status !== 'idle' || !cell.queenResponse?.pendingSince) return false;
   const saved = cell.watchdogSettings?.queenResponseMinutes;
   const minutes = Number.isFinite(saved) && saved > 0 ? saved : 30;
   return now - cell.queenResponse.pendingSince >= minutes * 60000;
 }
 
-export function queenStopped(graph, cell) {
+export function queenStopped(graph, cell, now = Date.now()) {
   if (!cell.enabled || cell.snapshot || cell.retired || !cell.queenResponse?.pendingSince) return false;
   const queen = sessionNode(graph, cell.queenSessionId);
-  return Boolean(queen && (queen.archived || ['exited', 'errored'].includes(queen.status)));
+  return Boolean(queen && (queen.archived || queen.exitOutput || ['exited', 'errored'].includes(queen.status) || (queen.dormant && (cell.queenResponse.deliveryFailed || now - cell.queenResponse.pendingSince >= 120000))));
+}
+
+export function queenSuspended(graph, cell) {
+  const queen = sessionNode(graph, cell.queenSessionId);
+  return queenStopped(graph, cell) && !queen.archived && !queen.exitOutput && !['exited', 'errored'].includes(queen.status);
 }
 
 export function queenNeedsAttention(graph, cell, now = Date.now()) {
   if (!cell.enabled || cell.snapshot || cell.retired) return false;
   const queen = sessionNode(graph, cell.queenSessionId);
-  return queenStopped(graph, cell) || Boolean(queen && !queen.archived && (['needs-input', 'needs-you'].includes(queen.status) || queenNotResponding(graph, cell, now)));
+  return queenStopped(graph, cell, now) || Boolean(queen && !queen.archived && (['needs-input', 'needs-you'].includes(queen.status) || queenNotResponding(graph, cell, now)));
 }
 
 export function statusDot(graph, sessionId) {

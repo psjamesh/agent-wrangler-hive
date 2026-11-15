@@ -269,11 +269,11 @@ test('client clock refreshes overdue queen attention without a new snapshot and 
 test('stopped queens appear in global and hive inboxes and tab badge until running again', t => {
   const f = fixture(t);
   f.cell.queenSessionId = 'queen';
-  f.doc.requests = { private: { id: 'private', cellId: f.cell.id, title: 'Private question', audience: 'queen', state: 'open', createdAt: Date.now() } };
+  f.doc.requests = { private: { id: 'private', cellId: f.cell.id, title: 'Private question', audience: 'queen', state: 'open', createdAt: Date.now() - 120000 } };
   const queen = { sessionId: 'queen', status: 'exited' };
   f.graph.sessions.push(queen);
   f.ui.setInboxView(f.cell.id, 'human');
-  for (const state of [{ status: 'exited' }, { status: 'errored' }, { status: 'idle', archived: true }, { status: 'working', archived: false }]) {
+  for (const state of [{ status: 'idle', exitOutput: 'Process exited' }, { status: 'unknown', exitOutput: 'Process crashed' }, { status: 'idle', archived: true }, { status: 'idle', archived: false, exitOutput: null, dormant: true }, { status: 'working', archived: false, exitOutput: null, dormant: false }]) {
     Object.assign(queen, state);
     const stopped = queen.status !== 'working';
     const tile = f.draw();
@@ -286,7 +286,11 @@ test('stopped queens appear in global and hive inboxes and tab badge until runni
       const rows = list.querySelectorAll('.hive-inbox-item').filter(row => row.textContent.includes('Queen stopped'));
       assert.equal(rows.length, Number(stopped));
       assert.equal(list.textContent.includes('Private question'), false);
-      if (stopped) assert.equal(rows[0].querySelector('a').getAttribute('href'), '#session=queen');
+      if (stopped) {
+        assert.equal(rows[0].querySelector('a').getAttribute('href'), queen.dormant ? '#session=queen' : '#view=ext:hive:overview&cell=cell_test');
+        const sessionLinks = rows[0].querySelectorAll('a').filter(link => link.textContent === 'Open session');
+        assert.equal(sessionLinks.length, queen.archived ? 0 : 1, JSON.stringify({state, list: list.textContent}));
+      }
     }
   }
 });
