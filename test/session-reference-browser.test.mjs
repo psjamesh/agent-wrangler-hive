@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
+import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -59,12 +60,11 @@ const rowVisible = !inboxMode || (() => { const row = node.querySelector('.hive-
 setTimeout(()=>{document.body.dataset.verification = valid && unavailableVisible && rowVisible && markdownNavigated && location.hash === '#session=${worker}' ? 'passed' : 'failed';},0);
 </script></body></html>`;
 
-test('isolated Chrome renders request and message links and navigates their session fragments', { skip: !process.env.HIVE_SCREENSHOT_DIR }, async t => {
+test('isolated Chrome renders request and message links and navigates their session fragments', { skip: !process.env.HIVE_TEST_CHROME ? 'Set HIVE_TEST_CHROME to a Chrome binary' : !process.env.HIVE_SCREENSHOT_DIR ? 'Set HIVE_SCREENSHOT_DIR to a screenshot directory' : false }, async t => {
   assert.ok(process.env.HIVE_CORE_PUBLIC, 'Provide the core public directory to verify the real Markdown renderer.');
   const output = path.resolve(process.env.HIVE_SCREENSHOT_DIR);
-  assert.ok(output.startsWith('/private/tmp/'), 'Screenshots must stay under /private/tmp.');
   await fs.mkdir(output, { recursive: true });
-  const build = await fs.mkdtemp('/private/tmp/hive-session-build-');
+  const build = await fs.mkdtemp(path.join(tmpdir(), 'hive-session-build-'));
   t.after(() => fs.rm(build, { recursive: true, force: true }));
   await fs.cp(new URL('../public/', import.meta.url), path.join(build, 'public'), { recursive: true });
   await fs.mkdir(path.join(build, 'core'));
@@ -82,10 +82,10 @@ test('isolated Chrome renders request and message links and navigates their sess
   const port = server.address().port;
   assert.notEqual(port, 7777);
   for (const mode of modes) {
-    const profile = await fs.mkdtemp('/private/tmp/hive-session-chrome-');
+    const profile = await fs.mkdtemp(path.join(tmpdir(), 'hive-session-chrome-'));
     t.after(() => fs.rm(profile, { recursive: true, force: true }));
     const screenshot = path.join(output, `${mode}.png`);
-    const { stdout } = await run(process.env.HIVE_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--window-size=1100,1000', '--virtual-time-budget=1800', `--screenshot=${screenshot}`, '--dump-dom', `http://127.0.0.1:${port}/${mode}`], { timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
+    const { stdout } = await run(process.env.HIVE_TEST_CHROME, ['--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--window-size=1100,1000', '--virtual-time-budget=1800', `--screenshot=${screenshot}`, '--dump-dom', `http://127.0.0.1:${port}/${mode}`], { timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
     assert.match(stdout, /data-verification="passed"/, `${mode}: ${stdout}`);
     assert.ok((await fs.stat(screenshot)).size > 10000);
   }

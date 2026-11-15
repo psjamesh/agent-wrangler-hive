@@ -29,7 +29,7 @@ view.update(root, null, graph);
 </script></body></html>`;
 
 
-test('All hives shows the global inbox as a side panel that matches the cell page (isolated Chrome, synthetic store)', async (t) => {
+test('All hives shows the global inbox as a side panel that matches the cell page (isolated Chrome, synthetic store)', { skip: !process.env.HIVE_TEST_CHROME ? 'Set HIVE_TEST_CHROME to a Chrome binary' : !process.env.HIVE_TEST_CDP ? 'Set HIVE_TEST_CDP to an isolated Chrome port' : false }, async (t) => {
   const port = Number(process.env.HIVE_TEST_CDP);
   assert.ok(Number.isInteger(port) && port > 0 && port !== 7777, 'Set HIVE_TEST_CDP to an explicitly allocated isolated headless Chrome port');
   const server = http.createServer(async (req, res) => {

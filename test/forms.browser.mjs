@@ -19,7 +19,7 @@ const mount = (node) => { root.replaceChildren(node || ''); return root; };
 window.t = { ui, ctx, sent, replies, notices, mount, retireDrawer, workstreamDrawer, completeKey, queenInstructions };
 </script></body></html>`;
 
-test('retire, reopen, complete-workstream and queen-instructions forms validate, submit, fail and succeed in a real browser (isolated Chrome, synthetic data)', async (t) => {
+test('retire, reopen, complete-workstream and queen-instructions forms validate, submit, fail and succeed in a real browser (isolated Chrome, synthetic data)', { skip: !process.env.HIVE_TEST_CHROME ? 'Set HIVE_TEST_CHROME to a Chrome binary' : !process.env.HIVE_TEST_CDP ? 'Set HIVE_TEST_CDP to an isolated Chrome port' : false }, async (t) => {
   const port = Number(process.env.HIVE_TEST_CDP);
   assert.ok(Number.isInteger(port) && port > 0 && port !== 7777, 'Set HIVE_TEST_CDP to an explicitly allocated isolated headless Chrome port');
   const server = http.createServer(async (req, res) => {
