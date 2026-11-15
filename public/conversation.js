@@ -164,7 +164,7 @@ function messageItem({ m, cell, beads, graph, api, ui, ctx, target, replyKey }) 
         ui.selectConversationMessage?.(cell.id, m.threadId, null);
       }
     },
-    class: `hive-message hive-message-${m.author}${unreadFor(x => ui.ackOf(cell.id, x))(m) ? ' is-unread' : ''}${ui.conversationMessage?.(cell.id, m.threadId) === m.id ? ' is-conversation-selected' : ''}${ui.linkedMessage?.(cell.id, m.threadId)?.messageId === m.id ? ' is-link-target' : ''}`,
+    class: `hive-message hive-message-${m.author}${unreadFor(x => ui.ackOf(cell.id, x))(m) ? ' is-unread' : ''}${ui.conversationMessage?.(cell.id, m.threadId) === m.id ? ' is-conversation-selected' : ''}${ui.linkedMessage?.(cell.id, m.threadId)?.messageId === m.id && ui.linkedMessage(cell.id, m.threadId).highlight !== false ? ' is-link-target' : ''}`,
     dataset: { id: m.id },
   },
     h('div', { class: 'hive-message-head' },
@@ -621,7 +621,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
     const message = byId.get(row.id || rows.find(r => r.threadId === row.threadId)?.id);
     list.append(inboxRow(context, row, {
       id: row.id || row.key, showContext: false, query: searching ? query : '',
-      ...(t ? { open: () => openTopic(ui, ctx, cell, t, cell.threads.some(x => x.id === t.id), epoch) } : {}),
+      ...(t && kind !== 'human' ? { open: () => openTopic(ui, ctx, cell, t, cell.threads.some(x => x.id === t.id), epoch) } : {}),
       action: kind === 'queen' && message && !cell.snapshot ? withdrawButton(message, cell, ctx, 'hive-withdraw', 'Withdraw', 'inbox', ui) : null,
     }));
   }

@@ -1,7 +1,7 @@
 import { isHumanRequest as visibleToHuman, needsHuman } from './request-state.js';
 import { h, markdown, relativeTime, sessionReference } from './dom.js';
 import { messageImages } from './attachments.js';
-import { hiveLink } from './deep-links.js';
+import { hiveLink, openHiveLink } from './deep-links.js';
 export { needsHuman } from './request-state.js';
 
 const forms = new WeakMap();
@@ -91,7 +91,7 @@ export function requestList({ cell, kind, scope = null, all = true, ...ctx }) {
   return list;
 }
 
-export function createRequestNotifications(api, { read = () => null, write = () => {}, answer = null, open = url => { globalThis.location.hash = url; } } = {}) {
+export function createRequestNotifications(api, { read = () => null, write = () => {}, answer = null, open = url => openHiveLink(globalThis.window, url) } = {}) {
   let seeded = false;
   const shown = new Map(), seen = new Set(read() || []);
   return hive => {
