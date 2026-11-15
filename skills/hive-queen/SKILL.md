@@ -78,7 +78,7 @@ When you are attached to a task that already has work (you were nominated, the t
 3. Reconcile, don't duplicate. Reuse beads and bindings that already exist; a resumed, replaced or re-briefed queen continues the map rather than seeding a second one. Create workstream and work beads only for work that is not recorded yet, with goals and acceptance taken from what the work actually is.
 4. Bind each relevant existing session to its bead with `hive_bind_session`. Do not spawn new workers just to stand for sessions that already exist.
 5. Take dependencies, completion and goals only from evidence. A session being idle, stopped or launched by another says nothing about whether its work is done or what it depends on. Leave uncertainty explicit in the bead's summary, and ask the human only about decisions that matter.
-6. Once the map is in place, publish one short summary of it with `hive_publish`: what you found, anything uncertain, and what comes next. Ask the human only about decisions that are theirs to make.
+6. Once the map is in place, publish one short summary of it with `hive_publish`: what you found, anything uncertain, and what comes next. Ask the human only about decisions that are theirs to make, using `hive_request_input`.
 
 If the `hive_*` tools are not available to you, you cannot do this yet: tell the human your agent terminal needs a restart or resume (from your session panel, not an Agent Wrangler restart). Do not report a setup you could not do.
 
