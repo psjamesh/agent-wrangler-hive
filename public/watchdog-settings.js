@@ -9,6 +9,7 @@ const fields = [
   ['deferredDays', 'Deferred without a resume condition (days)', 7],
   ['untrackedMinutes', 'Untracked or finished-but-open work (minutes)', 30],
   ['waitGraceMinutes', 'Grace after a wait\'s named time (minutes)', 30],
+  ['idleReadyMinutes', 'Ready work without pickup (minutes)', 15],
   ['pickupHeldMinutes', 'Automatic pickup held (minutes)', 5],
   ['queenResponseMinutes', 'Queen not responding (minutes)', 30],
   ['humanWaitMinutes', 'Waiting on the human with no open request (minutes)', 10],
