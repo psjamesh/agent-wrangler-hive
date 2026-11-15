@@ -775,6 +775,8 @@ export function restoreFocus(root, f) {
   let el = null;
   if (f.focusKey) el = root.querySelector(`[data-focus-key="${CSS.escape(f.focusKey)}"]`);
   else if (f.tileId) el = root.querySelector(`[data-tile-id="${CSS.escape(f.tileId)}"]`);
+  const mapMenu = el?.closest?.('.hive-map-menu');
+  if (mapMenu?.hidden) el = mapMenu.closest('.hive-zoom')?.querySelector('.hive-map-menu-toggle');
   if (el?.disabled) el = null;
   if (!el && next) el = root.querySelector(`[data-focus-key="${CSS.escape(next)}"]`);
   if (!el && f.focusFallback) el = root.querySelector(`[data-focus-key="${CSS.escape(f.focusFallback)}"]`);
