@@ -114,3 +114,23 @@ test('tab wraps in DOM order and does not intercept arrow keys', t => {
   assert.equal(document.activeElement, controls.at(-1));
   assert.equal(press(dialog, 'ArrowLeft').defaultPrevented, false);
 });
+
+test('automatic opening restores focus to About Hive when the entry had no focused control', t => {
+  const f = fixture(t);
+  f.opener.dataset.focusKey = 'about-hive';
+  document.querySelectorAll = selector => selector === '[data-focus-key]' ? [f.opener] : [];
+  assert.equal(document.activeElement, document.body);
+  f.promo.offer();
+  f.button('Close intro').click();
+  assert.equal(document.activeElement, f.opener);
+});
+
+test('an unavailable scene keeps its fallback within that image theme', t => {
+  const f = fixture(t);
+  f.promo.open(f.opener);
+  const img = walk(f.dialog()).find(el => el.tagName === 'img' && el.getAttribute('class') === 'hive-promo-art-light');
+  const target = img || walk(f.dialog()).find(el => el.tagName === 'img' && el.parentNode.getAttribute('class') === 'hive-promo-art-light');
+  target.dispatchEvent({ type: 'error', target });
+  const fallback = walk(f.dialog()).find(el => el.getAttribute('class') === 'hive-promo-image-fallback');
+  assert.equal(fallback.parentNode.getAttribute('class'), 'hive-promo-art-light');
+});

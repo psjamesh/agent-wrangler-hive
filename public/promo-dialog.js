@@ -14,7 +14,7 @@ export function createPromo({ root, storage, buildVersion, notice = () => {}, pa
   let active = null;
   const button = (label, onclick, attrs = {}) => h('button', { type: 'button', class: 'hive-btn', onclick, ...attrs }, label);
   const restore = opener => {
-    const target = opener?.isConnected ? opener
+    const target = opener?.isConnected && !['body', 'html'].includes(opener.tagName?.toLowerCase()) ? opener
       : [...document.querySelectorAll('[data-focus-key]')].find(el => el.dataset.focusKey === 'about-hive')
         || root()?.querySelector('h2');
     if (target) { if (target.tagName?.toLowerCase() === 'h2') target.setAttribute('tabindex', '-1'); target.focus(); }
@@ -33,15 +33,16 @@ export function createPromo({ root, storage, buildVersion, notice = () => {}, pa
       restore(current.opener);
     }
   };
-  const image = page => h('div', { class: 'hive-promo-art' }, ['', '-light'].map(theme => h('img', {
+  const image = page => h('div', { class: 'hive-promo-art' }, ['', '-light'].map(theme => h('div', {
     class: theme ? 'hive-promo-art-light' : 'hive-promo-art-dark',
+  }, h('img', {
     src: new URL(`./promo/${page.id}${theme}.svg`, import.meta.url).href,
     alt: page.alt,
     onerror: event => {
       event.target.hidden = true;
       if (!event.target.parentNode.querySelector('p')) event.target.parentNode.append(h('p', { class: 'hive-promo-image-fallback' }, `Example unavailable. ${page.alt}`));
     },
-  })));
+  }))));
   const open = (opener = document.activeElement, offer = { page: 0, changes: [], digest: '' }) => {
     if (active || !root()) return false;
     const dialog = h('dialog', { class: 'hive-promo', 'aria-label': 'Introducing Hive' });
