@@ -25,3 +25,48 @@ jobs:
       - run: npm ci
 
       - run: npm test
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: psjamesh/agent-wrangler
+          ref: 23612fb6ac7a11a9aa5f3ca34d01efe4c34ac9fd
+          path: .core
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 'lts/*'
+          cache: npm
+
+      - uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
+        id: chrome
+        with:
+          chrome-version: stable
+          install-dependencies: true
+
+      - name: Allow Chrome sandbox user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - run: npm ci
+
+      - run: npm run test:browser
+        env:
+          HIVE_TEST_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+          HIVE_CORE_PUBLIC: ${{ github.workspace }}/.core/public
+          HIVE_SCREENSHOT_DIR: ${{ runner.temp }}/hive-browser-artifacts
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: hive-browser-artifacts
+          path: ${{ runner.temp }}/hive-browser-artifacts
+          if-no-files-found: warn

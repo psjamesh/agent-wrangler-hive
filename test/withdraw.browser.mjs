@@ -54,7 +54,7 @@ function state({ rt, metadata }) {
   return { id: CELL, rootBeadId: 'hive-root', enabled: true, queenSessionId: '11111111-1111-4111-8111-111111111111', messages: list, threads, inbox: { queen: slice, human }, requests: {} };
 }
 
-test('withdrawing and undoing in the Waiting for queen list and the conversation, on a synthetic store', async (t) => {
+test('withdrawing and undoing in the Waiting for queen list and the conversation, on a synthetic store', { skip: !process.env.HIVE_TEST_CHROME ? 'Set HIVE_TEST_CHROME to a Chrome binary' : !process.env.HIVE_TEST_CDP ? 'Set HIVE_TEST_CDP to an isolated Chrome port' : false }, async (t) => {
   const port = Number(process.env.HIVE_TEST_CDP);
   assert.ok(Number.isInteger(port) && port > 0 && port !== 7777, 'Set HIVE_TEST_CDP to an explicitly allocated isolated headless Chrome port');
   const s = synthetic();
@@ -115,7 +115,8 @@ test('withdrawing and undoing in the Waiting for queen list and the conversation
   await click('Withdraw');
   assert.deepEqual(s.metadata.read().conversation[CELL].filter(awaitingQueen).map((m) => m.id), [first.id]);
   assert.equal(inboxSlice(s.metadata.read(), CELL, 'queen').count, 1);
-  assert.equal(await run(`document.querySelector('#root .hive-unread').textContent`), '1');
+  assert.equal(await rows(), 1);
+  assert.equal(await run(`document.querySelector('#root .hive-unread') === null`), true, 'single-message rows omit the count badge');
   assert.match(await run(`document.querySelector('#root .hive-inbox-withdrawn').textContent`), /Withdrawn: .*Undo/);
   const shot = await call('Page.captureScreenshot', { format: 'png' });
   if (process.env.HIVE_TEST_SHOT) fs.writeFileSync(process.env.HIVE_TEST_SHOT, Buffer.from(shot.data, 'base64'));

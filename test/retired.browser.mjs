@@ -21,7 +21,7 @@ const draw = () => { const out = renderHive({ ui, hive, graph: { sessions: [], t
 window.t = { ui, draw, sent };
 </script></body></html>`;
 
-test('retired hives toggle on All hives, show grey with an outcome mark, open read-only and offer Reopen (isolated Chrome, synthetic store)', async (t) => {
+test('retired hives toggle on All hives, show grey with an outcome mark, open read-only and offer Reopen (isolated Chrome, synthetic store)', { skip: !process.env.HIVE_TEST_CHROME ? 'Set HIVE_TEST_CHROME to a Chrome binary' : !process.env.HIVE_TEST_CDP ? 'Set HIVE_TEST_CDP to an isolated Chrome port' : false }, async (t) => {
   const port = Number(process.env.HIVE_TEST_CDP);
   assert.ok(Number.isInteger(port) && port > 0 && port !== 7777, 'Set HIVE_TEST_CDP to an explicitly allocated isolated headless Chrome port');
   const server = http.createServer(async (req, res) => {

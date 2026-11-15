@@ -42,7 +42,7 @@ try {
 })()`;
 
 for (const view of ['overview', 'cell']) {
-  test(`isolated Chrome verifies auto-fit controls in ${view}`, { skip: process.env.HIVE_AUTO_FIT_BROWSER !== '1' }, async t => {
+  test(`isolated Chrome verifies auto-fit controls in ${view}`, { skip: !process.env.HIVE_TEST_CHROME ? 'Set HIVE_TEST_CHROME to a Chrome binary' : process.env.HIVE_AUTO_FIT_BROWSER !== '1' ? 'Set HIVE_AUTO_FIT_BROWSER=1' : false }, async t => {
     const fixture = await readFile(new URL('./fixtures/ui-polish.html', import.meta.url), 'utf8');
     const server = http.createServer(async (req, res) => {
       const path = new URL(req.url, 'http://localhost').pathname;
@@ -57,7 +57,7 @@ for (const view of ['overview', 'cell']) {
     t.after(() => server.close());
     assert.notEqual(server.address().port, 7777);
     const profile = await mkdtemp(join(tmpdir(), 'hive-kyl3-chrome-'));
-    const child = spawn(process.env.HIVE_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
+    const child = spawn(process.env.HIVE_TEST_CHROME, [
       '--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--no-first-run', '--no-default-browser-check',
       '--remote-debugging-port=0', 'about:blank',
     ], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -73,10 +73,7 @@ for (const view of ['overview', 'cell']) {
         if (launchError || child.exitCode !== null || child.signalCode !== null) break;
         await wait(100);
       }
-      if (!port) {
-        t.skip(`Browser checks not run: isolated Chrome could not start (exit ${child.exitCode}, signal ${child.signalCode}). ${launchError || errors.slice(-600)}. Run HIVE_AUTO_FIT_BROWSER=1 npm test`);
-        return;
-      }
+      assert.ok(port, `Isolated Chrome could not start: ${launchError || errors.slice(-600)}`);
       assert.notEqual(port, 7777);
       const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT', signal: AbortSignal.timeout(5000) })).json();
       socket = new WebSocket(target.webSocketDebuggerUrl);
@@ -121,7 +118,7 @@ for (const view of ['overview', 'cell']) {
       socket?.close();
       if (child.exitCode === null && child.signalCode === null && !launchError) child.kill();
       await exited;
-      await rm(profile, { recursive: true, force: true });
+      await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 }

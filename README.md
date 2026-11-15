@@ -95,7 +95,7 @@ Enabled hives start ready-marked work automatically, bounded by the global work 
 
 ## Tests
 
-`npm test` runs the fast automated suites in `test/`, `public/` and `server/`. `npm run test:native` runs the native release suites in `test/native/`; run it for changes touching the Beads, `bd` or Dolt integration, or the release and install path. Standalone browser scripts in `test/` run separately. Test data uses temporary directories and honours `TMPDIR`; to keep it inside the checkout, run:
+`npm test` runs the fast automated suites in `test/`, `public/` and `server/`. `npm run test:native` runs the native release suites in `test/native/`; run it for changes touching the Beads, `bd` or Dolt integration, or the release and install path. `npm run test:browser` runs the browser fixtures separately. Test data uses temporary directories and honours `TMPDIR`; to keep it inside the checkout, run:
 
 ```sh
 mkdir -p .scratch
@@ -103,6 +103,10 @@ echo '{}' > .scratch/package.json
 TMPDIR="$PWD/.scratch" npm test
 TMPDIR="$PWD/.scratch" npm run test:native
 ```
+
+Browser tests are opt-in: set `HIVE_TEST_CHROME` to a Chrome executable and `HIVE_CORE_PUBLIC` to an Agent Wrangler core `public/` directory, then run `npm run test:browser`. The runner starts an isolated headless Chrome debugging port, enables the individual browser gates, and runs each fixture sequentially (including the global inbox through its test wrapper). Screenshots and measurements go under `HIVE_SCREENSHOT_DIR`, defaulting to a temporary directory. Without `HIVE_TEST_CHROME`, browser fixtures skip with a setup message; an explicitly configured browser that cannot start fails the run. The default `npm test` command does not opt into browser coverage.
+
+The Test workflow runs browser coverage on Ubuntu with Chrome and a pinned core renderer checkout. The disposable runner permits unprivileged user namespaces so Chrome's sandbox can start under Ubuntu's AppArmor policy. It fetches Git history for the map-search and UI-polish baseline comparisons, and uploads browser artifacts for diagnosis.
 
 Use the explicit file globs in `npm test`. A bare `node --test` can discover tests in local scratch directories.
 

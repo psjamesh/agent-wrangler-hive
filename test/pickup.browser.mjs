@@ -40,7 +40,7 @@ const valid=state.bead.pickup.state===expected && document.querySelector('[role=
 document.body.dataset.verification=valid?'passed':'failed';
 </script></body></html>`;
 
-test('pickup UI with real readiness handlers and fake workers in isolated Chrome', async t => {
+test('pickup UI with real readiness handlers and fake workers in isolated Chrome', { skip: process.env.HIVE_TEST_CHROME ? false : 'Set HIVE_TEST_CHROME to a Chrome binary' }, async t => {
   const output = process.env.HIVE_SCREENSHOT_DIR ? path.resolve(process.env.HIVE_SCREENSHOT_DIR) : await fs.mkdtemp(path.join(os.tmpdir(), 'hive-pickup-shots-'));
   t.diagnostic(`Screenshots: ${output}`);
   await fs.mkdir(output, { recursive: true });
@@ -71,13 +71,7 @@ test('pickup UI with real readiness handlers and fake workers in isolated Chrome
     if (['attention', 'launched'].includes(mode)) await createPickupDispatcher({ runtime: fixture.rt, host: fixture.host, now: fixture.now }).run();
     const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'hive-pickup-chrome-'));
     t.after(() => fs.rm(profile, { recursive: true, force: true }));
-    let stdout;
-    try {
-      ({ stdout } = await run(process.env.HIVE_TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--window-size=1100,1100', '--virtual-time-budget=6000', `--screenshot=${path.join(output, `${mode}.png`)}`, '--dump-dom', `http://127.0.0.1:${server.address().port}/?mode=${mode}`], { timeout: 25000, maxBuffer: 2 * 1024 * 1024 }));
-    } catch (err) {
-      if (err.code === 'ENOENT') { t.skip('Chrome is not installed; set HIVE_TEST_CHROME to its executable'); return; }
-      throw err;
-    }
+    const { stdout } = await run(process.env.HIVE_TEST_CHROME, ['--headless=new', `--user-data-dir=${profile}`, '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--window-size=1100,1100', '--virtual-time-budget=6000', `--screenshot=${path.join(output, `${mode}.png`)}`, '--dump-dom', `http://127.0.0.1:${server.address().port}/?mode=${mode}`], { timeout: 25000, maxBuffer: 2 * 1024 * 1024 });
     assert.match(stdout, /data-verification="passed"/, `${mode}: ${stdout}`);
     assert.ok((await fs.stat(path.join(output, `${mode}.png`))).size > 10000);
   }
