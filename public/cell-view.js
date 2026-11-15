@@ -1,3 +1,4 @@
+import { cellMetrics } from './cell-metrics.js';
 import { workerProfileForm } from './worker-profile.js';
 import { workstreamProfileSettings } from './worker-profile.js';
 import { cellTitle, cellGoalForm } from './cell-settings.js';
@@ -11,7 +12,7 @@ import { settingsModal, settingsButton, advancedSettings } from './settings-view
 import { openCellPopover, disposeCellPopover } from './cell-popover.js';
 import { capacityControl } from './capacity-control.js';
 import { progressBar } from './progress-bar.js';
-import { waitingItems, cellWaitingItems, waitingSection, openWaitingMenu } from './waiting-view.js';
+import { waitingItems, waitingSection, openWaitingMenu } from './waiting-view.js';
 import { prSummary, pullRequestsSection } from './pr-view.js';
 import { h, syncChildren, markdown, safeHref, relativeTime } from './dom.js';
 import { hexPath, primaryMark, fitLines } from './hex-grid.js';
@@ -502,8 +503,9 @@ function headProgress(counts) {
 
 function cellHeader(ctx, cell, root) {
   const { graph, ui, send, hive } = ctx;
-  const counts = root && (cell.enabled || isRetired(cell)) ? workCounts(hive, childrenMap(hive.beads), root.id) : null;
-  const waiting = cellWaitingItems(ctx, cell);
+  const metrics = cellMetrics(ctx, cell);
+  const counts = root && (cell.enabled || isRetired(cell)) ? metrics.work : null;
+  const waiting = metrics.waitingItems;
   return h('header', { class: 'hive-cellhead' },
     h('div', { class: 'hive-cellhead-top' },
       h('button', { type: 'button', class: 'hive-back', onclick: () => ui.closeCell(), 'aria-label': 'Show all hives', title: 'Show all hives' },

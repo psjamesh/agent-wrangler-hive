@@ -294,3 +294,47 @@ test('stopped queens appear in global and hive inboxes and tab badge until runni
     }
   }
 });
+
+
+test('tile and header share counts for blocked work, requests, worker input and PR actions', t => {
+  const f = fixture(t);
+  f.beads.blocked = { id: 'blocked', parentId: 'root', status: 'open' };
+  f.beads.review = { id: 'review', parentId: 'root', status: 'in_progress', reviewState: 'in_review' };
+  f.beads.inactive = { id: 'inactive', parentId: 'root', status: 'in_progress' };
+  f.beads.blocker = { id: 'blocker', parentId: 'root', status: 'open' };
+  f.doc.requests = { question: { id: 'question', cellId: f.cell.id, beadId: 'blocked', title: 'Decision', audience: 'human', state: 'open' } };
+  f.graph.tasks = { assignments: { worker: f.cell.taskId } };
+  const worker = { sessionId: 'worker', status: 'needs-you' };
+  f.graph.sessions.push(worker);
+  const first = f.draw();
+  assert.equal(counter(first, 'needs').querySelector('text').textContent, '2');
+  const hive = structuredClone(f.hive);
+  hive.edges.push({ dependent: 'blocked', prerequisite: 'blocker', blocking: true });
+  const ctx = () => ({ ui: f.ui, hive, graph: f.graph, api: {}, notices: [], busy: () => false, send() {}, notice() {} });
+  const cell = hive.cells[f.cell.id];
+  const check = needs => {
+    const overview = renderHive(ctx()).top;
+    const tile = overview.querySelector('[data-tile-id="cell_test"]');
+    const local = renderHive({ ...ctx(), ui: { ...f.ui, cellId: () => f.cell.id } }).top;
+    const header = local.querySelector('.hive-cellhead');
+    assert.equal(counter(tile, 'needs')?.querySelector('text')?.textContent || '0', String(needs));
+    assert.equal(header.querySelector('[data-focus-key="waiting-header"]')?.textContent || '', needs ? `${needs} need you` : '');
+    assert.equal(header.querySelector('.hive-headprogress').textContent, '1/6 closed');
+    assert.match(tile.getAttribute('aria-label'), /1 in progress, 1 in review, 1 not active, 1 waiting, 2 open, 1 of 6 closed/);
+    assert.equal(header.querySelector('.hive-headprogress').getAttribute('title'), '1 in progress, 1 in review, 1 not active, 1 waiting, 2 open, 1 of 6 closed');
+    assert.equal(counter(tile, 'progress').querySelector('text').textContent, '1');
+    assert.equal(header.querySelector('.hive-capacity-count').textContent, overview.querySelector('.hive-capacity-count').textContent);
+  };
+  check(2);
+  worker.status = 'working';
+  check(1);
+  const head = 'a'.repeat(40);
+  cell.pullRequests = [{ url: 'https://github.com/example/repo/pull/1', number: 1, title: 'Ready work', beadIds: ['work'], state: 'OPEN', headSha: head, isDraft: false, checks: 'green', stateCheckedAt: Date.now(), humanAttention: { state: 'ready', headSha: head, reason: 'Ready for merge' } }];
+  check(2);
+  cell.pullRequests[0].humanAttention.state = 'cannot-fix';
+  check(2);
+  cell.pullRequests[0].stateCheckedAt = 0;
+  check(1);
+  cell.requests = {};
+  check(0);
+});
