@@ -54,7 +54,7 @@ export function pickupDetails({ api, ui, send, hive }, cell, bead) {
     mark.launchId ? h('p', {}, 'Launch: ', h('code', {}, mark.launchId)) : null,
     editable && (!['investigation', 'idea'].includes(bead.kind) || mark.armToken) ? h('button', { type: 'button', class: 'hive-quiet-btn', disabled: draft?.saving, onclick: hold }, mark.held ? 'Unhold automatic pickup' : 'Hold automatic pickup') : null,
     editable && draft?.error ? h('p', { role: 'alert' }, draft.error) : null,
-    editable ? h('details', {}, h('summary', {}, mark.armToken ? 'Change readiness…' : 'Mark ready for pickup…'),
+    editable ? h('details', { 'data-state-key': 'pickup-readiness' }, h('summary', {}, mark.armToken ? 'Change readiness…' : 'Mark ready for pickup…'),
       h('form', { class: 'hive-form', onsubmit: e => { e.preventDefault(); sendMark(true); } },
         h('p', { class: 'hive-muted' }, 'One worker start, subject to available work capacity and the start-rate guard. Restarts preserve readiness; failed starts need reconciliation and deliberate rearming.'),
         select('agent', 'Agent', agents.map(a => ({ value: a.id, label: a.label }))),

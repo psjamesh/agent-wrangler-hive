@@ -617,7 +617,7 @@ export function cellPanels(ctx, cell) {
     h('h3', {}, 'Details'), h('p', { class: 'hive-muted' }, 'This hive is off. Turn it on to see its work.'));
   const history = cell.enabled && !cell.snapshot && (!root || ui.inspecting()) ? closedButton(ctx, cell) : null;
   if (history) details.append(history);
-  const dock = hasPanels(cell, root) || history ? syncChildren(cached.dock, [conversation, details]) : null;
+  const dock = hasPanels(cell, root) || history ? syncChildren(cached.dock, [conversation, details], ctx.beforeReplace) : null;
   return {
     header: cellHeader(ctx, cell, root),
     drawer: retireDrawer(ctx, cell) || workstreamDrawer(ctx, cell),
