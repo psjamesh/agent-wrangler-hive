@@ -106,7 +106,7 @@ test('submitting immediately after typing saves the current draft without a rere
 
 test('count opens the shared Settings modal and focuses the limit field', t => {
   const f = fixture(t); f.open();
-  assert.match(text(f.draw()), /Settings.*All hives.*Maximum active workers.*Bee slider.*bd executable/);
+  assert.match(text(f.draw()), /Settings.*All hives.*Maximum active workers.*Bee slider/);
   assert.equal(globalThis.document.activeElement.attrs['data-focus-key'], 'capacity-limit');
   assert.equal(f.control('capacity-toggle').attrs['aria-controls'], 'hive-settings');
   f.control('settings-close').events.click(); f.draw();
@@ -119,6 +119,7 @@ test('Hive settings render without bd and save its path through the host', async
   const setup = renderSetup(f.ctx);
   assert.ok(walk(setup).some(el => el.attrs['data-focus-key'] === 'open-settings'));
   walk(setup).find(el => el.attrs['data-focus-key'] === 'open-settings').events.click(); f.draw();
+  f.control('settings-section-all-advanced').events.click(); f.draw();
   const input = f.control('settings-bd-path');
   assert.equal(input.attrs.type, 'text');
   input.events.input({ target: { value: '/tmp/beads-test' } });
@@ -149,6 +150,7 @@ test('closing settings discards drafts before the next open', t => {
 test('failed bd saves retain the path and never request a recheck', async t => {
   const f = fixture(t); f.open();
   f.ctx.api.settings.set = async () => { throw new Error('Disk full'); };
+  f.control('settings-section-all-advanced').events.click(); f.draw();
   f.control('settings-bd-path').events.input({ target: { value: '/tmp/my-bd' } }); f.draw();
   await walk(f.draw()).find(el => el.attrs.id === 'hive-bd-setting').events.submit({ preventDefault() {} });
   assert.match(text(f.draw()), /Could not save bd executable: Disk full/);
@@ -168,6 +170,7 @@ test('completed saves restore focus after the pending controls were disabled', a
   f.ctx.api.settings.set = async () => { globalThis.document.activeElement = null; };
   await f.submit(); f.draw();
   assert.equal(globalThis.document.activeElement?.attrs['data-focus-key'], 'capacity-save');
+  f.control('settings-section-all-advanced').events.click(); f.draw();
   await walk(f.draw()).find(el => el.attrs.id === 'hive-bd-setting').events.submit({ preventDefault() {} }); f.draw();
   assert.equal(globalThis.document.activeElement?.attrs['data-focus-key'], 'settings-bd-save');
 });

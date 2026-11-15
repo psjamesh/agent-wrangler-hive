@@ -31,7 +31,7 @@ function fixture(t, extra = {}) {
   };
   document.querySelector = selector => walk(document.body).find(el => el.getAttribute('data-focus-key') === selector.match(/data-focus-key="([^"]+)"/)?.[1]);
   const draw = (current = cell) => {
-    document.body.replaceChildren(settingsButton(ctx, current), settingsModal(ctx, current, leave => hiveSettings(ctx, current, leave)) || h('span'));
+    document.body.replaceChildren(settingsButton(ctx, current), settingsModal(ctx, current, (leave, section) => hiveSettings(ctx, current, leave, section)) || h('span'));
     while (frames.length) frames.shift()();
     return document.body;
   };
@@ -51,11 +51,12 @@ test('cog opens labelled modal; tabs change content and preserve hive drafts', t
   assert.equal(f.dialog().getAttribute('aria-modal'), 'true');
   assert.equal(f.dialog().getAttribute('aria-labelledby'), 'hive-settings-title');
   assert.equal(document.activeElement, f.key('settings-close'));
-  assert.match(f.dialog().textContent, /How the queen works.*Watchdog thresholds.*Codex approvals.*Automatic pickup.*Reviewers.*Turn hive off.*Retire hive/s);
+  assert.match(f.dialog().textContent, /How the queen works/);
+  f.key('settings-section-hive-advanced').click(); f.draw();
   f.key('watchdog:c:workerMinutes').value = '15';
   fire(f.key('watchdog:c:workerMinutes'), 'input');
   f.key('settings-tab-all').click(); f.draw();
-  assert.match(f.dialog().textContent, /Maximum active workers.*bd executable.*Pop up/s);
+  assert.match(f.dialog().textContent, /Maximum active workers.*Pop up/s);
   assert.doesNotMatch(f.dialog().textContent, /Watchdog thresholds/);
   assert.equal(f.key('settings-tab-all').getAttribute('aria-selected'), 'true');
   press(f.key('settings-tab-all'), 'ArrowLeft'); f.draw();
@@ -85,6 +86,7 @@ test('Escape and Close return focus to the cog and Tab stays within the dialog',
 
 test('per-hive settings save and prevent closing across tabs while pending', t => {
   const f = fixture(t); f.open();
+  f.key('settings-section-hive-advanced').click(); f.draw();
   const form = walk(f.dialog()).find(el => el.getAttribute('class') === 'hive-form hive-watchdog');
   fire(form, 'submit'); f.draw();
   assert.equal(f.sent[0].msg.type, 'hive-watchdog-settings');
@@ -120,6 +122,7 @@ test('global saves prevent closing and successful saves persist', async t => {
 test('retired hives retain reopening and snapshots only offer All hives settings', t => {
   const f = fixture(t, { enabled: false, retired: { outcome: 'done', summary: 'Shipped' } });
   f.open();
+  f.key('settings-section-hive-lifecycle').click(); f.draw();
   assert.match(f.dialog().textContent, /Retired as done.*Shipped.*Reopen hive/s);
   assert.doesNotMatch(f.dialog().textContent, /Watchdog thresholds/);
   f.button('Reopen hive…').click();
@@ -198,4 +201,122 @@ test('goal saves prevent closing settings across tabs and closing clears the goa
   f.key('settings-close').click(); f.draw();
   assert.equal(f.dialog(), undefined);
   assert.equal(f.forms.get('goal:c'), null);
+});
+
+
+test('sections keep every setting reachable and Advanced collapsed across redraws', t => {
+  const f = fixture(t); f.open();
+  assert.ok(f.key('goal:c:goal'));
+  assert.match(f.dialog().textContent, /How the queen works/);
+  assert.ok(f.key('settings-rename-open:c'));
+  assert.ok(f.key('goal:c:acceptance'));
+  assert.doesNotMatch(f.dialog().textContent, /Watchdog thresholds|Codex approvals|Turn hive off/);
+  const section = name => { f.key(`settings-section-hive-${name}`).click(); f.draw(); };
+  section('agents');
+  assert.match(f.dialog().textContent, /Codex approvals.*Automatic pickup.*Reviewers/s);
+  assert.ok(f.key('codex-approvals:c'));
+  for (const slot of ['primary', 'secondary']) for (const field of ['agent', 'model', 'effort']) assert.ok(f.key(`review-policy:c:${slot}:${field}`));
+  section('lifecycle');
+  assert.match(f.dialog().textContent, /Turn hive off.*Retire hive/s);
+  section('advanced');
+  let details = walk(f.dialog()).find(el => el.tagName === 'details');
+  assert.equal(details.getAttribute('open'), null);
+  assert.match(details.children[0].textContent, /Advanced/);
+  details.open = true; fire(details, 'toggle'); f.draw();
+  details = walk(f.dialog()).find(el => el.tagName === 'details');
+  assert.equal(details.getAttribute('open'), '');
+  assert.equal(walk(details).filter(el => el.getAttribute('type') === 'number').length, 10);
+  f.key('watchdog:c:workerMinutes').value = '19'; fire(f.key('watchdog:c:workerMinutes'), 'input'); f.draw();
+  f.button('Reset to defaults').click(); f.draw();
+  assert.equal(f.key('watchdog:c:workerMinutes').value, 30);
+  const form = walk(f.dialog()).find(el => el.getAttribute('class') === 'hive-form hive-watchdog');
+  fire(form, 'submit');
+  assert.deepEqual(Object.values(f.sent.at(-1).msg.settings), [30, 30, 60, 30, 24, 7, 30, 30, 5, 10]);
+  f.sent.at(-1).options.onReply({ ok: true });
+  details = walk(f.dialog()).find(el => el.tagName === 'details');
+  details.open = false; fire(details, 'toggle'); f.draw();
+  assert.equal(walk(f.dialog()).find(el => el.tagName === 'details').getAttribute('open'), null);
+  f.key('settings-tab-all').click(); f.draw();
+  assert.ok(f.key('capacity-limit'));
+  assert.match(f.dialog().textContent, /Pop up/);
+  assert.ok(walk(f.dialog()).find(el => el.getAttribute('aria-label') === 'Number of bees'));
+  f.key('settings-section-all-advanced').click(); f.draw();
+  assert.equal(walk(f.dialog()).find(el => el.tagName === 'details').getAttribute('open'), null);
+  assert.ok(f.key('settings-bd-path'));
+  assert.ok(f.key('settings-bd-recheck'));
+});
+
+test('section navigation is keyboard accessible and remembers viewer choices safely', t => {
+  const previous = globalThis.localStorage;
+  const values = new Map();
+  globalThis.localStorage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+  t.after(() => { globalThis.localStorage = previous; });
+  const f = fixture(t); f.open();
+  press(f.key('settings-section-hive-general'), 'ArrowRight'); f.draw();
+  assert.equal(document.activeElement, f.key('settings-section-hive-agents'));
+  assert.equal(f.key('settings-section-hive-agents').getAttribute('aria-selected'), 'true');
+  f.key('settings-close').click(); f.draw(); f.open();
+  assert.equal(f.key('settings-section-hive-agents').getAttribute('aria-selected'), 'true');
+  globalThis.localStorage = { getItem() { throw Error('denied'); }, setItem() { throw Error('denied'); } };
+  f.key('settings-close').click(); f.draw(); f.open();
+  assert.equal(f.key('settings-section-hive-general').getAttribute('aria-selected'), 'true');
+  press(f.key('settings-section-hive-general'), 'End'); f.draw();
+  assert.equal(f.key('settings-section-hive-advanced').getAttribute('aria-selected'), 'true');
+});
+
+
+test('All hives remembers its section independently and resets the bd draft', t => {
+  const previous = globalThis.localStorage;
+  const values = new Map();
+  globalThis.localStorage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+  t.after(() => { globalThis.localStorage = previous; });
+  const f = fixture(t); f.open();
+  f.key('settings-section-hive-agents').click(); f.draw();
+  f.key('settings-tab-all').click(); f.draw();
+  f.key('settings-section-all-advanced').click(); f.draw();
+  f.key('settings-bd-path').value = '/tmp/custom-bd'; fire(f.key('settings-bd-path'), 'input'); f.draw();
+  f.button('Reset to defaults').click(); f.draw();
+  assert.equal(f.key('settings-bd-path').value, '');
+  assert.deepEqual(f.writes, []);
+  f.key('settings-close').click(); f.draw(); f.open(null);
+  assert.equal(f.key('settings-section-all-advanced').getAttribute('aria-selected'), 'true');
+  assert.equal(document.activeElement, f.key('settings-close'));
+  f.key('settings-close').click(); f.draw(); f.open();
+  assert.equal(f.key('settings-section-hive-agents').getAttribute('aria-selected'), 'true');
+  f.key('settings-close').click(); f.draw();
+  values.set('hive:settings-section:hive', 'unknown'); f.open();
+  assert.equal(f.key('settings-section-hive-general').getAttribute('aria-selected'), 'true');
+});
+
+
+test('name editing stays in the modal and prevents closing while its save is pending', t => {
+  const f = fixture(t); f.open();
+  f.key('settings-rename-open:c').click(); f.draw();
+  assert.equal(document.activeElement, f.key('settings-rename:c'));
+  assert.equal(f.forms.get('rename:c'), undefined);
+  const form = walk(f.dialog()).find(el => el.getAttribute('class') === 'hive-title-edit');
+  fire(form, 'submit'); f.draw();
+  assert.equal(f.sent[0].msg.type, 'hive-cell-rename');
+  f.key('settings-section-hive-agents').click(); f.draw();
+  f.key('settings-close').click(); f.draw();
+  assert.ok(f.dialog());
+  f.sent[0].options.onReply({ ok: true }); f.draw();
+  f.key('settings-close').click(); f.draw();
+  assert.equal(f.dialog(), undefined);
+});
+
+test('section selection and resets redraw immediately through the UI state API', t => {
+  const f = fixture(t); f.open();
+  const setForm = f.ctx.ui.setForm;
+  f.ctx.ui.setForm = (key, value) => { setForm(key, value); f.draw(); };
+  f.key('settings-section-hive-advanced').click();
+  assert.ok(f.key('watchdog:c:workerMinutes'));
+  f.key('watchdog:c:workerMinutes').value = '19'; fire(f.key('watchdog:c:workerMinutes'), 'input');
+  f.button('Reset to defaults').click();
+  assert.equal(f.key('watchdog:c:workerMinutes').value, 30);
+  f.key('settings-tab-all').click();
+  f.key('settings-section-all-advanced').click();
+  f.key('settings-bd-path').value = '/tmp/bd'; fire(f.key('settings-bd-path'), 'input');
+  f.button('Reset to defaults').click();
+  assert.equal(f.key('settings-bd-path').value, '');
 });

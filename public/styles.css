@@ -1800,3 +1800,11 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .hive-title-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .hive-title-edit input { min-width: 6em; width: 12em; max-width: 100%; font: inherit; color: inherit; }
 .hive-title-edit [role="alert"] { flex-basis: 100%; font-size: 12px; font-weight: normal; }
+
+.hive-settings .hive-settings-sections { padding: 0; margin-bottom: 16px; flex-wrap: wrap; }
+.hive-settings-advanced { border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+.hive-settings-advanced > summary { cursor: pointer; font-weight: 600; }
+.hive-settings-summary { display: block; font-size: 12px; font-weight: normal; line-height: 1.6; margin-top: 8px; overflow-wrap: anywhere; }
+.hive-settings-advanced[open] > summary { margin-bottom: 16px; }
+.hive-settings-name { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.hive-settings summary:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
