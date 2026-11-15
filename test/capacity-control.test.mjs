@@ -236,13 +236,13 @@ test('popup checkbox preserves a pending choice and reads live host state after 
   assert.match(text(f.draw()), /Disk full/);
 });
 
-test('external popup changes invalidate the client render signature', () => {
+test('external popup and bee behaviour changes invalidate the client render signature', () => {
   const source = readFileSync(new URL('../public/client.js', import.meta.url), 'utf8');
   const code = source.slice(source.indexOf('function signature('), source.indexOf('export function captureFocus'));
   const settings = {};
   const signature = vm.runInNewContext(`${code}\nsignature`, {
     state: { api: { settings: () => settings }, pending: new Set(), placements: [], notices: [] },
-    beeLevel: () => 0, capacityLimit: () => 8, waitingGraphKey,
+    beeLevel: () => 0, beeBehaviour: { value: () => settings.beeBehaviour || 0 }, capacityLimit: () => 8, waitingGraphKey,
   });
   const hive = { cells: {}, backend: {} };
   const before = signature(hive);
@@ -250,6 +250,8 @@ test('external popup changes invalidate the client render signature', () => {
   assert.notEqual(signature(hive), before);
   settings.requestNotifications = true;
   assert.equal(signature(hive), before);
+  settings.beeBehaviour = 2;
+  assert.notEqual(signature(hive), before);
 });
 
 

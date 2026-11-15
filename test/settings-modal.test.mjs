@@ -24,7 +24,7 @@ function fixture(t, extra = {}) {
   const ctx = {
     hive: { cells: { c: cell }, beads: { r: root }, launches: [] },
     graph: { sessions: [], tasks: { tasks: [{ id: 't', name: 'Example hive' }] } },
-    bees: { slider: () => h('input', { type: 'range', 'aria-label': 'Number of bees' }) },
+    bees: { slider: () => h('input', { type: 'range', 'aria-label': 'Number of bees' }), behaviourSlider: () => h('input', { type: 'range', 'aria-label': 'Bee behaviour' }) },
     ui: { form: k => forms.get(k), setForm: (k, v) => forms.set(k, v), patchForm: (k, p) => forms.set(k, { ...forms.get(k), ...p }), cellId: () => 'c' },
     send: (msg, options) => sent.push({ msg, options }), busy: () => false,
     api: { settings: Object.assign(() => settings, { set: async (key, value) => { writes.push([key, value]); settings[key] = value; } }) },
@@ -240,6 +240,7 @@ test('sections keep every setting reachable and Advanced collapsed across redraw
   assert.ok(f.key('capacity-limit'));
   assert.match(f.dialog().textContent, /Pop up/);
   assert.ok(walk(f.dialog()).find(el => el.getAttribute('aria-label') === 'Number of bees'));
+  assert.ok(walk(f.dialog()).find(el => el.getAttribute('aria-label') === 'Bee behaviour'));
   f.key('settings-section-all-advanced').click(); f.draw();
   assert.equal(walk(f.dialog()).find(el => el.tagName === 'details').getAttribute('open'), null);
   assert.ok(f.key('settings-bd-path'));

@@ -8,6 +8,13 @@ import { reducedMotion } from './hex-grid.js';
 // right is one occasional visitor.
 
 export const BEE_LEVEL_SETTING = 'beeLevel';
+export const BEE_BEHAVIOUR_SETTING = 'beeBehaviour';
+export const BEE_BEHAVIOURS = ['Plain', 'Trails', 'Acrobatics'];
+
+export function beeBehaviourOf(values) {
+  const value = values?.[BEE_BEHAVIOUR_SETTING];
+  return Number.isInteger(value) && value >= 0 && value < BEE_BEHAVIOURS.length ? value : 0;
+}
 // Hive 0.1.9 and earlier read only this switch. It is kept in step with the
 // level, and read when no level has been stored yet: off means None.
 export const BEES_SETTING = 'showBees';
@@ -59,7 +66,7 @@ function beeEl(scale = 1) {
 
 // A gentle curve from one side of the box to the other, with a little
 // bobbing. Returns keyframes that turn the bee to follow its path.
-function flightFrames(w, hgt, scale = 1) {
+function flightFrames(w, hgt, scale = 1, acrobatics = false) {
   const size = SIZE * scale;
   const fromLeft = Math.random() < 0.5;
   const y0 = hgt * (0.15 + Math.random() * 0.7);
@@ -75,39 +82,64 @@ function flightFrames(w, hgt, scale = 1) {
       y: u * u * u * y0 + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * y3,
     };
   };
-  const steps = 48;
+  const loop = acrobatics && Math.random() < 0.35;
+  const start = loop ? 0.3 + Math.random() * 0.25 : 0;
+  const span = 0.22;
+  const anchor = at(start / (1 - span));
+  const tangent = at(start / (1 - span) + 0.001);
+  const heading = Math.atan2(tangent.y - anchor.y, tangent.x - anchor.x);
+  const radius = Math.min(48 * scale, hgt * 0.12, w * 0.08);
+  const side = (anchor.y < hgt / 2 ? 1 : -1) * (fromLeft ? 1 : -1);
+  const point = t => {
+    if (!loop) return at(t);
+    if (t < start) return at(t / (1 - span));
+    if (t > start + span) return at((t - span) / (1 - span));
+    const theta = (t - start) / span * Math.PI * 2;
+    const x = Math.sin(theta) * radius;
+    const y = (1 - Math.cos(theta)) * radius * side;
+    return { x: anchor.x + x * Math.cos(heading) - y * Math.sin(heading), y: anchor.y + x * Math.sin(heading) + y * Math.cos(heading) };
+  };
+  const steps = loop ? 160 : 48;
   const bob = (4 + Math.random() * 4) * scale;
   const frames = [];
+  let lastAngle = 0;
   for (let i = 0; i <= steps; i += 1) {
     const t = i / steps;
-    const p = at(t);
-    const q = at(Math.min(1, t + 0.01));
-    const r = at(Math.max(0, t - 0.01));
+    const p = point(t);
+    const delta = loop ? 0.001 : 0.01;
+    const q = point(Math.min(1, t + delta));
+    const r = point(Math.max(0, t - delta));
     let angle = Math.atan2(q.y - r.y, q.x - r.x) * 180 / Math.PI;
     if (!fromLeft) angle -= 180;
     angle = ((angle + 540) % 360) - 180;
-    const y = p.y + Math.sin(t * Math.PI * 7) * bob;
+    if (loop) {
+      while (angle - lastAngle > 180) angle -= 360;
+      while (angle - lastAngle < -180) angle += 360;
+    }
+    lastAngle = angle;
+    const y = p.y + (loop ? 0 : Math.sin(t * Math.PI * 7) * bob);
     const flip = fromLeft ? 1 : -1;
-    frames.push({ transform: `translate(${p.x.toFixed(1)}px, ${y.toFixed(1)}px) rotate(${(angle * 0.6).toFixed(1)}deg) scaleX(${flip})` });
+    frames.push({ transform: `translate(${p.x.toFixed(1)}px, ${y.toFixed(1)}px) rotate(${(angle * (loop ? 1 : 0.6)).toFixed(1)}deg) scaleX(${flip})` });
   }
   return frames;
 }
 
-export function createBees({ level }) {
+export function createBees({ level, behaviour = () => 0 }) {
   let root = null;
   let layer = null;
   let timer = 0;
   const flights = new Set();
   let motionQuery = null;
   let lastLevel = null;
+  let lastBehaviour = null;
   const salt = Math.random().toString(36).slice(2);
   let serial = 0;
   const plan = () => BEE_LEVELS[level()] || BEE_LEVELS[0];
   const allowed = () => Boolean(root?.isConnected) && plan().max > 0 && !reducedMotion() && document.visibilityState !== 'hidden';
 
   const endFlight = (f) => {
-    try { f.anim.cancel(); } catch { }
-    f.el.remove();
+    for (const anim of f.animations) { try { anim.cancel(); } catch { } }
+    for (const el of f.elements) el.remove();
     flights.delete(f);
   };
   const stopFlights = () => { for (const f of [...flights]) endFlight(f); };
@@ -154,14 +186,27 @@ export function createBees({ level }) {
     if (layer.parentNode !== root) root.append(layer);
     const scale = beeScaleOf(`${salt}:${serial++}`);
     const el = beeEl(scale);
+    const frames = flightFrames(box.width, box.height, scale, behaviour() >= 2);
+    const duration = rand(FLIGHT_MS);
+    const elements = [], animations = [];
+    if (behaviour() >= 1) {
+      for (let i = 1; i <= 16; i++) {
+        const dot = h('span', { class: 'hive-bee-trail', style: { opacity: String(0.5 * (1 - i / 17)) } });
+        layer.append(dot);
+        elements.push(dot);
+        animations.push(dot.animate(frames, { duration, delay: i * 125, easing: 'linear', fill: 'both' }));
+      }
+    }
     layer.append(el);
-    const anim = el.animate(flightFrames(box.width, box.height, scale), { duration: rand(FLIGHT_MS), easing: 'linear', fill: 'forwards' });
-    const f = { el, anim, view, box };
+    const anim = el.animate(frames, { duration, easing: 'linear', fill: 'forwards' });
+    const completion = animations.at(-1) || anim;
+    elements.push(el);
+    animations.push(anim);
+    const f = { elements, animations, view, box };
     flights.add(f);
-    anim.onfinish = () => {
+    completion.onfinish = () => {
       if (!flights.has(f)) return;
-      el.remove();
-      flights.delete(f);
+      endFlight(f);
       if (!timer) schedule('next');
     };
     if (flights.size < plan().max) schedule('next');
@@ -187,6 +232,7 @@ export function createBees({ level }) {
       this.unmount();
       root = el;
       lastLevel = level();
+      lastBehaviour = behaviour();
       document.addEventListener('visibilitychange', onVisibility);
       motionQuery = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)') || null;
       motionQuery?.addEventListener?.('change', onMotion);
@@ -221,7 +267,10 @@ export function createBees({ level }) {
     // extra bees away; any change starts the new pace from now.
     sync() {
       const next = level();
-      if (next === lastLevel) return;
+      const nextBehaviour = behaviour();
+      if (next === lastLevel && nextBehaviour === lastBehaviour) return;
+      if (nextBehaviour !== lastBehaviour) stopFlights();
+      lastBehaviour = nextBehaviour;
       lastLevel = next;
       const max = plan().max;
       if (!max) { stop(); return; }
@@ -236,16 +285,25 @@ export function createBees({ level }) {
       layer = null;
       root = null;
       lastLevel = null;
+      lastBehaviour = null;
     },
   };
 }
 
 // The Number of bees control, the same wherever it is shown.
-export function beeSlider({ value, onInput, onCommit, onHold, idKey }) {
-  const text = (v) => BEE_LEVELS[v]?.text || '';
-  const id = `hive-bees-${idKey}`;
-  const read = (e) => Math.max(0, Math.min(BEE_LEVELS.length - 1, Math.round(Number(e.target.value) || 0)));
-  const thumb = h('span', { class: 'hive-bee-thumb', 'aria-hidden': 'true', style: { left: `${value / (BEE_LEVELS.length - 1) * 100}%` } }, beeEl());
+export function beeSlider(options) {
+  return beeRange({ ...options, labels: BEE_LEVELS.map(l => l.text), label: 'Number of bees', prefix: 'hive-bees', ticks: ['None', 'About right', 'Frankly too many bees'] });
+}
+
+export function beeBehaviourSlider(options) {
+  return beeRange({ ...options, labels: BEE_BEHAVIOURS, label: 'Bee behaviour', prefix: 'hive-bee-behaviour', ticks: BEE_BEHAVIOURS });
+}
+
+function beeRange({ value, onInput, onCommit, onHold, idKey, labels, label, prefix, ticks }) {
+  const text = v => labels[v] || '';
+  const id = `${prefix}-${idKey}`;
+  const read = (e) => Math.max(0, Math.min(labels.length - 1, Math.round(Number(e.target.value) || 0)));
+  const thumb = h('span', { class: 'hive-bee-thumb', 'aria-hidden': 'true', style: { left: `${value / (labels.length - 1) * 100}%` } }, beeEl());
   let timer;
   let pointerHeld = false;
   const settle = () => { clearTimeout(timer); thumb.dataset.flapping = 'false'; if (!pointerHeld) onHold?.(false); };
@@ -258,17 +316,17 @@ export function beeSlider({ value, onInput, onCommit, onHold, idKey }) {
   };
   const release = () => { pointerHeld = false; settle(); };
   return h('div', { class: 'hive-bee-setting' },
-    h('label', { class: 'hive-bee-label', for: id }, 'Number of bees'),
+    h('label', { class: 'hive-bee-label', for: id }, label),
     h('div', { class: 'hive-bee-slider' }, h('input', {
       type: 'range',
       id,
       class: 'hive-bee-range',
       min: '0',
-      max: String(BEE_LEVELS.length - 1),
+      max: String(labels.length - 1),
       step: '1',
       'aria-valuetext': text(value),
       'data-focus-key': id,
-      oninput: (e) => { const v = read(e); thumb.style.left = `${v / (BEE_LEVELS.length - 1) * 100}%`; e.target.setAttribute('aria-valuetext', text(v)); flap(); onInput(v); },
+      oninput: (e) => { const v = read(e); thumb.style.left = `${v / (labels.length - 1) * 100}%`; e.target.setAttribute('aria-valuetext', text(v)); flap(); onInput(v); },
       onchange: (e) => onCommit(read(e)),
       onpointerdown: () => { pointerHeld = true; onHold?.(true); flap(); },
       onpointermove: e => { if (e.buttons & 1) flap(); },
@@ -279,6 +337,36 @@ export function beeSlider({ value, onInput, onCommit, onHold, idKey }) {
       value: String(value),
     }), h('span', { class: 'hive-bee-thumb-track', 'aria-hidden': 'true' }, thumb)),
     h('div', { class: 'hive-bee-scale', 'aria-hidden': 'true' },
-      h('span', {}, 'None'), h('span', {}, 'About right'), h('span', {}, 'Frankly too many bees')));
+      ticks.map(tick => h('span', {}, tick))));
 }
 
+export function createBeeBehaviourPreference({ settings, save, sync, render, onHold, onError }) {
+  let pending = null, want = null, saving = false, intent = 0, committed = 0;
+  const value = () => {
+    if (pending !== null) return pending;
+    try { return beeBehaviourOf(settings()); } catch { return 0; }
+  };
+  async function persist() {
+    saving = true;
+    let failed = null;
+    while (want !== null) {
+      const next = want;
+      want = null;
+      failed = null;
+      try { await save(BEE_BEHAVIOUR_SETTING, next); } catch (err) { failed = err; }
+    }
+    saving = false;
+    if (intent === committed) { pending = null; sync(); }
+    if (failed) onError(failed);
+    render();
+  }
+  return {
+    value,
+    saving: () => saving,
+    slider: idKey => beeBehaviourSlider({
+      value: value(), idKey, onHold,
+      onInput: next => { intent++; pending = next; sync(); },
+      onCommit: next => { committed = ++intent; pending = next; sync(); want = next; if (!saving) persist(); },
+    }),
+  };
+}
