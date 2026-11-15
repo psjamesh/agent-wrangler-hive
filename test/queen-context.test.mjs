@@ -75,7 +75,7 @@ test('new hive lists cross-task context and stale selection keeps choices withou
   assert.equal(f.sent.length, 1); assert.match(f.ui.form('cell-dialog').error, /source/i);
   assert.equal(f.ui.form('cell-dialog').handoverSourceSessionId, 'cross');
 });
-test('Hive info new queen defaults to 250k and supports changing agent and threshold', () => {
+test('Hive queen popover new queen defaults to 250k and supports changing agent and threshold', () => {
   const source = fs.readFileSync(new URL('../public/cell-view.js', import.meta.url), 'utf8');
   const code = source.slice(source.indexOf('function queenBar('), source.indexOf('\nconst LAUNCH_TEXT'));
   const queenBar = vm.runInNewContext(code + '\nqueenBar', { ...dialogScope, launchState: () => null, sessionButton: () => h('span', {}, 'Current') });

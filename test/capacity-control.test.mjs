@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { capacityControl } from '../public/capacity-control.js';
-import { allSettings } from '../public/settings-view.js';
+import { settingsModal } from '../public/settings-view.js';
 import { h } from '../public/dom.js';
 import { renderSetup, setupNeeded } from '../public/setup.js';
 import { createManifest } from '../server/manifest.js';
@@ -22,7 +22,7 @@ function fixture(t) {
   const previous = { document: globalThis.document, Node: globalThis.Node, requestAnimationFrame: globalThis.requestAnimationFrame };
   const frames = [];
   globalThis.Node = Element;
-  globalThis.document = { createElement: tag => new Element(tag), createTextNode: value => new Element('#text', value), querySelector: selector => walk(tree).find(el => el.attrs['data-focus-key'] === selector.match(/"([^"]+)"/)?.[1]) };
+  globalThis.document = { createElement: tag => new Element(tag), createElementNS: (_, tag) => new Element(tag), createTextNode: value => new Element('#text', value), querySelector: selector => walk(tree).find(el => el.attrs['data-focus-key'] === selector.match(/"([^"]+)"/)?.[1]) };
   globalThis.requestAnimationFrame = fn => frames.push(fn);
   t.after(() => Object.assign(globalThis, previous));
   const forms = new Map(), writes = [], sent = [], settings = {};
@@ -34,7 +34,7 @@ function fixture(t) {
     api: { settings: Object.assign(() => settings, { set: async (k, v) => { writes.push([k, v]); settings[k] = v; } }) },
   };
   let tree;
-  const draw = () => { tree = ctx.setupMode ? renderSetup(ctx) : h('div', {}, capacityControl(ctx), allSettings(ctx)); while (frames.length) frames.shift()(); return tree; };
+  const draw = () => { tree = ctx.setupMode ? renderSetup(ctx) : h('div', {}, capacityControl(ctx), settingsModal(ctx)); while (frames.length) frames.shift()(); return tree; };
   const control = key => walk(tree).find(el => el.attrs['data-focus-key'] === key);
   const open = () => { draw(); control('capacity-toggle').events.click(); draw(); };
   const submit = () => walk(tree).find(el => el.attrs.id === 'hive-capacity-editor').events.submit({ preventDefault() {} });
@@ -88,7 +88,7 @@ test('invalid drafts and failed writes keep the editor with an accessible error'
 
 test('Escape and Close dismiss settings without saving', t => {
   const f = fixture(t); f.open();
-  const form = walk(f.draw()).find(el => el.attrs.id === 'hive-all-settings');
+  const form = walk(f.draw()).find(el => el.attrs.id === 'hive-settings');
   form.events.keydown({ key: 'Escape', preventDefault() {}, stopPropagation() {} });
   f.draw();
   assert.equal(f.control('capacity-toggle').attrs['aria-expanded'], 'false');
@@ -104,11 +104,11 @@ test('submitting immediately after typing saves the current draft without a rere
   assert.deepEqual(f.writes, [['maxClaimedWork', 12]]);
 });
 
-test('count opens the shared Settings panel and focuses the limit field', t => {
+test('count opens the shared Settings modal and focuses the limit field', t => {
   const f = fixture(t); f.open();
-  assert.match(text(f.draw()), /Settings for all hives.*Maximum active workers.*Bee slider.*bd executable/);
+  assert.match(text(f.draw()), /Settings.*All hives.*Maximum active workers.*Bee slider.*bd executable/);
   assert.equal(globalThis.document.activeElement.attrs['data-focus-key'], 'capacity-limit');
-  assert.equal(f.control('capacity-toggle').attrs['aria-controls'], 'hive-all-settings');
+  assert.equal(f.control('capacity-toggle').attrs['aria-controls'], 'hive-settings');
   f.control('settings-close').events.click(); f.draw();
   assert.equal(globalThis.document.activeElement.attrs['data-focus-key'], 'capacity-toggle');
 });

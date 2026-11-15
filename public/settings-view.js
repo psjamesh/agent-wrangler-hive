@@ -1,12 +1,14 @@
 import { h } from './dom.js';
 import { capacityEditor, openHiveSettings, restoreSettingsFocus } from './capacity-control.js';
 
-export function settingsButton({ ui }) {
+export function settingsButton({ ui }, cell = null) {
   return h('button', {
-    type: 'button', class: 'hive-quiet-btn',
-    title: 'Open Hive settings', 'aria-expanded': String(Boolean(ui.form('settings'))), 'aria-controls': 'hive-all-settings', 'data-focus-key': 'open-settings',
-    onclick: () => openHiveSettings(ui),
-  }, 'Settings');
+    type: 'button', class: 'hive-quiet-btn hive-settings-cog', 'aria-label': 'Settings',
+    title: 'Settings', 'aria-haspopup': 'dialog', 'aria-expanded': String(Boolean(ui.form('settings'))), 'aria-controls': 'hive-settings', 'data-focus-key': 'open-settings',
+    onclick: () => openHiveSettings(ui, 'open-settings', cell && !cell.snapshot ? cell.id : null),
+  }, h('svg:svg', { viewBox: '0 0 24 24', width: '18', height: '18', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'aria-hidden': 'true' },
+    h('svg:path', { d: 'M9 3h6l.6 3 2 1.2 2.9-.9 3 5.2-2.3 2v2.3l2.3 2-3 5.2-2.9-.9-2 1.2-.6 3H9l-.6-3-2-1.2-2.9.9-3-5.2 2.3-2v-2.3l-2.3-2 3-5.2 2.9.9L8.4 6z', transform: 'translate(2 0) scale(.83)' }),
+    h('svg:circle', { cx: '12', cy: '12', r: '3' })));
 }
 
 function bdSetting({ ui, api, send, busy }) {
@@ -82,28 +84,49 @@ function notificationSetting({ ui, api }) {
     form.error ? h('p', { role: 'alert' }, form.error) : null);
 }
 
-export function allSettings(ctx) {
+export function settingsModal(ctx, cell = null, thisHive = () => null) {
   const { ui } = ctx;
   const form = ui.form('settings');
   if (!form) return null;
-  const saving = () => ui.form('global-capacity')?.saving || ui.form('global-bd')?.saving || ui.form('global-notifications')?.saving;
-  const close = () => {
-    if (saving()) return;
+  const local = cell && !cell.snapshot;
+  const tab = local && form.tab !== 'all' ? 'hive' : 'all';
+  const keys = ['global-capacity', 'global-bd', 'global-notifications',
+    ...(cell ? [`instructions:${cell.id}`, `watchdog:${cell.id}`, `codex-approvals:${cell.id}`, `review-policy:${cell.id}`] : [])];
+  const saving = () => keys.some(key => ui.form(key)?.saving || ui.form(key)?.pending) || ctx.bees.saving?.();
+  const close = (restore = true) => {
+    if (saving()) return false;
     ui.setForm('settings', null);
     ui.setForm('global-capacity', null);
     ui.setForm('global-bd', null);
     ui.setForm('global-notifications', null);
-    requestAnimationFrame(() => (document.querySelector(`[data-focus-key="${form.returnKey || 'open-settings'}"]`) || document.querySelector('[data-focus-key="open-settings"]'))?.focus());
+    if (restore) requestAnimationFrame(() => (document.querySelector(`[data-focus-key="${form.returnKey || 'open-settings'}"]`) || document.querySelector('[data-focus-key="open-settings"]'))?.focus());
+    return true;
   };
-  return h('div', {
-    class: 'hive-allsettings', id: 'hive-all-settings', role: 'group', 'aria-label': 'Settings for all hives',
-    onkeydown: e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } },
+  const select = id => {
+    ui.setForm('settings', { ...ui.form('settings'), tab: id });
+    requestAnimationFrame(() => document.querySelector(`[data-focus-key="settings-tab-${id}"]`)?.focus());
+  };
+  const tabButton = (id, label) => h('button', {
+    type: 'button', role: 'tab', class: 'hive-tab', id: `hive-settings-tab-${id}`,
+    'aria-selected': String(tab === id), 'aria-controls': 'hive-settings-panel', tabindex: tab === id ? '0' : '-1',
+    'data-focus-key': `settings-tab-${id}`, onclick: () => select(id),
+    onkeydown: event => { if (local && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); select(event.key === 'Home' ? 'hive' : event.key === 'End' ? 'all' : id === 'hive' ? 'all' : 'hive'); } },
+  }, label);
+  return h('div', { class: 'hive-modal' }, h('div', {
+    class: 'hive-dialog hive-settings', id: 'hive-settings', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'hive-settings-title',
+    onkeydown: e => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+      if (e.key !== 'Tab') return;
+      const controls = [...e.currentTarget.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')].filter(el => !el.disabled && el.getAttribute('tabindex') !== '-1' && (el.offsetParent !== null || el === document.activeElement));
+      if (!controls.length) return;
+      const index = controls.indexOf(document.activeElement);
+      if (index === -1 || (e.shiftKey ? index === 0 : index === controls.length - 1)) { e.preventDefault(); controls[e.shiftKey ? controls.length - 1 : 0].focus(); }
+    },
   },
-  h('div', { class: 'hive-allsettings-head' }, h('h3', {}, 'Settings for all hives'),
-    h('button', { type: 'button', class: 'hive-quiet-btn', disabled: saving(), 'data-focus-key': 'settings-close', onclick: close }, 'Close')),
-  capacityEditor(ctx),
-  ctx.bees.slider('all'),
-  h('p', { class: 'hive-muted' }, 'Bees are decoration and mean nothing about the work. Reduced-motion settings stop them.'),
-  bdSetting(ctx),
-  notificationSetting(ctx));
+  h('div', { class: 'hive-dialog-head' }, h('h2', { id: 'hive-settings-title' }, 'Settings'),
+    h('button', { type: 'button', class: 'hive-quiet-btn', disabled: saving(), 'data-autofocus': '', 'data-focus-key': 'settings-close', onclick: close }, 'Close')),
+  h('div', { class: 'hive-tabs', role: 'tablist', 'aria-label': 'Settings scope' }, local ? tabButton('hive', 'This hive') : null, tabButton('all', 'All hives')),
+  h('div', { class: 'hive-dialog-body', id: 'hive-settings-panel', role: 'tabpanel', 'aria-labelledby': `hive-settings-tab-${tab}`, dataset: { scrollKey: `settings:${tab}` } },
+    tab === 'hive' ? thisHive(() => close(false)) : [capacityEditor(ctx), ctx.bees.slider('all'),
+      h('p', { class: 'hive-muted' }, 'Bees are decoration and mean nothing about the work. Reduced-motion settings stop them.'), bdSetting(ctx), notificationSetting(ctx)])));
 }

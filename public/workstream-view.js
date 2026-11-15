@@ -55,7 +55,6 @@ export function closedButton(ctx, cell) {
     'data-focus-key': `closed-open:${cell.id}`,
     title: 'Archived workstreams in this hive: their history, showing them on the map, and reopening them',
     onclick: () => {
-      ui.setForm(`info:${cell.id}`, null);
       ui.setForm(completeKey(cell.id), null);
       ui.setForm(k, open ? null : {});
       if (!open) focusKey(`closed-close:${cell.id}`);
@@ -167,7 +166,6 @@ function closedDrawer(ctx, cell) {
 export function openComplete(ctx, cell, headId) {
   const { ui, send } = ctx;
   const k = completeKey(cell.id);
-  ui.setForm(`info:${cell.id}`, null);
   ui.setForm(closedKey(cell.id), null);
   ui.setForm(k, { headId, outcome: 'done', summary: '', archive: true, check: null, error: null, pending: null });
   send({ type: 'hive-ws-check', cellId: cell.id, headId }, {
