@@ -826,9 +826,11 @@ function requireApprovedMergeHead(rt, cellId, beadId, evidence) {
     const latest = Object.values(rt.metadata.read().reviews || {})
       .filter(r => r.cellId === cellId && r.workBeadId === beadId)
       .sort((a, b) => (a.updatedAt || a.createdAt || 0) - (b.updatedAt || b.createdAt || 0)).at(-1);
+    const approvedCommit = latest?.commit;
     if (!entry.merged_head || latest?.state !== 'approved' || latest.verdict?.value !== 'approved'
-      || latest.commit?.toLowerCase() !== entry.merged_head) {
-      throw new HiveError('Hive merge evidence requires merged_head to equal the latest approved review commit. Obtain approval for that exact head first.', 'refused');
+      || typeof approvedCommit !== 'string' || !/^[a-f0-9]{7,40}$/i.test(approvedCommit)
+      || !entry.merged_head.startsWith(approvedCommit.toLowerCase())) {
+      throw new HiveError('Hive merge evidence requires merged_head to match the latest approved review commit (at least 7 hex characters). Obtain approval for that exact head first.', 'refused');
     }
   }
 }
