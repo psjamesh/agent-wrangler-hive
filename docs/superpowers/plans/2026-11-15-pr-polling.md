@@ -11,3 +11,5 @@ Approach: retain the 60-second active-state sweep; skip confirmed MERGED/CLOSED 
 - [ ] Record merge/install wait and report to queen without closing the bead.
 
 Review focus: failed reads retain last state but cannot confirm open after closure; persisted terminal records stay quiet after restart; reopened PRs become observable; discovery failure retry cannot spin each minute; bounded search may miss PRs beyond the most recently updated 100.
+
+Identity review correction: every state read includes node id and creation time. Re-observe legacy terminal records once before skipping; replace stale URL attribution on changed identity, use current session links to assign replacements, and use newer core open-link observations to recover unlabelled reopenings. Never synthesize OPEN from search results. Add URL-reuse/migration/error/reassociation regressions before implementing.
