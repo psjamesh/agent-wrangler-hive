@@ -12,13 +12,15 @@ Respect repository protections, required reviews and environment approvals. Neve
 
 ## Repository recipes
 
+The Hive builder-merge and auto-update recipe below requires rollout. Until its protections and worker instructions are in place, hand merge back to the queen. Until auto-update is enabled after restart verification, hand back with `install-wait` and keep the bead open until the queen verifies installation. Merge becomes the ordinary Hive boundary only after that rollout.
+
 | Repository | Merge authority and checks | Delivery boundary and owner |
 | --- | --- | --- |
-| Hive (`psjamesh/agent-wrangler-hive`) | Builder merges after Hive review approves the exact head and required `test` (workflow `Test`) passes. Main must require the check with strict branch protection, enforced for administrators and the executing credential. Verify these prerequisites before using builder merge; if unavailable, hand back to the queen without bypassing them. | Merge is the ordinary bead boundary. Core extension auto-update owns installation and its supervised restart; the queen does not run an install for every PR. Explicit runtime acceptance stays open for verification. |
-| Agent Wrangler core | One human approval per PR through `hive_request_input`, identifying PR/head, review and check evidence. The queen merges after approval and repository requirements pass; upstream maintainers merge where permissions require it. Run core tests with `npm test`, never bare `node --test`. | The queen fast-forwards the configured checkout, restarts the configured instance and verifies the running revision. Merge approval includes this install/restart; no separate install approval is needed. Keep the bead open until this delivery is verified. |
+| Hive (`psjamesh/agent-wrangler-hive`) | Builder merges after Hive review approves the exact head and required `test` (workflow `Test`) passes. Main must require the check with strict branch protection, enforced for administrators and the executing credential. Verify classic branch protection and active rulesets with read-only `gh api` calls, including admin enforcement and applicable bypass actors, before using builder merge; if unavailable, hand back to the queen without bypassing them. | Merge is the ordinary bead boundary. Core extension auto-update owns installation and its supervised restart; the queen does not run an install for every PR. Explicit runtime acceptance stays open for verification. |
+| Agent Wrangler core | One human approval per PR through `hive_request_input`, identifying PR/head, review and check evidence. The queen merges after approval and repository requirements pass; upstream maintainers merge where permissions require it. Follow core's contribution instructions, currently `AW_BROWSER_TESTS=0 npm test` for local agent runs; never use bare `node --test`. | The queen fast-forwards the configured checkout, restarts the configured instance and verifies the running revision. Merge approval includes this install/restart; no separate install approval is needed. Keep the bead open until this delivery is verified. |
 | Other repositories | Follow the repository's merge authority and prescribed checks; absent a delegated recipe, request one human approval per PR and respect maintainer authority. | Merge is the default boundary. Record the verified merge and operational handoff. Deployment verification is opt-in through the recipe or bead acceptance, with a named owner and bounded procedure. |
 
-Hive feature PRs do not bump the package version. Named releases follow [Hive releases](../releases.md). Configure the public push route and commit identity in the repository instructions rather than repeating them in every pickup brief.
+Hive feature PRs do not bump the package version. Named releases follow [Hive releases](../releases.md). Keep the public push route and commit identity in repository instructions. Until those instructions exist, the workstream brief template must carry both.
 
 ### Hive auto-update prerequisites and limits
 
@@ -28,13 +30,15 @@ This path follows main's head, not an exact CI-selected SHA. It can serve update
 
 ## How workers receive the recipe
 
-Keep durable repository instructions in `AGENTS.md` (with a `CLAUDE.md` import where needed). The workstream's brief template names the repository and instructions, checkout/branch, approved push route, merge authority, checks and stop point. A worker reads these before acting; bead-specific briefs contain only the task's additions or exceptions. A hive-wide worker profile cannot substitute for repository-specific instructions.
+Keep durable repository instructions in `AGENTS.md` (with a `CLAUDE.md` import where needed). The workstream's brief template names the repository and instructions, checkout/branch, approved push route, merge authority, checks and stop point. A worker reads these before acting. Until repository instructions exist, the workstream brief template carries the complete recipe; once they exist, bead-specific briefs need only the task's additions or exceptions. A hive-wide worker profile cannot substitute for repository-specific instructions.
 
 For an opted-in install/deploy step, name the target, command or workflow, commit/artifact mapping, success signal, maximum wait and handoff recipient. Resolve missing configuration once through the queen. Do not infer deployment from workflow names or treat PR checks, a main build, installation and application health as interchangeable.
 
 ## Evidence and handoff
 
-Record PR/head, review verdict, check results, merge approval or delegation and verified merge commit on the bead. Add installed/running revision or deployment evidence only where the recipe requires it. Finish when that boundary and the bead's other acceptance are met; opening a PR or handing it back does not establish delivery.
+A worker's `hive_request_input` goes to the queen, who must forward a required human merge approval to the human. A queen answer is not human merge approval.
+
+Record PR/head, review verdict, check results, merge approval or delegation and verified merge commit on the bead. Add installed/running revision or deployment evidence only where the recipe requires it. Install reports show the running short SHA and the PRs it includes, retaining the full SHA as evidence. Finish when that boundary and the bead's other acceptance are met; opening a PR or handing it back does not establish delivery.
 
 When another owner must merge or install, record `merge-wait` or `install-wait` evidence, the owner and next action, then release the claim as open for that delivery handoff. Use existing host notices or a supported structured wait to resume. Without reliable wake-up, hand back with the pending obligation visible; never poll in terminal loops. Reconcile uncertain create, merge or install outcomes before retrying. For long release waits, use an owned external verification bead with a structured resume condition.
 
