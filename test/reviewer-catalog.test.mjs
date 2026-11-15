@@ -53,8 +53,9 @@ test('server refuses unavailable agents, stale retained slots, and unsupported p
   f.agents[0].models[0].efforts = ['medium'];
   await assert.rejects(save(f, valid), /effort is not supported/);
   f.agents.pop(); f.agents.pop();
+  f.cell().reviewPolicy = { secondary: { agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' } };
   await assert.rejects(save(f, { ...valid, effort: 'medium' }), /secondary reviewer agent is not installed/);
-  assert.equal(f.cell().reviewPolicy, undefined);
+  assert.equal(f.cell().reviewPolicy.primary, undefined);
 });
 
 test('catalogue failures fail closed on graph and save; a retired runtime cannot save after awaiting host', async () => {
@@ -120,4 +121,33 @@ test('graph refresh handles a rebuild failure without an unhandled rejection', a
   await new Promise(resolve => setImmediate(resolve));
   assert.match(logs[0], /rebuild unavailable/);
   assert.deepEqual(manifest.graph({ host: f.host }).hive.agents, f.agents);
+});
+
+test('automatic settings persist tiers and retain existing pins', async () => {
+  const f = fixture();
+  const secondary = { mode: 'pinned', agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' };
+  f.cell().reviewPolicy = { secondary };
+  await save(f, { ...valid, mode: 'automatic', minQuality: 75, maxUsd: 3 });
+  assert.equal(f.cell().reviewPolicy.primary.mode, 'automatic');
+  assert.equal(f.cell().reviewPolicy.primary.minQuality, 75);
+  assert.equal(f.cell().reviewPolicy.primary.maxUsd, 3);
+  assert.deepEqual(f.cell().reviewPolicy.secondary, secondary);
+});
+
+for (const tier of [{ minQuality: -1 }, { minQuality: 101 }, { minQuality: '70' }, { maxUsd: 0 }, { maxUsd: Infinity }]) test(`invalid automatic tier ${JSON.stringify(tier)} is refused`, async () => {
+  const f = fixture();
+  await assert.rejects(save(f, { ...valid, mode: 'automatic', ...tier }), /quality must be/);
+  assert.equal(f.cell().reviewPolicy, undefined);
+});
+
+test('graph projects a refreshed front for the settings preview and caches concurrent reads', async () => {
+  const f = fixture(), manifest = createManifest({ dir: '.' });
+  const front = { read: '2026-11-01', front: [{ agent: 'claude', model: 'opus', effort: 'high', usd: 2, quality: 85 }] };
+  let calls = 0;
+  f.host.agents.front = async () => { calls++; return front; };
+  manifest.graph({ host: f.host });
+  manifest.graph({ host: f.host });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(manifest.graph({ host: f.host }).hive.reviewerFront, front);
+  assert.equal(calls, 1);
 });

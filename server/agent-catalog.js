@@ -1,3 +1,4 @@
+import { readReviewerFront } from './reviewer-front.js';
 import { HiveError } from './ops.js';
 import { isCurrent } from './lifetime.js';
 
@@ -22,7 +23,7 @@ export function agentCatalogForGraph(rt, host) {
     catalogs.set(rt, state);
   }
   if (!state.pending && Date.now() - state.checkedAt >= REFRESH_MS && isCurrent(rt, host)) {
-    state.pending = readAgentCatalog(host).then(agents => ({ agents, agentsError: '' }), error => ({ agents: null, agentsError: error.message })).then(value => {
+    state.pending = Promise.all([readAgentCatalog(host).then(agents => ({ agents, agentsError: '' }), error => ({ agents: null, agentsError: error.message })), readReviewerFront(host)]).then(([catalog, reviewerFront]) => ({ ...catalog, reviewerFront })).then(value => {
       if (!isCurrent(rt, host)) return;
       const changed = JSON.stringify(value) !== JSON.stringify(state.value);
       state.value = value;

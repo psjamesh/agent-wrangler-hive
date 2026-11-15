@@ -1,3 +1,4 @@
+import { readReviewerFront } from './reviewer-front.js';
 import { readAgentCatalog } from './agent-catalog.js';
 import { newId } from './metadata-store.js';
 import { actorFor, normalizeIssue, descendantIds } from './bead-model.js';
@@ -99,11 +100,11 @@ function builderAgentOf(host, bead) {
   return (sid && host.sessions.get(sid)?.agent) || null;
 }
 
-export function resolveReviewPolicy(cell, builderAgent, input, byHolder, agents) {
+export function resolveReviewPolicy(cell, builderAgent, input, byHolder, agents, front) {
   const explicit = ['agent', 'model', 'effort'].filter((k) => input[k] !== undefined);
   const fullOverride = !byHolder && explicit.length === 3;
-  const chosen = chooseReviewer(cell, builderAgent, fullOverride ? undefined : agents);
-  const policy = { ...chosen.config, builderAgent, sameProvider: chosen.unknownBuilder ? null : chosen.sameProvider, ...(chosen.unknownBuilder ? { unknownBuilder: true } : {}), ...(chosen.fallback ? { fallback: chosen.fallback } : {}) };
+  const chosen = chooseReviewer(cell, builderAgent, fullOverride ? undefined : agents, fullOverride ? undefined : front);
+  const policy = { ...chosen.config, builderAgent, sameProvider: chosen.unknownBuilder ? null : chosen.sameProvider, ...(chosen.unknownBuilder ? { unknownBuilder: true } : {}), ...(chosen.selection ? { selection: chosen.selection } : {}), ...(chosen.fallback ? { fallback: chosen.fallback } : {}) };
   if (explicit.length && !byHolder) {
     const reason = text(input.override_reason, 'override_reason', 1000);
     if (!reason) throw new HiveError('The review policy applies to every review. To use a different agent, model or effort, pass override_reason.', 'refused');
@@ -111,6 +112,7 @@ export function resolveReviewPolicy(cell, builderAgent, input, byHolder, agents)
     assertAllowedReviewer(policy);
     policy.sameProvider = builderAgent ? policy.agent === builderAgent : null;
     delete policy.fallback;
+    delete policy.selection;
     policy.overrideReason = reason;
   }
   return policy;
@@ -165,8 +167,9 @@ export async function requestReview(rt, host, actor, input) {
       let agents, catalogUnavailable;
       try { agents = await readAgentCatalog(host); }
       catch (error) { catalogUnavailable = error.message; }
+      const front = await readReviewerFront(host);
       ensureWritable(rt);
-      policy = resolveReviewPolicy(cell, builderAgentOf(host, bead), input, byHolder, agents);
+      policy = resolveReviewPolicy(cell, builderAgentOf(host, bead), input, byHolder, agents, front);
       if (catalogUnavailable) policy.catalogUnavailable = catalogUnavailable;
       const prior = openReview(rt, bead.id);
       if (prior) {

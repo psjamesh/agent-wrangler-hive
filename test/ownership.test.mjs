@@ -2051,3 +2051,18 @@ test('full coordinator override can launch while no pinned reviewer is installed
   assert.equal(out.policy.overrideReason, 'Explicit alternate configuration');
   assert.equal(out.policy.fallback, undefined);
 });
+
+test('automatic review resolves the current host front at launch and persists its selection', async () => {
+  const f = holderFixture('codex'); await launchRecording(f);
+  let reads = 0;
+  f.host.agents.front = async () => {
+    reads++;
+    return { read: '2026-11-01', front: [{ agent: 'claude', model: 'opus', effort: 'high', usd: 2, quality: 80, minutes: 4 }] };
+  };
+  const out = await reviews.requestReview(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'review' });
+  assert.equal(reads, 1);
+  assert.equal(f.launched[0].agent, 'claude');
+  assert.equal(f.launched[0].effort, 'high');
+  assert.equal(f.doc().reviews[out.review_id].policy.selection.pick.quality, 80);
+  assert.equal(out.policy.sameProvider, false);
+});

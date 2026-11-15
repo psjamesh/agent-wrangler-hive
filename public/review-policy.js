@@ -1,4 +1,5 @@
 import { h } from './dom.js';
+import { frontPick } from './reviewer-front.js';
 
 const defaults = { primary: { agent: 'claude', model: 'opus', effort: 'medium' }, secondary: { agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' } };
 const slots = [['primary', 'Primary reviewer'], ['secondary', 'Secondary reviewer']];
@@ -8,7 +9,7 @@ export function reviewPolicyForm({ ui, send, hive }, cell) {
   const key = `review-policy:${cell.id}`;
   let draft = ui.form(key);
   if (!draft) {
-    draft = Object.fromEntries(slots.map(([slot]) => [slot, { ...defaults[slot], ...(cell.reviewPolicy?.[slot] || {}) }]));
+    draft = Object.fromEntries(slots.map(([slot]) => [slot, { ...defaults[slot], mode: cell.reviewPolicy?.[slot] ? 'pinned' : 'automatic', minQuality: 0, ...(cell.reviewPolicy?.[slot] || {}) }]));
     ui.setForm(key, draft);
   }
   const agents = hive?.agents || [];
@@ -29,14 +30,14 @@ export function reviewPolicyForm({ ui, send, hive }, cell) {
     return values.length ? values.map(value => ({ value, label: agent.efforts?.find(e => e.value === value)?.label || value })) : model ? [{ value: '', label: 'No effort control' }] : [];
   };
   const invalid = (value, name) => !optionsFor(value, name).some(o => o.value === value[name] && !o.disabled);
-  const canSave = current => catalogReady && slots.every(([slot]) => fields.every(([name]) => !invalid(current[slot], name)));
+  const canSave = current => catalogReady && slots.every(([slot]) => current[slot].mode === 'automatic' ? Number.isFinite(current[slot].minQuality) && current[slot].minQuality >= 0 && current[slot].minQuality <= 100 && (current[slot].maxUsd === undefined || Number.isFinite(current[slot].maxUsd) && current[slot].maxUsd > 0) : fields.every(([name]) => !invalid(current[slot], name)));
   return h('form', {
     class: 'hive-form hive-review-policy',
     onsubmit: event => {
       event.preventDefault();
       if (ui.form(key)?.saving || !canSave(ui.form(key))) return;
       const current = ui.form(key);
-      const policy = Object.fromEntries(slots.map(([slot]) => [slot, { mode: 'pinned', ...Object.fromEntries(fields.map(([name]) => [name, String(current[slot][name] || '').trim()])) }]));
+      const policy = Object.fromEntries(slots.map(([slot]) => [slot, { mode: current[slot].mode, ...(current[slot].mode === 'automatic' ? { minQuality: current[slot].minQuality, ...(current[slot].maxUsd !== undefined ? { maxUsd: current[slot].maxUsd } : {}) } : {}), ...Object.fromEntries(fields.map(([name]) => [name, String(current[slot][name] || '').trim()])) }]));
       ui.patchForm(key, { saving: true, error: '', saved: false });
       send({ type: 'hive-review-policy', cellId: cell.id, policy }, {
         onReply: reply => ui.patchForm(key, { saving: false, error: reply.ok ? '' : reply.error || 'Review policy could not be saved.', saved: Boolean(reply.ok) }),
@@ -44,15 +45,23 @@ export function reviewPolicyForm({ ui, send, hive }, cell) {
     },
   },
   h('h4', {}, 'Reviewers'),
-  h('p', { class: 'hive-muted' }, 'Every review runs on the config whose provider differs from the builder’s; if neither differs it uses the primary and notes the same provider.'),
-  ...slots.map(([slot, label]) => h('div', { class: 'hive-row' }, h('strong', {}, `${label} (Pinned) `),
-    catalogReady && fields.some(([name]) => invalid(draft[slot], name)) ? h('p', { class: 'hive-error', role: 'status' }, 'Pinned model no longer available, using Automatic host defaults at launch. The saved pin is kept.') : null, ...fields.map(([name, title]) => {
+  h('p', { class: 'hive-muted' }, 'The slot whose configured provider differs from the builder is used, otherwise the primary. Automatic picks from the model front at launch; Pinned uses the configured model. Fallbacks record when the same provider is needed.'),
+  ...slots.map(([slot, label]) => h('div', { class: 'hive-row' }, h('strong', {}, label),
+    h('label', {}, 'Mode', h('select', { 'data-focus-key': `review-policy:${cell.id}:${slot}:mode`, disabled: draft.saving, onchange: event => ui.patchForm(key, { [slot]: { ...ui.form(key)[slot], mode: event.target.value }, saved: false }) }, ...['automatic', 'pinned'].map(mode => h('option', { value: mode, selected: draft[slot].mode === mode }, mode === 'automatic' ? 'Automatic' : 'Pinned')))),
+    draft[slot].mode === 'automatic' ? h('div', {},
+      ...[['minQuality', 'Minimum quality (0–100)'], ['maxUsd', 'Maximum dollars per task (optional)']].map(([name, title]) => h('label', {}, title, h('input', { type: 'number', 'data-focus-key': `review-policy:${cell.id}:${slot}:${name}`, min: 0, max: name === 'minQuality' ? 100 : null, step: 'any', value: draft[slot][name] ?? '', disabled: draft.saving, oninput: event => ui.patchForm(key, { [slot]: { ...ui.form(key)[slot], [name]: event.target.value === '' ? (name === 'minQuality' ? 0 : undefined) : Number(event.target.value) }, saved: false }) }))),
+      h('p', { class: 'hive-muted' }, 'Coding-task benchmark tiers; these are not review-specific scores. The cheapest eligible different-provider setting is chosen at launch.'),
+      ...(agents.filter(a => a.available === true).map(builder => {
+        const pick = frontPick(hive?.reviewerFront?.front, draft[slot], builder.id, agents);
+        return h('p', { role: 'status' }, `Builder ${builder.label || builder.id}: ${pick ? `${pick.agent} / ${pick.model} / ${pick.effort || 'default effort'} ($${pick.usd}, quality ${pick.quality})` : hive?.reviewerFront?.error || 'No eligible front setting; using configured policy.'}`);
+      }))) : null,
+    draft[slot].mode !== 'automatic' && catalogReady && fields.some(([name]) => invalid(draft[slot], name)) ? h('p', { class: 'hive-error', role: 'status' }, 'Pinned model no longer available, using Automatic host defaults at launch. The saved pin is kept.') : null, ...fields.map(([name, title]) => {
     const id = `hive-review-${cell.id}-${slot}-${name}`;
     const value = draft[slot];
     const options = optionsFor(value, name);
     const stale = !options.some(o => o.value === value[name]);
     const flagged = catalogReady && invalid(value, name);
-    return h('label', { for: id, class: 'hive-field' }, title, h('select', {
+    return h('label', { for: id, class: 'hive-field' }, draft[slot].mode === 'automatic' ? `Fallback ${title.toLowerCase()}` : title, h('select', {
       id, disabled: draft.saving || !catalogReady,
       'aria-invalid': flagged ? 'true' : null,
       'data-focus-key': `review-policy:${cell.id}:${slot}:${name}`,
