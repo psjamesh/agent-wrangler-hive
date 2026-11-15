@@ -169,3 +169,21 @@ test('remote read topics outside the loaded window sort after unread topics', as
   ];
   assert.deepEqual(orderInboxTopics(ctx([a]), [a], rows).map(r => r.key), ['unread', 'read']);
 });
+
+
+test('queen attention is live only and leaves working and idle queens out', () => {
+  const a = cell('a', { queenSessionId: 's1' });
+  const c = ctx([a]);
+  for (const status of ['needs-input', 'needs-you', 'working', 'idle']) {
+    c.graph.sessions[0].status = status;
+    assert.equal(needsRows(c, [a]).length, status.startsWith('needs-') ? 1 : 0);
+  }
+  c.graph.sessions[0].status = 'needs-input';
+  for (const over of [{ enabled: false }, { snapshot: {} }, { retired: { outcome: 'done' } }]) {
+    assert.deepEqual(needsRows(c, [{ ...a, ...over }]), []);
+  }
+  c.graph.sessions[0].archived = true;
+  assert.deepEqual(needsRows(c, [a]), []);
+  c.graph.sessions = [];
+  assert.deepEqual(needsRows(c, [a]), []);
+});

@@ -24,12 +24,18 @@ export function sessionsInTask(graph, taskId) {
   return (graph?.sessions || []).filter((s) => assignments[s.sessionId] === taskId && !s.archived);
 }
 
+export function queenNeedsAttention(graph, cell) {
+  if (!cell.enabled || cell.snapshot || cell.retired) return false;
+  const queen = sessionNode(graph, cell.queenSessionId);
+  return Boolean(queen && !queen.archived && ['needs-input', 'needs-you'].includes(queen.status));
+}
+
 export function statusDot(graph, sessionId) {
   const s = sessionNode(graph, sessionId);
   if (!s) return 'gone';
   if (s.archived) return 'archived';
   if (s.status === 'working') return 'working';
-  if (s.status === 'needs-you') return 'needs';
+  if (['needs-input', 'needs-you'].includes(s.status)) return 'needs';
   if (s.exitOutput || s.status === 'exited') return 'exited';
   return 'idle';
 }

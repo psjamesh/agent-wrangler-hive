@@ -2,7 +2,7 @@ import { compareTopics } from './topic-order.js';
 import { h, relativeTime, markdown, sessionReference } from './dom.js';
 import { hiveLink } from './deep-links.js';
 import { needsHuman, requestAuthor } from './requests.js';
-import { cellName } from './model.js';
+import { cellName, queenNeedsAttention } from './model.js';
 import { filterRows, highlightParts, searchTerms, snippetFor } from './inbox-search.js';
 import { inboxMessages, inboxMessageCount, topicTitles, topicPriorities, messageAuthor } from './conversation.js';
 
@@ -16,6 +16,12 @@ export function needsRows(ctx, cells) {
   const { graph } = ctx;
   const rows = [];
   for (const cell of cells) {
+    if (queenNeedsAttention(graph, cell)) rows.push({
+      key: `queen:${cell.id}`, cellId: cell.id, hive: cellName(graph, cell), title: 'Queen needs attention', at: 0,
+      preview: 'The queen is waiting for input at its terminal.', texts: ['Queen needs attention', 'The queen is waiting for input at its terminal.'], beadIds: [],
+      needsCount: 1, count: 0, sessionLinks: [{ sessionId: cell.queenSessionId, label: 'Open session' }],
+      link: `#session=${encodeURIComponent(cell.queenSessionId)}`,
+    });
     for (const r of Object.values(cell.requests || {})) {
       if (!needsHuman(r)) continue;
       rows.push({
