@@ -18,6 +18,23 @@ function observation(host, url) {
   try { return host?.links?.prObservation?.(url) || null; } catch { return null; }
 }
 
+function registrationRecord(rt, host, bead, cell, url, now) {
+  const record = rt.metadata.read().prLabels?.[url];
+  if (record?.associations?.some(a => a.cellId === cell.id && a.beadId === bead.id)) return record;
+  let linked = false;
+  try { linked = Boolean(bead.ownerSessionId && host?.links?.get?.(bead.ownerSessionId)?.some(link => link.type === 'pr' && link.url === url)); } catch {}
+  const evidenced = bead.evidence?.some(entry => entry.kind === 'pr' && entry.url === url);
+  if (!linked && !evidenced) throw new HiveError('Choose a known PR associated with this bead, or link it to the claimant session or record PR evidence on the bead.');
+  return {
+    url, source: linked ? 'session-link' : 'bead-evidence', sessionId: linked ? bead.ownerSessionId : null,
+    firstSeenAt: now, enrolledAt: now, status: 'pending', labelledAt: null, state: null, stateCheckedAt: null,
+    ...record,
+    cellIds: [...new Set([...(record?.cellIds || []), cell.id])],
+    beadIds: [...new Set([...(record?.beadIds || []), bead.id])],
+    associations: [...(record?.associations || []), { cellId: cell.id, beadId: bead.id, kind: linked ? 'session-link' : 'bead-evidence' }],
+  };
+}
+
 function checkOutcome(row) {
   const value = String(row.state || (row.status === 'COMPLETED' ? row.conclusion : row.status) || '').toUpperCase();
   if (['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(value)) return 'success';
@@ -87,8 +104,7 @@ export function reportCiWait(rt, host, actor, args, now = Date.now()) {
     if (args.state !== 'wait') throw new HiveError('Unknown CI wait state.');
     if (['run_id', 'attempt', 'workflow', 'workflow_id'].some(key => args[key] !== undefined) || !TARGETS.includes(args.target)) throw new HiveError('Select checks, check, mergeable or merge. Run, attempt and workflow identity waits are unsupported by core observations.');
     if (!SHA.test(args.head_sha || '') || !prRepository(args.url)) throw new HiveError('Give a canonical PR URL and its full head SHA.');
-    const record = rt.metadata.read().prLabels?.[args.url];
-    if (!record?.associations?.some(a => a.cellId === cell.id && a.beadId === bead.id)) throw new HiveError('Choose a known PR associated with this bead.');
+    const record = registrationRecord(rt, host, bead, cell, args.url, now);
     if (!bead.ownerSessionId) throw new HiveError('A CI wait requires a responsible claimant.');
     if (!line(args.reason)) throw new HiveError('Give the purpose of the wait in reason.');
     if (!['success', 'completed'].includes(args.desired_outcome) || (['merge', 'mergeable'].includes(args.target) && args.desired_outcome !== 'success')) throw new HiveError('desired_outcome must be success, or completed for a check target.');
@@ -98,8 +114,9 @@ export function reportCiWait(rt, host, actor, args, now = Date.now()) {
     const next = { beadId: bead.id, cellId: cell.id, sessionId: bead.ownerSessionId, url: args.url, headSha: args.head_sha.toLowerCase(), target: args.target, checkName: args.check_name, desiredOutcome: args.desired_outcome, purpose: line(args.reason), deadline };
     const same = current && Object.entries(next).every(([key, value]) => current[key] === value);
     if (current && !current.acknowledgedAt && !same) throw new HiveError('Acknowledge the previous outcome, or cancel the pending wait and acknowledge it before replacing it.');
-    if (!same || current.acknowledgedAt) rt.metadata.mutate(doc => {
-      (doc.ciWaits ||= {})[bead.id] = { ...next, id: newId('ciwait'), nodeId: record.nodeId || null, createdAt: now, state: 'pending' };
+    rt.metadata.mutate(doc => {
+      (doc.prLabels ||= {})[args.url] = record;
+      if (!same || current.acknowledgedAt) (doc.ciWaits ||= {})[bead.id] = { ...next, id: newId('ciwait'), nodeId: record.nodeId || null, createdAt: now, state: 'pending' };
     });
   }
   rt.changed();

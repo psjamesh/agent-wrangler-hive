@@ -1,6 +1,10 @@
 # CI and PR waits
 
-A wait belongs to a bead's claimant and pins one PR head. Register it through `hive_report_pr_wait` before yielding:
+A wait belongs to a bead's claimant and pins one PR head. A canonical GitHub PR URL can be enrolled immediately when it appears as a PR link on the claimant's session or as `kind: "pr"` evidence on that bead. The exact URL declares the expected repository and PR, including a first PR in a new repository; links from other sessions or evidence on other beads do not authorize enrollment. Existing PR identity records are preserved.
+
+Keep the PR linked to a session or task so core observes it, including when enrollment uses bead evidence. Linking an evidence-enrolled PR also enables normal Hive labeling without discarding its bead associations. The declared repository enters the existing open-only Hive-label search, bounded to 100 results and at most one successful search per repository per five-minute cooldown (failures back off).
+
+Register it through `hive_report_pr_wait` before yielding:
 
 ```json
 {
