@@ -836,6 +836,18 @@ function requireApprovedMergeHead(rt, cellId, beadId, evidence) {
   }
 }
 
+function withHumanAnswerPins(rt, cellId, beadId, evidence) {
+  for (const entry of evidence) {
+    if (!['merge', 'merged'].includes(entry.kind) || !entry.url) continue;
+    const request = Object.values(rt.metadata.read().requests || {})
+      .filter(r => r.cellId === cellId && (!r.beadId || r.beadId === beadId) && r.kind === 'approval'
+        && r.answer?.author === 'human' && r.answer.subjectPin?.kind === 'pr' && r.answer.subjectPin.url === entry.url)
+      .sort((a, b) => a.answer.at - b.answer.at).at(-1);
+    if (request) entry.human_answer = { request_id: request.id, at: request.answer.at, subject_pin: structuredClone(request.answer.subjectPin), matches_merged_head: entry.merged_head ? request.answer.subjectPin.revision.toLowerCase() === entry.merged_head.toLowerCase() : null };
+  }
+  return evidence;
+}
+
 function kindArg(value) {
   const kind = text(value, 'kind', 40);
   if (kind !== undefined && !/^[a-z][a-z0-9-]{0,39}$/.test(kind)) throw new HiveError('kind must be a short lowercase word such as work, workstream, goal, investigation, fix, review or decision.');
@@ -984,7 +996,7 @@ export async function updateBead(rt, actor, input) {
   } else if (patch.status !== undefined && bead.resume && !waitStatus(patch.status)) {
     patch.resume = '';
   }
-  const add = evidenceInput(input.add_evidence, actor.sessionId ? actorFor(actor.sessionId) : 'aw:human');
+  const add = withHumanAnswerPins(rt, cell.id, id, evidenceInput(input.add_evidence, actor.sessionId ? actorFor(actor.sessionId) : 'aw:human'));
   requireApprovedMergeHead(rt, cell.id, id, add);
   const removeLabels = Array.isArray(input.remove_evidence_labels) ? input.remove_evidence_labels.slice(0, 50).map(String) : [];
   for (const k of Object.keys(patch)) if (patch[k] === undefined) delete patch[k];
@@ -1337,7 +1349,7 @@ export async function finishBead(rt, actor, input) {
   const outcome = input.outcome;
   if (!OUTCOMES.includes(outcome)) throw new HiveError(`outcome must be one of ${OUTCOMES.join(', ')}.`);
   const summary = text(input.summary, 'summary', LIMITS.long, { required: true });
-  const add = evidenceInput(input.evidence, actorFor(actor.sessionId));
+  const add = withHumanAnswerPins(rt, cell.id, id, evidenceInput(input.evidence, actorFor(actor.sessionId)));
   requireApprovedMergeHead(rt, cell.id, id, add);
   const who = actorFor(actor.sessionId);
   if (id !== cell.rootBeadId && Object.values(rt.snapshots.graph.beads).some((b) => b.parentId === id)) {
