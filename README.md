@@ -51,12 +51,16 @@ Drag the background to pan, zoom to inspect the map, and use **Fit** to see ever
 - **Worker and claim:** a session responsible for a bounded bead. A session stopping or going idle does not finish its work.
 - **Link:** an explicit dependency or association. Blocking links make work wait; neighbouring hexagons do not imply dependencies.
 - **Request:** a tracked question needing a decision or action. Worker requests go privately to the queen until forwarded; a missing or archived queen routes requests to the human.
-- **Delegation.** Tracked delegation uses Hive's tools, which claim a bead before launching a session. Hive adds no tool deny list to Claude, Codex or Gemini launches. Sessions they start outside Hive appear under `attention.untracked_descendants` in `hive_context`. A helper, advisor or investigation is its own claimed bead launched with `hive_spawn_worker`; a code review uses `role: "review"` on the work bead. Codex approvals are configured per hive in **Info → Settings** (see below). `codex_approval` on `hive_spawn_worker` accepts `"on-request"` or `"never"` and is ignored when the resolved agent is not Codex. A retained reviewer keeps its stored launch configuration and rejects `codex_approval`; the hive setting still applies when it resumes.
+- **Delegation.** Tracked delegation uses Hive's tools, which claim a bead before launching a session. Hive adds no tool deny list to Claude, Codex or Gemini launches. Sessions they start outside Hive appear under `attention.untracked_descendants` in `hive_context`. A helper, advisor or investigation is its own claimed bead launched with `hive_spawn_worker`; a code review uses `role: "review"` on the work bead. Codex approvals are configured per hive in **Settings → This hive** (see below). `codex_approval` on `hive_spawn_worker` accepts `"on-request"` or `"never"` and is ignored when the resolved agent is not Codex. A retained reviewer keeps its stored launch configuration and rejects `codex_approval`; the hive setting still applies when it resumes.
 - **Queen handoff.** The current queen calls `hive_handoff_queen` to hand the cell to one Hive-launched successor at a time. The handoff is generation-fenced: if the queen changes meanwhile, the successor is refused before it acts. Workers keep their claims and reviews; the old queen loses queen and coordinator authority, and claims it holds personally are not transferred. The human can launch a replacement queen at any time.
+
+### Settings and hive details
+
+The cog at the top right opens **Settings**. **This hive** contains queen instructions, watchdog thresholds, Codex approvals, reviewers and hive lifecycle actions. **All hives** contains worker capacity, decorative bees, the bd executable and request notifications. On the All hives map and in captured snapshots, settings open directly to **All hives**. Click a hive title for its goal and done criteria, or its queen pill for queen status and management.
 
 ### Codex approvals
 
-Each hive has a **Codex approvals** selector in **Info → Settings**:
+Each hive has a **Codex approvals** selector in **Settings → This hive**:
 
 | Choice | Behavior |
 | --- | --- |

@@ -1213,7 +1213,7 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 }
 
 /* Compact header: name, queen, progress and actions on one line; the rest of
-   the hive's settings are in the Info drawer. */
+   the hive's settings open from the cog. */
 
 .hive-cellhead-top { flex-wrap: nowrap; min-width: 0; }
 .hive-cellhead-top > * { flex: 0 0 auto; }
@@ -1281,7 +1281,7 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 
 .hive-tab[aria-selected="true"] { background: var(--surface-2); color: var(--fg); border-color: var(--hive-comb-strong); }
 
-/* The Info drawer opens over the right of the hive view. */
+/* Action drawers open over the right of the hive view. */
 .hive-info {
   position: absolute;
   top: 0;
@@ -1316,8 +1316,6 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 .hive-closed-title { overflow-wrap: anywhere; }
 .hive-complete .hive-form { display: flex; flex-direction: column; gap: 10px; }
 .hive-warning { margin: 0; padding: 6px 8px; border-radius: 6px; color: var(--warn-fg, var(--fg)); background: color-mix(in srgb, var(--warn-fg, var(--fg)) 10%, transparent); }
-.hive-info .hive-queenbar { align-items: flex-start; }
-.hive-info .hive-queen-note { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 6px; }
 
 .hive-root[data-view^="cell"] {
   display: grid;
@@ -1474,34 +1472,16 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 
 .hive-overhead, .hive-cellhead { position: relative; }
 
-.hive-allsettings {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 4;
-  width: min(420px, 100%);
-  max-height: calc(100dvh - 150px);
-  overflow: auto;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-muted, var(--border));
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: 0 6px 18px rgb(0 0 0 / 0.18);
-}
-
-.hive-allsettings-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.hive-allsettings-head h3 { margin: 0; font-size: 14px; }
-.hive-allsettings p { margin: 0; font-size: 12px; }
+.hive-settings { width: min(640px, 100%); }
+.hive-settings .hive-tabs { padding: 0 20px; flex-shrink: 0; }
+.hive-settings .hive-dialog-body > section > h4 { margin: 4px 0; }
+.hive-settings-cog { display: inline-flex; align-items: center; justify-content: center; padding: 7px; }
+.hive-title-btn { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; color: inherit; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; }
+.hive-title-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
+.hive-cell-popover { width: min(460px, calc(100vw - 32px)); }
+.hive-cell-popover-body { display: flex; flex-direction: column; gap: 12px; }
+.hive-cell-popover-body h4 { margin: 8px 0 4px; }
+.hive-cell-popover .hive-queenbar { align-items: flex-start; }
 
 .hive-bee-setting {
   display: flex;

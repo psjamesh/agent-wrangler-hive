@@ -10,6 +10,7 @@ import { refreshWaitingMenu, disposeWaitingMenu } from './waiting-view.js';
 import { installHiveLinks, revealMessage, syncHiveSelection, hiveLink } from './deep-links.js';
 import { createToaster, announceRestoreNotices } from './toasts.js';
 import { disposeConfirm } from './confirm-dialog.js';
+import { refreshCellPopover, disposeCellPopover } from './cell-popover.js';
 import { disposeConversation } from './conversation.js';
 import { disposePanels } from './cell-view.js';
 import { disposeImages } from './attachments.js';
@@ -1122,6 +1123,7 @@ export function rerender() {
   announceRestores(hive);
   menuRenderEnd();
   refreshWaitingMenu(ctx);
+  refreshCellPopover(ctx);
   if (state.revealCell) {
     const tile = root.querySelector(`.hive-overview [data-tile-id="${CSS.escape(state.revealCell)}"]`);
     if (tile && !root.querySelector('.hive-dialog')) {
@@ -1220,6 +1222,7 @@ function holdBees(on) {
 }
 
 const beeControls = {
+  saving: () => beeSaving,
   slider: (idKey) => beeSlider({ value: beeLevel(), onInput: previewBees, onCommit: commitBees, onHold: holdBees, idKey }),
 };
 
@@ -1298,6 +1301,7 @@ const overview = {
       globalThis.window?.removeEventListener('focus', onVisible);
       disposeConfirm();
       disposeWaitingMenu();
+      disposeCellPopover();
       disposeImages(state.ui);
       disposeConversation(state.ui);
       disposePanels(state.ui);

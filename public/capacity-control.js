@@ -14,9 +14,9 @@ export function capacityLimit(api, fallback = 8) {
   return Number.isSafeInteger(value) && value >= 0 ? value : fallback;
 }
 
-export function openHiveSettings(ui, returnKey = 'open-settings') {
-  ui.setForm('settings', { returnKey });
-  focus('capacity-limit');
+export function openHiveSettings(ui, returnKey = 'open-settings', cellId = null) {
+  ui.setForm('settings', { returnKey, cellId, tab: cellId ? 'hive' : 'all' });
+  focus(cellId ? 'settings-close' : 'capacity-limit');
 }
 
 export function capacityControl({ hive, ui, api }) {
@@ -28,7 +28,7 @@ export function capacityControl({ hive, ui, api }) {
   return h('div', { class: 'hive-capacity-control' },
     h('button', {
       type: 'button', class: 'hive-quiet-btn hive-capacity-count',
-      'data-focus-key': 'capacity-toggle', 'aria-expanded': String(Boolean(ui.form('settings'))), 'aria-controls': 'hive-all-settings',
+      'data-focus-key': 'capacity-toggle', 'aria-expanded': String(Boolean(ui.form('settings'))), 'aria-controls': 'hive-settings',
       title: `${detail} Open Hive Settings.`, 'aria-label': `${usage.used}${limit ? ` of ${limit}` : ''} in progress. ${detail} Open Hive Settings.`,
       onclick: () => openHiveSettings(ui, 'capacity-toggle'),
     }, `${usage.used}${limit ? ` of ${limit}` : ''} in progress`),

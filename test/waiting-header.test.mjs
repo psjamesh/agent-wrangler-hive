@@ -7,10 +7,11 @@ import { cellWaitingItems } from '../public/waiting-model.js';
 test('the cell-wide wait action includes unbound waits and remains available in responsive layouts', () => {
   const source = fs.readFileSync(new URL('../public/cell-view.js', import.meta.url), 'utf8');
   const h = (tag, attrs, ...children) => ({ tag, attrs, children: children.flat(Infinity).filter(Boolean) });
+  const name = 'A long hive name that must remain readable when the header is narrow';
   const header = vm.runInNewContext(`(${source.match(/function cellHeader\([\s\S]*?\n}\n/)[0]})`, {
-    h, cellWaitingItems, cellName: () => 'Example', queenPill: () => null, headProgress: () => null,
+    h, cellWaitingItems, cellName: () => name, queenPill: () => null, headProgress: () => null,
     hasPanels: () => false, closedButton: () => null,
-    capacityControl: () => null, allSettings: () => null, isRetired: () => false, retireKey: (id) => `retire:${id}`, openReopen() {},
+    capacityControl: () => null, settingsModal: () => null, settingsButton: () => null, isRetired: () => false, retireKey: (id) => `retire:${id}`, openReopen() {},
     attentionEl: () => null, restoreNotices: () => null, noticesEl: () => null,
   });
   const cell = { id: 'c', enabled: true, rootBeadId: 'root', taskId: 't', bindings: [], waits: [{ id: 'message:fyi', kind: 'message', beadIds: ['root'] }], inbox: { human: { count: 1 } }, requests: { native: { id: 'native', cellId: 'c', audience: 'human', state: 'open', title: 'Hive-wide decision' } } };
@@ -18,6 +19,9 @@ test('the cell-wide wait action includes unbound waits and remains available in 
     sessions: [{ sessionId: 'unbound', status: 'needs-you' }], tasks: { assignments: { unbound: 't' } },
   }, ui: { form: () => null }, send: () => {} };
   const all = node => [node, ...(node.children || []).filter(n => typeof n === 'object').flatMap(all)];
+  const title = all(header(ctx, cell, null)).find(n => n.attrs?.class === 'hive-title-btn');
+  assert.ok(title.attrs.title.includes(name));
+  assert.equal(title.children[0], name);
   const action = all(header(ctx, cell, null)).find(n => n.attrs?.['data-focus-key'] === 'waiting-header');
   assert.equal(action.tag, 'button');
   assert.equal(action.children[0], '2 waiting for you');
@@ -27,6 +31,8 @@ test('the cell-wide wait action includes unbound waits and remains available in 
   ctx.graph.sessions = [];
   assert.equal(all(header(ctx, cell, null)).some(n => n.attrs?.['data-focus-key'] === 'waiting-header'), false);
   const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const titleStyle = css.match(/\.hive-title-btn \{([^}]+)\}/)[1];
+  for (const rule of ['display: block', 'max-width: 100%', 'overflow: hidden', 'text-overflow: ellipsis', 'white-space: nowrap']) assert.ok(titleStyle.includes(rule), rule);
   const hidden = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, , declarations]) => /display\s*:\s*none\b/.test(declarations));
   const classes = action.attrs.class.split(/\s+/);
   for (const [, selectors] of hidden) {
