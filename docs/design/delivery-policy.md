@@ -14,7 +14,7 @@ Delivery after merge is already authorized. For ordinary repos, agents monitor t
 
 Store a single root `deliveryPolicy` in `<AW_DATA_DIR>/hive/metadata.json`, using the existing metadata store, outside `cells`. It contains a schema version, revision and ordered repository rules. Edit it once in **Hive → Settings → Settings for all hives → Delivery policy** (`public/settings-view.js`). The human can save changes there; queens may propose changes through Hive rather than edit metadata directly. Record who changed the policy and when. This is a coordination contract for agents using the supported UI/tools, not protection against a same-user process rewriting local files.
 
-Reuse the existing Reviewers form's validation and save/error pattern. Reviewer model/provider selection stays in **Info → Settings → Reviewers** and `cell.reviewPolicy`; delivery rules decide whether review is required and its round limit. A new hive or successor queen simply reads the same global policy. No per-cell policy copies or cross-cell grant negotiation are needed.
+Reuse the existing Reviewers form's validation and save/error pattern. Reviewer model/provider selection stays in **Settings → This hive → Reviewers** and `cell.reviewPolicy`; delivery rules decide whether review is required and its round limit. A new hive or successor queen simply reads the same global policy. No per-cell policy copies or cross-cell grant negotiation are needed.
 
 | Rule field | Built-in default and `*` rule | Available override |
 | --- | --- | --- |

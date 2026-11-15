@@ -22,6 +22,7 @@ export class Element extends Node {
   get firstChild() { return this.childNodes[0] ?? null; }
   get lastChild() { return this.childNodes.at(-1) ?? null; }
   get textContent() { return this.childNodes.map(n => n.textContent).join(''); }
+  set textContent(value) { this.replaceChildren(String(value)); }
   setAttribute(k, v) { this.attributes[k] = String(v); if (k.startsWith('data-')) this.dataset[camel(k)] = String(v); }
   getAttribute(k) { return this.attributes[k] ?? null; }
   removeAttribute(k) { delete this.attributes[k]; }
