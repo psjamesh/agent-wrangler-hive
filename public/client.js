@@ -1,3 +1,4 @@
+import { queenNeedsAttention } from './model.js';
 import { createWatchdogNotifications } from './watchdog-notifications.js';
 import { createDrafts, DRAFT_PREFIX, DRAFT_TEXT_MAX } from './ui-drafts.js';
 import { capacityLimit } from './capacity-control.js';
@@ -1281,7 +1282,10 @@ const overview = {
   id: 'overview',
   label: 'Hive',
   icon: HIVE_ICON,
-  badge(graph) { return graph?.hive?.metadataError ? 0 : graph?.hive?.requestCount || 0; },
+  badge(graph) {
+    if (graph?.hive?.metadataError) return 0;
+    return (graph?.hive?.requestCount || 0) + Object.values(graph?.hive?.cells || {}).filter(cell => queenNeedsAttention(graph, cell)).length;
+  },
   mount(el, api) {
     state.api = api || state.api;
     state.root = el;

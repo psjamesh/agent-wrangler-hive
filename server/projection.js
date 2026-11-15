@@ -18,12 +18,7 @@ export function queenResponseState(doc, cell) {
     ...messages.filter(awaitingQueen).map(m => stamp(m.at)),
     ...Object.values(doc.requests || {}).filter(r => r.cellId === cell.id && r.audience === 'queen' && r.state === 'open').map(r => stamp(r.createdAt)),
   ].filter(at => at > 0);
-  const activity = [
-    ...messages.filter(m => m.sessionId === cell.queenSessionId).map(m => stamp(m.at)),
-    ...Object.values(doc.operations || {}).filter(op => op.actor === `aw:${cell.queenSessionId}` && op.state === 'applied').map(op => stamp(op.updatedAt)),
-    stamp(doc.workerActivity?.[cell.queenSessionId]),
-  ];
-  return { pendingSince: pending.length ? Math.min(...pending) : null, lastActivity: Math.max(0, ...activity) };
+  return { pendingSince: pending.length ? Math.min(...pending) : null };
 }
 
 const THREAD_WINDOW = 40;

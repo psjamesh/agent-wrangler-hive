@@ -43,7 +43,7 @@ export function watchdogSettingsForm({ ui, send }, cell) {
     },
   },
   h('h4', {}, 'Watchdog'),
-  h('p', { class: 'hive-muted' }, 'Watchdog thresholds for this hive. New flags wake the queen once; quiet checks never wake it. Queen not responding appears in Needs you when pending input has no queen activity for that long.'),
+  h('p', { class: 'hive-muted' }, 'Watchdog thresholds for this hive. New flags wake the queen once; quiet checks never wake it. Queen not responding appears in Needs you when the queen is idle and the oldest unanswered input has waited that long.'),
   ...fields.map(([name, label]) => {
     const id = `hive-watchdog-${cell.id}-${name}`;
     return h('label', { for: id, class: 'hive-field' }, label, h('input', {
