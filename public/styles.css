@@ -747,8 +747,8 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 /* The primary mark: one per item, centred at the bottom, in Agent
    Wrangler's own status colours and never a workstream hue. Solid red person
    (an agent waiting for input) and solid green robot (an agent working),
-   each with the theme's paired bar ink; a bare warning-ink cross (prerequisite
-   waiting on a prerequisite); an outlined grey tick (done), so it never
+   each with the theme's paired bar ink; a bare grey cross (waiting
+   on a prerequisite); an outlined grey tick (done), so it never
    reads as the green of work in progress; grey minus (closed otherwise) and
    grey pause (deferred). Words are in its title and the tile's name. */
 .hive-root {
@@ -756,7 +756,9 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   --hive-pm-person-ink: var(--bar-on, var(--surface));
   --hive-pm-busy: var(--green, var(--fg));
   --hive-pm-busy-ink: var(--green-bar-on, var(--bar-on, var(--surface)));
-  --hive-pm-waiting: var(--warn-fg, var(--fg));
+  --hive-pm-waiting: var(--fg-muted, var(--fg));
+  --hive-pm-review: var(--blue, #3467bd);
+  --hive-pm-review-ink: var(--blue-bar-on, var(--bar-on, var(--surface)));
   --hive-pm-done: var(--fg-muted, var(--fg));
   --hive-pm-quiet: var(--fg-muted, var(--fg));
 }
@@ -1616,8 +1618,9 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 
 .hive-pm-untracked .hive-pm-line { stroke: var(--warn-fg, #b45309); }
 
-.hive-pm-review-pending .hive-pm-bg { fill: var(--warn-fg, #b45309); stroke: var(--warn-fg, #b45309); }
-.hive-pm-review-pending .hive-pm-glyph { stroke: var(--bar-on, var(--surface)); }
+.hive-pm-review-pending .hive-pm-bg { fill: var(--hive-pm-review); stroke: var(--hive-pm-review); }
+.hive-pm-review-pending .hive-pm-glyph { stroke: var(--hive-pm-review-ink); }
+.hive-pm-pickup .hive-pm-line { stroke: var(--hive-pm-busy); }
 
 .hive-message.is-link-target {
   outline: 2px solid var(--accent, #d5a93b);
