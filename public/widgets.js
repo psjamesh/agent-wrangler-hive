@@ -161,7 +161,7 @@ export function instructionsField(value, onPatch, focusKey) {
       rows: '4',
       maxlength: '8000',
       value: value || '',
-      placeholder: 'Optional. How the queen should work, e.g. "Use the mob-boss skill alongside hive-queen. Require mob-worker for delegated implementation."',
+      placeholder: 'Optional. How the queen should work, e.g. "Keep work focused on the current milestone. Ask before expanding scope."',
       oninput: (e) => onPatch(e.target.value),
       'data-focus-key': focusKey,
     }),

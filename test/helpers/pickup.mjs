@@ -47,6 +47,6 @@ export function pickupFixture(limit = 8) {
   rt.host = host;
   rt.metadata.lifetime.attach(rt, host);
   const actor = (id = 'queen', role = 'queen') => ({ sessionId: id, role, cell: doc.cells.cell, cells: [{ cell: doc.cells.cell, role }] });
-  const profile = { agent: 'claude', model: 'sonnet', effort: 'medium', cwd: '/tmp/fake-repo', worktree: { auto: true }, intent: 'Use the mob-worker skill.' };
+  const profile = { agent: 'claude', model: 'sonnet', effort: 'medium', cwd: '/tmp/fake-repo', worktree: { auto: true }, intent: 'Use the hive-worker skill.' };
   return { rt, host, live, board, catalog, spawned, delivered, actions, actor, profile, doc: () => doc, bump, graph, now: () => now, advance: ms => { now += ms; }, setLimit: n => { limit = n; } };
 }
