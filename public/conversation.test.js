@@ -1555,9 +1555,9 @@ test('merged Inbox includes needs across the cell despite a bead selection', t =
   assert.equal(out.head.querySelector('.hive-inbox-filters').querySelector('.hive-inbox-count').textContent, '1');
 });
 
-test('rail badge uses host-supported numeric counts even when request metadata is unavailable', t => {
+test('rail badge stays empty when cell metadata is unavailable', t => {
   const f = fixture(t);
-  assert.equal(f.view.badge({ hive: { requestCount: 3 } }), 3);
+  assert.equal(f.view.badge({ hive: { requestCount: 3 } }), 0);
   assert.equal(f.view.badge({ hive: { metadataError: 'Corrupt metadata' } }), 0);
 });
 
