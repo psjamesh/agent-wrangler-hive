@@ -300,7 +300,7 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   const opened = await run(`[...document.querySelectorAll('.hive-inbox-item .hive-topic-btn')].find(e => e.textContent.includes('Importer database')).click(); await new Promise(r => setTimeout(r, 150)); return { messages: document.querySelectorAll('.hive-message').length, back: Boolean(document.querySelector('[data-focus-key="topics-back:alpha"]')) };`);
   assert.equal(opened.messages, 2);
   assert.equal(opened.back, true);
-  await run(`document.querySelector('[data-focus-key="topics-back:alpha"]').click(); await new Promise(r => setTimeout(r, 100)); [...document.querySelectorAll('.hive-conversation button')].find(e => e.textContent === 'Show topics').click();`);
+  await run(`document.querySelector('[data-focus-key="topics-back:alpha"]').click(); await new Promise(r => setTimeout(r, 100));`);
   assert.equal(await run(`return Boolean(document.querySelector('[aria-label="Topics"]'));`), true);
 
   await run(`[...document.querySelectorAll('.hive-inbox-filter')].find(e => e.textContent.startsWith('Inbox')).click(); const input = document.querySelector('.hive-inbox-search-input'); input.value = 'retry'; input.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); document.querySelector('[aria-label="Show all hives"]').click(); await new Promise(r => setTimeout(r, 200));`);
