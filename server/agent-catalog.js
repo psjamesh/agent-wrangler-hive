@@ -28,7 +28,7 @@ export function agentCatalogForGraph(rt, host) {
       state.value = value;
       state.checkedAt = Date.now();
       if (changed) rt.changed();
-    }).finally(() => { state.pending = null; });
+    }).finally(() => { state.pending = null; }).catch(error => rt.log?.(`hive: agent catalogue refresh failed: ${error.message}`));
   }
   return state.value;
 }

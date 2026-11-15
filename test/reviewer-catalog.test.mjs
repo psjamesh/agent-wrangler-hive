@@ -110,3 +110,14 @@ test('graph refresh reflects removed models without rewriting saved settings', a
   assert.deepEqual(manifest.graph({ host: f.host }).hive.agents[0].models, []);
   assert.equal(f.calls(), 2);
 });
+
+test('graph refresh handles a rebuild failure without an unhandled rejection', async () => {
+  const f = fixture(), logs = [];
+  f.rt.changed = () => { throw new Error('rebuild unavailable'); };
+  f.rt.log = message => logs.push(message);
+  const manifest = createManifest({ dir: '.' });
+  manifest.graph({ host: f.host });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(logs[0], /rebuild unavailable/);
+  assert.deepEqual(manifest.graph({ host: f.host }).hive.agents, f.agents);
+});

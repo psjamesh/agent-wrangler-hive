@@ -2027,3 +2027,27 @@ test('review launch records a stale-pin fallback and preserves the pinned settin
   assert.deepEqual(f.doc().cells.cell.reviewPolicy.secondary, pinned);
   assert.ok(f.sent.some(m => /Automatic host defaults/.test(m.text)));
 });
+
+for (const failure of ['throws', 'missing', 'invalid']) test(`review launch preserves the pin and records a ${failure} catalogue read`, async () => {
+  const f = holderFixture('claude'); await launchRecording(f);
+  if (failure === 'throws') f.host.agents.list = async () => { throw new Error('offline'); };
+  if (failure === 'missing') delete f.host.agents;
+  if (failure === 'invalid') f.host.agents.list = async () => null;
+  const out = await reviews.requestReview(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'review' });
+  assert.equal(f.launched[0].agent, 'codex');
+  assert.equal(f.launched[0].model, 'gpt-6.1-sol');
+  assert.equal(f.launched[0].effort, 'medium');
+  assert.match(out.policy.catalogUnavailable, /installed agents list/);
+  assert.equal(out.policy.fallback, undefined);
+  assert.equal(f.doc().reviews[out.review_id].policy.catalogUnavailable, out.policy.catalogUnavailable);
+  assert.ok(f.sent.some(m => /catalogue unavailable/.test(m.text)));
+});
+
+test('full coordinator override can launch while no pinned reviewer is installed', async () => {
+  const f = holderFixture('codex'); await launchRecording(f);
+  f.host.agents.list = async () => [];
+  const out = await reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review', agent: 'claude', model: 'sonnet', effort: 'high', override_reason: 'Explicit alternate configuration' });
+  assert.equal(f.launched[0].model, 'sonnet');
+  assert.equal(out.policy.overrideReason, 'Explicit alternate configuration');
+  assert.equal(out.policy.fallback, undefined);
+});
