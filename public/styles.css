@@ -732,7 +732,7 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   transition: stroke 140ms ease, stroke-width 140ms ease;
 }
 
-/* Selection and keyboard focus use the neutral inner ring; conversation
+/* Selection and keyboard focus use the neutral rim overlay; conversation
    relations use a separate dashed rim. Links use marks on linked tiles. */
 .hive-hex.is-selected .hive-hex-ring { stroke: var(--fg-muted, var(--fg)); stroke-width: 1.5; }
 .hive-hex:focus-visible .hive-hex-ring,
