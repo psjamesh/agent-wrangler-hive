@@ -2031,7 +2031,7 @@ for (const view of ['topics', 'cell', 'global', 'cell-search', 'global-search'])
   assert.ok(tinted().includes('unread-old'));
 });
 
-test('topic comparator groups needs, unread and read, oldest activity first with stable ties', async () => {
+test('Inbox comparator groups needs, unread and read, oldest activity first with stable ties', async () => {
   const { compareTopics } = await import('./topic-order.js');
   const entries = [
     { id: 'read', lastAt: 1 }, { id: 'unread', unreadCount: 2, lastAt: 2 },
@@ -2041,23 +2041,33 @@ test('topic comparator groups needs, unread and read, oldest activity first with
   assert.equal(compareTopics(entries[0], entries[0]), 0);
 });
 
-test('Topics groups waiting, unread and read topics by oldest last activity in each group', t => {
+test('Topics lists newest activity first across waiting, unread and read topics', t => {
   const f = orderedTopicsFixture(t);
-  assert.deepEqual(topicTitlesIn(f.draw().list), ['needs-old', 'needs-new', 'unread-old', 'unread-new', 'read-old', 'read-new']);
+  assert.deepEqual(topicTitlesIn(f.draw().list), ['needs-new', 'needs-old', 'unread-new', 'unread-old', 'read-new', 'read-old']);
+  f.cell.threads.find(topic => topic.id === 'read-old').lastAt = 70;
+  assert.deepEqual(topicTitlesIn(f.draw().list), ['read-old', 'needs-new', 'needs-old', 'unread-new', 'unread-old', 'read-new']);
 });
 
-for (const state of ['answered', 'withdrawn']) test(`Topics reorders live after a request is ${state} and messages are read`, t => {
+test('Topics keeps stable ties and opens the right topic after activity reorders the list', t => {
   const f = orderedTopicsFixture(t);
-  assert.equal(topicTitlesIn(f.draw().list)[0], 'needs-old');
-  Object.assign(f.cell.requests['needs-old'], { state, delivery: { state: state === 'answered' ? 'failed' : 'delivered' } });
-  if (state === 'answered') {
-    assert.equal(topicTitlesIn(f.draw().list)[0], 'needs-old', 'delivery repair still needs the human');
-    f.cell.requests['needs-old'].delivery.state = 'delivered';
-  }
-  assert.deepEqual(topicTitlesIn(f.draw().list), ['needs-new', 'unread-old', 'unread-new', 'needs-old', 'read-old', 'read-new']);
+  f.cell.threads.find(topic => topic.id === 'read-old').lastAt = 60;
+  assert.deepEqual(topicTitlesIn(f.draw().list).slice(0, 2), ['needs-new', 'read-old']);
+  f.cell.threads.find(topic => topic.id === 'read-old').lastAt = 70;
+  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  assert.equal(f.ui.openThread(f.cell.id), 'read-old');
+  f.cell.threads.find(topic => topic.id === 'read-new').lastAt = 80;
+  f.draw();
+  assert.equal(f.ui.openThread(f.cell.id), 'read-old');
+});
+
+for (const state of ['answered', 'withdrawn']) test(`Topics keeps activity order after a request is ${state} and messages are read`, t => {
+  const f = orderedTopicsFixture(t);
+  const expected = ['needs-new', 'needs-old', 'unread-new', 'unread-old', 'read-new', 'read-old'];
+  Object.assign(f.cell.requests['needs-old'], { state, delivery: { state: 'delivered' } });
+  assert.deepEqual(topicTitlesIn(f.draw().list), expected);
   const message = f.cell.messages.find(m => m.threadId === 'unread-old');
   f.ui.noteAck(f.cell.id, message.id, { required: true, state: { kind: 'seen' }, rev: 1 });
-  assert.deepEqual(topicTitlesIn(f.draw().list), ['needs-new', 'unread-new', 'needs-old', 'read-old', 'read-new', 'unread-old']);
+  assert.deepEqual(topicTitlesIn(f.draw().list), expected);
 });
 
 for (const view of ['cell', 'global', 'cell-search', 'global-search']) test(`${view} Inbox orders topics by last activity and reorders after requests settle`, async t => {
@@ -2098,7 +2108,7 @@ test('Show older topics merges loaded pages into the same order without changing
   f.replies.at(-1).onReply({ ok: true, threads: [
     { id: 'earlier', title: 'Earlier read topic', beads: [], count: 1, retained: 1, lastAt: 5 },
   ], more: false, after: null });
-  assert.deepEqual(topicTitlesIn(f.draw().list), ['needs-old', 'needs-new', 'unread-old', 'unread-new', 'Earlier read topic', 'read-old', 'read-new']);
+  assert.deepEqual(topicTitlesIn(f.draw().list), ['needs-new', 'needs-old', 'unread-new', 'unread-old', 'read-new', 'read-old', 'Earlier read topic']);
 });
 
 for (const view of ['cell', 'global']) test(`${view} Waiting for queen uses the same topic groups and last activity order`, async t => {
