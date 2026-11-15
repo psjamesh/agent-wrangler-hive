@@ -1,3 +1,4 @@
+import { readAgentCatalog } from './agent-catalog.js';
 import { newId } from './metadata-store.js';
 import { actorFor, normalizeIssue, descendantIds } from './bead-model.js';
 import { COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller } from './access.js';
@@ -98,16 +99,18 @@ function builderAgentOf(host, bead) {
   return (sid && host.sessions.get(sid)?.agent) || null;
 }
 
-export function resolveReviewPolicy(cell, builderAgent, input, byHolder) {
-  const chosen = chooseReviewer(cell, builderAgent);
+export function resolveReviewPolicy(cell, builderAgent, input, byHolder, agents) {
   const explicit = ['agent', 'model', 'effort'].filter((k) => input[k] !== undefined);
-  const policy = { ...chosen.config, builderAgent, sameProvider: chosen.unknownBuilder ? null : chosen.sameProvider, ...(chosen.unknownBuilder ? { unknownBuilder: true } : {}) };
+  const fullOverride = !byHolder && explicit.length === 3;
+  const chosen = chooseReviewer(cell, builderAgent, fullOverride ? undefined : agents);
+  const policy = { ...chosen.config, builderAgent, sameProvider: chosen.unknownBuilder ? null : chosen.sameProvider, ...(chosen.unknownBuilder ? { unknownBuilder: true } : {}), ...(chosen.fallback ? { fallback: chosen.fallback } : {}) };
   if (explicit.length && !byHolder) {
     const reason = text(input.override_reason, 'override_reason', 1000);
     if (!reason) throw new HiveError('The review policy applies to every review. To use a different agent, model or effort, pass override_reason.', 'refused');
     for (const k of explicit) policy[k] = text(input[k], k, 120);
     assertAllowedReviewer(policy);
     policy.sameProvider = builderAgent ? policy.agent === builderAgent : null;
+    delete policy.fallback;
     policy.overrideReason = reason;
   }
   return policy;
@@ -159,7 +162,12 @@ export async function requestReview(rt, host, actor, input) {
         retained = { session_id: reviewerSessionId, review_id: record.id, round, policy: record.policy };
         return;
       }
-      policy = resolveReviewPolicy(cell, builderAgentOf(host, bead), input, byHolder);
+      let agents, catalogUnavailable;
+      try { agents = await readAgentCatalog(host); }
+      catch (error) { catalogUnavailable = error.message; }
+      ensureWritable(rt);
+      policy = resolveReviewPolicy(cell, builderAgentOf(host, bead), input, byHolder, agents);
+      if (catalogUnavailable) policy.catalogUnavailable = catalogUnavailable;
       const prior = openReview(rt, bead.id);
       if (prior) {
         const launch = rt.metadata.read().workerLaunches[prior.launchId];
@@ -190,7 +198,7 @@ export async function requestReview(rt, host, actor, input) {
   try {
     const launchInput = { ...input, agent: policy.agent, model: policy.model, effort: policy.effort, intent: `${intent}${commit ? `\n\nReview commit ${commit}.` : ''}\n\nYou review work bead ${input.bead_id}; its builder keeps the claim. Give hive_review_verdict with bead_id ${input.bead_id}, approved or changes_requested, findings${commit ? ` and commit ${commit}` : ' and the reviewed commit'}.` };
     const launch = await spawnWorker(rt, host, actor, launchInput, { reviewId });
-    await notifyQueen(rt, host, cellOf, actor, `[Hive] Review session ${launch.session_id} started on ${input.bead_id} (${policy.agent}/${policy.model}/${policy.effort}${policy.sameProvider ? ', same provider as the builder' : ''}${policy.overrideReason ? `, policy overridden: ${policy.overrideReason}` : ''}), requested by ${actor.sessionId}. No action needed.`);
+    await notifyQueen(rt, host, cellOf, actor, `[Hive] Review session ${launch.session_id} started on ${input.bead_id} (${policy.agent}/${policy.model}/${policy.effort}${policy.sameProvider ? ', same provider as the builder' : ''}${policy.overrideReason ? `, policy overridden: ${policy.overrideReason}` : ''}${policy.fallback ? `, ${policy.fallback.reason}` : ''}${policy.catalogUnavailable ? `, catalogue unavailable: ${policy.catalogUnavailable}; using configured policy without availability fallback` : ''}), requested by ${actor.sessionId}. No action needed.`);
     return { ...launch, review_id: reviewId, policy };
   } catch (err) {
     if (rt.metadata.read().reviews[reviewId]?.state === 'cancelled') throw new HiveError(`Review ${reviewId} was cancelled before its reviewer launch completed: ${err.message}`, 'refused');

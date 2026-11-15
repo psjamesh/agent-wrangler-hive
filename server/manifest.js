@@ -1,3 +1,4 @@
+import { agentCatalogForGraph } from './agent-catalog.js';
 import { codexPolicy } from './codex-policy.js';
 import { beforeSpawn, spawned } from './spawn-hooks.js';
 import { onArchive } from './archived-claims.js';
@@ -102,7 +103,7 @@ export function createManifest({ dir }) {
     codexPolicy,
     session: { onBeforeDispatch, onArchive },
     hooks: { 'session.beforeSpawn': beforeSpawn, 'session.spawned': spawned, 'session.prepare': prepareSession, 'session.launchContext': async (args) => (await workerLaunchContext(args)) ?? queenLaunchContext(args) },
-    graph: ({ host }) => ({ hive: { ...host.stores.hive.projection(), handoverSources: handoverSources(host) } }),
+    graph: ({ host }) => ({ hive: { ...host.stores.hive.projection(), ...agentCatalogForGraph(host.stores.hive, host), handoverSources: handoverSources(host) } }),
     sweeps: [{
       id: 'refresh',
       everyMs: REFRESH_EVERY_MS,
