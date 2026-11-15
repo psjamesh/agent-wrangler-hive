@@ -298,7 +298,7 @@ export function primaryMark(kind, title, x = 0, y = 0, scale = 1) {
   if (!shapes) return null;
   return h('svg:g', { class: `hive-pm hive-pm-${kind}`, transform: `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${scale.toFixed(2)})` },
     h('svg:title', {}, title),
-    ['waiting', 'approved'].includes(kind) ? null : kind === 'external' ? h('svg:path', { d: hexPath(MARK_R, 0.18), class: 'hive-pm-bg' }) : h('svg:circle', { r: String(MARK_R), class: 'hive-pm-bg' }),
+    ['waiting', 'approved'].includes(kind) ? null : h('svg:circle', { r: String(MARK_R), class: 'hive-pm-bg' }),
     shapes);
 }
 
