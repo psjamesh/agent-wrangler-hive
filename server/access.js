@@ -1,3 +1,4 @@
+import { assertCurrent } from './lifetime.js';
 import { isSessionId } from './bead-model.js';
 
 export class AccessError extends Error {
@@ -91,6 +92,42 @@ export function cellOfBead(rt, beadId) {
 export function requireCompleteHierarchy(rt) {
   if (rt.snapshots.current?.error || rt.snapshots.hierarchyCurrent === false) {
     throw new AccessError('The Beads snapshot is incomplete or out of date. Wait for a complete refresh before changing or admitting work. Nothing was changed.');
+  }
+}
+
+// Only read-only admission may be retried; callers perform effects afterwards.
+export async function waitForHierarchy(rt, { read, refresh = false, timeoutMs = 10000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let backoff = 250;
+  const busy = () => Object.assign(new AccessError('Hive is still catching up with a hierarchy change. It is safe to retry in about 1 second. No action was retried.'), { code: 'busy', hierarchyBusy: true, noWrite: true });
+  async function bounded(fn) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw busy();
+    let timer;
+    try {
+      return await Promise.race([Promise.resolve().then(fn), new Promise((_, reject) => { timer = setTimeout(() => reject(busy()), remaining); })]);
+    } finally { clearTimeout(timer); }
+  }
+  while (true) {
+    assertCurrent(rt);
+    if (rt.beads.status.state !== 'ready') throw Object.assign(new AccessError(`Hive's Beads store is not ready (${rt.beads.status.state}). Finish setup in the Hive view before retrying.`), { code: 'setup-required', noWrite: true });
+    if (rt.snapshots.current?.error) requireCompleteHierarchy(rt);
+    if ((refresh || rt.snapshots.hierarchyCurrent === false) && !rt.beads.hierarchy?.writing) {
+      await bounded(() => rt.snapshots.refresh());
+      assertCurrent(rt);
+      if (rt.snapshots.current?.error) requireCompleteHierarchy(rt);
+    }
+    if (rt.snapshots.hierarchyCurrent !== false) {
+      const generation = rt.beads.hierarchy?.generation;
+      const result = read ? await bounded(read) : undefined;
+      assertCurrent(rt);
+      if (rt.snapshots.current?.error) requireCompleteHierarchy(rt);
+      if (rt.snapshots.hierarchyCurrent !== false && generation === rt.beads.hierarchy?.generation) return result;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw busy();
+    await new Promise(resolve => setTimeout(resolve, Math.min(backoff, remaining)));
+    backoff = Math.min(backoff * 2, 1000);
   }
 }
 

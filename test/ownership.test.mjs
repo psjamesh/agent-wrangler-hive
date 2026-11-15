@@ -2438,6 +2438,135 @@ test('a refused scheduled resume preserves an in-flight manual restore reservati
   assert.equal(capacity(f.rt).used, 1);
 });
 
+async function hierarchyFixture(f) {
+  const { createSnapshotCache } = await import('../server/snapshots.js');
+  const listeners = new Set();
+  f.rt.beads.hierarchy = { generation: 0, writing: false };
+  f.rt.beads.onHierarchySettled = fn => { listeners.add(fn); return () => listeners.delete(fn); };
+  f.rt.snapshots = createSnapshotCache({ beads: f.rt.beads });
+  await f.rt.snapshots.refresh();
+  return {
+    start() { f.rt.beads.hierarchy.writing = true; f.rt.beads.hierarchy.generation++; },
+    settle() {
+      f.rt.beads.hierarchy.writing = false;
+      f.rt.beads.hierarchy.generation++;
+      for (const fn of listeners) fn();
+    },
+  };
+}
+
+test('worker launch repeats an all-issues export that overlaps a hierarchy write', async () => {
+  const f = fixture();
+  await dispatchFixture(f);
+  const hierarchy = await hierarchyFixture(f);
+  const load = f.rt.beads.loadSnapshot;
+  let allReads = 0;
+  f.rt.beads.loadSnapshot = async options => {
+    const graph = await load(options);
+    if (options?.all && ++allReads === 1) {
+      hierarchy.start();
+      setImmediate(() => hierarchy.settle());
+    }
+    return graph;
+  };
+  const out = await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build it' });
+  assert.equal(out.session_id, 'worker-1');
+  assert.ok(allReads >= 2);
+  assert.equal(Object.values(f.doc().workerLaunches).some(l => l.state === 'uncertain'), false);
+});
+
+for (const review of [false, true]) test(`${review ? 'reviewer' : 'worker'} startup waits out hierarchy settlement without an uncertain reservation`, async () => {
+  const f = fixture();
+  if (review) reviewFixture(f);
+  await dispatchFixture(f);
+  const hierarchy = await hierarchyFixture(f);
+  const spawn = f.host.sessions.spawn;
+  f.host.sessions.spawn = async options => {
+    hierarchy.start();
+    setImmediate(() => hierarchy.settle());
+    return spawn(options);
+  };
+  const input = { bead_id: 'a', intent: 'do the work' };
+  const out = review ? await reviews.requestReview(f.rt, f.host, f.actor(), input)
+    : await workers.spawnWorker(f.rt, f.host, f.actor(), input);
+  assert.equal(out.session_id, 'worker-1');
+  assert.equal(f.doc().workerLaunches[out.launch_id].state, 'launched');
+  if (review) assert.equal(f.doc().reviews[out.review_id].state, 'in_review');
+});
+
+test('a hierarchy change during launch admission cannot grant access to a moved bead', async () => {
+  const f = fixture();
+  await dispatchFixture(f);
+  const hierarchy = await hierarchyFixture(f);
+  const load = f.rt.beads.loadSnapshot;
+  let moved = false;
+  f.rt.beads.loadSnapshot = async options => {
+    const graph = await load(options);
+    if (options?.all && !moved) {
+      moved = true;
+      hierarchy.start();
+      f.live.a.dependencies = [{ issue_id: 'a', depends_on_id: 'other-root', type: 'parent-child' }];
+      setImmediate(() => hierarchy.settle());
+    }
+    return graph;
+  };
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build' }), /do not take part|another cell|this cell/i);
+  assert.deepEqual(f.doc().workerLaunches, {});
+  assert.equal(f.live.a.assignee, null);
+});
+
+test('a reviewer startup export timeout leaves a cancelled review and a refused launch', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = fixture(); reviewFixture(f);
+  let reached;
+  const reading = new Promise(resolve => { reached = resolve; });
+  f.host.sessions.spawn = async options => {
+    workers.workerBeforeDispatch({ sessionId: 'reviewer', ext: options.ext.hive, host: f.host });
+    f.rt.snapshots.refresh = () => { reached(); return new Promise(() => {}); };
+    const result = await workers.workerLaunchContext({ sid: 'reviewer', task: { id: 'task' }, reason: 'spawn', host: f.host });
+    throw new Error(result.refuse);
+  };
+  const result = reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review' }).catch(error => error);
+  await reading;
+  t.mock.timers.tick(10000);
+  assert.match((await result).message, /safe to retry/);
+  assert.equal(Object.values(f.doc().workerLaunches)[0].state, 'refused');
+  assert.equal(Object.values(f.doc().reviews)[0].state, 'cancelled');
+  assert.equal(f.live.a.assignee, null);
+  assert.equal(capacity(f.rt).used, 0);
+});
+
+test('waiting for hierarchy settlement revalidates a caller whose queen role was removed', async () => {
+  const f = fixture();
+  const hierarchy = await hierarchyFixture(f);
+  hierarchy.start();
+  setImmediate(() => {
+    f.doc().cells.cell.queenSessionId = 'replacement';
+    hierarchy.settle();
+  });
+  await assert.rejects(createBeads(f.rt, f.actor(), { beads: [{ title: 'work', hold: false }] }), /Only the queen/);
+  assert.deepEqual(f.doc().operations, {});
+});
+
+test('a reviewer admission timeout before reservation leaves a cancelled retryable review', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = fixture(); reviewFixture(f);
+  let reached;
+  const reading = new Promise(resolve => { reached = resolve; });
+  const refresh = f.rt.snapshots.refresh;
+  f.rt.snapshots.refresh = () => {
+    if (Object.keys(f.doc().reviews).length) { reached(); return new Promise(() => {}); }
+    return refresh();
+  };
+  const result = reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review' }).catch(error => error);
+  await reading;
+  t.mock.timers.tick(10000);
+  assert.match((await result).message, /safe to retry/);
+  assert.deepEqual(f.doc().workerLaunches, {});
+  assert.equal(Object.values(f.doc().reviews)[0].state, 'cancelled');
+  assert.equal(capacity(f.rt).used, 0);
+});
+
 for (const target of ['queen', 'coordinator', 'other', 'builder']) test(`helper binding cannot demote ${target}`, async () => {
   const f = holderFixture('codex', 0);
   f.board.set('coordinator', { sessionId: 'coordinator', taskId: 'task', status: 'working' });
@@ -2486,4 +2615,89 @@ test('helper startup rechecks the live holder after dispatch', async () => {
   };
   await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'Help' }, { role: 'investigator' }), /live claim holder/i);
   assert.equal(f.live.a.assignee, null);
+});
+
+for (const phase of ['export', 'applied']) test(`startup survives hierarchy invalidation when the claim is ${phase}`, async () => {
+  const f = fixture(); await dispatchFixture(f);
+  const hierarchy = await hierarchyFixture(f);
+  const claim = f.rt.beads.claim;
+  f.rt.beads.claim = async (id, who, check) => {
+    if (phase === 'export') hierarchy.start();
+    const out = await claim(id, who, check);
+    if (phase === 'applied') hierarchy.start();
+    setImmediate(() => hierarchy.settle());
+    return out;
+  };
+  const out = await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build' });
+  assert.equal(f.doc().workerLaunches[out.launch_id].state, 'launched');
+  assert.equal(f.live.a.assignee, 'aw:worker-1');
+});
+
+test('reviewer startup waits for hierarchy invalidation after its admission reservation', async () => {
+  const f = fixture(); reviewFixture(f); await dispatchFixture(f);
+  const hierarchy = await hierarchyFixture(f);
+  const mutate = f.rt.metadata.mutate;
+  let started = false;
+  f.rt.metadata.mutate = fn => {
+    const result = mutate(fn);
+    if (!started && Object.values(f.doc().workerLaunches).some(l => l.state === 'binding' && l.role === 'reviewer')) {
+      started = true;
+      hierarchy.start();
+      setImmediate(() => hierarchy.settle());
+    }
+    return result;
+  };
+  const out = await reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review' });
+  assert.equal(f.doc().workerLaunches[out.launch_id].state, 'launched');
+  assert.equal(f.doc().reviews[out.review_id].state, 'in_review');
+});
+
+test('a post-claim hierarchy timeout retains a confirmed claim without an uncertain launch', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = fixture(); await dispatchFixture(f);
+  let reached;
+  const reading = new Promise(resolve => { reached = resolve; });
+  const claim = f.rt.beads.claim;
+  f.rt.beads.claim = async (...args) => {
+    const out = await claim(...args);
+    f.rt.snapshots.hierarchyCurrent = false;
+    f.rt.snapshots.refresh = () => { reached(); return new Promise(() => {}); };
+    return out;
+  };
+  const result = workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build' }).catch(error => error);
+  await reading;
+  t.mock.timers.tick(10000);
+  const error = await result;
+  assert.match(error.message, /already claimed.*Resume this session.*do not spawn/);
+  assert.doesNotMatch(error.message, /uncertain|Nothing was changed|safe to retry/i);
+  const launch = Object.values(f.doc().workerLaunches)[0];
+  assert.equal(launch.state, 'claimed');
+  assert.equal(launch.claimApplied, true);
+  assert.equal(f.live.a.assignee, 'aw:worker-1');
+  assert.equal(capacity(f.rt).used, 1);
+});
+
+test('a reviewer post-admission hierarchy timeout cancels its definite failed startup', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = fixture(); reviewFixture(f); await dispatchFixture(f);
+  let reached;
+  const reading = new Promise(resolve => { reached = resolve; });
+  const mutate = f.rt.metadata.mutate;
+  let started = false;
+  f.rt.metadata.mutate = fn => {
+    const out = mutate(fn);
+    if (!started && Object.values(f.doc().workerLaunches).some(l => l.state === 'binding' && l.role === 'reviewer')) {
+      started = true;
+      f.rt.snapshots.hierarchyCurrent = false;
+      f.rt.snapshots.refresh = () => { reached(); return new Promise(() => {}); };
+    }
+    return out;
+  };
+  const result = reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review' }).catch(error => error);
+  await reading;
+  t.mock.timers.tick(10000);
+  assert.match((await result).message, /safe to retry/);
+  assert.equal(Object.values(f.doc().workerLaunches)[0].state, 'refused');
+  assert.equal(Object.values(f.doc().reviews)[0].state, 'cancelled');
+  assert.equal(capacity(f.rt).used, 0);
 });

@@ -11,8 +11,8 @@ import { holdsBead } from './bead-sessions.js';
 import { assertCurrent } from './lifetime.js';
 import { newId } from './metadata-store.js';
 import { actorFor, descendantIds, GROUP_KINDS } from './bead-model.js';
-import { requireNonHelper, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller } from './access.js';
-import { HiveError, ensureWritable, text, withLock, withLocks, claimBead, bindIfMissing } from './ops.js';
+import { requireNonHelper, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller, waitForHierarchy } from './access.js';
+import { HiveError, ensureWritable, ensureStoreWritable, waitForWritable, text, withLock, withLocks, claimBead, bindIfMissing } from './ops.js';
 import { applyLaunchPolicy, launchRestriction } from './launch-policy.js';
 import { ADMISSION_LOCK, capacity, checkAdmission, exportedGraph, RESERVED_LAUNCH_STATES } from './admission.js';
 
@@ -40,15 +40,20 @@ function launchOptions(input) {
   return out;
 }
 
-export function coordinator(rt, host, actor, { attach = false, beadId = null } = {}) {
+function coordinatorAuthority(rt, host, actor, { attach = false, beadId = null } = {}) {
   assertCurrent(rt, host);
+  ensureStoreWritable(rt);
   const fresh = resolveCaller(rt, host, actor.sessionId, actor.cell.id);
   requireNonHelper(rt, fresh, 'launch or reconcile sessions');
   if (attach && beadId && !COORDINATING_ROLES.has(fresh.role) && holdsBead(rt, host, fresh.sessionId, beadId)) {
-    ensureWritable(rt);
     return fresh;
   }
   requireCoordinator(fresh, attach ? 'attach a session to work it does not hold' : 'launch or reconcile workers');
+  return fresh;
+}
+
+export function coordinator(rt, host, actor, options) {
+  const fresh = coordinatorAuthority(rt, host, actor, options);
   ensureWritable(rt);
   return fresh;
 }
@@ -76,8 +81,8 @@ function gateAuthority(rt, host, launchId, { sid, task, ext, initial, restoring 
     const holder = rt.snapshots.graph.beads[launch.beadId]?.assignee || 'none';
     throw new HiveError(`Archived Hive worker ${sid} cannot be restored safely. Manual restore requires Agent Wrangler host API ^1.95.0 and an explicit restore; scheduled resumes remain refused. Bead ${launch.beadId}; last known claim holder: ${holder}. The queen should check hive_context and, if the claim is stale, release it with hive_release_bead (bead_id: ${launch.beadId}, force: true, and a reason). Then launch a fresh worker with hive_spawn_worker on open, unclaimed work.`);
   }
-  const requester = initial ? coordinator(rt, host, { sessionId: launch.requestedBy, cell: { id: launch.cellId } }, { attach: launch.role !== 'worker', beadId: launch.beadId }) : resolveCaller(rt, host, sid, launch.cellId);
-  ensureWritable(rt);
+  const requester = initial ? coordinatorAuthority(rt, host, { sessionId: launch.requestedBy, cell: { id: launch.cellId } }, { attach: launch.role !== 'worker', beadId: launch.beadId }) : resolveCaller(rt, host, sid, launch.cellId);
+  ensureStoreWritable(rt);
   reviewForLaunch(rt, launch, { sid, initial });
   if (initial && launch.source === 'automatic') {
     const cell = rt.metadata.cell(launch.cellId);
@@ -114,10 +119,12 @@ function recordLaunchFailure(rt, launchId, error, dispatched = true) {
     const review = launch.reviewId && d.reviews[launch.reviewId];
     if (!RETIRED_LAUNCH_STATES.has(launch.state)) {
       if (review && !OPEN_REVIEW_STATES.has(review.state)) launch.state = review.state === 'cancelled' ? 'cancelled' : 'review-ended';
+      else if (error.hierarchyBusy || launch.refusalReason === 'hierarchy-busy' && launch.claimApplied) launch.state = launch.claimApplied ? 'claimed' : 'refused';
       else launch.state = dispatched ? 'uncertain' : 'refused';
     }
     if (!dispatched && launch.source === 'automatic' && d.pickupRates?.starts) d.pickupRates.starts = d.pickupRates.starts.filter(s => s.launchId !== launchId);
     launch.error = String(error.message).slice(0, 1000);
+    if (error.hierarchyBusy) launch.refusalReason = 'hierarchy-busy';
     launch.updatedAt = Date.now();
     return launch.state;
   });
@@ -167,6 +174,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
   if (!launchId) return;
   return withLock(`worker-launch:${launchId}`, async () => {
     let reserved = false;
+    let claimApplied = false;
     let restoreReserved = false;
     let held = null;
     let target = null;
@@ -180,12 +188,9 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
       let launch;
       await withLock(ADMISSION_LOCK, async () => {
         const context = { sid, task, ext, initial, restoring };
-        let current = gateAuthority(rt, host, launchId, context);
-        await rt.snapshots.refresh();
-        if (rt.snapshots.current.error) throw new HiveError('Current worker ownership could not be read.');
-        current = gateAuthority(rt, host, launchId, context, current.launch);
-        const graph = await rt.beads.loadSnapshot({ all: true });
-        current = gateAuthority(rt, host, launchId, context, current.launch);
+        const expected = rt.metadata.read().workerLaunches[launchId];
+        const graph = await waitForHierarchy(rt, { refresh: true, read: () => rt.beads.loadSnapshot({ all: true }) });
+        const current = gateAuthority(rt, host, launchId, context, expected);
         const { launch: l, requester } = current;
         if (initial && l.source === 'automatic') assertPickupAuthorization(rt, host, l, graph);
         held = initial || l.role !== 'worker' ? null : heldOpenBead(rt, graph, sid, l);
@@ -205,7 +210,8 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
         launch = l;
         rt.metadata.mutate((d) => {
           const rec = d.workerLaunches[launchId];
-          Object.assign(rec, { sessionId: sid, state: 'binding', claimStarted: true, updatedAt: Date.now() });
+          Object.assign(rec, { sessionId: sid, state: 'binding', claimStarted: l.role === 'worker', claimApplied: false, updatedAt: Date.now() });
+          delete rec.refusalReason;
         });
         if (restoring) {
           activeWorkerRestores(rt).set(sid, { beadId: target, cellId: launch.cellId, at: Date.now() });
@@ -213,22 +219,33 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
         }
         reserved = true;
       });
-      if (launch.role === 'worker') await claimBead(rt, actor, { bead_id: target }, { launchId: held ? null : launchId, revalidateCapacity: restoring, validate: (context) => {
-        if (initial && launch.source === 'automatic') assertPickupAuthorization(rt, host, launch, exportedGraph(context), { ownOperationId: context.pickupOperationId });
-        if (initial) coordinator(rt, host, { sessionId: launch.requestedBy, cell: { id: launch.cellId } }, { attach: launch.role !== 'worker', beadId: launch.beadId });
-        else resolveCaller(rt, host, sid, launch.cellId);
-        if (host.sessions.get(sid)?.archived && !restoring) throw new HiveError('The worker was archived before claiming.');
-        if (held) {
-          const fresh = context?.issues?.find((i) => i.id === held);
-          if (!fresh || fresh.status === 'closed' || fresh.assignee !== `aw:${sid}`) throw new HiveError(`Bead ${held} is no longer held by this worker.`, 'conflict');
-        }
-      } });
+      if (launch.role === 'worker') {
+        await claimBead(rt, actor, { bead_id: target }, { launchId: held ? null : launchId, revalidateCapacity: restoring, validate: (context) => {
+          if (initial && launch.source === 'automatic') assertPickupAuthorization(rt, host, launch, exportedGraph(context), { ownOperationId: context.pickupOperationId, checkHierarchy: false });
+          if (initial) {
+            const requester = coordinatorAuthority(rt, host, { sessionId: launch.requestedBy, cell: { id: launch.cellId } });
+            requireLaunchScope(requester, exportedGraph(context), target);
+          }
+          else resolveCaller(rt, host, sid, launch.cellId);
+          if (host.sessions.get(sid)?.archived && !restoring) throw new HiveError('The worker was archived before claiming.');
+          if (held) {
+            const fresh = context?.issues?.find((i) => i.id === held);
+            if (!fresh || fresh.status === 'closed' || fresh.assignee !== `aw:${sid}`) throw new HiveError(`Bead ${held} is no longer held by this worker.`, 'conflict');
+          }
+        } });
+        claimApplied = true;
+        rt.metadata.mutate(d => { d.workerLaunches[launchId].claimApplied = true; });
+      }
       if (initial && launch.source === 'automatic') {
         assertCurrent(rt, host);
-        const claimedGraph = await rt.beads.loadSnapshot({ all: true });
+        const claimedGraph = await waitForHierarchy(rt, { read: () => rt.beads.loadSnapshot({ all: true }) });
         assertPickupClaimed(rt, host, launch, claimedGraph, sid);
       }
-      gateAuthority(rt, host, launchId, { sid, task, ext, initial, restoring }, launch);
+      await waitForWritable(rt);
+      const fresh = gateAuthority(rt, host, launchId, { sid, task, ext, initial, restoring }, launch);
+      const access = requireBeadAccess(rt, fresh.requester, target);
+      if (access.cell.id !== launch.cellId) throw new HiveError('The worker bead moved to another cell.');
+      requireLaunchScope(fresh.requester, rt.snapshots.graph, target);
       rt.metadata.mutate((d) => {
         const rec = d.workerLaunches[launchId];
         if (rec.state !== 'binding' || rec.sessionId !== sid || (host.sessions.get(sid)?.archived && !restoring)) throw new HiveError('The worker launch was archived or changed before startup.');
@@ -246,7 +263,16 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
       });
       rt.changed();
     } catch (err) {
+      if (claimApplied) {
+        err.message = err.hierarchyBusy
+          ? `Bead ${target} is already claimed by session ${sid}. The hierarchy refresh timed out. Resume this session in about 1 second or reconcile launch ${launchId}; do not spawn a replacement.`
+          : String(err.message).replace('Nothing was changed.', 'The startup claim was already applied.');
+      }
       if (restoreReserved) rt.workerRestores.delete(sid);
+      if (err.hierarchyBusy && !reserved && ['dispatch', 'spawn'].includes(reason)) {
+        recordLaunchFailure(rt, launchId, err, false);
+        rt.changed();
+      }
       if (reserved) {
         try { recordLaunchFailure(rt, launchId, err); }
         catch (recordError) { rt.log(`hive: could not record refused relaunch: ${recordError.message}`); }
@@ -266,6 +292,8 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
   const launchId = newId('worker');
   const as = { attach: role !== 'worker', beadId: input.bead_id };
   const attach = role !== 'worker';
+  try { await waitForWritable(rt); }
+  catch (err) { if (pickup && (err.hierarchyBusy || rt.snapshots.current?.error)) throw pickupReadUnavailable(err.message); throw err; }
   actor = coordinator(rt, host, actor, as);
   assertAllowedModel(opts);
   let catalog;
@@ -284,11 +312,9 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     if (model.resolved !== input.resolvedModel) throw new HiveError('Worker model resolution changed; reconcile and rearm.', 'refused');
   }
   await withLocks([ADMISSION_LOCK, `bead:${input.bead_id}`], async () => {
-    if (attach) await rt.snapshots.refresh();
-    actor = coordinator(rt, host, actor, as);
-    await rt.snapshots.refresh();
-    if (rt.snapshots.current.error || pickup && rt.snapshots.hierarchyCurrent === false) throw pickup ? pickupReadUnavailable('Cannot confirm current bead ownership or capacity.') : new HiveError('Cannot confirm current bead ownership or capacity.', 'refused');
-    const graph = await rt.beads.loadSnapshot({ all: true });
+    let graph;
+    try { graph = await waitForHierarchy(rt, { refresh: true, read: () => rt.beads.loadSnapshot({ all: true }) }); }
+    catch (err) { if (pickup && (err.hierarchyBusy || rt.snapshots.current?.error)) throw pickupReadUnavailable(err.message); throw err; }
     actor = coordinator(rt, host, actor, as);
     const { bead, cell } = requireBeadAccess(rt, actor, input.bead_id);
     if (cell.id !== actor.cell.id || bead.id === cell.rootBeadId) throw new HiveError('Launch a worker for a bead in this cell, below its goal.');
@@ -312,6 +338,7 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
   inFlight.add(launchId);
   let dispatched = false;
   try {
+    await waitForWritable(rt);
     const l = rt.metadata.read().workerLaunches[launchId];
     actor = coordinator(rt, host, actor, as);
     if (l.state !== 'reserved') throw new HiveError('This launch was cancelled or changed before dispatch.', 'conflict');
@@ -355,7 +382,8 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     catch (recordError) { rt.log(`hive: could not record worker launch failure: ${recordError.message}`); }
     rt.changed();
     if (retryScheduled) throw Object.assign(new HiveError(err.message, 'busy'), { pickupRetryScheduled: true });
-    if (RETIRED_LAUNCH_STATES.has(state)) throw new HiveError(`Worker launch ${launchId} is ${state}: ${err.message}`, 'refused');
+    if (state === 'claimed' && rt.metadata.read().workerLaunches[launchId]?.refusalReason === 'hierarchy-busy') throw new HiveError(err.message, 'busy');
+    if (RETIRED_LAUNCH_STATES.has(state)) throw Object.assign(new HiveError(`Worker launch ${launchId} is ${state}: ${err.message}`, 'refused'), { hierarchyBusy: rt.metadata.read().workerLaunches[launchId]?.refusalReason === 'hierarchy-busy' });
     if (!dispatched) throw new HiveError(`Worker launch ${launchId} did not dispatch: ${err.message}`, err.code || 'refused');
     throw new HiveError(`Worker launch ${launchId} is uncertain: ${err.message}. Do not spawn again; reconcile this launch first.`, 'uncertain');
   } finally { inFlight.delete(launchId); }

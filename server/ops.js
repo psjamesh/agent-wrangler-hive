@@ -15,7 +15,7 @@ import { BeadsError } from './beads.js';
 import {
   BLOCKED_STATUS_HELP, actorFor, issueTypeForKind, GROUP_KINDS, isBeadId, isSessionId, SETTABLE_STATUSES, LINK_TYPES, OUTCOMES, OPEN_STATUSES, descendantIds, normalizeIssue, buildGraph,
 } from './bead-model.js';
-import { requireNonHelper, AccessError, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, requireQueen, cellOfBead, requireCompleteHierarchy } from './access.js';
+import { requireNonHelper, AccessError, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, requireQueen, cellOfBead, requireCompleteHierarchy, waitForHierarchy, resolveCaller, participation } from './access.js';
 import { layoutBase, stackable } from '../public/layout-base.js';
 import { archiveHidden } from '../public/archive-layout.js';
 import { inRange, MAX_COORD } from '../public/hex-search.js';
@@ -46,13 +46,26 @@ export function beadIdArg(value, field) {
   return value;
 }
 
-export function ensureWritable(rt) {
+export function ensureStoreWritable(rt) {
   assertCurrent(rt);
   if (rt.metadata.error) throw new HiveError(rt.metadata.error, 'metadata-unavailable');
   if (rt.beads.status.state !== 'ready') {
     throw new HiveError(`Hive's Beads store is not ready (${rt.beads.status.state}). Nothing was changed. ${rt.beads.status.detail || ''} The human can finish setup in the Hive view.`, 'setup-required');
   }
+}
+
+export function ensureWritable(rt) {
+  ensureStoreWritable(rt);
   requireCompleteHierarchy(rt);
+}
+
+export async function waitForWritable(rt, actor) {
+  assertCurrent(rt);
+  const caller = actor?.sessionId && rt.host ? participation(rt, rt.host, actor.sessionId).find(p => p.cell.id === actor.cell.id) : null;
+  if (rt.metadata.error || rt.beads.status.state !== 'ready') ensureWritable(rt);
+  await waitForHierarchy(rt);
+  ensureWritable(rt);
+  return caller ? resolveCaller(rt, rt.host, actor.sessionId, actor.cell.id) : actor;
 }
 
 const locks = new Map();
@@ -93,7 +106,23 @@ function stamp(op, patch) {
 // "error". `intent` is the requested final state in structured form (ids and
 // expected values, never free text), so recovery can check the store for it.
 export async function journaled(rt, { kind, cellId = null, actor, summary = '', beadIds = [], intent = null, onApplied = null }, fn) {
-  ensureWritable(rt);
+  const structure = id => {
+    const bead = rt.snapshots.graph.beads[id];
+    return [cellOfBead(rt, id)?.id, bead?.parentId, bead?.kind, bead?.status, bead?.assignee];
+  };
+  const prepared = beadIds.map(id => [id, structure(id)]);
+  const sessionId = actor?.startsWith('aw:') && actor !== 'aw:human' ? actor.slice(3) : null;
+  const caller = sessionId && cellId && rt.host ? participation(rt, rt.host, sessionId).find(p => p.cell.id === cellId) : null;
+  await waitForWritable(rt);
+  if (caller) {
+    const fresh = resolveCaller(rt, rt.host, sessionId, cellId);
+    if (fresh.role !== caller.role) throw new HiveError('Your role changed while waiting for the hierarchy. Re-read the work before retrying.', 'conflict');
+  }
+  for (const [id, before] of prepared) {
+    if (JSON.stringify(structure(id)) !== JSON.stringify(before)) {
+      throw new HiveError(`Bead ${id} changed while waiting for the hierarchy. Re-read the work before retrying.`, 'conflict');
+    }
+  }
   const blocked = Object.values(rt.metadata.read?.().operations || {}).find((op) =>
     managedReleaseIntent(op) && UNSETTLED.has(op.state) && beadIds.includes(op.intent.beadId));
   if (blocked) throw new HiveError(`Release operation ${blocked.id} must be reconciled before changing ${blocked.intent.beadId}.`, 'busy');
@@ -224,7 +253,7 @@ export async function createCellRoot(rt, { cellId, title, goal, acceptance, acto
 // pending operation stays visible (with the name) for the human to adopt the
 // task that exists instead of creating another.
 export async function createCell(rt, host, { name, goal, acceptance, instructions, position }) {
-  ensureWritable(rt);
+  await waitForWritable(rt);
   const cleanName = text(name, 'name', LIMITS.title, { required: true });
   const cleanInstructions = text(instructions, 'instructions', LIMITS.instructions) || '';
   const cleanGoal = text(goal, 'goal', LIMITS.short) || '';
@@ -290,7 +319,7 @@ export async function createCell(rt, host, { name, goal, acceptance, instruction
 }
 
 export async function adoptTask(rt, host, { taskId, goal, acceptance, instructions, rootBeadId, position }) {
-  ensureWritable(rt);
+  await waitForWritable(rt);
   const cleanInstructions = text(instructions, 'instructions', LIMITS.instructions);
   const task = host.tasks.get(taskId);
   if (!task || task.archived) throw new HiveError(`Unknown or archived task ${taskId}.`);
@@ -524,7 +553,7 @@ export async function resolveOperation(rt, { opId, note }, actor) {
 // A create whose outcome was unknown is settled by READING the store for the
 // beads it stamped; nothing is written again.
 export async function reconcileOperation(rt, { opId }) {
-  ensureWritable(rt);
+  await waitForWritable(rt);
   const op = rt.metadata.read().operations[opId];
   if (!op) throw new HiveError(`Unknown operation ${opId}.`);
   if (op.state !== 'uncertain' && op.state !== 'pending') return { opId, state: op.state };
@@ -747,7 +776,7 @@ export function settleOperations(rt) {
 export const VERDICTS = ['applied', 'not-applied', 'superseded'];
 
 export async function reconcileForAgent(rt, actor, { op_id, verdict, note }) {
-  requireCompleteHierarchy(rt);
+  await waitForHierarchy(rt);
   if (rt.metadata.error) throw new HiveError(rt.metadata.error, 'metadata-unavailable');
   const opId = text(op_id, 'op_id', 80, { required: true });
   const op = rt.metadata.read().operations[opId];
@@ -856,7 +885,7 @@ function kindArg(value) {
 }
 
 export async function createBeads(rt, actor, { beads = [], links = [] }) {
-  ensureWritable(rt);
+  actor = await waitForWritable(rt, actor);
   if (!Array.isArray(beads) || !beads.length) throw new HiveError('Give at least one bead.');
   if (beads.length > LIMITS.beads) throw new HiveError(`At most ${LIMITS.beads} beads per call.`);
   if (!Array.isArray(links) || links.length > LIMITS.links) throw new HiveError(`At most ${LIMITS.links} links per call.`);
@@ -940,7 +969,7 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
 export async function updateBead(rt, actor, input) {
-  ensureWritable(rt);
+  actor = await waitForWritable(rt, actor);
   const id = beadIdArg(input.bead_id, 'bead_id');
   const { bead, cell } = requireBeadAccess(rt, actor, id);
   const isRoot = cell.rootBeadId === id;
@@ -1080,7 +1109,7 @@ export async function updateBead(rt, actor, input) {
 }
 
 export async function linkBeads(rt, actor, { links }) {
-  ensureWritable(rt);
+  actor = await waitForWritable(rt, actor);
   if (!Array.isArray(links) || !links.length) throw new HiveError('Give at least one link.');
   if (links.length > LIMITS.links) throw new HiveError(`At most ${LIMITS.links} links per call.`);
   const existing = rt.snapshots.graph.edges;
@@ -1115,7 +1144,7 @@ export async function linkBeads(rt, actor, { links }) {
 }
 
 export async function claimBead(rt, actor, { bead_id }, { launchId = null, revalidateCapacity = false, validate = () => {} } = {}) {
-  ensureWritable(rt);
+  actor = await waitForWritable(rt, actor);
   requireNonHelper(rt, actor, 'claim beads');
   const id = beadIdArg(bead_id, 'bead_id');
   const { cell, bead } = requireBeadAccess(rt, actor, id);
@@ -1144,7 +1173,7 @@ export async function claimBead(rt, actor, { bead_id }, { launchId = null, reval
 }
 
 export async function releaseBead(rt, actor, { bead_id, reason, force, status }) {
-  ensureWritable(rt);
+  actor = await waitForWritable(rt, actor);
   const id = beadIdArg(bead_id, 'bead_id');
   const { cell, role } = requireBeadAccess(rt, actor, id);
   const who = actorFor(actor.sessionId);
@@ -1229,7 +1258,7 @@ export async function bindSession(rt, host, actor, input) {
   const stored = storedRole((typeof input.role === 'string' ? input.role.trim() : '') || 'worker');
   if (beadId && ['reviewer', 'investigator'].includes(stored) && !input.unbind) {
     return withLock(`review:${beadId}`, () => withLocks([ADMISSION_LOCK, `bead:${beadId}`], async () => {
-      await rt.snapshots.refresh();
+      await waitForHierarchy(rt, { refresh: true });
       return bindSessionNow(rt, host, actor, input);
     }));
   }
@@ -1237,7 +1266,7 @@ export async function bindSession(rt, host, actor, input) {
 }
 
 async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbind, note }) {
-  requireCompleteHierarchy(rt);
+  await waitForHierarchy(rt);
   if (rt.metadata.error) throw new HiveError(rt.metadata.error, 'metadata-unavailable');
   const cell = actor.cell;
   const target = session_id === undefined || session_id === null || session_id === '' ? actor.sessionId : session_id;
@@ -1370,7 +1399,7 @@ function completionEvidence(rt, id, evidence, outcome, overrideReason) {
 }
 
 export async function finishBead(rt, actor, input) {
-  ensureWritable(rt);
+  actor = await waitForWritable(rt, actor);
   const id = beadIdArg(input.bead_id, 'bead_id');
   if (openReview(rt, id)) throw new HiveError('An open review must end with hive_review_verdict or a coordinator using hive_cancel_review before this work can finish.');
   const { cell, bead, role } = requireBeadAccess(rt, actor, id);
@@ -1526,7 +1555,7 @@ export function waitingOn(rt, beadId) {
 }
 
 export async function humanRelease(rt, { beadId, reason }) {
-  ensureWritable(rt);
+  await waitForWritable(rt);
   const id = beadIdArg(beadId, 'bead');
   const cleanReason = text(reason, 'reason', LIMITS.short, { required: true });
   const cell = cellOfBead(rt, id);
@@ -1644,7 +1673,7 @@ function currentQueenCell(rt, cell, sessionId) {
 // a preview of exactly the same items in the same state. Never cascades or
 // orphans: every child must be named and no link may reach work that stays.
 export async function deleteBeads(rt, actor, { bead_ids, reason, execute, confirm_token }) {
-  ensureWritable(rt);
+  actor = await waitForWritable(rt, actor);
   requireQueen(actor, 'delete work items');
   const cell = actor.cell;
   if (!cell.rootBeadId) throw new HiveError('This hive has no goal yet.');
