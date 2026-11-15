@@ -144,18 +144,7 @@ export function recordedWait(bead) {
 }
 
 export function cellCounts(hive, cell) {
-  const counts = { open: 0, in_progress: 0, in_review: 0, not_active: 0, waiting: 0, closed: 0, total: 0 };
-  for (const id of cellBeadIds(hive, cell)) {
-    if (id === cell.rootBeadId) continue;
-    const b = hive.beads[id];
-    counts.total += 1;
-    if (b.status === 'closed') counts.closed += 1;
-    else if (displayStatus(b) === 'in_review') counts.in_review += 1;
-    else if (b.status === 'in_progress') counts[b.occupiesCapacity ? 'in_progress' : 'not_active'] += 1;
-    else counts.open += 1;
-    if (b.status !== 'closed' && waitingOn(hive, id).length) counts.waiting += 1;
-  }
-  return counts;
+  return workCounts(hive, childrenMap(hive.beads), cell.rootBeadId);
 }
 
 export function workCounts(hive, kids, beadId) {

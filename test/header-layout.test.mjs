@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { cellMetrics } from '../public/cell-metrics.js';
 import { statusDot, STATUS_TEXT, workCounts, childrenMap } from '../public/model.js';
 
 const source = fs.readFileSync(new URL('../public/cell-view.js', import.meta.url), 'utf8');
@@ -15,13 +16,13 @@ const queen = load('queenPill', { statusDot, STATUS_TEXT, sessionLabel: () => 'C
 
 test('header orders identity, capacity, progress, needs, queen and settings', () => {
   const header = load('cellHeader', {
-    childrenMap, workCounts, cellWaitingItems: () => [{ id: 'wait' }], cellTitle: () => 'Title',
+    cellMetrics, cellTitle: () => 'Title',
     queenPill: () => h('button', {}, 'Queen'), headProgress: progress,
     capacityControl: () => h('button', {}, '5/8 slots'), settingsButton: () => h('button', {}, 'Settings'),
     settingsModal: () => null, attentionEl: () => null, noticesEl: () => null, isRetired: () => false,
   });
-  const cell = { id: 'c', enabled: true };
-  const ctx = { hive: { beads: { done: { id: 'done', parentId: 'root', status: 'closed' } }, edges: [] }, ui: {}, graph: {} };
+  const cell = { id: 'c', enabled: true, rootBeadId: 'root', requests: { r: { id: 'r', audience: 'human', state: 'open' } } };
+  const ctx = { hive: { beads: { root: { id: 'root' }, done: { id: 'done', parentId: 'root', status: 'closed' } }, edges: [] }, ui: {}, graph: {} };
   assert.match(text(header(ctx, cell, { id: 'root' })), /All hives\/Title5\/8 slots1\/1 closed1 need youQueenSettings/);
   assert.equal(all(header(ctx, cell, { id: 'root' })).filter(n => n.attrs?.class === 'hive-progress-inline').length, 1);
 });

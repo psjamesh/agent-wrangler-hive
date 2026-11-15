@@ -1,3 +1,4 @@
+import { cellMetrics } from './cell-metrics.js';
 import { workerProfileForm } from './worker-profile.js';
 import { workstreamProfileSettings } from './worker-profile.js';
 import { cellTitle, cellGoalForm } from './cell-settings.js';
@@ -11,7 +12,7 @@ import { settingsModal, settingsButton, advancedSettings } from './settings-view
 import { openCellPopover, disposeCellPopover } from './cell-popover.js';
 import { capacityControl } from './capacity-control.js';
 import { progressBar } from './progress-bar.js';
-import { waitingItems, cellWaitingItems, waitingSection, openWaitingMenu } from './waiting-view.js';
+import { waitingItems, waitingSection, openWaitingMenu } from './waiting-view.js';
 import { prSummary, pullRequestsSection } from './pr-view.js';
 import { h, syncChildren, markdown, safeHref, relativeTime } from './dom.js';
 import { hexPath, primaryMark, fitLines } from './hex-grid.js';
@@ -502,8 +503,9 @@ function headProgress(counts) {
 
 function cellHeader(ctx, cell, root) {
   const { graph, ui, send, hive } = ctx;
-  const counts = root && (cell.enabled || isRetired(cell)) ? workCounts(hive, childrenMap(hive.beads), root.id) : null;
-  const waiting = cellWaitingItems(ctx, cell);
+  const metrics = cellMetrics(ctx, cell);
+  const counts = root && (cell.enabled || isRetired(cell)) ? metrics.work : null;
+  const waiting = metrics.waitingItems;
   return h('header', { class: 'hive-cellhead' },
     h('div', { class: 'hive-cellhead-top' },
       h('button', { type: 'button', class: 'hive-back', onclick: () => ui.closeCell(), 'aria-label': 'Show all hives', title: 'Show all hives' },
@@ -514,8 +516,9 @@ function cellHeader(ctx, cell, root) {
       h('div', { class: 'hive-cellstate' },
         capacityControl(ctx),
         headProgress(counts),
-        waiting.length ? h('button', { type: 'button', class: 'hive-queen-pill hive-waiting', 'aria-haspopup': 'dialog', 'data-focus-key': 'waiting-header', onclick: event => openWaitingMenu(ctx, waiting, event.currentTarget, { cellId: cell.id }) },
-          h('span', { class: 'hive-dot-inline hive-dot-needs', 'aria-hidden': 'true' }), `${waiting.length} need you`) : null,
+        metrics.needs ? (cell.snapshot ? h('span', { class: 'hive-queen-pill hive-waiting', title: 'Captured requests awaiting input' },
+          h('span', { class: 'hive-dot-inline hive-dot-needs', 'aria-hidden': 'true' }), `${metrics.needs} need you`) : h('button', { type: 'button', class: 'hive-queen-pill hive-waiting', 'aria-haspopup': 'dialog', 'data-focus-key': 'waiting-header', onclick: event => openWaitingMenu(ctx, waiting, event.currentTarget, { cellId: cell.id }) },
+          h('span', { class: 'hive-dot-inline hive-dot-needs', 'aria-hidden': 'true' }), `${metrics.needs} need you`)) : null,
         queenPill(ctx, cell, event => openQueenPopover(ctx, cell, event.currentTarget))),
       h('div', { class: 'hive-head-actions' },
         isRetired(cell) ? h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openReopen(ctx, cell), 'data-focus-key': `reopen-open:${cell.id}` }, 'Reopen hive…') : (cell.enabled || cell.snapshot ? null : h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => send({ type: 'hive-cell-enable', cellId: cell.id }) }, 'Turn on')),

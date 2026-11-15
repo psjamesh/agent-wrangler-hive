@@ -1,3 +1,4 @@
+import { cellMetrics } from './cell-metrics.js';
 import { renderRelatedBeads } from './conversation.js';
 import { confirmHive } from './confirm-dialog.js';
 import { settingsModal, settingsButton } from './settings-view.js';
@@ -16,7 +17,7 @@ import { layoutBase, stackable } from './layout-base.js';
 import { archiveHidden, activeKids } from './archive-layout.js';
 import { groupClosed, archiveReply, closedButton } from './workstream-view.js';
 import {
-  cellName, cellCounts, agentSummary, capturedAgentSummary, queenNeedsAttention, queenNotResponding, queenStopped, queenSuspended, sessionLabel,
+  cellName, cellCounts, countsSentence, agentSummary, capturedAgentSummary, queenNeedsAttention, queenNotResponding, queenStopped, queenSuspended, sessionLabel,
 } from './model.js';
 import { attentionEl, noticesEl } from './widgets.js';
 import { hiveTile } from './hive-shape.js';
@@ -38,7 +39,7 @@ function cellTile(ctx, cell) {
   const { hive, graph } = ctx;
   const name = cellName(graph, cell);
   const root = cell.rootBeadId ? hive.beads[cell.rootBeadId] : null;
-  const counts = cellCounts(hive, cell);
+  const { work: counts, needs, occupied, toRead, toAnswer } = cellMetrics(ctx, cell);
   const goal = firstLine(root?.goal);
   const launch = launchState(hive, cell);
   let queen;
@@ -55,16 +56,13 @@ function cellTile(ctx, cell) {
     warn = true;
   }
   const work = cell.retired ? `Retired, ${cell.retired.outcome}` : !cell.enabled ? 'Off' : counts.total ? `${counts.closed} of ${counts.total} closed` : 'No work yet';
-  const detail = [work, cell.enabled && counts.in_progress ? `${counts.in_progress} in progress` : '', cell.enabled && counts.in_review ? `${counts.in_review} in review` : ''].filter(Boolean).join(', ');
+  const detail = cell.enabled ? countsSentence(counts) : work;
   // What each side still owes the other, so it stays in reach from here.
-  const toRead = cell.inbox?.human?.count || 0;
-  const toAnswer = cell.inbox?.queen?.count || 0;
-  const needs = (cell.requestCounts?.human || 0) + Number(queenNeedsAttention(graph, cell));
   const counters = [
     { kind: 'inbox', count: cell.retired ? 0 : toRead, label: 'Inbox' },
     { kind: 'queen', count: cell.retired ? 0 : toAnswer, label: 'Waiting for queen' },
     { kind: 'needs', count: cell.retired ? 0 : needs, label: 'Needs you' },
-    { kind: 'progress', count: cell.occupiedCount || 0, label: 'In progress' },
+    { kind: 'progress', count: occupied, label: 'In progress' },
   ];
   const owed = [needs ? `${needs} need your input` : '', toRead ? `${toRead} from the queen to read` : '', toAnswer ? `${toAnswer} awaiting the queen` : ''].filter(Boolean).join(', ');
   const pos = { q: cell.position?.q ?? 0, r: cell.position?.r ?? 0 };

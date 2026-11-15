@@ -19,13 +19,14 @@ function sessionBeads(ctx, cell, sid, ids) {
 }
 
 export function cellWaitingItems(ctx, cell) {
-  if (!cell?.enabled || cell.snapshot) return [];
+  if (!cell || cell.retired || cell.snapshot) return [];
   const ids = cellBeadIds(ctx.hive, cell);
   const items = [];
   for (const request of Object.values(cell.requests || {})) {
     if (!needsHuman(request)) continue;
     items.push({ id: `request:${request.id}`, kind: 'request', cellId: cell.id, beadIds: [ids.has(request.beadId) ? request.beadId : cell.rootBeadId], title: request.title, reason: request.state === 'answered' ? 'Your answer needs delivery repair. Open the request to retry.' : 'Hive request awaiting your decision or action.', threadId: request.threadId, messageId: request.messageId });
   }
+  if (!cell.enabled) return items;
   const sessions = ctx.graph?.sessions || [];
   for (const s of sessions) {
     const stopped = s.sessionId === cell.queenSessionId && queenStopped(ctx.graph, cell);
