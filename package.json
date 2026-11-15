@@ -32,6 +32,7 @@
       "deliver",
       "board:rebuild",
       "links:read",
+      "events",
       "agents:read"
     ],
     "engines": {

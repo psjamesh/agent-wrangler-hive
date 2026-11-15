@@ -42,6 +42,14 @@ Membership comes from the current queen nomination, an active Hive binding, assi
 
 For a request about a specific Hive message or topic, include `[Open Hive message](<link>)` in its body, using the link from `hive_publish` or `hive_context`. An ordinary conversation reply does not answer or withdraw a native request. Pre-existing standard requests retain their original recovery/withdraw tools; never mirror them into Hive.
 
+## CI and PR waits
+
+Before yielding for CI or merge, call `hive_report_pr_wait` with `state: "wait"`, `bead_id`, associated PR `url`, full expected `head_sha`, purpose in `reason`, `target`, `desired_outcome` and an ISO `deadline` with timezone. Keep the PR linked to a session or task so core observes it. `target` is `checks` (all reported checks), `check` (also give its unique exact `check_name`), `mergeable` (core readiness), or `merge`. Use `desired_outcome: "success"`, or `"completed"` for check targets to await every selected terminal result. Run, attempt and workflow identity waits are unsupported; use a separate verification contract when those identities matter. See [CI wait examples and semantics](../../docs/ci-waits.md).
+
+Registration persists before reading the current shared observation, so already-finished checks are handled. Hive resolves success, failure, cancellation, action requirements, head/identity changes and deadline expiry; it does not register a new head automatically. Missing/stale observations and unavailable workers flag the queen. No agent polling or sleep loop is needed. The returned wait ID and outcome remain in `hive_context.focus.ci_wait`. On a wake, verify the outcome and call `hive_report_pr_wait` with `state: "acknowledge"`, `bead_id` and exact `wait_id` before continuing authorized work. `cancel-wait` cancels a pending wait; acknowledge that outcome before replacing it. Never infer merge or installation from green checks. A notification does not authorize a merge, deployment or closure.
+
+Plain `waiting_for` grants only `waitGraceMinutes` (30 minutes by default) of worker-alarm suppression from its original anchor. Unrelated bead edits cannot extend it. A fresh pending structured CI wait suppresses alarms until its deadline; a finished or unavailable wait cannot hide a stalled worker. Keep the bead claimed while waiting for your continuation; hand merge/install delivery to the queen using the delivery handoff below.
+
 ## Archived workers
 
 Archived Hive workers are refused at startup, including `restore_session` and scheduled resumes. The refusal names the launch bead and its last known claim holder. The queen should check `hive_context` and, if that claim is stale, release it with `hive_release_bead` (`force: true` and a reason), then launch a fresh worker with `hive_spawn_worker` on open, unclaimed work. A fresh worker starts a new conversation; include the relevant findings and remaining work in its brief.

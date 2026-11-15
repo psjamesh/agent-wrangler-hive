@@ -1,3 +1,4 @@
+import { ciWaitAttention, ciWaitSuppresses, reconcileCiWaits } from './ci-waits.js';
 import { explicitResume, linksResolved, resolveLinkWaits, structuredWait, waitStatus, STRUCTURED_WAIT_HELP } from './link-waits.js';
 import { pickupState, defaultPickupProblem } from './pickup.js';
 import { prRepository } from './pr-labels.js';
@@ -126,6 +127,9 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     since = cell.watchdogFlags?.[id]?.since ?? since;
     flags.push({ id, kind, ...fields, ...(fields?.session_id ? { session_link: availableSessionHref(host, fields.session_id) } : {}), reason, since, age_ms: Math.max(0, now - since) });
   };
+  for (const flag of ciWaitAttention(rt, cell, now)) {
+    add(flag.kind, flag.bead_id, flag.wait_id, flag.since, flag.reason, { bead_id: flag.bead_id, session_id: flag.session_id, wait_id: flag.wait_id });
+  }
   const migrations = Object.entries(cell.blockedMigrations || {}).filter(([, migration]) => !migration.notice).sort(([a], [b]) => a.localeCompare(b));
   if (migrations.length) {
     const ids = migrations.map(([id]) => id);
@@ -176,12 +180,16 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     if (deadline && now - deadline >= settings.waitGraceMinutes * 60000) {
       add('overdue_wait', bead.id, [deadline, bead.waitingFor], deadline, `Recorded wait names a time that has passed: ${bead.waitingFor.slice(0, 120)}`, { bead_id: bead.id, session_id: sid || null });
     }
+    const ciWait = doc.ciWaits?.[bead.id];
+    const proseAnchor = recorded && recorded.text === bead.waitingFor ? recorded.at : updated;
+    const proseGrace = bead.waitingFor && !(ciWait && !ciWait.acknowledgedAt) && proseAnchor && now - proseAnchor < settings.waitGraceMinutes * 60000;
+    const waiting = Boolean(proseGrace || ciWaitSuppresses(rt, host, bead, now) || structuredWait(rt.snapshots.graph, bead));
     const claimed = liveClaimant(host, sid);
     const history = histories.get(bead.id) || [];
     const reviewOpen = history.some(r => OPEN_REVIEW_STATES.has(r.state));
     if (!claimed && !GROUP_KINDS.has(bead.kind) && updated) {
       const exitedClaim = session && ['exited', 'error', 'errored'].includes(session.status) && !session.archived;
-      const finished = bead.status !== 'deferred' && !bead.waitingFor && !index.blockers.get(bead.id)
+      const finished = !waiting && !index.blockers.get(bead.id)
         && recordsCompletion(bead, sid ? [...QUEEN_ASKED, ...WORK_DONE] : QUEEN_ASKED);
       if (finished && !reviewOpen && now - updated >= settings.untrackedMinutes * 60000) {
         add('finished_open', bead.id, [updated, bead.status], updated, 'No worker holds this bead and its record says the work is finished or asks the queen to close it.', { bead_id: bead.id, session_id: sid || null });
@@ -200,7 +208,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       || recordsCompletion(bead, [...QUEEN_ASKED, ...WORK_DONE]);
     const turn = session.lastTurn;
     if (bead.status === 'in_progress' && !session.archived && !session.hasBackgroundShell && !handedOff
-      && !bead.waitingFor && !index.blockers.get(bead.id) && ['aborted', 'error'].includes(turn?.outcome)
+      && !waiting && !index.blockers.get(bead.id) && ['aborted', 'error'].includes(turn?.outcome)
       && Number.isFinite(turn.at) && turn.at > 0 && turn.at <= now
       && Math.max(updated, index.observedActivity.get(sid) || 0) <= turn.at) {
       const reason = turn.outcome === 'aborted' ? 'Claimed worker’s last turn was aborted.'
@@ -213,7 +221,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       add('stalled_worker', bead.id, [sid, session.status], activity || now, `Claimed worker ${session.status}.`, { bead_id: bead.id, session_id: sid });
       continue;
     }
-    if (bead.status === 'in_progress' && !session.archived && !handedOff && !bead.waitingFor && !index.blockers.get(bead.id)
+    if (bead.status === 'in_progress' && !session.archived && !handedOff && !waiting && !index.blockers.get(bead.id)
       && ['api-error', 'api-error-blocking'].includes(session.waitingReason) && session.status !== 'working') {
       add('stalled_worker', bead.id, [sid, 'api-error'], activity || now, 'Claimed worker ended its turn with an API error.', { bead_id: bead.id, session_id: sid });
       continue;
@@ -221,13 +229,13 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     const sleeping = sleepingReason(session);
     if (sleeping && !GROUP_KINDS.has(bead.kind) && !reviewOpen && !(session.hasBackgroundShell)) {
       const since = activity;
-      const waiting = bead.status === 'deferred' || bead.waitingFor || index.blockers.get(bead.id) || index.requesters.get(cell.id)?.has(sid);
-      if (!waiting && since && now - since >= settings.workerMinutes * 60000) {
+      const sleepingWait = waiting || index.blockers.get(bead.id) || index.requesters.get(cell.id)?.has(sid);
+      if (!sleepingWait && since && now - since >= settings.workerMinutes * 60000) {
         add('dormant_claim', bead.id, [sid, sleeping], since, `Claim is held by a ${sleeping} session with no recorded wait, request or review.`, { bead_id: bead.id, session_id: sid });
       }
       continue;
     }
-    if (session.status !== 'idle' || session.hasBackgroundShell || session.archived || bead.status === 'deferred' || bead.waitingFor || index.blockers.get(bead.id)) continue;
+    if (session.status !== 'idle' || session.hasBackgroundShell || session.archived || waiting || index.blockers.get(bead.id)) continue;
     if (handedOff) continue;
     const latest = history.toSorted((a, b) => stamp(b.createdAt) - stamp(a.createdAt)).at(0);
     const since = Math.max(activity, latest?.state === 'approved' ? stamp(latest.completedAt || latest.verdict?.at || latest.updatedAt) : 0);
@@ -366,6 +374,8 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
     } finally { clearTimer(timer); }
   }
   async function pass() {
+    if (!usable()) return;
+    await reconcileCiWaits(rt, host, now());
     if (!usable()) return;
     await resolveLinkWaits(rt, host, now());
     if (!usable()) return;

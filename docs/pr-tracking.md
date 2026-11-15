@@ -20,7 +20,7 @@ At 20 open PRs in five repositories, Hive adds approximately **1,260 GraphQL poi
 
 The extension consumes core through its public host API only. `host.links.get(sessionId)` exposes stored session links and derived check status/head metadata. It does not provide Hive's full state observation (raw check rollup, draft flag, merge state, title and review fields), or retain the final observation after core removes a merged/closed link. A missing link cannot prove a merge.
 
-Replacing Hive's active-state reads requires a URL-keyed host observation API with freshness/error information, full PR state fields including stable node identity/creation time and retained terminal observations. Derived notifications alone cannot preserve Hive's existing readiness behavior. The queen tracks that API addition separately; this implementation keeps the independent state reads until that contract exists.
+Core API 1.93.0 exposes URL-keyed `host.links.prObservation` snapshots and `pr:observation` events with raw checks, stable PR identity, freshness/errors and retained terminal observations. Structured [CI waits](ci-waits.md) consume this contract without additional GitHub reads. The attribution/state sweep described above retains its existing independent reads; it does not supply CI wait outcomes.
 
 ## Hive repository merge evidence
 

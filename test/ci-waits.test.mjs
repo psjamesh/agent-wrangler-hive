@@ -1,0 +1,226 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { evaluateCiWait, reconcileCiWaits, reportCiWait, ciWaitAttention } from '../server/ci-waits.js';
+import { pickupFixture } from './helpers/pickup.mjs';
+
+const URL = 'https://github.com/example/repo/pull/7', SHA = 'a'.repeat(40);
+const NOW = Date.now();
+const snapshot = (extra = {}) => ({ url: URL, nodeId: 'PR_7', isDraft: false, state: 'open', headSha: SHA, fetchedAt: new Date(NOW).toISOString(), lastError: null, statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }], ...extra });
+const wait = (extra = {}) => ({ id: 'wait_1', beadId: 'a', cellId: 'cell', sessionId: 'queen', url: URL, headSha: SHA, nodeId: 'PR_7', target: 'checks', desiredOutcome: 'success', deadline: NOW + 600000, createdAt: NOW, state: 'pending', ...extra });
+
+for (const [conclusion, outcome] of [['SUCCESS', 'success'], ['FAILURE', 'failure'], ['CANCELLED', 'cancelled'], ['TIMED_OUT', 'failure'], ['ACTION_REQUIRED', 'action-required']]) {
+  test(`resolves check outcome ${conclusion}`, () => {
+    assert.equal(evaluateCiWait(wait(), snapshot({ statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion }] }), NOW).outcome, outcome);
+  });
+}
+test('distinguishes completion, readiness and merge and ignores incomplete or unknown check sets', () => {
+  for (const rows of [[], [{ name: 'test', status: 'IN_PROGRESS' }], [{ name: 'test', conclusion: 'NEW_ENUM' }]]) assert.equal(evaluateCiWait(wait(), snapshot({ statusCheckRollup: rows }), NOW).outcome, undefined);
+  assert.equal(evaluateCiWait(wait({ target: 'merge' }), snapshot(), NOW).outcome, undefined);
+  assert.equal(evaluateCiWait(wait({ target: 'merge' }), snapshot({ state: 'merged' }), NOW).outcome, 'success');
+  assert.equal(evaluateCiWait(wait(), snapshot({ state: 'closed' }), NOW).outcome, 'cancelled');
+  assert.equal(evaluateCiWait(wait({ target: 'mergeable' }), snapshot({ checkStatus: 'awaiting-review' }), NOW).outcome, undefined);
+  assert.equal(evaluateCiWait(wait({ target: 'mergeable' }), snapshot({ checkStatus: 'passing' }), NOW).outcome, 'success');
+  const mixed = snapshot({ statusCheckRollup: [{ status: 'IN_PROGRESS' }, { status: 'COMPLETED', conclusion: 'FAILURE' }] });
+  assert.equal(evaluateCiWait(wait(), mixed, NOW).outcome, 'failure');
+  assert.equal(evaluateCiWait(wait({ desiredOutcome: 'completed' }), mixed, NOW).outcome, undefined);
+});
+test('selects named checks including status contexts without guessing missing or ambiguous identities', () => {
+  const selected = wait({ target: 'check', checkName: 'test' });
+  assert.equal(evaluateCiWait(selected, snapshot({ statusCheckRollup: [{ context: 'test', state: 'SUCCESS' }, { name: 'other', status: 'IN_PROGRESS' }] }), NOW).outcome, 'success');
+  assert.match(evaluateCiWait(selected, snapshot({ statusCheckRollup: [] }), NOW).unavailable, /check/i);
+  assert.match(evaluateCiWait(selected, snapshot({ statusCheckRollup: [{ name: 'test' }, { name: 'test' }] }), NOW).unavailable, /ambiguous/i);
+});
+test('head changes and URL identity replacement supersede the target, never advance it', () => {
+  assert.equal(evaluateCiWait(wait(), snapshot({ headSha: 'b'.repeat(40) }), NOW).outcome, 'superseded');
+  assert.equal(evaluateCiWait(wait(), snapshot({ nodeId: 'PR_new' }), NOW).outcome, 'superseded');
+});
+test('stale, absent and failed observations cannot establish success; deadline remains fixed', () => {
+  for (const obs of [null, snapshot({ lastError: 'no permission' }), snapshot({ fetchedAt: new Date(NOW - 240000).toISOString() })]) assert.ok(evaluateCiWait(wait(), obs, NOW).unavailable);
+  assert.equal(evaluateCiWait(wait({ deadline: NOW }), null, NOW).outcome, 'overdue');
+});
+function fixture() {
+  const f = pickupFixture();
+  f.live.a.assignee = 'aw:queen'; f.live.a.status = 'in_progress';
+  f.rt.snapshots.graph = f.graph();
+  f.rt.metadata.mutate(d => { d.prLabels = { [URL]: { url: URL, associations: [{ cellId: 'cell', beadId: 'a' }] } }; });
+  let observation = snapshot({ statusCheckRollup: [{ name: 'test', status: 'IN_PROGRESS' }] });
+  f.host.links = { prObservation: () => observation };
+  return { ...f, observe: value => { observation = value; } };
+}
+const args = () => ({ bead_id: 'a', state: 'wait', url: URL, head_sha: SHA, reason: 'Continue after tests', target: 'checks', desired_outcome: 'success', deadline: new Date(NOW + 600000).toISOString() });
+
+test('registration persists before snapshot read, resolves already finished checks and awaits exact acknowledgement', async () => {
+  const f = fixture();
+  f.host.links.prObservation = () => { assert.ok(f.doc().ciWaits.a); return snapshot(); };
+  const registered = await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  assert.equal(registered.outcome, 'success'); assert.equal(f.delivered.length, 1);
+  assert.match(f.delivered[0].message, /acknowledge.*wait_id/i);
+  assert.equal(f.doc().ciWaits.a.wake.state, 'delivered');
+  assert.throws(() => reportCiWait(f.rt, f.host, f.actor(), { bead_id: 'a', state: 'acknowledge', wait_id: 'wrong' }), /wait/i);
+  await reportCiWait(f.rt, f.host, f.actor(), { bead_id: 'a', state: 'acknowledge', wait_id: registered.id });
+  assert.ok(f.doc().ciWaits.a.acknowledgedAt);
+});
+test('same-head completion resolves on reconciliation and restart does not repeat a confirmed wake', async () => {
+  const f = fixture(); await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  assert.equal(f.delivered.length, 0);
+  f.observe(snapshot({ statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion: 'FAILURE' }] }));
+  await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+  assert.equal(f.doc().ciWaits.a.outcome, 'failure'); assert.equal(f.delivered.length, 1);
+  await reconcileCiWaits(f.rt, f.host, NOW + 2000); assert.equal(f.delivered.length, 1);
+});
+test('interrupted, uncertain and unavailable wake delivery is retained for queen attention', async () => {
+  for (const wake of [undefined, { state: 'sending', at: NOW }, { state: 'uncertain', at: NOW }]) {
+    const f = fixture(); f.rt.metadata.mutate(d => { d.ciWaits = { a: wait({ state: 'resolved', outcome: 'failure', resolvedAt: NOW, wake }) }; });
+    if (!wake) f.host.deliver = async () => ({ mode: 'error', outcome: 'unknown' });
+    await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+    assert.ok(ciWaitAttention(f.rt, f.doc().cells.cell, NOW + 1000).some(flag => flag.kind === 'ci_wait_delivery'));
+    assert.equal(f.doc().ciWaits.a.acknowledgedAt, undefined);
+  }
+});
+test('missing owner cancels continuation and notifies queen attention rather than a replacement worker', async () => {
+  const f = fixture(); await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  f.live.a.assignee = 'aw:other'; f.rt.snapshots.graph = f.graph();
+  await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+  assert.equal(f.doc().ciWaits.a.outcome, 'unavailable'); assert.equal(f.delivered.length, 0);
+  assert.ok(ciWaitAttention(f.rt, f.doc().cells.cell, NOW + 1000).length);
+});
+test('unsupported selectors, unassociated PRs and nonclaimants are refused before registration', () => {
+  const f = fixture();
+  for (const change of [{ target: 'workflow' }, { run_id: 123 }, { attempt: 2 }, { workflow: 'Test' }, { url: URL + '0' }, { head_sha: 'short' }]) assert.throws(() => reportCiWait(f.rt, f.host, f.actor(), { ...args(), ...change }, NOW));
+  assert.throws(() => reportCiWait(f.rt, f.host, f.actor('stranger', 'worker'), args(), NOW), /claimant|queen|coordinator/i);
+  assert.equal(f.doc().ciWaits, undefined);
+});
+
+test('existing wait tool registers structured targets and rejects unsupported identity fields', async () => {
+  const { reportPrWaitTool } = await import('../server/tools.js');
+  assert.equal(reportPrWaitTool.inputSchema.safeParse(args()).success, true);
+  assert.equal(reportPrWaitTool.inputSchema.safeParse({ ...args(), run_id: 1 }).success, false);
+  assert.equal(reportPrWaitTool.inputSchema.safeParse({ bead_id: 'a', state: 'acknowledge', wait_id: 'ciwait_123' }).success, true);
+});
+
+test('prose suppression expires from its original anchor, even after unrelated bead edits', async () => {
+  const { collectWatchdog, syncWaitAnchors } = await import('../server/watchdog.js');
+  const f = fixture();
+  const start = NOW - 3600000;
+  f.live.a.metadata.hive_waiting_for = 'Waiting for CI';
+  f.live.a.updated_at = new Date(start).toISOString();
+  f.board.get('queen').lastActivity = start;
+  f.rt.snapshots.graph = f.graph();
+  syncWaitAnchors(f.rt);
+  f.live.a.updated_at = new Date(NOW - 31 * 60000).toISOString();
+  f.rt.snapshots.graph = f.graph(); syncWaitAnchors(f.rt);
+  assert.equal(f.doc().cells.cell.waitAnchors.a.at, start);
+  assert.ok(collectWatchdog(f.rt, f.host, f.doc().cells.cell, NOW).some(flag => flag.kind === 'stalled_worker' && flag.bead_id === 'a'));
+  f.doc().cells.cell.waitAnchors.a.at = NOW - 60000;
+  assert.equal(collectWatchdog(f.rt, f.host, f.doc().cells.cell, NOW).some(flag => flag.kind === 'stalled_worker' && flag.bead_id === 'a'), false);
+});
+
+test('pending structured waits suppress alarms only while valid; a finished wait exposes an idle worker', async () => {
+  const { collectWatchdog } = await import('../server/watchdog.js');
+  const f = fixture();
+  const start = NOW - 3600000;
+  f.live.a.updated_at = new Date(start).toISOString(); f.board.get('queen').lastActivity = start;
+  f.live.a.metadata.hive_waiting_for = 'Waiting for CI'; f.rt.snapshots.graph = f.graph();
+  await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  const flags = () => collectWatchdog(f.rt, f.host, f.doc().cells.cell, NOW);
+  assert.equal(flags().some(flag => flag.kind === 'stalled_worker' && flag.bead_id === 'a'), false);
+  f.observe(null);
+  assert.ok(flags().some(flag => flag.kind === 'ci_wait_unavailable'));
+  assert.ok(flags().some(flag => flag.kind === 'stalled_worker' && flag.bead_id === 'a'));
+  f.observe(snapshot()); await reconcileCiWaits(f.rt, f.host, NOW);
+  assert.ok(flags().some(flag => flag.kind === 'stalled_worker' && flag.bead_id === 'a'));
+});
+
+test('observer subscribes before baseline, resolves events and stops on deactivation', async () => {
+  const { startCiWaits } = await import('../server/ci-waits.js');
+  const f = fixture(); await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  let listener, subscribed = false;
+  f.host.events = { on(name, fn) { assert.equal(name, 'pr:observation'); subscribed = true; listener = fn; return () => { listener = null; }; } };
+  f.host.links.prObservation = () => { assert.ok(subscribed); return snapshot(); };
+  const stop = startCiWaits(f.rt, f.host, () => NOW);
+  await listener();
+  assert.equal(f.doc().ciWaits.a.outcome, 'success'); assert.equal(f.delivered.length, 1);
+  stop(); assert.equal(listener, null);
+});
+
+test('pending wait and wake receipt reconcile from disk without duplicate delivery after restart', async t => {
+  const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+  const { MetadataStore } = await import('../server/metadata-store.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-waits-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'metadata.json'), f = fixture();
+  const original = f.doc();
+  f.rt.metadata = new MetadataStore({ file }); f.rt.metadata.mutate(d => Object.assign(d, original));
+  await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  f.rt.metadata = new MetadataStore({ file });
+  f.observe(snapshot()); await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+  assert.equal(f.rt.metadata.read().ciWaits.a.outcome, 'success'); assert.equal(f.delivered.length, 1);
+  f.rt.metadata = new MetadataStore({ file });
+  await reconcileCiWaits(f.rt, f.host, NOW + 2000); assert.equal(f.delivered.length, 1);
+  assert.ok(ciWaitAttention(f.rt, f.rt.metadata.cell('cell'), NOW + 301000).some(flag => flag.kind === 'ci_wait_unacknowledged'));
+});
+
+test('an old retained merged snapshot proves merge after link removal and restart', () => {
+  assert.equal(evaluateCiWait(wait({ target: 'merge' }), snapshot({ state: 'merged', fetchedAt: new Date(NOW - 86400000).toISOString() }), NOW).outcome, 'success');
+});
+
+test('retirement during wake leaves a sending receipt without writing a late success', async () => {
+  const f = fixture();
+  f.observe(snapshot());
+  f.host.deliver = async () => { f.rt.metadata.lifetime.stop(); return { mode: 'live' }; };
+  await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  assert.equal(f.doc().ciWaits.a.wake.state, 'sending');
+});
+
+test('definite delivery failure can be retried explicitly; delayed acknowledgements never clear a newer wait', async () => {
+  const f = fixture(); f.observe(snapshot());
+  f.host.deliver = async () => ({ mode: 'error', error: 'No transport' });
+  const old = await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  assert.equal(old.wake.state, 'failed');
+  f.host.deliver = async () => ({ mode: 'live' });
+  await reportCiWait(f.rt, f.host, f.actor(), { bead_id: 'a', state: 'retry-wake', wait_id: old.id }, NOW + 1000);
+  assert.equal(f.doc().ciWaits.a.wake.state, 'delivered');
+  await reportCiWait(f.rt, f.host, f.actor(), { bead_id: 'a', state: 'acknowledge', wait_id: old.id }, NOW + 2000);
+  const next = await reportCiWait(f.rt, f.host, f.actor(), { ...args(), target: 'merge' }, NOW + 3000);
+  assert.notEqual(next.id, old.id);
+  assert.throws(() => reportCiWait(f.rt, f.host, f.actor(), { bead_id: 'a', state: 'acknowledge', wait_id: old.id }), /wait_id/);
+});
+
+test('real wait tool enforces caller identity and exposes the persisted outcome in bead context', async t => {
+  const { reportPrWaitTool, contextTool } = await import('../server/tools.js');
+  const f = fixture();
+  const sid = '22222222-2222-4222-8222-222222222222';
+  f.board.set(sid, { sessionId: sid, taskId: 'task', status: 'idle' });
+  f.live.a.assignee = `aw:${sid}`; f.rt.snapshots.graph = f.graph();
+  f.observe(snapshot());
+  const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-wait-context-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  f.rt.paths = { root: dir };
+  f.rt.log = message => { throw new Error(message); };
+  const refusal = await reportPrWaitTool.handler({ host: f.host, caller: '33333333-3333-4333-8333-333333333333' }, args());
+  assert.equal(refusal.isError, true); assert.equal(f.doc().ciWaits, undefined);
+  const accepted = await reportPrWaitTool.handler({ host: f.host, caller: sid }, args());
+  assert.equal(accepted.isError, undefined); assert.equal(accepted.structuredContent.outcome, 'success');
+  const context = await contextTool.handler({ host: f.host, caller: sid }, { scope: 'bead', bead_id: 'a' });
+  assert.equal(context.isError, undefined, JSON.stringify(context));
+  assert.equal(context.structuredContent.focus.ci_wait.id, accepted.structuredContent.id);
+});
+
+test('superseding a head permanently resolves the old wait without registering a continuation', async () => {
+  const f = fixture(); await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  const id = f.doc().ciWaits.a.id;
+  f.observe(snapshot({ headSha: 'b'.repeat(40) })); await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+  assert.equal(f.doc().ciWaits.a.outcome, 'superseded');
+  f.observe(snapshot()); await reconcileCiWaits(f.rt, f.host, NOW + 2000);
+  assert.equal(f.doc().ciWaits.a.outcome, 'superseded'); assert.equal(f.doc().ciWaits.a.id, id); assert.equal(f.delivered.length, 1);
+});
+
+test('older hosts retain unavailable waits and deadlines without any fallback observer', async () => {
+  const f = fixture(); delete f.host.links;
+  const result = await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  assert.equal(result.state, 'pending'); assert.equal(f.delivered.length, 0);
+  assert.ok(ciWaitAttention(f.rt, f.doc().cells.cell, NOW).some(flag => flag.kind === 'ci_wait_unavailable'));
+  await reconcileCiWaits(f.rt, f.host, NOW + 600000);
+  assert.equal(f.doc().ciWaits.a.outcome, 'overdue'); assert.equal(f.delivered.length, 1);
+});

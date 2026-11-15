@@ -409,7 +409,7 @@ for (const agent of ['codex', 'claude']) {
   });
 
   for (const waitingReason of [null, 'api-error']) {
-    test(`${agent}: a PR attention report requires an explicit bead wait to suppress ${waitingReason || 'idle'} stalls`, t => {
+    test(`${agent}: a PR attention report needs a fresh prose grace or structured wait to suppress ${waitingReason || 'idle'} stalls`, t => {
       const f = fixture(t);
       f.bead('work', { status: 'in_progress', ownerSessionId: 'worker' });
       Object.assign(f.sessions.worker, { agent, status: 'idle', waitingReason });
@@ -420,7 +420,10 @@ for (const agent of ['codex', 'claude']) {
         } };
       });
       f.advance(31 * MIN); assert.equal(f.flags()[0]?.kind, 'stalled_worker');
-      f.beads.work.waitingFor = 'PR checks'; assert.deepEqual(f.flags(), []);
+      f.beads.work.waitingFor = 'PR checks';
+      f.rt.metadata.mutate(d => { d.cells.cell.waitAnchors = { work: { text: 'PR checks', at: f.now() } }; });
+      assert.deepEqual(f.flags(), []);
+      f.advance(30 * MIN); assert.equal(f.flags()[0]?.kind, 'stalled_worker');
     });
   }
 }

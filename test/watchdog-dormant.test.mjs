@@ -38,10 +38,14 @@ test('a dormant claimant with no wait, request or review flags at the worker thr
   assert.equal(flag.session_link, '#session=worker');
   assert.equal(flag.kind, 'dormant_claim'); assert.equal(flag.bead_id, 'work'); assert.equal(flag.session_id, 'worker');
   assert.match(flag.reason, /no recorded wait/);
-  for (const wait of [{ waitingFor: 'Final check later' }, { status: 'deferred' }]) {
-    Object.assign(f.beads.work, wait); assert.deepEqual(kinds(f).filter(k => k === 'dormant_claim'), []);
-    f.beads.work.waitingFor = ''; f.beads.work.status = 'in_progress';
-  }
+  f.beads.work.waitingFor = 'Final check later';
+  f.beads.work.updatedAt = new Date(f.now()).toISOString();
+  assert.deepEqual(kinds(f).filter(k => k === 'dormant_claim'), []);
+  f.advance(30 * MIN);
+  assert.ok(kinds(f).includes('dormant_claim'));
+  f.beads.work.waitingFor = ''; f.beads.work.status = 'deferred';
+  assert.ok(kinds(f).includes('dormant_claim'));
+  f.beads.work.status = 'in_progress';
   f.sessions.worker = { status: 'idle', lastActivity: f.now() }; assert.deepEqual(kinds(f), []);
 });
 

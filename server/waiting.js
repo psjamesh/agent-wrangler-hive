@@ -28,5 +28,6 @@ export function waitingProjection(rt, cell, beadIds) {
     if (!ids.length) return [];
     return [{ url: r.url, number: r.number || Number(r.url.split('/').at(-1)), title: r.title || r.url, state: r.state, headSha: r.headSha || null, checks: r.checks || 'unknown', isDraft: r.isDraft !== false, reviewDecision: r.reviewDecision || null, mergeable: r.mergeable || null, mergeStateStatus: r.mergeStateStatus || null, stateCheckedAt: r.stateCheckedAt ?? null, observationError: r.observationError || null, humanAttention: r.humanAttention || null, beadIds: ids, cellId: cell.id }];
   });
-  return { waits: [], pullRequests };
+  const waits = Object.values(doc.ciWaits || {}).filter(wait => wait.cellId === cell.id && beadIds.has(wait.beadId));
+  return { waits, pullRequests };
 }

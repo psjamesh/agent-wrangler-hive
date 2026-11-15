@@ -48,6 +48,7 @@ function emptyDoc() {
     restoreNotices: {},
     restoring: {},
     prLabels: {},
+    ciWaits: {},
   };
 }
 

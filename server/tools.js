@@ -1,3 +1,4 @@
+import { reportCiWait } from './ci-waits.js';
 import { hasBlockingPrerequisite } from './human-wait.js';
 import { setPickup, pickupState } from './pickup.js';
 import { collectWatchdog, watchdogSettings, archiveSuggestions } from './watchdog.js';
@@ -105,6 +106,7 @@ function compactBead(rt, b, { full, cell }) {
     assignee: b.assignee,
     next_action: b.nextAction || undefined,
     waiting_for: b.waitingFor || undefined,
+    ci_wait: rt.metadata.read().ciWaits?.[b.id] || undefined,
     resume: b.resume || undefined,
     waiting_on: ops.waitingOn(rt, b.id),
     outcome: b.outcome || undefined,
@@ -563,9 +565,21 @@ export const handoffQueenTool = hiveTool({
 
 export const reportPrWaitTool = hiveTool({
   name: 'hive_report_pr_wait',
-  description: 'Report or clear a human wait on a known PR associated with your bead. Claimant, queen or coordinator only. ready means independent review approved this exact head and the human should review it; GitHub checks must also be green. cannot-fix records a concrete human blocker the worker cannot resolve, such as admin workflow approval or an unresolved conflict. Failing checks the worker is handling are not a human wait. Reports expire when the observed head changes. This never merges or changes GitHub.',
-  inputSchema: { bead_id: beadId, url: z.string().max(2000), head_sha: z.string().regex(/^[a-f0-9]{40}$/i), state: z.enum(['ready', 'cannot-fix', 'clear']), reason: z.string().max(500).optional() },
-}, ({ rt, actor, args }) => reportPrWait(rt, actor, args));
+  description: 'Report a human PR wait (ready/cannot-fix/clear), or register a durable CI wait with state wait, purpose in reason, expected head, target, desired_outcome and deadline. Targets are checks, unique check name, mergeable or merge; run/attempt/workflow identity is unsupported. Core must observe a linked PR. Read current state immediately; wake on terminal outcome and retain it until acknowledge with wait_id. retry-wake explicitly retries failed/uncertain delivery; cancel-wait cancels a pending wait. Never merges, deploys or closes work.',
+  inputSchema: {
+    bead_id: beadId,
+    url: z.string().max(2000).optional(),
+    head_sha: z.string().regex(/^[a-f0-9]{40}$/i).optional(),
+    state: z.enum(['ready', 'cannot-fix', 'clear', 'wait', 'acknowledge', 'retry-wake', 'cancel-wait']),
+    reason: z.string().max(500).optional(),
+    target: z.enum(['checks', 'check', 'mergeable', 'merge']).optional(),
+    check_name: z.string().min(1).max(500).optional(),
+    desired_outcome: z.enum(['success', 'completed']).optional(),
+    deadline: z.string().max(80).optional(),
+    wait_id: z.string().max(80).optional(),
+  },
+}, ({ rt, host, actor, args }) => ['wait', 'acknowledge', 'retry-wake', 'cancel-wait'].includes(args.state)
+  ? reportCiWait(rt, host, actor, args) : reportPrWait(rt, actor, args));
 
 export const pickupTool = hiveTool({
   name: 'hive_set_pickup',
