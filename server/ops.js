@@ -15,7 +15,7 @@ import { BeadsError } from './beads.js';
 import {
   BLOCKED_STATUS_HELP, actorFor, issueTypeForKind, GROUP_KINDS, isBeadId, isSessionId, SETTABLE_STATUSES, LINK_TYPES, OUTCOMES, OPEN_STATUSES, descendantIds, normalizeIssue, buildGraph,
 } from './bead-model.js';
-import { AccessError, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, requireQueen, cellOfBead, requireCompleteHierarchy } from './access.js';
+import { requireNonHelper, AccessError, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, requireQueen, cellOfBead, requireCompleteHierarchy } from './access.js';
 import { layoutBase, stackable } from '../public/layout-base.js';
 import { archiveHidden } from '../public/archive-layout.js';
 import { inRange, MAX_COORD } from '../public/hex-search.js';
@@ -1116,6 +1116,7 @@ export async function linkBeads(rt, actor, { links }) {
 
 export async function claimBead(rt, actor, { bead_id }, { launchId = null, revalidateCapacity = false, validate = () => {} } = {}) {
   ensureWritable(rt);
+  requireNonHelper(rt, actor, 'claim beads');
   const id = beadIdArg(bead_id, 'bead_id');
   const { cell, bead } = requireBeadAccess(rt, actor, id);
   if (cell.rootBeadId === id) throw new HiveError('The cell goal is not claimed; claim a piece of work under it.');
@@ -1123,6 +1124,7 @@ export async function claimBead(rt, actor, { bead_id }, { launchId = null, reval
   const who = actorFor(actor.sessionId);
   const out = await withLocks([ADMISSION_LOCK, `bead:${id}`], () => journaled(rt, { kind: 'claim', cellId: cell.id, actor: who, summary: `Claim ${id}`, beadIds: [id], intent: { beadId: id, assignee: who } }, async (opId, phase) => {
     const res = await rt.beads.claim(id, who, (context) => {
+      requireNonHelper(rt, actor, 'claim beads');
       context.pickupOperationId = opId;
       validate(context);
       if (launchId) {

@@ -298,13 +298,13 @@ test('a later nomination keeps its coordinator bindings when an older handoff is
   assert.equal(f.doc().bindings.cell[0].active, true);
 });
 
-test('a helper cannot share a builder bead through the tool or spawn path', async () => {
+test('a helper shares a builder bead through the tool and spawn path', async () => {
   const f = fixture(1);
   recordSpawns(f);
   const tool = workTools.find((t) => t.name === 'hive_spawn_worker');
-  assert.equal(tool.inputSchema.safeParse({ bead_id: 'a', intent: 'x', role: 'helper' }).success, false);
+  assert.equal(tool.inputSchema.safeParse({ bead_id: 'a', intent: 'x', role: 'helper' }).success, true);
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build' });
-  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'advise' }, { role: 'investigator' }), /own bead/);
+  await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'advise' }, { role: 'investigator' });
   assert.equal(Object.values(f.live).filter((b) => b.assignee).length, 1);
 });
 

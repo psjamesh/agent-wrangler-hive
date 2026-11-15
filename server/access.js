@@ -106,3 +106,9 @@ export function requireBeadAccess(rt, actor, beadId) {
   if (!part) throw new AccessError(`Bead ${beadId} belongs to cell ${cell.id}, which you do not take part in.`);
   return { bead, cell, role: part.role };
 }
+
+export function requireNonHelper(rt, actor, what) {
+  if ((rt.metadata.read().bindings[actor.cell.id] || []).some(b => b.active && b.sessionId === actor.sessionId && b.role === 'investigator')) {
+    throw new AccessError(`Helper sessions cannot ${what}. Report back to the bead's holder.`);
+  }
+}
