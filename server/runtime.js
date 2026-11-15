@@ -1,3 +1,4 @@
+import { startCiWaits } from './ci-waits.js';
 import { observeLinkWaits } from './link-waits.js';
 import { createPickupDispatcher } from './pickup.js';
 import { createWatchdog } from './watchdog.js';
@@ -68,6 +69,7 @@ export class HiveRuntime {
     this.metadata.lifetime.attach(this, host);
     this.watchdog = createWatchdog({ runtime: this, host });
     this.prLabels = createPrLabelSweep({ runtime: this, host });
+    this.stopCiObservations = startCiWaits(this, host);
     this.attachmentRecovery = cleanupOrphanAttachments(this);
     try {
       threadAllCells(this);
@@ -108,6 +110,7 @@ export class HiveRuntime {
     this.pickup?.stop();
     this.metadata.lifetime.stop();
     this.prLabels?.stop();
+    this.stopCiObservations?.();
     this.watchdog?.stop();
     this.host = null;
   }
