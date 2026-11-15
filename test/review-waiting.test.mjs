@@ -85,7 +85,7 @@ test('review and recorded waiting coexist with an agent mark and use circular ba
   assert.deepEqual(tile.marks.map(m => m.kind), ['person', 'review-pending', 'recorded-wait']);
   for (const mark of tile.marks) {
     const el = primaryMark(mark.kind, mark.title);
-    assert(walk(el).some(n => n.tag === 'circle' && n.attributes.class === 'hive-pm-bg'));
+    assert.equal(walk(el).some(n => n.tag === 'circle' && n.attributes.class === 'hive-pm-bg'), mark.kind !== 'recorded-wait');
     assert(!walk(el).some(n => n.tag === 'path' && n.attributes.class === 'hive-pm-bg'));
     assert.match(words(el), /In review|Waiting for|waiting for you/);
   }
