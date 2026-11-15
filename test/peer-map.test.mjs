@@ -83,7 +83,7 @@ function mapFixture({contact=false,enclosed=false,hiveHidingStart=true,related=n
       });
       return { el: element };
     },
-    workstreamMenu: (o) => { menu = o; return []; }, groupClosed: () => false,
+    closedButton: () => null, workstreamMenu: (o) => { menu = o; return []; }, groupClosed: () => false,
     focusTile(id) { located.push(id); }, revealWarning: () => 'Move this region?',
     document: { querySelector: () => null },
   };

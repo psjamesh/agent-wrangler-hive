@@ -8,6 +8,7 @@ import { confirmHive, promptHive } from './confirm-dialog.js';
 import { settingsModal, settingsButton, advancedSettings } from './settings-view.js';
 import { openCellPopover, disposeCellPopover } from './cell-popover.js';
 import { capacityControl } from './capacity-control.js';
+import { progressBar } from './progress-bar.js';
 import { waitingItems, cellWaitingItems, waitingSection, openWaitingMenu } from './waiting-view.js';
 import { prSummary, pullRequestsSection } from './pr-view.js';
 import { h, syncChildren, markdown, safeHref, relativeTime } from './dom.js';
@@ -467,16 +468,14 @@ function queenPill(ctx, cell, openQueen) {
     title: `Queen: ${sessionLabel(graph, cell.queenSessionId)}, ${STATUS_TEXT[dot]}. Manage the queen.`,
   },
   h('span', { class: `hive-dot-inline hive-dot-${dot}`, 'aria-hidden': 'true' }),
-  `Queen ${STATUS_TEXT[dot]}`, brief ? ` · ${brief}` : '');
+  `Queen${['working', 'idle'].includes(dot) ? '' : ` ${STATUS_TEXT[dot]}`}`, brief ? ` · ${brief}` : '');
 }
 
 function headProgress(counts) {
   if (!counts) return null;
-  const fill = h('span', {});
-  fill.style.width = `${counts.total ? Math.round((counts.closed / counts.total) * 100) : 0}%`;
   return h('span', { class: 'hive-counts hive-headprogress', title: countsSentence(counts) },
-    counts.total ? h('span', { class: 'hive-progress-inline', 'aria-hidden': 'true' }, fill) : null,
-    counts.total ? `${counts.closed} of ${counts.total} closed` : 'No work yet');
+    counts.total ? progressBar(counts.closed, counts.total) : null,
+    counts.total ? `${counts.closed}/${counts.total} closed` : 'No work yet');
 }
 
 function cellHeader(ctx, cell, root) {
@@ -490,14 +489,13 @@ function cellHeader(ctx, cell, root) {
       h('span', { class: 'hive-crumb-sep', 'aria-hidden': 'true' }, '/'),
       h('h2', { class: 'hive-celltitle' }, cellTitle(ctx, cell)),
       isRetired(cell) ? h('span', { class: 'hive-badge hive-badge-retired', title: cell.retired.summary }, `Retired · ${cell.retired.outcome}`) : (cell.enabled ? null : h('span', { class: 'hive-badge' }, 'Off')),
-      capacityControl(ctx),
       h('div', { class: 'hive-cellstate' },
-        queenPill(ctx, cell, event => openQueenPopover(ctx, cell, event.currentTarget)),
+        waiting.length ? h('button', { type: 'button', class: 'hive-quiet-btn hive-waiting', 'aria-haspopup': 'dialog', 'data-focus-key': 'waiting-header', onclick: event => openWaitingMenu(ctx, waiting, event.currentTarget, { cellId: cell.id }) }, `Needs you ${waiting.length}`) : null,
         headProgress(counts),
-        waiting.length ? h('button', { type: 'button', class: 'hive-quiet-btn hive-waiting', 'aria-haspopup': 'dialog', 'data-focus-key': 'waiting-header', onclick: event => openWaitingMenu(ctx, waiting, event.currentTarget, { cellId: cell.id }) }, `${waiting.length} waiting for you`) : null),
+        capacityControl(ctx),
+        queenPill(ctx, cell, event => openQueenPopover(ctx, cell, event.currentTarget))),
       h('div', { class: 'hive-head-actions' },
         isRetired(cell) ? h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openReopen(ctx, cell), 'data-focus-key': `reopen-open:${cell.id}` }, 'Reopen hive…') : (cell.enabled || cell.snapshot ? null : h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => send({ type: 'hive-cell-enable', cellId: cell.id }) }, 'Turn on')),
-        cell.enabled && !cell.snapshot ? closedButton(ctx, cell) : null,
         settingsButton(ctx, cell))),
     settingsModal(ctx, cell, (leave, section) => hiveSettings(ctx, cell, leave, section)),
     attentionEl(ctx, { cellId: cell.id }),
@@ -600,7 +598,9 @@ export function cellPanels(ctx, cell) {
   if (conversation && !conversation.hiveKeys) { conversation.addEventListener('keydown', onKeyDown); conversation.hiveKeys = true; }
   const details = cell.snapshot || cell.enabled || isRetired(cell) ? beadDetails(ctx, cell) : h('section', { class: 'hive-panel hive-details', tabindex: '-1', 'data-focus-key': 'panel:details', 'aria-label': 'Details', 'data-pane': 'details' },
     h('h3', {}, 'Details'), h('p', { class: 'hive-muted' }, 'This hive is off. Turn it on to see its work.'));
-  const dock = hasPanels(cell, root) ? syncChildren(cached.dock, [conversation, details]) : null;
+  const history = cell.enabled && !cell.snapshot && (!root || ui.inspecting()) ? closedButton(ctx, cell) : null;
+  if (history) details.append(history);
+  const dock = hasPanels(cell, root) || history ? syncChildren(cached.dock, [conversation, details]) : null;
   return {
     header: cellHeader(ctx, cell, root),
     drawer: retireDrawer(ctx, cell) || workstreamDrawer(ctx, cell),

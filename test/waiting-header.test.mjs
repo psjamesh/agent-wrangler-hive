@@ -24,7 +24,7 @@ test('the cell-wide wait action includes unbound waits and remains available in 
   assert.equal(title.children[0], name);
   const action = all(header(ctx, cell, null)).find(n => n.attrs?.['data-focus-key'] === 'waiting-header');
   assert.equal(action.tag, 'button');
-  assert.equal(action.children[0], '2 waiting for you');
+  assert.equal(action.children[0], 'Needs you 2');
   assert.equal(typeof action.attrs.onclick, 'function');
   assert.equal(action.attrs['aria-haspopup'], 'dialog');
   cell.requests = {};

@@ -1,4 +1,5 @@
 import { h } from './dom.js';
+import { progressBar } from './progress-bar.js';
 
 const FORM = 'global-capacity';
 const focus = key => requestAnimationFrame(() => document.querySelector(`[data-focus-key="${key}"]`)?.focus());
@@ -31,7 +32,7 @@ export function capacityControl({ hive, ui, api }) {
       'data-focus-key': 'capacity-toggle', 'aria-expanded': String(Boolean(ui.form('settings'))), 'aria-controls': 'hive-settings',
       title: `${detail} Open Hive Settings.`, 'aria-label': `${usage.used}${limit ? ` of ${limit}` : ''} in progress. ${detail} Open Hive Settings.`,
       onclick: () => openHiveSettings(ui, 'capacity-toggle'),
-    }, `${usage.used}${limit ? ` of ${limit}` : ''} in progress`),
+    }, limit ? progressBar(usage.used, limit) : null, `${usage.used}${limit ? `/${limit}` : ''} slots`),
     usage.outside > 0 ? h('span', { class: 'hive-capacity-note' }, `· ${usage.outside} outside a hive`) : null,
     limit > 0 && usage.used > limit ? h('span', { class: 'hive-capacity-note', role: 'status' }, 'Over limit. Current work continues; new work waits for room.') : null);
 }

@@ -10,7 +10,7 @@ import { renderSetup, setupNeeded } from '../public/setup.js';
 import { createManifest } from '../server/manifest.js';
 
 class Element {
-  constructor(tag, text = '') { this.tag = tag; this.text = text; this.children = []; this.attrs = {}; this.events = {}; this.dataset = {}; }
+  constructor(tag, text = '') { this.tag = tag; this.text = text; this.children = []; this.attrs = {}; this.events = {}; this.dataset = {}; this.style = {}; }
   setAttribute(k, v) { this.attrs[k] = v; }
   append(child) { this.children.push(child); }
   addEventListener(k, fn) { this.events[k] = fn; }
@@ -44,12 +44,16 @@ function fixture(t) {
 
 test('renders limited/unlimited global count with deduplicated breakdown and over-limit note', t => {
   const f = fixture(t);
-  assert.match(text(f.draw()), /5 of 8 in progress/);
+  assert.match(text(f.draw()), /5\/8 slots/);
   assert.match(f.control('capacity-toggle').attrs.title, /2 claimed.*1.*reviews.*2.*launching/i);
   assert.equal(f.control('capacity-toggle').tag, 'button');
   assert.equal(f.control('capacity-toggle').attrs.type, 'button');
+  const bar = walk(f.control('capacity-toggle')).find(el => el.attrs.class === 'hive-progress-inline');
+  assert.equal(bar.children[0].style.width, '63%');
+  assert.equal(bar.attrs['aria-hidden'], 'true');
   f.ctx.hive.capacity.limit = 0;
-  assert.match(text(f.draw()), /5 in progress/);
+  assert.match(text(f.draw()), /5 slots/);
+  assert.equal(walk(f.control('capacity-toggle')).some(el => el.attrs.class === 'hive-progress-inline'), false);
   assert.doesNotMatch(text(f.draw()), /of 0/);
   f.ctx.hive.capacity.limit = 2;
   assert.match(text(f.draw()), /Over limit.*Current work continues/);
