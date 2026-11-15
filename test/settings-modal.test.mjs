@@ -19,7 +19,7 @@ function fixture(t, extra = {}) {
   t.after(() => { globalThis.requestAnimationFrame = oldFrame; });
   const forms = new Map(), sent = [], writes = [];
   const cell = { id: 'c', enabled: true, rootBeadId: 'r', taskId: 't', ...extra };
-  const root = { id: 'r', goal: 'Ship useful work', acceptance: 'People can use it' };
+  const root = { id: 'r', goal: 'Ship useful work', acceptance: 'People can use it', updatedAt: 'v1' };
   const settings = {};
   const ctx = {
     hive: { cells: { c: cell }, beads: { r: root }, launches: [] },

@@ -67,7 +67,7 @@ function dom(t) {
 
 function views() {
   const source = fs.readFileSync(new URL('../public/cell-view.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?from .*;\n/gm, '').replaceAll('export ', '');
-  return vm.runInNewContext(`${source}\n({ beadDetails, workstreamProgress, headProgress })`, { ...model, h, pickupDetails: () => null, waitingSection: () => null, pullRequestsSection: () => null, markdown: (api, text) => h('p', {}, text), safeHref: url => url || null, sessionLabel: () => '' });
+  return vm.runInNewContext(`${source}\n({ beadDetails, workstreamProgress, headProgress, hasPanels })`, { ...model, h, pickupDetails: () => null, waitingSection: () => null, pullRequestsSection: () => null, markdown: (api, text) => h('p', {}, text), safeHref: url => url || null, sessionLabel: () => '' });
 }
 
 test('review and recorded waiting coexist with an agent mark and use circular badges and a bare blocked cross', t => {
@@ -292,4 +292,14 @@ test('details panel loads the long text on demand, with loading and error states
   const shown = text(loaded);
   for (const part of ['Ship the thing', 'It ships', 'Nearly', 'Wait for review', 'PR 5', 'Other metadata: x']) assert.ok(shown.includes(part), part);
   assert.doesNotMatch(shown, /Loading details/);
+});
+
+test('snapshot details preserve the board brief when no goal was confirmed', t => {
+  dom(t);
+  const view = views();
+  const cell = { id: 'captured', snapshot: { brief: 'The captured board intention' } };
+  assert.equal(view.hasPanels(cell, null), true);
+  const details = view.beadDetails({ hive: { beads: {} }, api: {}, graph: {}, ui: { selectedBeadId: () => null } }, cell);
+  assert.match(words(details), /Board brief, not a confirmed goal:.*The captured board intention/s);
+  assert.equal(walk(details).some(el => ['input', 'textarea'].includes(el.tag)), false);
 });

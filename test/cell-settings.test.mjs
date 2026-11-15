@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import { installDom, walk, fire, press } from './helpers/dom.mjs';
 import { cellTitle, cellGoalForm } from '../public/cell-settings.js';
 import { configHandlers } from '../server/handlers.js';
-import { fixture } from './ownership.test.mjs';
+import { fixture as ownershipFixture } from './ownership.test.mjs';
+
+function fixture() {
+  const f = ownershipFixture();
+  f.live.root.updated_at = 'v1';
+  return f;
+}
 
 function uiFixture(t) {
   installDom(t);
@@ -74,7 +80,7 @@ for (const mode of ['snapshot', 'retired']) test(`${mode} title and goal stay re
 
 async function request(f, type, values) {
   let reply;
-  await configHandlers.find(h => h.type === type).handler({ cellId: 'cell', ...values }, f.host, r => { reply = r; });
+  await configHandlers.find(h => h.type === type).handler({ cellId: 'cell', ...(type === 'hive-cell-goal' ? { expectedUpdatedAt: 'v1' } : {}), ...values }, f.host, r => { reply = r; });
   return reply;
 }
 
@@ -146,7 +152,7 @@ test('stale goal saves and backend failures are reported without recording human
 
 test('maximum length goal fields still produce human input, and failed delivery preserves it', async () => {
   const f = fixture();
-  f.rt.beads.update = async (id, patch, actor, check) => { check({ issues: Object.values(f.live) }); return {}; };
+  f.rt.beads.update = async (id, patch, actor, check) => { check({ issues: Object.values(f.live) }); Object.assign(f.live[id], { description: patch.goal, acceptance_criteria: patch.acceptance }); return {}; };
   f.host.deliver = async () => { throw new Error('Queen unavailable'); };
   const reply = await request(f, 'hive-cell-goal', { goal: 'g'.repeat(20000), acceptance: 'a'.repeat(20000) });
   assert.equal(reply.ok, true);
@@ -157,8 +163,62 @@ test('maximum length goal fields still produce human input, and failed delivery 
 test('an off hive can save its goal and keeps human input for the queen', async () => {
   const f = fixture();
   f.doc().cells.cell.enabled = false;
-  f.rt.beads.update = async (id, patch, actor, check) => { check({ issues: Object.values(f.live) }); return {}; };
+  f.rt.beads.update = async (id, patch, actor, check) => { check({ issues: Object.values(f.live) }); Object.assign(f.live[id], { description: patch.goal, acceptance_criteria: patch.acceptance }); return {}; };
   const reply = await request(f, 'hive-cell-goal', { goal: 'New goal', acceptance: 'Done' });
   assert.equal(reply.ok, true, JSON.stringify(reply));
   assert.equal(f.doc().conversation.cell[0].author, 'human');
+});
+
+test('goal drafts initialize from the root when it arrives after settings opens', t => {
+  const f = uiFixture(t);
+  const root = f.ctx.hive.beads.root;
+  delete f.ctx.hive.beads.root;
+  let form = f.draw(cellGoalForm);
+  assert.equal(f.forms.has('goal:c'), false);
+  fire(form, 'submit');
+  assert.equal(f.sent.length, 0);
+  f.ctx.hive.beads.root = root;
+  form = f.draw(cellGoalForm);
+  assert.deepEqual(walk(form).filter(el => el.tagName === 'textarea').map(el => el.value), ['Old goal', 'Old done']);
+  fire(form, 'submit');
+  assert.equal(f.sent[0].msg.expectedUpdatedAt, 'v1');
+});
+
+test('goal saves require a revision and refuse incomplete exports', async () => {
+  const f = fixture();
+  let writes = 0;
+  f.rt.beads.update = async (id, patch, actor, check) => { check({ issues: Object.values(f.live), errors: ['missing row'] }); writes++; };
+  for (const expectedUpdatedAt of [undefined, null, '', 5, 'v1']) {
+    const reply = await request(f, 'hive-cell-goal', { goal: '', acceptance: '', expectedUpdatedAt });
+    assert.equal(reply.ok, false);
+  }
+  assert.equal(writes, 0);
+});
+
+test('goal save rereads the revision when bd omits updated_at in its write reply', async () => {
+  const f = fixture();
+  f.rt.beads.update = async (id, patch, actor, check) => { check({ issues: Object.values(f.live) }); Object.assign(f.live[id], { description: patch.goal, acceptance_criteria: patch.acceptance, updated_at: 'v2' }); return {}; };
+  const reply = await request(f, 'hive-cell-goal', { goal: 'New', acceptance: 'Done' });
+  assert.equal(reply.ok, true);
+  assert.equal(reply.updatedAt, 'v2');
+});
+
+test('a goal save reply without a revision disables further saves until settings reloads', t => {
+  const f = uiFixture(t);
+  fire(f.draw(cellGoalForm), 'submit');
+  f.sent[0].options.onReply({ ok: true });
+  const form = f.draw(cellGoalForm);
+  assert.ok(walk(form).filter(el => el.tagName === 'textarea').every(el => el.getAttribute('disabled') === ''));
+  fire(form, 'submit');
+  assert.equal(f.sent.length, 1);
+});
+
+test('a concurrent change during revision reread requires reopening instead of adopting its revision', async () => {
+  const f = fixture();
+  f.rt.beads.update = async (id, patch, actor, check) => { check({ issues: Object.values(f.live) }); return {}; };
+  f.live.root.description = 'Another edit';
+  const reply = await request(f, 'hive-cell-goal', { goal: 'New', acceptance: 'Done' });
+  assert.equal(reply.ok, false);
+  assert.equal(reply.code, 'partial');
+  assert.match(reply.error, /changed again/);
 });

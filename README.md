@@ -56,7 +56,7 @@ Drag the background to pan, zoom to inspect the map, and use **Fit** to see ever
 
 ### Settings and hive details
 
-The cog at the top right opens **Settings**. **This hive** contains queen instructions, watchdog thresholds, Codex approvals, reviewers and hive lifecycle actions. **All hives** contains worker capacity, decorative bees, the bd executable and request notifications. On the All hives map and in captured snapshots, settings open directly to **All hives**. Click a hive title for its goal and done criteria, or its queen pill for queen status and management.
+The cog at the top right opens **Settings**. **This hive** contains editable Goal and Done when fields, queen instructions, watchdog thresholds, Codex approvals, reviewers and hive lifecycle actions. **All hives** contains worker capacity, decorative bees, the bd executable and request notifications. On the All hives map and in captured snapshots, settings open directly to **All hives**. Click a hive title to rename its Agent Wrangler task in place: Enter saves and Escape cancels. Click its queen pill for queen status and management. Snapshot and retired hives stay read-only; snapshot board briefs appear in Details.
 
 ### Codex approvals
 

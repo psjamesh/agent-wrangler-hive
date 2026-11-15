@@ -37,12 +37,12 @@ export function cellTitle({ graph, ui, send }, cell) {
 export function cellGoalForm({ hive, ui, send }, cell) {
   const root = hive.beads[cell.rootBeadId];
   const key = `goal:${cell.id}`;
-  const readOnly = Boolean(cell.snapshot || cell.retired || !root);
   let draft = ui.form(key);
   if (!draft) {
     draft = { goal: root?.goal || '', acceptance: root?.acceptance || '', expectedUpdatedAt: root?.updatedAt };
-    ui.patchForm(key, draft);
+    if (root?.updatedAt) ui.patchForm(key, draft);
   }
+  const readOnly = Boolean(cell.snapshot || cell.retired || !root || !draft.expectedUpdatedAt);
   return h('form', {
     class: 'hive-form hive-goal', onsubmit: event => {
       event.preventDefault();
