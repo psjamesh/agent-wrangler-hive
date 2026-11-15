@@ -228,7 +228,7 @@ test('finishing unclaimed ready work retires its authorization durably', async (
   const f = pickupFixture(); await arm(f);
   f.rt.beads.close = async id => { f.live[id].status = 'closed'; f.bump(id); };
   const { finishBead } = await import('../server/ops.js');
-  await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'No worker needed' });
+  await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'No worker needed' });
   assert.equal(Object.values(f.doc().pickupAttempts)[0]?.source, 'finish');
 });
 
