@@ -2,7 +2,7 @@ import { compareTopics } from './topic-order.js';
 import { h, relativeTime, markdown, sessionReference } from './dom.js';
 import { hiveLink } from './deep-links.js';
 import { needsHuman, requestAuthor } from './requests.js';
-import { cellName, queenNeedsAttention, queenNotResponding } from './model.js';
+import { cellName, queenNeedsAttention, queenNotResponding, queenStopped } from './model.js';
 import { filterRows, highlightParts, searchTerms, snippetFor } from './inbox-search.js';
 import { inboxMessages, inboxMessageCount, topicTitles, topicPriorities, messageAuthor } from './conversation.js';
 
@@ -17,8 +17,9 @@ export function needsRows(ctx, cells) {
   const rows = [];
   for (const cell of cells) {
     const unresponsive = queenNotResponding(graph, cell);
-    const title = unresponsive ? 'Queen not responding' : 'Queen needs attention';
-    const preview = unresponsive ? 'Pending input has had no queen activity. Open the queen session to check.' : 'The queen is waiting for input at its terminal.';
+    const stopped = queenStopped(graph, cell);
+    const title = stopped ? 'Queen stopped' : unresponsive ? 'Queen not responding' : 'Queen needs attention';
+    const preview = stopped ? 'The queen has stopped with unanswered input. Open the hive to resume or replace it.' : unresponsive ? 'Pending input has had no queen activity. Open the queen session to check.' : 'The queen is waiting for input at its terminal.';
     if (queenNeedsAttention(graph, cell)) rows.push({
       key: `queen:${cell.id}`, cellId: cell.id, hive: cellName(graph, cell), title, at: 0, hideTime: true,
       preview, texts: [title, preview], beadIds: [],

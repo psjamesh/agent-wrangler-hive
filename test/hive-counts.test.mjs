@@ -265,3 +265,28 @@ test('client clock refreshes overdue queen attention without a new snapshot and 
   } finally { f.view.unmount(root); }
   assert.equal(cleared, 42);
 });
+
+test('stopped queens appear in global and hive inboxes and tab badge until running again', t => {
+  const f = fixture(t);
+  f.cell.queenSessionId = 'queen';
+  f.doc.requests = { private: { id: 'private', cellId: f.cell.id, title: 'Private question', audience: 'queen', state: 'open', createdAt: Date.now() } };
+  const queen = { sessionId: 'queen', status: 'exited' };
+  f.graph.sessions.push(queen);
+  f.ui.setInboxView(f.cell.id, 'human');
+  for (const state of [{ status: 'exited' }, { status: 'errored' }, { status: 'idle', archived: true }, { status: 'working', archived: false }]) {
+    Object.assign(queen, state);
+    const stopped = queen.status !== 'working';
+    const tile = f.draw();
+    f.graph.hive = f.hive;
+    assert.equal(f.view.badge(f.graph), Number(stopped));
+    assert.equal(counter(tile, 'needs')?.querySelector('text')?.textContent ?? '0', String(Number(stopped)));
+    const context = { hive: f.hive, graph: f.graph, ui: f.ui, api: {}, ctx: { uiVersion: 1, busy: () => false, send() {} } };
+    const projected = f.hive.cells[f.cell.id];
+    for (const list of [globalInbox(context, [projected]), renderConversation({ ...context, cell: projected }).list]) {
+      const rows = list.querySelectorAll('.hive-inbox-item').filter(row => row.textContent.includes('Queen stopped'));
+      assert.equal(rows.length, Number(stopped));
+      assert.equal(list.textContent.includes('Private question'), false);
+      if (stopped) assert.equal(rows[0].querySelector('a').getAttribute('href'), '#session=queen');
+    }
+  }
+});

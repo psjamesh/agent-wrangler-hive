@@ -33,10 +33,16 @@ export function queenNotResponding(graph, cell, now = Date.now()) {
   return now - cell.queenResponse.pendingSince >= minutes * 60000;
 }
 
+export function queenStopped(graph, cell) {
+  if (!cell.enabled || cell.snapshot || cell.retired || !cell.queenResponse?.pendingSince) return false;
+  const queen = sessionNode(graph, cell.queenSessionId);
+  return Boolean(queen && (queen.archived || ['exited', 'errored'].includes(queen.status)));
+}
+
 export function queenNeedsAttention(graph, cell, now = Date.now()) {
   if (!cell.enabled || cell.snapshot || cell.retired) return false;
   const queen = sessionNode(graph, cell.queenSessionId);
-  return Boolean(queen && !queen.archived && (['needs-input', 'needs-you'].includes(queen.status) || queenNotResponding(graph, cell, now)));
+  return queenStopped(graph, cell) || Boolean(queen && !queen.archived && (['needs-input', 'needs-you'].includes(queen.status) || queenNotResponding(graph, cell, now)));
 }
 
 export function statusDot(graph, sessionId) {
