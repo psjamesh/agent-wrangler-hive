@@ -1745,7 +1745,7 @@ test('hive_update_bead warns when it blocks on the human with no open request, a
 test('hive_update_bead warns for next-action human waits but not queen or worker actions', async () => {
   const f = statusFixture();
   const actor = f.actor();
-  for (const next_action of ["Browser trials need the human's go-ahead", 'Needs human approval', 'Obtain the human’s decision']) {
+  for (const next_action of ["Browser trials need the human's go-ahead", 'Needs human approval', 'Obtain the human’s decision', "Can't start trials until we get the human's go-ahead", 'Wait for human approval']) {
     const out = await updateBead(f.rt, actor, { bead_id: 'a', next_action });
     assert.match(out.warning, /hive_request_input/, next_action);
   }

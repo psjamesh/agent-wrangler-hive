@@ -291,6 +291,25 @@ test('only explicit human-wait clauses count; human-readable and negated mention
     assert.equal(waitsOnHuman(no), false, String(no));
 });
 
+test('human-wait requirements after until, unless or before retain their own negation scope', async () => {
+  const { waitsOnHuman } = await import('../server/human-wait.js');
+  for (const yes of [
+    "Can't start browser trials until we get the human's go-ahead",
+    'Do not merge until the human must approve',
+    'Never proceed unless we obtain human approval',
+    'Do not start before we get human confirmation',
+    'Human go-ahead needed for browser trials',
+    "Wait for the human's go-ahead", 'Hold for human approval',
+  ]) assert.equal(waitsOnHuman(yes), true, yes);
+  for (const no of [
+    "Trials do not need the human's approval",
+    'Do not merge until CI passes', 'Wait for the queen to approve',
+    'Hold for worker confirmation', 'Human go-ahead is not needed',
+    'Do not merge until human approval is no longer needed',
+    'Do not merge until we do not need human approval',
+  ]) assert.equal(waitsOnHuman(no), false, no);
+});
+
 test('human-readable waiting text does not flag', t => {
   const f = fixture(t);
   f.bead('ci', { status: 'deferred', resume: { reviewAt: '2099-01-01' }, waitingFor: 'Waiting for CI to emit human-readable diagnostics' });
