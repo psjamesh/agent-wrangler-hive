@@ -6,6 +6,7 @@ import { availableSessionHref } from './session-links.js';
 import { assertPickupAuthorization, assertPickupClaimed, consumePickup, catalogHold, pickupReadUnavailable, retryUnsubmittedPickup } from './pickup.js';
 import { reservePickupStart } from './launch-budget.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
+import { liveClaimant } from './tracking.js';
 import { holdsBead } from './bead-sessions.js';
 import { assertCurrent } from './lifetime.js';
 import { newId } from './metadata-store.js';
@@ -95,6 +96,11 @@ function heldOpenBead(rt, graph, sid, launch) {
   const held = [...inCell].filter((id) => id !== cell.rootBeadId && graph.beads[id]?.assignee === mine && graph.beads[id].status !== 'closed' && !GROUP_KINDS.has(graph.beads[id].kind)).sort();
   const bound = new Set((rt.metadata.read().bindings?.[launch.cellId] || []).filter((x) => x.active && x.sessionId === sid).map((x) => x.beadId));
   return held.find((id) => bound.has(id)) || held[0] || null;
+}
+
+function requireHelperHolder(host, graph, beadId) {
+  const owner = graph.beads[beadId]?.assignee;
+  if (!owner?.startsWith('aw:') || !liveClaimant(host, owner.slice(3))) throw new HiveError('A helper requires a live claim holder on its bead.', 'refused');
 }
 
 function requireLaunchScope(actor, graph, beadId) {
@@ -189,6 +195,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
           const access = requireBeadAccess(rt, requester, target);
           if (access.cell.id !== l.cellId) throw new HiveError('The worker bead moved to another cell.');
           requireLaunchScope(requester, graph, target);
+          if (initial && l.role === 'investigator') requireHelperHolder(host, graph, target);
           checkAdmission(rt, graph, target, { sessionId: sid, launchId, review: l.role !== 'worker', revalidateCapacity: restoring });
         } catch (err) {
           if (held) throw new HiveError(`${String(err.message).replace(/\.?$/, ".")} This worker holds an open claim on ${held}; the queen should release it or hand it over.`, err.code);
@@ -286,6 +293,7 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     const { bead, cell } = requireBeadAccess(rt, actor, input.bead_id);
     if (cell.id !== actor.cell.id || bead.id === cell.rootBeadId) throw new HiveError('Launch a worker for a bead in this cell, below its goal.');
     requireLaunchScope(actor, graph, bead.id);
+    if (role === 'investigator') requireHelperHolder(host, graph, bead.id);
     reviewForLaunch(rt, { reviewId, beadId: bead.id, cellId: cell.id });
     checkAdmission(rt, graph, bead.id, { sessionId: null, review: attach });
     const automatic = pickup ? { ...pickup, source: 'automatic', profile: structuredClone(graph.beads[bead.id].pickup.profile), briefDigest: graph.beads[bead.id].pickup.briefDigest } : {};

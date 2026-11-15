@@ -1263,6 +1263,11 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
   } else if (cleanRole === 'coordinator' && actor.role !== 'coordinator' && actor.role !== 'queen') {
     throw new AccessError('Only the queen can grant the coordinator role.');
   }
+  if (cleanRole === 'investigator' && !unbind) {
+    const bindings = (rt.metadata.read().bindings[cell.id] || []).filter(b => b.active && b.sessionId === target);
+    const holder = Object.values(rt.snapshots.graph.beads).some(b => holdsBead(rt, host, target, b.id));
+    if (cell.queenSessionId === target || bindings.some(b => ['coordinator', 'reviewer'].includes(b.role)) || holder) throw new AccessError('A queen, coordinator, reviewer or live claim holder cannot be bound as a helper.');
+  }
   if (cleanRole === 'reviewer' && !unbind) {
     const targetSession = host.sessions.get(target);
     assertAllowedReviewer({ agent: targetSession?.agent, model: targetSession?.model });
@@ -1273,6 +1278,7 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
       || Object.values(doc.workerLaunches || {}).some((l) => l.sessionId === target && l.beadId === beadId && !l.reviewId)
       || rt.snapshots.graph.beads[beadId]?.assignee === actorFor(target);
     if (worked) throw new AccessError('A session that has worked on this bead cannot review it.');
+    requireNonHelper(rt, { sessionId: target, cell }, 'review beads');
   }
   if (attachRole && beadId && !unbind) checkAdmission(rt, await rt.beads.loadSnapshot({ all: true }), beadId, { sessionId: null, review: true });
   const by = actorFor(actor.sessionId);
@@ -1306,10 +1312,11 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
     const existing = list.find((b) => b.active && b.sessionId === target && b.beadId === beadId);
     if (existing && !reviewId) {
       existing.role = cleanRole;
+      existing.helper = cleanRole === 'investigator';
       existing.note = noteText;
     } else {
       if (existing) existing.active = false;
-      list.push({ id: newId('bind'), sessionId: target, beadId, role: cleanRole, note: noteText, boundBy: by, at, active: true, ...(reviewId ? { reviewId } : {}) });
+      list.push({ id: newId('bind'), sessionId: target, beadId, role: cleanRole, ...(cleanRole === 'investigator' ? { helper: true } : {}), note: noteText, boundBy: by, at, active: true, ...(reviewId ? { reviewId } : {}) });
     }
     if (reviewId) {
       const builderSid = rt.snapshots.graph.beads[beadId].assignee?.startsWith('aw:') ? rt.snapshots.graph.beads[beadId].assignee.slice(3) : null;

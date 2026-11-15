@@ -2437,3 +2437,53 @@ test('a refused scheduled resume preserves an in-flight manual restore reservati
   assert.equal(f.rt.workerRestores.size, 0);
   assert.equal(capacity(f.rt).used, 1);
 });
+
+for (const target of ['queen', 'coordinator', 'other', 'builder']) test(`helper binding cannot demote ${target}`, async () => {
+  const f = holderFixture('codex', 0);
+  f.board.set('coordinator', { sessionId: 'coordinator', taskId: 'task', status: 'working' });
+  await bindSession(f.rt, f.host, f.actor(), { session_id: 'coordinator', role: 'coordinator' });
+  await claimBead(f.rt, f.worker('other'), { bead_id: 'b' });
+  await assert.rejects(bindSession(f.rt, f.host, f.worker('builder'), { bead_id: 'a', session_id: target, role: 'helper' }), /holder|queen|coordinator|helper/i);
+});
+
+for (const target of ['queen', 'other', 'legacy']) test(`legacy helper metadata preserves ${target} authority`, async () => {
+  const f = holderFixture('codex', 0); await launchRecording(f);
+  if (target === 'other') await claimBead(f.rt, f.worker('other'), { bead_id: 'b' });
+  if (target === 'legacy') f.board.set(target, { sessionId: target, taskId: 'task', status: 'working' });
+  f.rt.metadata.mutate(d => { (d.bindings.cell ||= []).push({ sessionId: target, beadId: 'a', role: 'investigator', active: true, autoEnrolled: true }); });
+  if (target === 'queen') await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'b', intent: 'Build' });
+  else if (target === 'other') await reviews.requestReview(f.rt, f.host, f.worker(target), { bead_id: 'b', intent: 'Review' });
+  else await claimBead(f.rt, f.worker(target), { bead_id: 'b' });
+});
+
+test('a helper requires a live holder and retains the bead slot after release', async () => {
+  const f = holderFixture('codex', 1); await launchRecording(f);
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'b', intent: 'Help' }, { role: 'investigator' }), /live claim holder/i);
+  f.board.get('builder').archived = true;
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'Help' }, { role: 'investigator' }), /live claim holder/i);
+  f.board.get('builder').archived = false;
+  const helper = await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'Help' }, { role: 'investigator' });
+  f.live.a.assignee = null; f.live.a.status = 'open';
+  await f.rt.snapshots.refresh();
+  assert.equal(capacity(f.rt).used, 1);
+  await assert.rejects(claimBead(f.rt, f.worker('other'), { bead_id: 'b' }), /limit/i);
+  f.board.get(helper.session_id).status = 'exited';
+  assert.equal(capacity(f.rt).used, 0);
+});
+
+test('a launched helper cannot be nominated to review another bead', async () => {
+  const f = holderFixture('codex', 0); await launchRecording(f);
+  const helper = await workers.spawnWorker(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'Help' }, { role: 'investigator' });
+  await assert.rejects(bindSession(f.rt, f.host, f.actor(), { bead_id: 'b', session_id: helper.session_id, role: 'review' }), /helper/i);
+});
+
+test('helper startup rechecks the live holder after dispatch', async () => {
+  const f = holderFixture('codex', 0); await launchRecording(f);
+  const spawn = f.host.sessions.spawn;
+  f.host.sessions.spawn = opts => {
+    f.live.a.assignee = null; f.live.a.status = 'open';
+    return spawn(opts);
+  };
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'Help' }, { role: 'investigator' }), /live claim holder/i);
+  assert.equal(f.live.a.assignee, null);
+});
