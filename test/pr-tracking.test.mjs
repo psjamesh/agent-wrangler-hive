@@ -14,20 +14,20 @@ const OTHER = 'https://github.com/example/repo/pull/43';
 function fixture() {
   const doc = { cells: { cell: { id: 'cell', taskId: 'task', rootBeadId: 'hive-root', enabled: true } }, bindings: { cell: [] }, prLabels: {} };
   const runtime = { metadata: { read: () => doc, mutate: fn => fn(doc) }, pendingParticipants: new Map() };
-  const f = { doc, runtime, time: 0, links: [PR], searches: [], views: [], additions: [], labelled: new Set(), states: new Map([[PR, 'OPEN'], [OTHER, 'MERGED']]), searchResults: [], stateError: null };
-  f.host = { version: '1.70.0', sessions: { list: () => [{ sessionId: SID }] }, tasks: { forSession: () => ({ taskId: 'task' }) }, links: { get: () => f.links.map(url => ({ type: 'pr', url })) } };
+  const f = { doc, runtime, time: 0, links: [PR], searches: [], views: [], additions: [], labelled: new Set(), states: new Map([[PR, 'OPEN'], [OTHER, 'MERGED']]), searchResults: [], stateError: null, ids: new Map(), createdAt: '1970-01-01T00:00:00Z' };
+  f.host = { version: '1.70.0', sessions: { list: () => [{ sessionId: SID }] }, tasks: { forSession: () => ({ taskId: 'task' }) }, links: { get: () => f.links.map(url => ({ type: 'pr', url, checkStatusFetchedAt: f.linkCheckedAt })) } };
   f.gh = async args => {
     if (args[0] === 'search') {
-      assert.deepEqual(args, ['search', 'prs', '--repo', 'example/repo', '--label', 'hive', '--limit', '1000', '--json', 'url']);
+      assert.deepEqual(args, ['search', 'prs', '--repo', 'example/repo', '--label', 'hive', '--state', 'open', '--sort', 'updated', '--order', 'desc', '--limit', '100', '--json', 'url,id,createdAt']);
       f.searches.push(args);
-      return JSON.stringify(f.searchResults.map(url => ({ url })));
+      return JSON.stringify(f.searchResults.map(url => ({ url, id: f.ids.get(url) || `node:${url}`, createdAt: f.createdAt })));
     }
     if (args[1] === 'view') {
       f.views.push(args);
       if (args[4] === 'labels') return JSON.stringify({ labels: f.labelled.has(args[2]) ? [{ name: 'hive' }] : [] });
       assert.match(args[4], /^state,/);
       if (f.stateError) throw new Error(f.stateError);
-      return JSON.stringify({ state: f.states.get(args[2]) });
+      return JSON.stringify({ state: f.states.get(args[2]), id: f.ids.get(args[2]) || `node:${args[2]}`, createdAt: f.createdAt });
     }
     assert.deepEqual(args, ['pr', 'edit', args[2], '--add-label', 'hive']);
     f.additions.push(args[2]);
@@ -68,18 +68,81 @@ test('a session without bead bindings has a distinguishable cell-root associatio
   assert.deepEqual(f.doc.prLabels[PR].associations, [{ cellId: 'cell', beadId: 'hive-root', kind: 'cell-root' }]);
 });
 
-test('state polling tracks closing, reopening and merging independently of AW links', async () => {
+for (const terminal of ['CLOSED', 'MERGED']) {
+  test(`state polling stops after a final ${terminal} observation, including after restart`, async () => {
+    const f = fixture();
+    await f.sweep.run();
+    f.links = [];
+    f.time = 60000;
+    f.states.set(PR, terminal);
+    await f.sweep.run();
+    const reads = f.views.length;
+    assert.equal(f.doc.prLabels[PR].state, terminal);
+    f.restart();
+    f.time = 120000;
+    await f.sweep.run();
+    assert.equal(f.views.length, reads);
+    assert.equal(f.doc.prLabels[PR].stateCheckedAt, 60000);
+  });
+}
+
+test('open label discovery resumes observation of a reopened historical PR', async () => {
+  const f = fixture();
+  f.links = [];
+  f.doc.prLabels[PR] = { url: PR, nodeId: `node:${PR}`, status: 'labelled', state: 'CLOSED', stateCheckedAt: 0 };
+  await f.sweep.run();
+  assert.equal(f.views.length, 0);
+  f.time = 300000;
+  f.searchResults = [PR];
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].state, 'OPEN');
+  assert.equal(f.doc.prLabels[PR].stateCheckedAt, 300000);
+});
+
+test('20 open and 100 historical PRs cost 20 state queries per sweep', async () => {
+  const f = fixture();
+  f.links = [];
+  for (let number = 1; number <= 120; number++) {
+    const url = `https://github.com/example/repo/pull/${number}`;
+    f.doc.prLabels[url] = { url, nodeId: `node:${url}`, status: 'labelled', state: number <= 20 ? 'OPEN' : number % 2 ? 'MERGED' : 'CLOSED' };
+    f.states.set(url, number <= 20 ? 'OPEN' : 'MERGED');
+  }
+  for (let minute = 0; minute < 60; minute++) {
+    f.time = minute * 60000;
+    await f.sweep.run();
+  }
+  assert.equal(f.views.length, 1200);
+  assert.equal(f.searches.length, 12);
+});
+
+test('successful discovery is limited to once per five minutes per repository', async () => {
   const f = fixture();
   await f.sweep.run();
-  f.links = [];
-  for (const state of ['CLOSED', 'OPEN', 'MERGED']) {
-    f.time += 60000;
-    f.states.set(PR, state);
-    await f.sweep.run();
-    assert.equal(f.doc.prLabels[PR].state, state);
-    assert.equal(f.doc.prLabels[PR].stateCheckedAt, f.time);
-  }
-  assert.deepEqual(f.additions, [PR]);
+  for (const time of [0, 60000, 299999]) { f.time = time; await f.sweep.run(); }
+  assert.equal(f.searches.length, 1);
+  f.time = 300000;
+  await f.sweep.run();
+  assert.equal(f.searches.length, 2);
+});
+
+test('failed discovery backs off without preventing active PR observations', async () => {
+  let time = 0, searches = 0;
+  const tracker = createPrTracker({ now: () => time, gh: async args => {
+    if (args[0] === 'search') { searches++; throw new Error('temporary search failure'); }
+    return JSON.stringify({ state: 'OPEN', id: 'node:pr', createdAt: '1970-01-01T00:00:00Z' });
+  } });
+  await tracker.search('example/repo');
+  await tracker.search('example/repo');
+  assert.equal(searches, 1);
+  assert.equal((await tracker.state(PR)).state, 'OPEN');
+  time = 60000;
+  await tracker.search('example/repo');
+  time = 120000;
+  await tracker.search('example/repo');
+  assert.equal(searches, 2);
+  time = 180000;
+  await tracker.search('example/repo');
+  assert.equal(searches, 3);
 });
 
 test('label search in known repositories records unknown PRs as unassigned without writing labels', async () => {
@@ -192,10 +255,9 @@ for (const stage of ['search', 'state', 'edit', 'buffered-state']) {
     const file = path.join(root, 'metadata.json');
     const oldStore = new MetadataStore({ file });
     oldStore.mutate(doc => {
-      doc.prLabels[PR] = { url: PR, source: 'session-link', status: stage === 'edit' ? 'pending' : 'labelled' };
+      doc.prLabels[PR] = { url: PR, firstSeenAt: Date.now(), source: 'session-link', status: stage === 'edit' ? 'pending' : 'labelled' };
       if (stage === 'buffered-state') doc.prLabels[OTHER] = { url: OTHER, source: 'session-link', status: 'labelled' };
     });
-    const oldVersion = oldStore.version;
     let enter, release;
     const entered = new Promise(resolve => { enter = resolve; });
     const blocked = new Promise(resolve => { release = resolve; });
@@ -210,7 +272,7 @@ for (const stage of ['search', 'state', 'edit', 'buffered-state']) {
       if (args[0] === 'search') return JSON.stringify(stage === 'search' ? [{ url: OTHER }] : []);
       if (args[4]?.startsWith('state,')) {
         if (stage === 'buffered-state' && args[2] === OTHER) throw new Error('state unavailable');
-        return JSON.stringify({ state: 'OPEN' });
+        return JSON.stringify({ state: 'OPEN', id: 'node:pr', createdAt: '1970-01-01T00:00:00Z' });
       }
       if (args[4] === 'labels') return JSON.stringify({ labels: labelled.has(args[2]) ? [{ name: 'hive' }] : [] });
       assert.deepEqual(args, ['pr', 'edit', args[2], '--add-label', 'hive']);
@@ -224,6 +286,7 @@ for (const stage of ['search', 'state', 'edit', 'buffered-state']) {
     const oldSweep = makeSweep(oldStore);
     const pending = oldSweep.run();
     await entered;
+    const oldVersion = oldStore.version;
     oldSweep.stop();
     const replacement = new MetadataStore({ file });
     const newPr = 'https://github.com/example/repo/pull/44';
@@ -244,3 +307,172 @@ for (const stage of ['search', 'state', 'edit', 'buffered-state']) {
     }
   });
 }
+
+test('legacy terminal URLs get one identity observation before terminal polling stops', async () => {
+  const f = fixture();
+  f.links = [];
+  f.doc.prLabels[PR] = { url: PR, source: 'session-link', status: 'labelled', state: 'MERGED', firstSeenAt: 0, beadIds: ['old'] };
+  f.states.set(PR, 'MERGED');
+  await f.sweep.run();
+  assert.equal(f.views.length, 1);
+  assert.equal(f.doc.prLabels[PR].nodeId, `node:${PR}`);
+  f.restart();
+  await f.sweep.run();
+  assert.equal(f.views.length, 1);
+});
+
+for (const existing of [
+  { state: 'MERGED', nodeId: 'old-node', createdAt: '1970-01-01T00:00:00Z' },
+  { state: 'MERGED' },
+  { state: 'OPEN', nodeId: 'old-node', createdAt: '1970-01-01T00:00:00Z' },
+]) {
+  test(`reused URL replaces stale ${existing.state} attribution (${existing.nodeId || 'legacy'})`, async () => {
+    const f = fixture();
+    f.time = 100000;
+    f.createdAt = '1970-01-01T00:01:00Z';
+    f.ids.set(PR, 'new-node');
+    f.doc.bindings.cell = [{ active: true, sessionId: SID, beadId: 'new-bead' }];
+    f.doc.prLabels[PR] = { url: PR, source: 'session-link', sessionId: 'old-session', cellIds: ['old-cell'], associations: [{ cellId: 'old-cell', beadId: 'old-bead' }], beadIds: ['old-bead'], firstSeenAt: 0, status: 'labelled', humanAttention: { headSha: 'old' }, ...existing };
+    await f.sweep.run();
+    const saved = f.doc.prLabels[PR];
+    assert.equal(saved.nodeId, 'new-node');
+    assert.equal(saved.state, 'OPEN');
+    assert.equal(saved.sessionId, SID);
+    assert.deepEqual(saved.beadIds, ['new-bead']);
+    assert.equal(saved.firstSeenAt, 100000);
+    assert.equal(saved.humanAttention, null);
+    assert.deepEqual(f.additions, [PR], 'new PR receives its own label attribution');
+  });
+}
+
+test('open discovery detects a reused terminal URL even without a current link', async () => {
+  const f = fixture();
+  f.links = [];
+  f.searchResults = [PR];
+  f.doc.prLabels[PR] = { url: PR, source: 'session-link', sessionId: 'old-session', beadIds: ['old-bead'], status: 'labelled', state: 'MERGED', nodeId: 'old-node' };
+  await f.sweep.run();
+  const saved = f.doc.prLabels[PR];
+  assert.equal(saved.nodeId, `node:${PR}`);
+  assert.equal(saved.source, 'label-search');
+  assert.equal(saved.sessionId, null);
+  assert.deepEqual(saved.beadIds, []);
+});
+
+test('failed identity migration cannot confirm stale terminal identity', async () => {
+  const f = fixture();
+  f.links = [];
+  f.doc.prLabels[PR] = { url: PR, status: 'labelled', state: 'MERGED' };
+  f.stateError = 'temporary outage';
+  await f.sweep.run();
+  assert.ok(f.doc.prLabels[PR].observationError);
+  assert.equal(f.doc.prLabels[PR].nodeId, undefined);
+  f.time = 60000;
+  f.stateError = null;
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].state, 'OPEN');
+});
+
+test('a newer core OPEN link observation rechecks an unlabelled reopened PR', async () => {
+  const f = fixture();
+  f.states.set(PR, 'CLOSED');
+  await f.sweep.run();
+  const reads = f.views.length;
+  f.time = 60000;
+  f.states.set(PR, 'OPEN');
+  f.linkCheckedAt = new Date(60000).toISOString();
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].state, 'OPEN');
+  assert.equal(f.views.length, reads + 1);
+});
+
+test('failed rediscovery leaves terminal state confirmed instead of exposing stale OPEN checks', async () => {
+  const f = fixture();
+  f.links = [];
+  f.doc.prLabels[PR] = { url: PR, nodeId: `node:${PR}`, firstSeenAt: 0, status: 'labelled', state: 'CLOSED', headSha: 'old-head', checks: 'green' };
+  f.searchResults = [PR];
+  f.stateError = 'offline';
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].state, 'CLOSED');
+  assert.ok(f.doc.prLabels[PR].observationError);
+});
+
+test('an unlinked identity replacement remains unlabelled and is attributed on a later session link', async () => {
+  const f = fixture();
+  f.links = [];
+  f.doc.prLabels[PR] = { url: PR, nodeId: 'old-node', source: 'session-link', sessionId: 'old', beadIds: ['old'], state: 'OPEN', status: 'labelled' };
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].status, 'unlabelled');
+  assert.equal(f.doc.prLabels[PR].labelledAt, null);
+  f.links = [PR];
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].status, 'labelled');
+  assert.equal(f.doc.prLabels[PR].sessionId, SID);
+  assert.deepEqual(f.additions, [PR]);
+});
+
+for (const terminal of ['MERGED', 'CLOSED']) {
+  test(`${terminal} pending labels get only one final attempt across restarts`, async () => {
+    const f = fixture();
+    f.states.set(PR, terminal);
+    let attempts = 0;
+    const start = () => { f.sweep = createPrLabelSweep({ runtime: f.runtime, host: f.host, now: () => f.time,
+      tracker: createPrTracker({ gh: f.gh, now: () => f.time }), labeler: { stop() {}, async apply() { attempts++; } } }); };
+    start();
+    await f.sweep.run();
+    assert.equal(f.doc.prLabels[PR].status, 'unlabelled');
+    assert.equal(f.doc.prLabels[PR].terminalLabelAttempted, true);
+    f.links = [];
+    for (let minute = 1; minute < 60; minute++) { f.time = minute * 60000; start(); await f.sweep.run(); }
+    assert.equal(attempts, 1);
+    f.states.set(PR, 'OPEN');
+    f.searchResults = [PR];
+    f.time = 3600000;
+    start(); await f.sweep.run();
+    assert.equal(attempts, 2, 'reopening resets attribution eligibility');
+  });
+}
+
+test('repo label configuration failure is persisted and gates every pending PR until retry', async () => {
+  const f = fixture();
+  f.links = [PR, OTHER];
+  f.states.set(OTHER, 'OPEN');
+  let edits = 0;
+  const gh = f.gh;
+  f.gh = async args => {
+    if (args[1] === 'edit') { edits++; throw new Error('HTTP 403 write access denied'); }
+    return gh(args);
+  };
+  f.restart();
+  await f.sweep.run();
+  assert.equal(edits, 1);
+  assert.match(f.doc.prLabelRepos['example/repo'].message, /403/);
+  f.time = 60000;
+  f.restart();
+  await f.sweep.run();
+  assert.equal(edits, 1, 'restart cannot fan out repository failures');
+  f.time = 900000;
+  await f.sweep.run();
+  assert.equal(edits, 2);
+});
+
+test('global label backoff defers terminal records without spending their final attempt', async () => {
+  const f = fixture();
+  f.links = [PR, OTHER];
+  f.states.set(PR, 'MERGED'); f.states.set(OTHER, 'MERGED');
+  const gh = f.gh;
+  let labelReads = 0;
+  f.gh = async args => {
+    if (args[4] === 'labels' && ++labelReads === 1) throw new Error('HTTP 429 rate limit');
+    return gh(args);
+  };
+  f.restart();
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].status, 'unlabelled', 'the attempted failure spends its budget');
+  assert.equal(labelReads, 1);
+  assert.equal(f.doc.prLabels[OTHER].status, 'pending', 'a deferred PR keeps its budget');
+  assert.equal(f.doc.prLabels[OTHER].terminalLabelAttempted, false);
+  f.time = 60000;
+  await f.sweep.run();
+  assert.equal(labelReads, 2);
+  assert.equal(f.doc.prLabels[OTHER].status, 'labelled');
+});

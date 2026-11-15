@@ -485,7 +485,7 @@ test('open PR linked to a closed-bead session flags and notifies until the link 
   f.host.links = { get: () => links };
   f.rt.metadata.mutate(d => {
     d.bindings.cell = [{ sessionId: 'worker', beadId: 'work', active: true }];
-    d.prLabels[url] = { url, state: 'OPEN' };
+    d.prLabels[url] = { url, state: 'OPEN', stateCheckedAt: f.now() + 1 };
   });
   f.beads.work.status = 'closed';
   const flag = f.flags().find(x => x.kind === 'closed_bead_pr');
@@ -508,7 +508,7 @@ test('closed-bead PR flags require a current binding, live card, actual link and
   f.host.links = { get: () => [{ type: 'pr', url }] };
   f.rt.metadata.mutate(d => {
     d.bindings.cell = [{ sessionId: 'worker', beadId: 'work', active: true }];
-    d.prLabels[url] = { url, state: 'OPEN' };
+    d.prLabels[url] = { url, state: 'OPEN', stateCheckedAt: f.now() + 1 };
     d.cells.other = { id: 'other', enabled: true, rootBeadId: 'other-root' };
   });
   f.beads['other-root'] = { id: 'other-root', status: 'open' };
@@ -534,4 +534,53 @@ test('stalled flags persist a toast episode across restarts and renew after reco
   f.sessions.worker.status = 'working'; await f.watchdog.run();
   f.sessions.worker.status = 'idle'; await f.watchdog.run();
   assert.notEqual(Object.values(f.rt.metadata.cell('cell').watchdogFlags)[0].episodeAt, first.episodeAt);
+});
+
+for (const terminal of ['MERGED', 'CLOSED']) {
+  test(`closed-bead PR attention waits for confirmation and clears on ${terminal}`, t => {
+    const f = fixture(t), url = 'https://github.com/example/repo/pull/42';
+    f.host.links = { get: () => [{ type: 'pr', url }] };
+    f.rt.metadata.mutate(d => {
+      d.bindings.cell = [{ sessionId: 'worker', beadId: 'work', active: true }];
+      d.prLabels[url] = { url, state: 'OPEN', stateCheckedAt: f.now() - 1 };
+    });
+    f.beads.work.status = 'closed';
+    f.beads.work.closedAt = f.now();
+    assert.deepEqual(f.flags(), [], 'cached OPEN before closure is not confirmation');
+    f.rt.metadata.mutate(d => { d.prLabels[url].stateCheckedAt = f.now() + 1; });
+    assert.equal(f.flags().filter(x => x.kind === 'closed_bead_pr').length, 1, 'confirmed still-open PR is flagged');
+    f.rt.metadata.mutate(d => { d.prLabels[url].observationError = { message: 'offline' }; });
+    assert.deepEqual(f.flags(), [], 'failed refresh cannot confirm current OPEN');
+    f.rt.metadata.mutate(d => { Object.assign(d.prLabels[url], { state: terminal, observationError: null }); });
+    assert.deepEqual(f.flags(), [], 'known merge/close clears stale attention');
+  });
+  test(`a PR observed ${terminal} before bead closure never raises closed-bead attention`, t => {
+    const f = fixture(t), url = 'https://github.com/example/repo/pull/42';
+    f.host.links = { get: () => [{ type: 'pr', url }] };
+    f.rt.metadata.mutate(d => {
+      d.bindings.cell = [{ sessionId: 'worker', beadId: 'work', active: true }];
+      d.prLabels[url] = { url, state: terminal, stateCheckedAt: f.now() - 1 };
+    });
+    f.beads.work.status = 'closed';
+    f.beads.work.closedAt = f.now();
+    assert.deepEqual(f.flags(), []);
+  });
+}
+
+test('repository label configuration attention is shown once until recovery', async t => {
+  const f = fixture(t), url = 'https://github.com/example/repo/pull/42';
+  f.rt.metadata.mutate(d => {
+    d.prLabels[url] = { url, cellIds: ['cell'], status: 'pending' };
+    d.prLabelRepos = { 'example/repo': { message: 'Label permission denied', at: f.now(), retryAt: f.now() + 900000 } };
+  });
+  assert.equal(f.flags().filter(flag => flag.kind === 'pr_label_configuration').length, 1);
+  await f.watchdog.run(); await f.watchdog.run();
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0].text, /permission denied/);
+  f.rt.metadata.mutate(d => { d.prLabels[url].status = 'unlabelled'; });
+  assert.deepEqual(f.flags(), [], 'no pending label work means no configuration attention');
+  f.rt.metadata.mutate(d => { d.prLabels[url].status = 'pending'; });
+  assert.equal(f.flags().filter(flag => flag.kind === 'pr_label_configuration').length, 1);
+  f.rt.metadata.mutate(d => { delete d.prLabelRepos['example/repo']; });
+  assert.deepEqual(f.flags(), []);
 });

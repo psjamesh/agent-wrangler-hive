@@ -9,8 +9,8 @@ export function prRepository(prUrl) {
 
 export function runGh(args) {
   return new Promise((resolve, reject) => {
-    const child = execFile('gh', args, { timeout: 15000, maxBuffer: 2 * 1024 * 1024 }, (error, stdout) => {
-      if (error) reject(error);
+    const child = execFile('gh', args, { timeout: 15000, maxBuffer: 2 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) { error.stderr = stderr; reject(error); }
       else resolve(stdout);
     });
     child.stdin.on('error', () => {});
@@ -62,7 +62,7 @@ export function createPrLabeler({ gh = runGh, now = Date.now } = {}) {
       const repo = prRepository(prUrl);
       const repoKey = repo?.toLowerCase();
       if (!repo || stopped || inFlight.has(prUrl) || now() < remoteRetryAt
-        || now() < (negatives.get(prUrl)?.retryAt || 0) || now() < (repoNegatives.get(repoKey)?.retryAt || 0)) return;
+        || now() < (negatives.get(prUrl)?.retryAt || 0) || now() < (repoNegatives.get(repoKey)?.retryAt || 0)) return { status: 'deferred' };
       inFlight.add(prUrl);
       try {
         if (!eligible()) return;
@@ -75,7 +75,7 @@ export function createPrLabeler({ gh = runGh, now = Date.now } = {}) {
           const message = `${err?.message || ''} ${err?.stderr || ''}`;
           if (!/label.*(?:not found|does not exist)/i.test(message) || now() < (createdRepos.get(repoKey) || 0)) throw err;
           if (stopped || !eligible()) return;
-          try { await createLabel(repo); } catch (creationError) { defer(repoNegatives, repoKey); throw creationError; }
+          try { await createLabel(repo); } catch (creationError) { defer(repoNegatives, repoKey); creationError.hiveRepoConfiguration = true; throw creationError; }
           if (stopped || !eligible()) return;
           current = await view(prUrl);
           if (!current.labelled && !stopped && eligible()) await gh(['pr', 'edit', prUrl, '--add-label', 'hive']);
@@ -93,6 +93,9 @@ export function createPrLabeler({ gh = runGh, now = Date.now } = {}) {
         if (err?.code === 'ENOENT' || /not authenticated|not logged in|gh auth login|authentication|HTTP (?:401|429)|rate.?limit/i.test(message)) {
           remoteFailures = Math.min(remoteFailures + 1, 5);
           remoteRetryAt = now() + delay(remoteFailures);
+        }
+        if (err.hiveRepoConfiguration || /label.*(?:not found|does not exist)|HTTP 403|forbidden|permission|not accessible|not permitted|write access/i.test(message)) {
+          return { status: 'blocked', message: message.replace(/\s+/g, ' ').trim().slice(0, 500) };
         }
       } finally {
         inFlight.delete(prUrl);

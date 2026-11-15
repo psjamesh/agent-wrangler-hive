@@ -233,6 +233,12 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       add('stalled_worker', bead.id, [sid, 'idle', since], since, 'Claimed worker is idle without a recorded handoff.', { bead_id: bead.id, session_id: sid });
     }
   }
+  const labelRepos = new Set(Object.values(doc.prLabels || {}).filter(record => record?.status === 'pending' && (record.cellIds?.includes(cell.id) || record.associations?.some(row => row.cellId === cell.id))).map(record => prRepository(record.url)?.toLowerCase()).filter(Boolean));
+  for (const repo of labelRepos) {
+    const failure = doc.prLabelRepos?.[repo];
+    if (failure) add('pr_label_configuration', repo, 'unavailable', failure.at,
+      `Hive PR labelling is unavailable for ${repo}: ${failure.message}. Repository label attempts are paused until ${new Date(failure.retryAt).toISOString()}.`, {});
+  }
   const linkedSessions = new Map();
   for (const binding of doc.bindings?.[cell.id] || []) {
     if (!binding.active || !ids.has(binding.beadId) || beads[binding.beadId]?.status !== 'closed') continue;
@@ -243,9 +249,12 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
   }
   for (const [sid, closedIds] of linkedSessions) {
     for (const link of host.links?.get?.(sid) || []) {
-      if (link.type !== 'pr' || !prRepository(link.url) || doc.prLabels?.[link.url]?.state !== 'OPEN') continue;
+      const observed = doc.prLabels?.[link.url];
+      if (link.type !== 'pr' || !prRepository(link.url) || observed?.state !== 'OPEN' || observed.observationError) continue;
       for (const beadId of closedIds) {
         const bead = beads[beadId];
+        const closedAt = stamp(bead.closedAt) || stamp(bead.updatedAt);
+        if (!closedAt || stamp(observed.stateCheckedAt) <= closedAt) continue;
         add('closed_bead_pr', [sid, beadId, link.url], 'OPEN', stamp(bead.closedAt) || stamp(bead.updatedAt) || now,
           `Open PR ${link.url} is still linked to a session bound to closed bead ${beadId}. Relink it to its current owner or remove the stale session link.`,
           { bead_id: beadId, session_id: sid, pr_url: link.url });

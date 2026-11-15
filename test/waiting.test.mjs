@@ -4,12 +4,12 @@ import { createPrTracker } from '../server/pr-tracking.js';
 import * as waiting from '../server/waiting.js';
 const SHA = 'a'.repeat(40), URL = 'https://github.com/example/repo/pull/7';
 const SID = '22222222-2222-4222-8222-222222222222';
-const observed = { state: 'OPEN', number: 7, title: 'Ship it', headRefOid: SHA, isDraft: false, reviewDecision: 'APPROVED', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [{ status: 'COMPLETED', conclusion: 'SUCCESS' }] };
+const observed = { id: 'node7', createdAt: '1970-01-01T00:00:00Z', state: 'OPEN', number: 7, title: 'Ship it', headRefOid: SHA, isDraft: false, reviewDecision: 'APPROVED', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [{ status: 'COMPLETED', conclusion: 'SUCCESS' }] };
 
 function fixture() {
   const beads = { 'hive-root': { id: 'hive-root' }, 'hive-a': { id: 'hive-a', parentId: 'hive-root', ownerSessionId: SID }, 'hive-b': { id: 'hive-b', parentId: 'hive-root' } };
   const cell = { id: 'cell', enabled: true, rootBeadId: 'hive-root', taskId: 'task' };
-  const doc = { cells: { cell }, conversation: { cell: [] }, threads: { cell: {} }, prLabels: { [URL]: { url: URL, state: 'OPEN', headSha: SHA, checks: 'green', reviewDecision: 'APPROVED', isDraft: false, stateCheckedAt: Date.now(), associations: [{ cellId: 'cell', beadId: 'hive-a' }, { cellId: 'cell', beadId: 'hive-b' }] } } };
+  const doc = { cells: { cell }, conversation: { cell: [] }, threads: { cell: {} }, prLabels: { [URL]: { url: URL, nodeId: 'node7', firstSeenAt: 0, state: 'OPEN', headSha: SHA, checks: 'green', reviewDecision: 'APPROVED', isDraft: false, stateCheckedAt: Date.now(), associations: [{ cellId: 'cell', beadId: 'hive-a' }, { cellId: 'cell', beadId: 'hive-b' }] } } };
   const rt = { metadata: { read: () => doc, cells: () => Object.values(doc.cells), mutate: fn => fn(doc) }, snapshots: { graph: { beads } }, changed() {} };
   const actor = { sessionId: SID, cell, role: 'worker', cells: [{ cell, role: 'worker' }] };
   return { rt, doc, beads, cell, actor };

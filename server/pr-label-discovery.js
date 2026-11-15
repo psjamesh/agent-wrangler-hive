@@ -8,6 +8,14 @@ function canReadLinks(host) {
   return major === 1 && minor >= 70 && typeof host?.links?.get === 'function';
 }
 
+function unassigned(url, at, labelled = false) {
+  return { url, source: 'label-search', sessionId: null, cellIds: [], associations: [], beadIds: [], firstSeenAt: at, enrolledAt: null, status: labelled ? 'labelled' : 'unlabelled', labelledAt: labelled ? at : null, state: null, stateCheckedAt: null };
+}
+
+function associationKey(record) {
+  return record ? JSON.stringify([record.sessionId, record.associations]) : null;
+}
+
 export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(), tracker = createPrTracker(), now = Date.now }) {
   let running = false;
   let stopped = false;
@@ -36,7 +44,7 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
             if (!cells.length) continue;
             for (const link of host.links.get(sid)) {
               if (link.type !== 'pr' || !prRepository(link.url) || discovered.has(link.url)) continue;
-              discovered.set(link.url, { url: link.url, source: 'session-link', sessionId: sid, cellIds: cells.map(cell => cell.id), associations, beadIds: [...new Set(associations.map(row => row.beadId))], firstSeenAt: now(), enrolledAt: now(), status: 'pending', labelledAt: null, state: null, stateCheckedAt: null });
+              discovered.set(link.url, { url: link.url, source: 'session-link', sessionId: sid, cellIds: cells.map(cell => cell.id), associations, beadIds: [...new Set(associations.map(row => row.beadId))], firstSeenAt: now(), enrolledAt: now(), status: 'pending', labelledAt: null, state: null, stateCheckedAt: null, coreCheckedAt: Date.parse(link.checkStatusFetchedAt) || 0 });
             }
           } catch {}
         }
@@ -47,51 +55,89 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
           for (const record of fresh) {
             const existing = doc.prLabels[record.url];
             if (!existing) doc.prLabels[record.url] = record;
-            else if (existing.source === 'label-search') Object.assign(existing, { source: record.source, sessionId: record.sessionId, cellIds: record.cellIds, associations: record.associations, beadIds: record.beadIds, enrolledAt: record.enrolledAt });
+            else if (existing.source === 'label-search') Object.assign(existing, { source: record.source, sessionId: record.sessionId, cellIds: record.cellIds, associations: record.associations, beadIds: record.beadIds, enrolledAt: record.enrolledAt, status: existing.labelledAt == null ? 'pending' : existing.status });
           }
         });
+        const searchHits = new Map();
         const repos = [...new Set(Object.values(runtime.metadata.read().prLabels || {}).map(record => prRepository(record?.url)).filter(Boolean))];
         for (const repo of repos) {
           if (!active()) break;
           const found = await tracker.search(repo);
           if (!active()) return;
-          const unknown = found.filter(url => !Object.hasOwn(runtime.metadata.read().prLabels || {}, url));
+          for (const hit of found) searchHits.set(hit.url, hit);
+          const unknown = found.filter(hit => !Object.hasOwn(runtime.metadata.read().prLabels || {}, hit.url));
           if (unknown.length) runtime.metadata.mutate(doc => {
-            for (const url of unknown) if (!Object.hasOwn(doc.prLabels, url)) doc.prLabels[url] = { url, source: 'label-search', sessionId: null, cellIds: [], associations: [], beadIds: [], firstSeenAt: now(), enrolledAt: null, status: 'labelled', labelledAt: now(), state: null, stateCheckedAt: null };
+            for (const { url } of unknown) if (!Object.hasOwn(doc.prLabels, url)) doc.prLabels[url] = unassigned(url, now(), true);
           });
-        }
-        for (const record of Object.values(runtime.metadata.read().prLabels || {})) {
-          if (!active() || !canReadLinks(host)) break;
-          if (!record || !prRepository(record.url) || !eligible(record.url)) continue;
-          try {
-            const result = await labeler.apply(record.url, () => eligible(record.url));
-            if (!active()) return;
-            if (result !== 'labelled' && result !== 'present') continue;
-            runtime.metadata.mutate(doc => {
-              const saved = doc.prLabels[record.url];
-              if (saved?.status === 'pending') { saved.status = 'labelled'; saved.labelledAt = now(); }
-            });
-          } catch {}
         }
         const observations = [];
         for (const record of Object.values(runtime.metadata.read().prLabels || {})) {
           if (!active() || !canReadLinks(host)) break;
-          const observed = await tracker.state(record?.url);
+          if (!record) continue;
+          const linked = discovered.get(record.url);
+          const linkKey = associationKey(linked);
+          const terminal = ['MERGED', 'CLOSED'].includes(record.state);
+          const newerCoreObservation = linked?.coreCheckedAt > (record.stateCheckedAt ?? 0);
+          if (terminal && record.nodeId && !searchHits.has(record.url) && !newerCoreObservation && (!linked || record.verifiedLinkKey === linkKey)) continue;
+          const observed = await tracker.state(record.url);
           if (!active()) return;
-          if (observed) observations.push({ url: record.url, ...observed });
+          if (observed) observations.push({ url: record.url, ...observed, verifiedLinkKey: linkKey });
         }
         if (active() && observations.length) runtime.metadata.mutate(doc => {
           for (const observed of observations) {
-            const saved = doc.prLabels[observed.url];
+            let saved = doc.prLabels[observed.url];
             if (saved && observed.observationError) {
               saved.observationError = observed.observationError;
             } else if (saved) {
+              const identityChanged = saved.nodeId ? saved.nodeId !== observed.nodeId
+                : !Number.isFinite(saved.firstSeenAt) || Date.parse(observed.createdAt) > saved.firstSeenAt;
+              if (identityChanged) {
+                const currentLink = discovered.get(observed.url);
+                saved = doc.prLabels[observed.url] = currentLink ? { ...currentLink } : unassigned(observed.url, now(), searchHits.get(observed.url)?.nodeId === observed.nodeId);
+              }
               const { url, checkedAt, ...fields } = observed;
+              const reopened = ['MERGED', 'CLOSED'].includes(saved.state) && fields.state === 'OPEN';
               Object.assign(saved, fields, { stateCheckedAt: checkedAt });
+              if (reopened && saved.source === 'session-link' && saved.status === 'unlabelled') {
+                saved.status = 'pending';
+                saved.terminalLabelAttempted = false;
+              }
               if (saved.humanAttention?.headSha !== saved.headSha) saved.humanAttention = null;
             }
           }
         });
+        for (const record of Object.values(runtime.metadata.read().prLabels || {})) {
+          if (!active() || !canReadLinks(host)) break;
+          if (!record || !prRepository(record.url) || !eligible(record.url)) continue;
+          const repo = prRepository(record.url).toLowerCase();
+          if (now() < (runtime.metadata.read().prLabelRepos?.[repo]?.retryAt || 0)) continue;
+          const terminal = ['MERGED', 'CLOSED'].includes(record.state) && record.nodeId && !record.observationError;
+          if (terminal && record.terminalLabelAttempted) {
+            runtime.metadata.mutate(doc => { doc.prLabels[record.url].status = 'unlabelled'; });
+            continue;
+          }
+          if (terminal) runtime.metadata.mutate(doc => { doc.prLabels[record.url].terminalLabelAttempted = true; });
+          let result;
+          try { result = await labeler.apply(record.url, () => eligible(record.url)); } catch {}
+          if (!active()) return;
+          if (terminal && result?.status === 'deferred') {
+            runtime.metadata.mutate(doc => { doc.prLabels[record.url].terminalLabelAttempted = false; });
+            continue;
+          }
+          const success = result === 'labelled' || result === 'present';
+          if (success || terminal || result?.status === 'blocked') runtime.metadata.mutate(doc => {
+            const saved = doc.prLabels[record.url];
+            if (saved?.status === 'pending') {
+              if (success) { saved.status = 'labelled'; saved.labelledAt = now(); }
+              else if (terminal) saved.status = 'unlabelled';
+            }
+            doc.prLabelRepos ||= {};
+            if (success) delete doc.prLabelRepos[repo];
+            else if (result?.status === 'blocked') {
+              doc.prLabelRepos[repo] = { message: result.message, at: doc.prLabelRepos[repo]?.at ?? now(), retryAt: now() + 900000 };
+            }
+          });
+        }
       } catch {} finally {
         running = false;
       }
