@@ -1,5 +1,5 @@
 import { explicitResume, linksResolved, resolveLinkWaits, structuredWait, waitStatus, STRUCTURED_WAIT_HELP } from './link-waits.js';
-import { pickupState } from './pickup.js';
+import { pickupState, defaultPickupProblem } from './pickup.js';
 import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
 import { awaitingQueen } from './conversation.js';
@@ -133,6 +133,8 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       `Migrated blocked beads to open: ${ids.map(id => `${id} (${beads[id]?.title || id})`).join(', ')}. Links and waiting annotations were preserved. Waiting now comes from open blocks prerequisites.`, { migrated_bead_ids: ids });
   }
   for (const bead of open) {
+    const pickupProblem = defaultPickupProblem(rt, host, cell, bead, rt.snapshots.graph, index.asked.get(cell.id) || new Set(), now);
+    if (pickupProblem) add('pickup_unavailable', bead.id, pickupProblem, now, `Free work capacity cannot start scoped work: ${pickupProblem}`, { bead_id: bead.id });
     if (bead.pickup?.armed) {
       const state = pickupState(rt, host, cell, bead, rt.snapshots.graph, { now });
       const anchor = cell.pickupHoldAnchors?.[bead.id];

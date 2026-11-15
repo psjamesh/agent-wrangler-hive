@@ -12,6 +12,7 @@ import { launchRate } from './launch-budget.js';
 import { spawnWorker, workerLaunchInFlight } from './workers.js';
 import { ungovernedDescendants } from './tracking.js';
 import { safeDeliver } from './sessions.js';
+import { hasOpenRequest } from './human-wait.js';
 
 const UNSETTLED = new Set(['pending', 'partial', 'uncertain']);
 const ATTENTION = new Set(['uncertain', 'refused', 'abandoned', 'cancelled']);
@@ -78,7 +79,9 @@ export function pickupConsumed(doc, bead) {
 }
 
 export function consumePickup(doc, bead, fields = {}) {
+  if (!bead) return;
   const token = bead.pickup?.armToken;
+  (doc.defaultPickupSpent ||= {})[bead.id] ||= { at: Date.now(), ...fields };
   if (!token || doc.pickupAttempts?.[token]) return;
   (doc.pickupAttempts ||= {})[token] = { token, cellId: bead.pickup.cellId, beadId: bead.id, at: Date.now(), ...fields };
 }
@@ -109,6 +112,102 @@ export function structuralPickupReasons(rt, graph, bead, { launchId = null, ownO
   return reasons;
 }
 
+export function inheritedWorkerProfile(graph, bead) {
+  let profile = bead?.pickup?.workerProfile || null;
+  let template;
+  let auto;
+  const seen = new Set();
+  for (let parent = graph.beads[bead?.parentId]; parent && !seen.has(parent.id); parent = graph.beads[parent.parentId]) {
+    seen.add(parent.id);
+    if (parent.kind !== 'workstream') continue;
+    if (auto === undefined && typeof parent.pickup?.auto === 'boolean') auto = parent.pickup.auto;
+    if (!profile && parent.pickup?.workerProfile) profile = parent.pickup.workerProfile;
+    if (template === undefined && parent.pickup?.workerProfile) template = parent.pickup.briefTemplate || '';
+  }
+  return { profile, template: template || '', auto: auto === true };
+}
+
+function deliveryPickupReasons(rt, bead) {
+  const doc = rt.metadata.read();
+  const reasons = [];
+  const prs = Object.values(doc.prLabels || {}).filter(pr => pr.beadIds?.includes(bead.id) || pr.associations?.some(a => a.beadId === bead.id));
+  if (prs.some(pr => !['MERGED', 'CLOSED'].includes(pr.state))) reasons.push('Work has an open or unconfirmed PR');
+  if (Object.values(doc.reviews || {}).some(r => r.workBeadId === bead.id && r.state === 'approved')) reasons.push('Approved work awaits delivery');
+  if ((bead.evidence || []).some(e => ['handoff', 'merge-wait', 'install-wait', 'delivery-wait', 'merge', 'install'].includes(e.kind))) reasons.push('Work has a recorded merge or install handoff');
+  if ((bead.evidence || []).some(e => e.kind === 'pr' && e.url && !prs.some(pr => pr.url === e.url && ['MERGED', 'CLOSED'].includes(pr.state)))) reasons.push('Work has PR evidence awaiting delivery');
+  return reasons;
+}
+
+function replacementPickupReason(rt, bead) {
+  const doc = rt.metadata.read();
+  return bead && (doc.defaultPickupSpent?.[bead.id] || Object.values(doc.workerLaunches || {}).some(l => l.beadId === bead.id) || Object.values(doc.bindings || {}).some(list => list.some(b => b.beadId === bead.id)))
+    ? 'A previous claim, completion or worker launch prevents an automatic replacement; the queen must explicitly rearm work' : null;
+}
+
+function defaultOnlyReasons(rt, cell, bead, requested = null, now = Date.now()) {
+  const reasons = deliveryPickupReasons(rt, bead);
+  if (requested ? requested.has(bead.id) : hasOpenRequest(rt.metadata.read(), cell?.id, bead.id)) reasons.push('Work has an open input request');
+  if (bead.resume?.afterBead || bead.resume?.reviewAt) reasons.push('Work has an explicit resume condition');
+  if (Number.isFinite(bead.pickup?.notBefore) && now < bead.pickup.notBefore) reasons.push('New work is in its two-minute setup grace period');
+  return reasons;
+}
+
+export function defaultPickupCandidate(rt, cell, bead, graph = rt.snapshots.graph, requested = null, now = Date.now()) {
+  if (!cell || !bead || bead.id === cell.rootBeadId || pickupCell(rt, graph, bead.id)?.id !== cell.id) return false;
+  if (bead.pickup?.armToken || bead.pickup?.held || bead.pickup?.armed === false) return false;
+  if (replacementPickupReason(rt, bead)) return false;
+  if (['investigation', 'decision', 'external', 'idea'].includes(bead.kind)) return false;
+  if (!bead.pickup?.automatic && !inheritedWorkerProfile(graph, bead).auto) return false;
+  return !structuralPickupReasons(rt, graph, bead).length && !defaultOnlyReasons(rt, cell, bead, requested, now).length;
+}
+
+export function defaultPickupProblem(rt, host, cell, bead, graph = rt.snapshots.graph, requested = null, now = Date.now()) {
+  if (!defaultPickupCandidate(rt, cell, bead, graph, requested, now)) return null;
+  const usage = capacity(rt, graph);
+  if (usage.limit && !usage.available) return null;
+  const reasons = cellReasons(rt, host, cell);
+  if (reasons.length) return reasons.join('; ');
+  const { profile } = inheritedWorkerProfile(graph, bead);
+  if (!profile) return 'No worker profile is configured on this workstream or its ancestors';
+  if (!profile.cwd || !path.isAbsolute(profile.cwd)) return 'Default worker profile needs an absolute working folder (cwd)';
+  if (!profile.agent || !profile.model || typeof profile.effort !== 'string') return 'Default worker profile needs agent, model and effort';
+  return rt.metadata.read().defaultPickupProblems?.[bead.id]?.reason || null;
+}
+
+export async function setWorkerProfile(rt, host, { cellId, beadId, profile, briefTemplate = '', auto = false }) {
+  ensureWritable(rt);
+  const cell = rt.metadata.cell(cellId);
+  if (!cell || cell.snapshot || cell.retired) throw new HiveError('Choose an editable hive.');
+  if (typeof auto !== 'boolean') throw new HiveError('auto must be true or false.');
+  const template = text(briefTemplate, 'brief template', 12000);
+  const selected = profile === null ? null : await validatePickupProfile(rt, host, profile);
+  assertCurrent(rt, host);
+  return withLocks([ADMISSION_LOCK, `bead:${beadId}`], async () => {
+    const graph = await rt.beads.loadSnapshot({ all: true });
+    assertCurrent(rt, host);
+    const bead = graph.beads[beadId];
+    if (!bead || bead.kind !== 'workstream' || pickupCell(rt, graph, beadId)?.id !== cellId) throw new HiveError('Choose a workstream in this hive.');
+    if (Object.values(rt.metadata.read().operations || {}).some(o => UNSETTLED.has(o.state) && (o.beadIds?.includes(beadId) || o.intent?.beadId === beadId))) throw new HiveError('Reconcile the earlier workstream write before saving its profile.', 'conflict');
+    const mark = { ...bead.pickup, workerProfile: selected, briefTemplate: template, auto: selected ? auto : false };
+    const out = await journaled(rt, { kind: 'set-pickup', cellId, actor: 'aw:human', summary: `Set worker profile for ${beadId}`, beadIds: [beadId], intent: { beadId, pickup: mark } }, async (opId, phase) => {
+      phase.attempted = true;
+      await rt.beads.update(beadId, { pickup: mark }, 'aw:human', context => {
+        assertCurrent(rt, host);
+        const fresh = exportedGraph(context).beads[beadId];
+        const current = rt.metadata.cell(cellId);
+        if (!current || current.snapshot || current.retired || !fresh || fresh.kind !== 'workstream' || fresh.updatedAt !== bead.updatedAt) throw new HiveError('The workstream changed; reopen its profile.', 'conflict');
+      });
+      phase.applied = true;
+      rt.metadata.mutate(d => {
+        for (const [id, problem] of Object.entries(d.defaultPickupProblems || {})) if (problem.cellId === cellId) delete d.defaultPickupProblems[id];
+      });
+    });
+    await rt.snapshots.refresh();
+    rt.pickup?.schedule();
+    return { op_id: out.opId, cellId, beadId, profile: selected };
+  });
+}
+
 export function pickupBlockingSessions(rt, host, cell) {
   return cell ? ungovernedDescendants(rt, host, cell, Object.values(rt.snapshots.graph?.beads || {}).filter(b => b.status !== 'closed')).filter(s => s.live).map(s => s.session_id).sort() : [];
 }
@@ -130,7 +229,10 @@ function cellReasons(rt, host, cell, blockingSessions = pickupBlockingSessions(r
 export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { launchId = null, ownOperationId = null, now = Date.now(), checkVersion = true, rates = true, ignoreProfileHold = false } = {}) {
   const mark = bead?.pickup;
   const unmarked = { ...mark, armed: false, eligible: false, state: 'unmarked', reason: 'Not marked ready for pickup' };
-  if (!mark?.armToken) return unmarked;
+  if (!mark?.armToken) {
+    const legacyHeld = bead && !GROUP_KINDS.has(bead.kind) && !['investigation', 'decision', 'external', 'idea'].includes(bead.kind) && !mark?.automatic && !inheritedWorkerProfile(graph, bead).auto;
+    return { ...unmarked, held: Boolean(mark?.held || legacyHeld), reason: mark?.held ? 'Automatic pickup is held' : replacementPickupReason(rt, bead) || (legacyHeld ? 'Existing work is held until unheld or its workstream enables auto' : defaultPickupProblem(rt, host, cell, bead, graph, null, now) || (defaultPickupCandidate(rt, cell, bead, graph, null, now) ? 'Scoped work uses its nearest workstream worker profile' : unmarked.reason)) };
+  }
   const attempt = pickupConsumed(rt.metadata.read(), bead);
   const launch = attempt?.launchId && rt.metadata.read().workerLaunches?.[attempt.launchId];
   const base = { ...mark, nativeVersion: receipt(rt, bead)?.nativeVersion, eligible: false, launchId: launch?.id };
@@ -138,6 +240,7 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
   if (!mark.armed) return unmarked;
   const blockingSessions = pickupBlockingSessions(rt, host, cell);
   const reasons = cellReasons(rt, host, cell, blockingSessions);
+  if (mark.source === 'default' || mark.armedBy === 'hive:default') reasons.push(...defaultOnlyReasons(rt, cell, bead, null, now));
   const hold = rt.metadata.read().pickupHolds?.[bead.id];
   if (!ignoreProfileHold && hold?.token === mark.armToken && hold.reason) reasons.push(hold.reason);
   if (receipt(rt, bead)?.heldReason) reasons.push(receipt(rt, bead).heldReason);
@@ -147,6 +250,7 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
   if (mark.briefDigest !== briefDigest(bead, cell?.id)) reasons.push('The executable brief changed; rearm after review');
   if (checkVersion && (!receipt(rt, bead)?.nativeVersion || receipt(rt, bead).nativeVersion !== bead.updatedAt)) reasons.push('Native version changed or arming receipt is unconfirmed; reconcile and rearm');
   const reconciliationReasons = [...reasons];
+  if (mark.held) reasons.push('Automatic pickup is held');
   reasons.push(...structuralPickupReasons(rt, graph, bead, { launchId, ownOperationId }));
   if (!launchId) {
     const usage = capacity(rt, graph);
@@ -177,15 +281,17 @@ export function assertPickupClaimed(rt, host, launch, graph, sid) {
   assertPickupAuthorization(rt, host, launch, beforeClaim, { checkVersion: false });
 }
 
-export async function setPickup(rt, host, actor, input) {
+export async function setPickup(rt, host, actor, input, { automatic = false, now = Date.now } = {}) {
   ensureWritable(rt);
   const human = actor.sessionId === null;
   if (!human) requireQueen(resolveCaller(rt, host, actor.sessionId, actor.cell.id), 'mark work ready for pickup');
   const { cell } = requireBeadAccess(rt, actor, input.bead_id);
+  if (input.hold !== undefined) return setPickupHold(rt, host, actor, input);
   if (typeof input.ready !== 'boolean') throw new HiveError('ready must be true or false.');
   const candidateProfile = input.profile || rt.snapshots.graph.beads[input.bead_id]?.pickup?.profile;
   const profile = input.ready ? await validatePickupProfile(rt, host, candidateProfile) : null;
   assertCurrent(rt, host);
+  if (automatic && candidateProfile.resolvedModel && candidateProfile.resolvedModel !== profile.resolvedModel) throw new HiveError('Default worker model resolution changed; save the profile again.', 'refused');
   return withLocks([ADMISSION_LOCK, `bead:${input.bead_id}`], async () => {
     ensureWritable(rt);
     if (!human) requireQueen(resolveCaller(rt, host, actor.sessionId, cell.id), 'mark work ready for pickup');
@@ -194,6 +300,8 @@ export async function setPickup(rt, host, actor, input) {
     const bead = graph.beads[input.bead_id];
     if (!bead || !descendantIds(graph.beads, cell.rootBeadId).has(bead.id) || bead.id === cell.rootBeadId) throw new HiveError('Mark a work bead below this hive goal.');
     if (Object.values(rt.metadata.read().operations || {}).some(o => UNSETTLED.has(o.state) && (o.beadIds?.includes(bead.id) || o.intent?.beadId === bead.id))) throw new HiveError('Reconcile the earlier Beads write before changing pickup readiness.', 'conflict');
+    if (automatic && !defaultPickupCandidate(rt, rt.metadata.cell(cell.id), bead, graph, null, now())) throw new HiveError('Work is no longer eligible for default pickup.', 'busy');
+    const markingActor = automatic ? 'hive:default' : actorFor(actor.sessionId);
     const previous = bead.pickup;
     if (input.ready && previous?.armed && !input.rearm && !pickupConsumed(rt.metadata.read(), bead) && receipt(rt, bead)?.nativeVersion === bead.updatedAt && !receipt(rt, bead)?.heldReason && previous.briefDigest === briefDigest(bead, cell.id) && (!profile || JSON.stringify(profile) === JSON.stringify(previous.profile))) return { bead_id: bead.id, pickup: pickupState(rt, host, cell, bead, graph) };
     if (input.ready && previous?.armToken) {
@@ -205,10 +313,10 @@ export async function setPickup(rt, host, actor, input) {
     if (input.ready && (GROUP_KINDS.has(bead.kind) || ['external', 'decision'].includes(bead.kind) || !bead.goal.trim() || !bead.acceptance.trim() || bead.status === 'closed')) throw new HiveError('Readiness needs an open bounded work item with goal and acceptance.');
     const selected = profile || previous?.profile;
     if (input.ready && !selected) throw new HiveError('A readiness mark needs a valid launch profile.');
-    const mark = input.ready ? { armed: true, armToken: newId('arm'), armedBy: actorFor(actor.sessionId), armedAt: Date.now(), cellId: cell.id, profileRevision: newId('profile'), profile: selected, briefDigest: briefDigest(bead, cell.id) } : { ...previous, armed: false };
-    const out = await journaled(rt, { kind: 'set-pickup', cellId: cell.id, actor: actorFor(actor.sessionId), summary: `${input.ready ? 'Arm' : 'Disarm'} pickup ${bead.id}`, beadIds: [bead.id], intent: { beadId: bead.id, pickup: mark } }, async (opId, phase) => {
+    const mark = input.ready ? { armed: true, source: automatic ? 'default' : 'explicit', armToken: newId('arm'), armedBy: automatic ? 'hive:default' : actorFor(actor.sessionId), armedAt: Date.now(), cellId: cell.id, profileRevision: newId('profile'), profile: selected, briefDigest: briefDigest(bead, cell.id) } : { ...previous, armed: false, held: true };
+    const out = await journaled(rt, { kind: 'set-pickup', cellId: cell.id, actor: markingActor, summary: `${input.ready ? 'Arm' : 'Disarm'} pickup ${bead.id}`, beadIds: [bead.id], intent: { beadId: bead.id, pickup: mark } }, async (opId, phase) => {
       phase.attempted = true;
-      const raw = await rt.beads.update(bead.id, { pickup: mark }, actorFor(actor.sessionId), context => {
+      const raw = await rt.beads.update(bead.id, { pickup: mark }, markingActor, context => {
         assertCurrent(rt, host);
         if (!human) requireQueen(resolveCaller(rt, host, actor.sessionId, cell.id), 'mark work ready for pickup');
         const fresh = exportedGraph(context).beads[bead.id];
@@ -224,6 +332,37 @@ export async function setPickup(rt, host, actor, input) {
     await rt.snapshots.refresh();
     rt.pickup?.schedule();
     return { op_id: out.opId, bead_id: bead.id, pickup: pickupState(rt, host, cell, rt.snapshots.graph.beads[bead.id]) };
+  });
+}
+
+async function setPickupHold(rt, host, actor, input) {
+  if (typeof input.hold !== 'boolean' || input.ready !== undefined || input.profile !== undefined) throw new HiveError('Supply hold as true or false on its own.');
+  const { cell } = requireBeadAccess(rt, actor, input.bead_id);
+  return withLocks([ADMISSION_LOCK, `bead:${input.bead_id}`], async () => {
+    ensureWritable(rt);
+    const graph = await rt.beads.loadSnapshot({ all: true });
+    assertCurrent(rt, host);
+    const bead = graph.beads[input.bead_id];
+    if (!bead || bead.id === cell.rootBeadId) throw new HiveError('Choose a work bead.');
+    if (Object.values(rt.metadata.read().operations || {}).some(o => UNSETTLED.has(o.state) && (o.beadIds?.includes(bead.id) || o.intent?.beadId === bead.id))) throw new HiveError('Reconcile the earlier Beads write before changing the hold.', 'conflict');
+    const mark = { ...bead.pickup, held: input.hold };
+    if (!mark.armToken) { delete mark.armed; if (!input.hold) mark.automatic = true; }
+    const out = await journaled(rt, { kind: 'set-pickup', cellId: cell.id, actor: actorFor(actor.sessionId), summary: `${input.hold ? 'Hold' : 'Unhold'} pickup ${bead.id}`, beadIds: [bead.id], intent: { beadId: bead.id, pickup: mark } }, async (opId, phase) => {
+      phase.attempted = true;
+      const raw = await rt.beads.update(bead.id, { pickup: mark }, actorFor(actor.sessionId), context => {
+        assertCurrent(rt, host);
+        if (actor.sessionId !== null) requireQueen(resolveCaller(rt, host, actor.sessionId, cell.id), 'hold work');
+        const fresh = exportedGraph(context).beads[bead.id];
+        if (!fresh || fresh.updatedAt !== bead.updatedAt) throw new HiveError('Work changed; reread before changing its hold.', 'conflict');
+      });
+      phase.applied = true;
+      const saved = raw && normalizeIssue(raw);
+      if (!saved?.updatedAt || saved.pickup?.held !== input.hold) throw new HiveError('Hold receipt is unconfirmed; do not repeat this write.', 'uncertain');
+      managedPickupReceipt(rt, bead, saved);
+    });
+    await rt.snapshots.refresh();
+    rt.pickup?.schedule();
+    return { op_id: out.opId, bead_id: bead.id };
   });
 }
 
@@ -297,15 +436,31 @@ export function createPickupDispatcher({ runtime: rt, host, now = Date.now }) {
     let starts = 0;
     for (const candidate of ordered) {
       if (!active() || starts >= 2) return;
-      const graph = await rt.beads.loadSnapshot({ all: true });
+      let graph = await rt.beads.loadSnapshot({ all: true });
       if (!active()) return;
       const cell = rt.metadata.cell(candidate.id);
       if (cellReasons(rt, host, cell).length) continue;
-      const beads = [...descendantIds(graph.beads, cell.rootBeadId)].map(id => graph.beads[id]).filter(b => b && pickupState(rt, host, cell, b, graph, { now: now(), ignoreProfileHold: true }).eligible)
-        .sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || a.pickup.armedAt - b.pickup.armedAt || a.id.localeCompare(b.id));
-      for (const bead of beads) {
-        const authorization = { armToken: bead.pickup.armToken, profileRevision: bead.pickup.profileRevision, authorizedBy: cell.queenSessionId, queenGeneration: cell.queenGeneration || 0, observedAt: now(), profileObservedAt: Date.now() };
+      rt.metadata.mutate(d => {
+        for (const [id, problem] of Object.entries(d.defaultPickupProblems || {})) if (problem.cellId === cell.id && !defaultPickupCandidate(rt, cell, graph.beads[id], graph, null, now())) delete d.defaultPickupProblems[id];
+      });
+      const beads = [...descendantIds(graph.beads, cell.rootBeadId)].map(id => graph.beads[id]).filter(b => b && (defaultPickupCandidate(rt, cell, b, graph, null, now()) || pickupState(rt, host, cell, b, graph, { now: now(), ignoreProfileHold: true }).eligible))
+        .sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || (a.pickup?.armedAt || 0) - (b.pickup?.armedAt || 0) || a.id.localeCompare(b.id));
+      for (let bead of beads) {
         try {
+          if (!bead.pickup?.armToken) {
+            const usage = capacity(rt, graph);
+            if ((usage.limit && !usage.available) || launchRate(rt.metadata.read(), cell.id, now()).reason) break;
+            const { profile, template } = inheritedWorkerProfile(graph, bead);
+            if (!profile) continue;
+            const intent = [profile.intent || 'Own this bounded deliverable. Report results and questions to the current queen by Agent Wrangler mail.', template].filter(Boolean).join('\n\n');
+            await setPickup(rt, host, resolveCaller(rt, host, cell.queenSessionId, cell.id), { bead_id: bead.id, ready: true, profile: { ...profile, intent } }, { automatic: true, now });
+            if (!active()) return;
+            graph = await rt.beads.loadSnapshot({ all: true });
+            if (!active()) return;
+            bead = graph.beads[bead.id];
+            rt.metadata.mutate(d => { if (d.defaultPickupProblems) delete d.defaultPickupProblems[bead.id]; });
+          }
+          const authorization = { armToken: bead.pickup.armToken, profileRevision: bead.pickup.profileRevision, authorizedBy: cell.queenSessionId, queenGeneration: cell.queenGeneration || 0, observedAt: now(), profileObservedAt: Date.now() };
           const profile = await validatePickupProfile(rt, host, bead.pickup.profile);
           if (!active()) return;
           if (JSON.stringify(profile) !== JSON.stringify(bead.pickup.profile)) throw new HiveError('Worker model resolution changed; reconcile and rearm.', 'refused');
@@ -317,7 +472,9 @@ export function createPickupDispatcher({ runtime: rt, host, now = Date.now }) {
         } catch (err) {
           if (!active()) return;
           rt.log(`hive: automatic pickup ${bead.id}: ${err.message}`);
-          if (err.pickupCause) {
+          if (!bead.pickup?.armToken) {
+            if (defaultPickupCandidate(rt, cell, bead, graph, null, now())) rt.metadata.mutate(d => { (d.defaultPickupProblems ||= {})[bead.id] = { cellId: cell.id, reason: err.message }; });
+          } else if (err.pickupCause) {
             rt.metadata.mutate(d => {
               const holds = d.pickupHolds ||= {};
               holds[bead.id] = { ...(holds[bead.id]?.token === bead.pickup.armToken ? holds[bead.id] : {}), beadId: bead.id, cellId: cell.id, token: bead.pickup.armToken, reason: err.message, cause: err.pickupCause };

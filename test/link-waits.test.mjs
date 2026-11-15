@@ -8,6 +8,8 @@ import { createPickupDispatcher, setPickup } from '../server/pickup.js';
 const link = (f, pre = 'b') => f.live.a.dependencies.push({ issue_id: 'a', depends_on_id: pre, type: 'blocks' });
 async function fixture() {
   const f = pickupFixture();
+  f.live.a.metadata.hive_pickup = { held: true };
+  f.live.b.metadata.hive_pickup = { held: true };
   f.rt.watchdog = createWatchdog({ runtime: f.rt, host: f.host, now: f.now });
   return f;
 }

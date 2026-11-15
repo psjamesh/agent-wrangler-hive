@@ -2,10 +2,17 @@ import { h } from './dom.js';
 
 const labels = { ready: 'Ready for pickup', queued: 'Ready for pickup · waiting', starting: 'Starting worker', attention: 'Pickup needs attention', consumed: 'Readiness consumed', unmarked: 'Automatic pickup' };
 
-export function pickupDetails({ api, ui, send }, cell, bead) {
+export function pickupDetails({ api, ui, send, hive }, cell, bead) {
   const mark = bead.pickup || {};
   const key = `pickup:${bead.id}:${mark.armToken || 'new'}`;
-  const agents = api?.agents?.() || [];
+  const hold = () => {
+    if (ui.form(key)?.saving) return;
+    ui.patchForm(key, { saving: true, error: '' });
+    send({ type: 'hive-bead-pickup', cellId: cell.id, beadId: bead.id, hold: !mark.held }, {
+      onReply: reply => ui.patchForm(key, { saving: false, error: reply.ok ? '' : reply.error || 'Hold could not be saved.' }),
+    });
+  };
+  const agents = hive?.agents || api?.agents?.() || [];
   let draft = ui.form(key);
   const editable = cell.enabled && !cell.snapshot && !cell.retired && bead.status !== 'closed' && !['goal', 'workstream', 'external', 'decision'].includes(bead.kind);
   if (!draft && editable) {
@@ -45,6 +52,8 @@ export function pickupDetails({ api, ui, send }, cell, bead) {
     mark.armedBy ? h('p', { class: 'hive-muted' }, `Marked by ${mark.armedBy}`) : null,
     mark.profile ? h('p', { class: 'hive-muted' }, `${mark.profile.agent} · ${mark.profile.model} (${mark.profile.resolvedModel || 'unconfirmed'}) · ${mark.profile.effort || 'No effort control'} · ${mark.profile.cwd}${mark.profile.worktree ? ' · isolated worktree' : ' · shared folder'}`) : null,
     mark.launchId ? h('p', {}, 'Launch: ', h('code', {}, mark.launchId)) : null,
+    editable && (!['investigation', 'idea'].includes(bead.kind) || mark.armToken) ? h('button', { type: 'button', class: 'hive-quiet-btn', disabled: draft?.saving, onclick: hold }, mark.held ? 'Unhold automatic pickup' : 'Hold automatic pickup') : null,
+    editable && draft?.error ? h('p', { role: 'alert' }, draft.error) : null,
     editable ? h('details', {}, h('summary', {}, mark.armToken ? 'Change readiness…' : 'Mark ready for pickup…'),
       h('form', { class: 'hive-form', onsubmit: e => { e.preventDefault(); sendMark(true); } },
         h('p', { class: 'hive-muted' }, 'One worker start, subject to available work capacity and the start-rate guard. Restarts preserve readiness; failed starts need reconciliation and deliberate rearming.'),

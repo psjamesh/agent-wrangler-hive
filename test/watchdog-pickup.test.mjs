@@ -8,6 +8,7 @@ const MIN = 60000;
 const flags = f => collectWatchdog(f.rt, f.host, f.doc().cells.cell, f.now()).filter(x => x.kind === 'pickup_held');
 async function fixture() {
   const f = pickupFixture();
+  f.live.b.metadata.hive_pickup = { held: true };
   f.doc().conversation = {};
   f.host.sessions.list = () => [...f.board.values()];
   await setPickup(f.rt, f.host, f.actor(), { bead_id: 'a', ready: true, profile: f.profile });

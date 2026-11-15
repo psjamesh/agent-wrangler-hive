@@ -213,7 +213,7 @@ test('sections keep every setting reachable and Advanced collapsed across redraw
   assert.doesNotMatch(f.dialog().textContent, /Watchdog thresholds|Codex approvals|Turn hive off/);
   const section = name => { f.key(`settings-section-hive-${name}`).click(); f.draw(); };
   section('agents');
-  assert.match(f.dialog().textContent, /Codex approvals.*Automatic pickup.*Reviewers/s);
+  assert.match(f.dialog().textContent, /Codex approvals.*Default worker.*Reviewers/s);
   assert.ok(f.key('codex-approvals:c'));
   for (const slot of ['primary', 'secondary']) for (const field of ['agent', 'model', 'effort']) assert.ok(f.key(`review-policy:c:${slot}:${field}`));
   section('lifecycle');

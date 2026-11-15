@@ -834,6 +834,8 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
     if (!/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(ref)) throw new HiveError(`beads[${i}].ref must be a short name (letters, digits, - or _).`);
     if (refs.has(ref)) throw new HiveError(`Duplicate ref ${ref}.`);
     refs.set(ref, i);
+    if (b.hold !== undefined && typeof b.hold !== 'boolean') throw new HiveError(`beads[${i}].hold must be true or false.`);
+    if (b.hold === false && !['queen', 'human'].includes(actor.role)) throw new HiveError('Only the queen or human can create unheld work.', 'access');
     const kind = kindArg(b.kind) || 'work';
     if (kind === 'goal') throw new HiveError('A cell has exactly one goal bead, its root. Use kind "workstream" for nested goals.');
     const status = b.status === undefined ? undefined : text(b.status, `beads[${i}].status`, 20);
@@ -842,6 +844,7 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
     if (status === 'in_progress' && !GROUP_KINDS.has(kind)) throw new HiveError('Create work as open, then claim it with hive_claim_bead before starting it.');
     return {
       key: ref,
+      pickup: { automatic: true, held: b.hold === true || !['queen', 'human'].includes(actor.role), notBefore: Date.now() + 120000 },
       title: text(b.title, `beads[${i}].title`, LIMITS.title, { required: true }),
       kind,
       issueType: issueTypeForKind(kind),
@@ -1093,7 +1096,7 @@ export async function claimBead(rt, actor, { bead_id }, { launchId = null, valid
       const graph = exportedGraph(context);
       if (!descendantIds(graph.beads, cell.rootBeadId).has(id)) throw new HiveError(`Bead ${id} moved outside this cell.`, 'conflict');
       checkAdmission(rt, graph, id, { sessionId: actor.sessionId, launchId, ownOperationId: opId });
-      if (graph.beads[id]?.pickup?.armToken) rt.metadata.mutate(d => consumePickup(d, graph.beads[id], { source: 'claim', operationId: opId }));
+      rt.metadata.mutate(d => consumePickup(d, graph.beads[id], { source: 'claim', operationId: opId }));
     });
     phase.applied = true;
     return { already: res.already, journal: { already: res.already } };
@@ -1338,7 +1341,7 @@ export async function finishBead(rt, actor, input) {
       throw new HiveError(`Bead ${id} is claimed by ${fresh.assignee}, so only that session can finish it. Nothing was changed. Ask the holder to finish it with hive_finish_bead; if it cannot, a queen or coordinator can check with it and then release the claim with hive_release_bead (force: true and a reason) before finishing.`, 'conflict');
     }
     const normalized = normalizeIssue(fresh);
-    if (normalized.pickup?.armToken) rt.metadata.mutate(d => consumePickup(d, normalized, { source: 'finish', operationId: opId }));
+    rt.metadata.mutate(d => consumePickup(d, normalized, { source: 'finish', operationId: opId }));
     const { evidence } = normalized;
     const next = [...evidence, ...add].slice(-LIMITS.evidence);
     await rt.beads.update(id, { summary, evidence: next }, who);

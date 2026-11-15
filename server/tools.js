@@ -293,7 +293,7 @@ export const readyTool = hiveTool({
 
 export const createBeadsTool = hiveTool({
   name: 'hive_create_beads',
-  description: 'Create one or more beads (work items, workstreams, investigations, decisions...) in your cell in one atomic step, with optional links. Give new beads a ref so later entries in the same call can use it as parent or link end. Beads without a parent go under the cell goal. Links say what depends on what; they are not created by position in the view.',
+  description: 'Create one or more beads (work items, workstreams, investigations, decisions...) in your cell in one atomic step, with optional links. Give new beads a ref so later entries in the same call can use it as parent or link end. New scoped work waits at least two minutes and until a later pickup pass before default launch: include prerequisites and children in this same batch, or set hold: true until setup is complete. Worker-created follow-ups are held for queen review. Beads without a parent go under the cell goal. Links say what depends on what; they are not created by position in the view.',
   inputSchema: {
     beads: z.array(strictObject({
       ref: z.string().max(40).optional().describe('Temporary name for this call, e.g. "api".'),
@@ -304,6 +304,7 @@ export const createBeadsTool = hiveTool({
       acceptance: z.string().max(20000).optional().describe('How anyone can tell it is achieved.'),
       summary: z.string().max(20000).optional().describe('Current understanding (Markdown).'),
       next_action: z.string().max(2000).optional(),
+      hold: z.boolean().optional().describe('Create held while assembling its brief, children or prerequisites; the queen can unhold it when ready.'),
       status: z.enum(SETTABLE_STATUSES, { error: BLOCKED_STATUS_HELP }).optional(),
     })).min(1).max(50),
     links: z.array(strictObject({
@@ -567,10 +568,11 @@ export const reportPrWaitTool = hiveTool({
 
 export const pickupTool = hiveTool({
   name: 'hive_set_pickup',
-  description: 'Queen only: mark bounded work ready for one automatic worker launch. Pickup is default behavior; max claimed work controls concurrency. Supply an explicit launch profile (agent, model, effort, cwd, optional worktree and intent). Returns current pickup state, eligibility and every hold reason, including blocking session ids. Dependencies may still be pending. Rearming a consumed or held mark requires expected_token and a reason. Failed or uncertain starts never retry automatically.',
+  description: 'Queen only: mark bounded work ready for one automatic worker launch. Pickup is default behavior; max claimed work controls concurrency. Eligible new scoped work inherits its nearest workstream worker profile and brief template; existing work remains held until opted in; explicit marks supply an override (agent, model, effort, cwd, optional worktree and intent). Supply hold: true or false on its own to hold/unhold work. Returns current pickup state, eligibility and every hold reason, including blocking session ids. Dependencies may still be pending. Rearming a consumed or held mark requires expected_token and a reason. Failed or uncertain starts never retry automatically.',
   inputSchema: {
     bead_id: beadId,
-    ready: z.boolean(),
+    ready: z.boolean().optional(),
+    hold: z.boolean().optional(),
     profile: z.object({ agent: z.string().max(120), model: z.string().max(200), effort: z.string().max(120), cwd: z.string().max(2000), intent: z.string().max(12000).optional(), worktree: z.object({ auto: z.boolean().optional(), branch: z.string().max(2000).optional(), folderName: z.string().max(2000).optional(), base: z.string().max(2000).optional() }).strict().optional() }).strict().optional(),
     rearm: z.boolean().optional(),
     expected_token: z.string().max(80).optional(),
