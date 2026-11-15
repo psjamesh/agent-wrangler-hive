@@ -12,17 +12,18 @@ try {
   await wait(600);
   const check = (value, message) => { if (!value) throw Error(message); };
   const canvas = () => document.querySelector('.hive-canvas');
-  const toggle = () => [...canvas().querySelectorAll('button')].find(b => b.textContent.startsWith('Auto-fit'));
+  const toggle = () => canvas().querySelector('.hive-map-menu .hive-zoom-auto');
+  const resume = () => [...canvas().querySelectorAll('button')].find(b => b.textContent === 'Auto-fit paused');
   const view = () => canvas().hiveCaptureView();
-  check(toggle()?.getAttribute('aria-pressed') === 'true', 'default on');
+  check(toggle()?.getAttribute('aria-checked') === 'true', 'default on');
   canvas().dispatchEvent(new WheelEvent('wheel', { deltaX: 80, cancelable: true }));
-  check(toggle().textContent === 'Auto-fit paused', 'manual pan pauses');
+  check(!resume().hidden, 'manual pan pauses');
   const paused = JSON.stringify(view());
   window.t.graph.hive.beads.extra = { id: 'extra', parentId: 'r1', title: 'Extra work', status: 'open', kind: 'work' };
   window.t.redraw();
   await wait(500);
   check(JSON.stringify(view()) === paused, 'board update preserves paused view');
-  toggle().click();
+  resume().click();
   await wait(600);
   check(view().auto && toggle().textContent === 'Auto-fit', 'toggle resumes');
   const before = view();
@@ -33,8 +34,9 @@ try {
   for (let i = 0; i < 40 && view().tx === before.tx && view().k === before.k; i++) await wait(50);
   check(canvas().clientWidth !== width, 'stage resize changes canvas width');
   check(view().tx !== before.tx || view().k !== before.k, 'resize refits');
+  canvas().querySelector('.hive-map-menu-toggle').click();
   toggle().click();
-  check(toggle().getAttribute('aria-pressed') === 'false', 'toggle off');
+  check(toggle().getAttribute('aria-checked') === 'false', 'toggle off');
   return 'passed';
 } catch (error) { return error.message; }
 })()`;

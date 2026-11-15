@@ -7,7 +7,7 @@ import { readScrollState, saveScrollState, conversationEpoch } from './view-stat
 import { createReadTracker, afterFrame } from './auto-read.js';
 import { waitingGraphKey } from './waiting-model.js';
 import { refreshWaitingMenu, disposeWaitingMenu } from './waiting-view.js';
-import { installHiveLinks, revealMessage, syncHiveSelection, hiveLink } from './deep-links.js';
+import { installHiveLinks, revealMessage, cancelMessageReveal, syncHiveSelection, hiveLink, openHiveLink } from './deep-links.js';
 import { createToaster, announceRestoreNotices } from './toasts.js';
 import { disposeConfirm } from './confirm-dialog.js';
 import { refreshCellPopover, disposeCellPopover } from './cell-popover.js';
@@ -95,6 +95,7 @@ const joinRuns = (a, b) => {
 };
 
 function cancelDeepLink() {
+  cancelMessageReveal(state.root);
   state.linkRequest = null;
   state.linkMessage = null;
   state.startAt.clear();
@@ -165,6 +166,7 @@ export function createUi() {
       const cellId = frame.cellId || null;
       closeInspector();
       state.pendingCell = null;
+      cancelMessageReveal(state.root);
       state.linkMessage = null;
       save('cell', cellId);
       if (cellId) {
@@ -289,6 +291,8 @@ export function createUi() {
     // Opening or sending also scrolls the panel around the list, if it
     // scrolls, until the newest message shows.
     followMessages(cellId) {
+      cancelMessageReveal(state.root);
+      state.linkMessage = null;
       const key = `messages:${cellId}`;
       state.startAt.delete(key);
       state.follow.set(key, true);
@@ -775,6 +779,8 @@ export function restoreFocus(root, f) {
   let el = null;
   if (f.focusKey) el = root.querySelector(`[data-focus-key="${CSS.escape(f.focusKey)}"]`);
   else if (f.tileId) el = root.querySelector(`[data-tile-id="${CSS.escape(f.tileId)}"]`);
+  const mapMenu = el?.closest?.('.hive-map-menu');
+  if (mapMenu?.hidden) el = mapMenu.closest('.hive-zoom')?.querySelector('.hive-map-menu-toggle');
   if (el?.disabled) el = null;
   if (!el && next) el = root.querySelector(`[data-focus-key="${CSS.escape(next)}"]`);
   if (!el && f.focusFallback) el = root.querySelector(`[data-focus-key="${CSS.escape(f.focusFallback)}"]`);
@@ -847,6 +853,10 @@ function putBack(el, retained = false) {
 // scrolls, and stops following the newest message until the reader scrolls
 // back to the bottom.
 function showFrom(el, item) {
+  if (item.dataset?.id) {
+    const [, cellId, threadId] = el.dataset.scrollKey.split(':');
+    state.linkMessage = { cellId, threadId, messageId: item.dataset.id, pending: false };
+  }
   state.follow.set(el.dataset.scrollKey, false);
   state.reveal.delete(el.dataset.scrollKey);
   el.scrollTop += item.getBoundingClientRect().top - el.getBoundingClientRect().top;
@@ -863,6 +873,7 @@ function atBottom(el) {
 
 function stick(el) {
   if (!el.isConnected || el.clientWidth <= 0 || state.follow.get(el.dataset.scrollKey) === false || state.startAt.has(el.dataset.scrollKey)) return;
+  el.style?.setProperty?.('--hive-reveal-space', '');
   el.scrollTop = el.scrollHeight;
   el.hiveSetTop = el.scrollTop;
   if (state.reveal.has(el.dataset.scrollKey) && revealEnd(el)) state.reveal.delete(el.dataset.scrollKey);
@@ -999,15 +1010,18 @@ export function resolveLink(hive) {
 
 function revealLinkMessage(root) {
   const link = state.linkMessage;
-  if (!link?.pending) return;
+  if (!link || link.released) return;
   state.follow.set(`messages:${link.cellId}:${link.threadId}`, false);
-  if (!revealMessage(root, link.messageId)) return;
+  if (!revealMessage(root, link.messageId, () => { link.pending = false; link.released = true; })) return;
   link.pending = false;
-  setTimeout(() => {
-    if (state.linkMessage !== link) return;
-    state.linkMessage = null;
-    forceRender();
-  }, 2500);
+  if (!link.highlightTimer) {
+    link.highlightTimer = setTimeout(() => {
+      if (state.linkMessage !== link) return;
+      link.highlight = false;
+      forceRender();
+    }, 2500);
+    link.highlightTimer.unref?.();
+  }
 }
 
 export function restoreScroll(root) {
@@ -1331,7 +1345,7 @@ export default {
   register(registrar) {
     state.api = registrar.api;
     state.watchdogNotifications = createWatchdogNotifications(state.api, { read: () => load('watchdogEpisodes', []), write: v => save('watchdogEpisodes', v) });
-    state.requestNotifications = createRequestNotifications(state.api, { read: () => load('requestEpisodes', []), write: v => save('requestEpisodes', v), answer: (r, optionId) => answerRequestOption(r, optionId, { ui: state.ui, ctx: { send, notice, onError: () => { globalThis.location.hash = hiveLink(r.cellId, r.threadId, r.messageId); } } }) });
+    state.requestNotifications = createRequestNotifications(state.api, { read: () => load('requestEpisodes', []), write: v => save('requestEpisodes', v), answer: (r, optionId) => answerRequestOption(r, optionId, { ui: state.ui, ctx: { send, notice, onError: () => { openHiveLink(globalThis.window, hiveLink(r.cellId, r.threadId, r.messageId)); } } }) });
     state.ui = createUi();
     const saved = readScrollState(globalThis.window?.location?.hash);
     if (saved) { state.scrollMemo = saved.scroll; state.follow = saved.follow; }
@@ -1341,12 +1355,14 @@ export default {
     globalThis.window?.addEventListener('pagehide', state.pageHide);
     let restore = Boolean(saved?.restore);
     if (globalThis.window?.history) state.linkBridge = installHiveLinks(window, target => {
+      cancelMessageReveal(state.root);
       state.linkRequest = { target, sent: false, restore };
       restore = false;
       state.linkMessage = null;
       state.lastSig = '';
       rerender();
     }, () => {
+      cancelMessageReveal(state.root);
       restore = false;
       state.linkRequest = null;
       state.linkMessage = null;

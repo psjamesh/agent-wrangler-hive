@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 test('search ranks fields before substring position, without case sensitivity', async () => {
   const { rankBeads } = await import('../public/map-search.js');
@@ -12,7 +13,7 @@ test('search ranks fields before substring position, without case sensitivity', 
 
 import { rankBeads } from '../public/bead-rank.js';
 import { renderHive } from '../public/hive-view.js';
-import client, { createUi } from '../public/client.js';
+import client, { createUi, captureFocus, restoreFocus } from '../public/client.js';
 
 class Element {
   constructor(tag) { this.tagName = tag; this.children = []; this.attributes = {}; this.events = {}; this.dataset = {}; this.style = {}; this.value = ''; this.clientWidth = 1000; this.clientHeight = 700; }
@@ -36,7 +37,10 @@ class Element {
   querySelector(s) { return this.querySelectorAll(s)[0] || null; }
   isEqualNode(other) { return this === other; }
   contains(n) { return n === this || this.children.some(c => c.contains(n)); }
-  focus() { document.activeElement = this; }
+  focus() {
+    for (let el = this; el; el = el.parentNode) if (el.hidden) return;
+    document.activeElement = this;
+  }
   addEventListener(type, fn, capture = false) { (this.events[type] ||= []).push({ fn, capture: capture === true }); }
   removeEventListener(type, fn) { this.events[type] = (this.events[type] || []).filter(e => e.fn !== fn); }
   fire(type, props = {}) { const e = { type, target: this, key: '', preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...props }; const path = []; for (let el = this; el; el = el.parentNode) path.push(el); for (const capture of [true, false]) for (const el of capture ? [...path].reverse() : path) { for (const h of el.events[type] || []) if (h.capture === capture) h.fn(e); if (e.stopped) return e; } return e; }
@@ -63,14 +67,24 @@ function fixture(t, extra = 0, preferences = []) {
   const ctx = { ui, hive: { beads, cells: { cell }, edges: [], operations: [], launches: [], backend: {} }, graph: { sessions: [] }, api: {}, notices: [], busy: () => false, notice() {}, searchDelay: 0,
     send(frame, { onReply } = {}) { if (frame.type === 'hive-bead-search') onReply({ ok: true, results: rankBeads(Object.values(beads), frame.query) }); } };
   let dock;
-  const draw = () => { const out = renderHive(ctx); dock = out.bottom; return out.top; };
-  const top = draw();
+  let top;
+  const draw = () => {
+    const out = renderHive(ctx);
+    dock = out.bottom;
+    if (top && top !== out.top && top.parentNode) {
+      const parent = top.parentNode;
+      parent.removeChild(top); parent.append(out.top);
+    }
+    top = out.top;
+    return top;
+  };
+  draw();
   document.body.append(top);
   const canvas = () => top.querySelector('.hive-canvas');
   const setQuery = ui.setSearchQuery.bind(ui);
   ui.setSearchQuery = query => { setQuery(query); canvas()?.hiveRefreshSearch?.(ctx); };
   const search = query => { canvas().focus(); canvas().fire('keydown', { key: '/' }); const input = top.querySelector('input'); input.value = query; input.fire('input'); return input; };
-  return { values, ui, ctx, beads, top, dock: () => dock, draw, canvas, search, tile: id => canvas().querySelector(`[data-tile-id="${id}"]`) };
+  return { values, ui, ctx, beads, get top() { return top; }, dock: () => dock, draw, canvas, search, tile: id => canvas().querySelector(`[data-tile-id="${id}"]`) };
 }
 
 test('map search uses shared fields in a labelled search region', t => {
@@ -389,7 +403,7 @@ for (const overview of [false, true]) {
     const paused = canvas.hiveCaptureView();
     const toggle = canvas.querySelectorAll('button').find(b => b.textContent === 'Auto-fit paused');
     assert.ok(toggle);
-    assert.equal(toggle.getAttribute('aria-pressed'), 'true');
+    assert.equal(toggle.getAttribute('aria-pressed'), null);
     canvas.clientWidth = 1400;
     observer.callback();
     t.mock.timers.tick(300);
@@ -450,30 +464,174 @@ test('map controls group zoom, stable view toggles and actions with explicit sta
   const f = fixture(t);
   f.canvas().fire('keydown', { key: '0' });
   const buttons = () => f.canvas().querySelector('.hive-zoom').querySelectorAll('button');
-  assert.deepEqual(buttons().map(b => b.textContent), ['−', '+', 'Auto-fit', 'Show done', 'Key', 'Search', 'Arrange']);
+  assert.deepEqual(buttons().filter(b => !b.closest('.hive-map-menu') && !b.hidden).map(b => b.textContent), ['Search', '☰']);
+  const menu = f.canvas().querySelector('.hive-map-menu');
+  assert.equal(menu.hidden, true);
+  assert.deepEqual(menu.querySelectorAll('button').map(b => b.textContent), ['−', '+', 'Auto-fit', 'Show done', 'Key', 'Arrange']);
   const done = () => buttons().find(b => b.textContent === 'Show done');
-  assert.equal(done().getAttribute('aria-pressed'), 'true');
+  assert.equal(done().getAttribute('aria-checked'), 'true');
+  assert.equal(done().getAttribute('aria-pressed'), null);
+  assert.equal(done().getAttribute('role'), 'menuitemcheckbox');
   f.ui.setHideDoneForHive('cell', true);
   f.draw();
-  assert.equal(done().getAttribute('aria-pressed'), 'false');
+  assert.equal(done().getAttribute('aria-checked'), 'false');
   const key = buttons().find(b => b.textContent === 'Key');
-  assert.equal(key.getAttribute('aria-pressed'), 'false');
+  assert.equal(key.getAttribute('aria-checked'), 'false');
   key.fire('click'); f.draw();
-  assert.equal(buttons().find(b => b.textContent === 'Key').getAttribute('aria-pressed'), 'true');
+  assert.equal(buttons().find(b => b.textContent === 'Key').getAttribute('aria-checked'), 'true');
   const auto = buttons().find(b => b.textContent === 'Auto-fit');
   f.canvas().fire('wheel', { deltaMode: 0, deltaX: 60, deltaY: 0 });
-  assert.equal(auto.textContent, 'Auto-fit paused');
-  assert.equal(auto.getAttribute('data-paused'), 'true');
+  assert.equal(auto.textContent, 'Auto-fit');
+  const resume = buttons().find(b => b.textContent === 'Auto-fit paused');
+  assert.equal(resume.hidden, false);
+  assert.equal(resume.closest('.hive-map-menu'), null);
+  resume.fire('click');
+  assert.equal(resume.hidden, true);
+  assert.equal(auto.getAttribute('data-paused'), 'false');
   auto.fire('click');
-  auto.fire('click');
-  assert.equal(auto.getAttribute('aria-pressed'), 'false');
+  assert.equal(auto.getAttribute('aria-checked'), 'false');
+  f.canvas().fire('wheel', { deltaMode: 0, deltaX: 60, deltaY: 0 });
+  assert.equal(resume.hidden, true);
   f.canvas().fire('keydown', { key: '0' });
-  assert.equal(auto.getAttribute('aria-pressed'), 'true');
+  assert.equal(auto.getAttribute('aria-checked'), 'true');
   assert.equal(auto.getAttribute('data-paused'), 'false');
   f.ui.closeCell();
   const overview = f.draw().querySelector('.hive-canvas');
   overview.fire('keydown', { key: '0' });
-  assert.deepEqual(overview.querySelector('.hive-zoom').querySelectorAll('button').map(b => b.textContent), ['−', '+', 'Auto-fit', 'Search']);
+  assert.deepEqual(overview.querySelector('.hive-zoom').querySelectorAll('button').map(b => b.textContent), ['Auto-fit paused', 'Search', '☰', '−', '+', 'Auto-fit']);
+});
+
+for (const overview of [false, true]) {
+  test(`map menu supports keyboard navigation and dismissal in ${overview ? 'overview' : 'hive'}`, t => {
+    const f = fixture(t);
+    if (overview) { f.ui.closeCell(); f.draw(); }
+    const canvas = f.canvas();
+    const trigger = canvas.querySelector('.hive-map-menu-toggle');
+    const menu = canvas.querySelector('.hive-map-menu');
+    assert.ok(menu);
+    const items = menu.querySelectorAll('button').filter(b => b.getAttribute('disabled') === null);
+    assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+    assert.equal(trigger.getAttribute('aria-haspopup'), 'menu');
+    assert.equal(trigger.getAttribute('aria-controls'), menu.getAttribute('id'));
+    const launcher = trigger.parentNode;
+    assert.equal(launcher.children.at(-2).querySelector('button').textContent, 'Search');
+    trigger.focus();
+    trigger.fire('keydown', { key: 'ArrowDown' });
+    assert.equal(menu.hidden, false);
+    assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+    assert.equal(document.activeElement, items[0]);
+    items[0].fire('keydown', { key: 'ArrowUp' });
+    assert.equal(document.activeElement, items.at(-1));
+    items.at(-1).fire('keydown', { key: 'ArrowDown' });
+    assert.equal(document.activeElement, items[0]);
+    items[0].fire('keydown', { key: 'End' });
+    assert.equal(document.activeElement, items.at(-1));
+    items.at(-1).fire('keydown', { key: 'Home' });
+    assert.equal(document.activeElement, items[0]);
+    assert.equal(items[0].fire('keydown', { key: 'Tab' }).defaultPrevented, undefined);
+    assert.ok(items.every(b => b.getAttribute('tabindex') !== '-1'));
+    const before = canvas.hiveCaptureView();
+    menu.fire('wheel', { deltaMode: 0, deltaX: 60, deltaY: 0 });
+    assert.deepEqual(canvas.hiveCaptureView(), before);
+    items[0].fire('keydown', { key: 'Escape' });
+    assert.equal(menu.hidden, true);
+    assert.equal(document.activeElement, trigger);
+    trigger.fire('click');
+    assert.equal(menu.hidden, false);
+    menu.fire('focusout', { relatedTarget: canvas });
+    assert.equal(menu.hidden, true);
+    trigger.fire('keydown', { key: 'ArrowUp' });
+    assert.equal(document.activeElement, items.at(-1));
+    trigger.focus();
+    trigger.fire('keydown', { key: 'Escape' });
+    assert.equal(menu.hidden, true);
+    trigger.fire('click');
+    items[0].fire('click');
+    assert.equal(menu.hidden, true);
+    assert.equal(document.activeElement, trigger);
+    canvas.hiveDisposeView();
+  });
+}
+
+for (const overview of [false, true]) {
+  test(`resume reserves its layout space through pause, drag and rebuild in ${overview ? 'overview' : 'hive'}`, t => {
+    const f = fixture(t);
+    if (overview) { f.ui.closeCell(); f.draw(); }
+    const canvas = f.canvas();
+    canvas.fire('keydown', { key: '0' });
+    const tools = canvas.querySelector('.hive-zoom');
+    const slot = tools.querySelector('.hive-map-resume-slot');
+    assert.ok(slot, 'resume has a persistent layout slot');
+    const resume = slot.querySelector('button');
+    const launcher = tools.querySelector('.hive-map-menu-launcher');
+    const structure = [...tools.children];
+    assert.equal(resume.hidden, true);
+    const svg = canvas.querySelector('svg');
+    svg.fire('pointerdown', { button: 0, clientX: 10, clientY: 10 });
+    svg.fire('pointermove', { clientX: 30, clientY: 30 });
+    assert.equal(resume.hidden, false);
+    assert.deepEqual(tools.children, structure);
+    svg.fire('pointerup', { clientX: 30, clientY: 30 });
+    resume.fire('click');
+    assert.equal(resume.hidden, true);
+    const tile = canvas.querySelector(`[data-tile-id="${overview ? 'cell' : 'title'}"]`);
+    tile.fire('pointerdown', { button: 0, clientX: 10, clientY: 10 });
+    tile.fire('pointermove', { clientX: 30, clientY: 30 });
+    assert.ok(canvas.querySelector('.hive-zoom') === tools, 'drag does not rebuild controls');
+    assert.equal(resume.hidden, true, 'tile drag does not pause auto-fit');
+    assert.ok(tools.querySelector('.hive-map-menu-launcher') === launcher);
+    tile.fire('pointercancel');
+    f.beads.title.status = 'in_progress';
+    f.draw();
+    assert.ok(f.canvas().querySelector('.hive-map-resume-slot'));
+    assert.equal(f.canvas().querySelector('.hive-map-resume-slot').querySelector('button').hidden, true);
+    const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+    const hiddenResume = css.match(/\.hive-map-resume-slot > \.hive-zoom-btn\[hidden\]\s*\{([^}]+)\}/)?.[1];
+    assert.match(hiddenResume || '', /display:\s*inline-flex/, 'hidden resume retains its natural width and height');
+    assert.match(hiddenResume || '', /visibility:\s*hidden/, 'inactive resume is invisible and cannot receive focus');
+  });
+}
+
+for (const label of ['Key', 'Show retired (1)']) {
+  test(`activating ${label} keeps focus on the new menu trigger after a synchronous rebuild`, t => {
+    const f = fixture(t);
+    if (label !== 'Key') {
+      f.ctx.hive.cells.gone = { id: 'gone', rootBeadId: 'gone', enabled: false, retired: { outcome: 'done' } };
+      f.beads.gone = { id: 'gone', title: 'Gone', status: 'closed', kind: 'goal' };
+      f.ui.closeCell(); f.draw();
+    }
+    const method = label === 'Key' ? 'setForm' : 'setShowRetired';
+    const original = f.ui[method].bind(f.ui);
+    f.ui[method] = (...args) => {
+      original(...args);
+      const focus = captureFocus(f.top);
+      f.draw();
+      document.activeElement = document.body;
+      restoreFocus(f.top, focus);
+    };
+    const oldTrigger = f.canvas().querySelector('.hive-map-menu-toggle');
+    oldTrigger.fire('click');
+    const item = f.canvas().querySelector('.hive-map-menu').querySelectorAll('button').find(b => b.textContent === label);
+    item.focus();
+    item.fire('click');
+    const nextTrigger = f.canvas().querySelector('.hive-map-menu-toggle');
+    assert.ok(oldTrigger !== nextTrigger);
+    assert.ok(document.activeElement === nextTrigger);
+    assert.equal(nextTrigger.getAttribute('aria-expanded'), 'false');
+  });
+}
+
+test('a live map rebuild restores hidden menu item focus to the hamburger', t => {
+  const f = fixture(t);
+  f.canvas().querySelector('.hive-map-menu-toggle').fire('click');
+  const key = f.canvas().querySelector('.hive-map-menu').querySelectorAll('button').find(b => b.textContent === 'Key');
+  key.focus();
+  const focus = captureFocus(f.top);
+  f.beads.title.status = 'in_progress';
+  f.draw();
+  document.activeElement = document.body;
+  restoreFocus(f.top, focus);
+  assert.ok(document.activeElement === f.canvas().querySelector('.hive-map-menu-toggle'));
 });
 
 test('one in-map query filters topics and messages while highlighting the map, and clearing restores both', t => {

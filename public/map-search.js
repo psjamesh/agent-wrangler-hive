@@ -170,7 +170,7 @@ export function bindMapSearch({ ctx, cell = null, map, ids, hidden = new Set(), 
   map.el.setAttribute('tabindex', '0');
   map.el.setAttribute('data-focus-key', `map:${searchId}`);
   map.el.append(bar);
-  map.viewControls.append(trigger);
+  map.searchControls.append(trigger);
   map.el.hiveRefreshSearch = next => {
     latest = next;
     if (!(next.ui.searchQuery?.() || '').trim() && input.value) state.open = false;
