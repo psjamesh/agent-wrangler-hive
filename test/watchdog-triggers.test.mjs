@@ -209,6 +209,36 @@ test('a bead waiting on the human flags after the grace period and names the wai
   assert.deepEqual(f.flags(), []);
 });
 
+test('next actions naming a human wait use the same delay and request suppression', t => {
+  const f = fixture(t);
+  const nextAction = "Browser trials need the human's go-ahead";
+  f.bead('ask', { nextAction, waitingFor: 'CI is running' });
+  f.advance(10 * MIN - 1);
+  assert.deepEqual(f.flags(), []);
+  f.advance(1);
+  const [flag] = f.flags();
+  assert.equal(flag.kind, 'human_wait_unasked');
+  assert.equal(flag.bead_id, 'ask');
+  assert.ok(flag.reason.includes(nextAction));
+  f.rt.metadata.mutate(d => { d.requests.q = { id: 'q', cellId: 'cell', beadId: 'ask', state: 'open' }; });
+  assert.deepEqual(f.flags(), []);
+  f.rt.metadata.mutate(d => { d.requests.q.state = 'answered'; });
+  assert.equal(f.flags()[0].kind, 'human_wait_unasked');
+});
+
+test('next actions assigned to the queen or workers and negated human waits stay quiet', t => {
+  const f = fixture(t);
+  const quiet = [
+    'Queen: approve the browser trials', 'Worker must decide which test to run',
+    'Queen approval needed', 'Worker decision needed', 'Write human-readable diagnostics',
+    "Browser trials do not need the human's go-ahead", "The human's approval is not required",
+    "Browser trials no longer need the human's decision",
+  ];
+  quiet.forEach((nextAction, i) => f.bead(`quiet${i}`, { nextAction }));
+  f.advance(10 * MIN);
+  assert.deepEqual(f.flags(), []);
+});
+
 test('the grace period is a per-hive setting', t => {
   const f = fixture(t);
   assert.equal(WATCHDOG_DEFAULTS.humanWaitMinutes, 10);
@@ -255,7 +285,7 @@ test('the flag wakes the queen once, naming the bead and waiting text, and not a
 
 test('only explicit human-wait clauses count; human-readable and negated mentions do not', async () => {
   const { waitsOnHuman } = await import('../server/human-wait.js');
-  for (const yes of ['Human: pick one', 'human decision needed', 'Human approval required', 'Waiting for the human to confirm', 'Blocked on human', 'CI is slow. Awaiting human input', 'waiting on human', 'Human decision needed, not CI', 'Human approval required, CI is not needed', 'Waiting for the human to approve, another CI run is not required', 'Human approval needed but CI is unnecessary', 'Human: not sure which, pick one'])
+  for (const yes of ["Browser trials need the human's go-ahead", 'Needs human approval', 'Obtain the human’s decision', 'The human must approve the trials', 'Human needs to decide', 'Human: pick one', 'human decision needed', 'Human approval required', 'Waiting for the human to confirm', 'Blocked on human', 'CI is slow. Awaiting human input', 'waiting on human', 'Human decision needed, not CI', 'Human approval required, CI is not needed', 'Waiting for the human to approve, another CI run is not required', 'Human approval needed but CI is unnecessary', 'Human: not sure which, pick one'])
     assert.equal(waitsOnHuman(yes), true, yes);
   for (const no of ['Waiting for CI to emit human-readable diagnostics', 'No human input needed; waiting for CI', 'Not waiting for the human', 'Human approval not required; waiting for CI', 'Human input is not needed; waiting for CI', 'Waiting for the human is not necessary; CI is the only prerequisite', 'Human input is no longer needed', 'Human approval not required, waiting for CI', 'Waiting for humane treatment', 'Waiting on the merge queue', '', undefined])
     assert.equal(waitsOnHuman(no), false, String(no));
