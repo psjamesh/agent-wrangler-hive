@@ -113,7 +113,7 @@ test('a first-install backlog is one digest with at most ten items and no repeat
   for (let i = 0; i < 25; i++) {
     f.bead(`w${i}`, { ownerSessionId: `s${i}` });
     f.sessions[`s${i}`] = { status: 'idle', dormant: true, lastActivity: T0 };
-    f.bead(`v${i}`, { status: 'blocked', waitingFor: 'check 10:05Z' });
+    f.bead(`v${i}`, { status: 'blocked', resume: { reviewAt: '2099-01-01' }, waitingFor: 'check 10:05Z' });
   }
   f.advance(2 * 60 * MIN);
   assert.equal(f.flags().length, 50);

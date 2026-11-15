@@ -95,7 +95,8 @@ export function beadTile(ctx, bead, tile, kids) {
   const agentText = agents ? agents.text : 'No agent attached';
   const groupId = layout.parentHead[bead.id];
   const groupName = groupId && groupId !== bead.id ? hive.beads[groupId]?.title : (isHead && bead.parentId && bead.parentId !== layout.rootId ? hive.beads[bead.parentId]?.title : null);
-  let badge;
+  const designWait = waits.some(id => ['decision', 'investigation'].includes(hive.beads[id]?.kind));
+  let badge = designWait ? 'Waiting on design' : undefined;
   const parentLabel = isHead && bead.parentId !== layout.rootId ? groupName : null;
   const titleLines = parentLabel ? 4 : 5;
   let progress = null;
@@ -116,7 +117,7 @@ export function beadTile(ctx, bead, tile, kids) {
   const attachmentText = attachment?.status === 'detached' ? 'Detached from its parent; drag this heading to attach it.' : attachment?.status === 'sibling' ? `Attached via ${hive.beads[attachment.via]?.title || attachment.via} in the parent group.` : '';
   if (!badge && attachmentText) badge = attachment.status === 'detached' ? 'Detached' : 'Via sibling';
   const waitReasons = bead.status === 'closed' ? [] : [
-    waits.length ? `Needed first: ${waits.map((id) => hive.beads[id]?.title || id).join('; ')}` : '',
+    waits.length ? `${designWait ? 'Waiting on design. ' : ''}Needed first: ${waits.map((id) => hive.beads[id]?.title || id).join('; ')}` : '',
     ['requested', 'in_review'].includes(bead.reviewState) ? [bead.review?.summary, bead.review?.waitingFor].filter(Boolean).join('; ') : '',
   ].filter(Boolean);
   const own = `${state}${waits.length ? `, waits on ${waits.length}` : ''}${['requested', 'in_review'].includes(bead.reviewState) ? `, ${bead.reviewWorking ? 'reviewer working' : 'review pending'}` : ''}`;

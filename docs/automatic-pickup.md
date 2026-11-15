@@ -42,3 +42,15 @@ A failed or unknown start is never retried automatically. Its durable token tomb
 ## Design interpretation
 
 The readiness mark itself carries the queen's launch profile. There is no human profile-configuration prerequisite or per-hive pickup switch. No additional per-hive concurrency limit, launch allowance, spend pause or usage permission applies. The start-rate guards prevent bursts; they are not spending limits. An optional per-hive default profile is not required: each mark supplies its profile explicitly.
+
+## Dependency waits
+
+Closing a prerequisite means its result has been delivered. For PR-backed work the queen merges, keep the bead open through merge and any required install. The builder reports the reviewed PR and verification, then releases its claim for the queen to claim and finish after delivery. Opening a PR or passing review must not release dependent work.
+
+Scope prerequisites with `hive_link_beads` (`type: "blocks"`). Work waits until every blocking prerequisite closes, including normal and external beads. An open decision or investigation prerequisite labels the map **Waiting on design**. Link-derived waiting needs no hand-set status.
+
+When the last prerequisite closes, Hive clears link-only `blocked`/`deferred` status to `open` and clears its `waiting_for` annotation. Claims stay with their holders; resuming claimed work uses the normal claim/admission check. The queen gets one `prerequisites_resolved` watchdog notification per resolved prerequisite state, persisted across restarts. Already-armed unclaimed work proceeds through automatic pickup with the same arm token and the usual capacity, profile, brief and native-version safeguards. Hive's own wait-resolution write preserves a valid pickup receipt; it cannot repair a receipt invalidated by an unrelated native edit.
+
+Creating work, explicitly setting status on update/release, or removing a resume condition cannot establish `blocked` or `deferred` without an open blocking prerequisite, `resume_after_bead`, or `resume_review_at`. A create batch may include the prerequisite and its link together. Set a resume condition with `hive_update_bead` for calendar or prerequisite review; either explicit condition raises `deferred_due` for the queen, and links closing do not clear it. `waiting_for` is explanatory text, not a condition. For example, create an external release bead and link it rather than writing only "after the release ships".
+
+Existing prose-only blocked/deferred records stay readable and editable and can be released without changing status. They immediately raise `unstructured_wait` in watchdog attention so the queen can add the missing condition. The default age reminder for legacy deferred work still applies. Missing prerequisite records never count as completed or permit automatic pickup. Disabled hives, captured snapshots and incomplete reads do not trigger wait resolution.

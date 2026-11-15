@@ -315,7 +315,7 @@ export const createBeadsTool = hiveTool({
 
 export const updateBeadTool = hiveTool({
   name: 'hive_update_bead',
-  description: 'Update a bead in your cell: title, kind, goal, acceptance, summary (replace it, do not append a log), next action, waiting reason, status (open, in_progress, blocked, deferred) or parent, and add or remove evidence. Omitted fields are unchanged; an empty string clears a text field. Use hive_finish_bead to close work.',
+  description: 'Update a bead in your cell: title, kind, goal, acceptance, summary (replace it, do not append a log), next action, waiting reason, status (open, in_progress, blocked, deferred) or parent, and add or remove evidence. Omitted fields are unchanged; an empty string clears a text field. Blocked/deferred requires an open blocks prerequisite or resume_after_bead/resume_review_at. Use hive_finish_bead to close work.',
   inputSchema: {
     bead_id: beadId,
     title: z.string().max(200).optional().describe('Short, self-contained action or outcome in plain words. Clarify, never change scope.'),
@@ -326,8 +326,8 @@ export const updateBeadTool = hiveTool({
     next_action: z.string().max(2000).optional(),
     waiting_for: z.string().max(2000).optional().describe('What it is waiting on and why. Waiting is normal, not failure.'),
     status: z.enum(SETTABLE_STATUSES).optional(),
-    resume_review_at: z.string().max(40).optional().describe('With status "deferred": a review date (e.g. 2026-12-01) after which Hive raises the bead to the queen. Empty string clears it. Without any resume condition, the hive\'s default deferred review age applies.'),
-    resume_after_bead: z.string().max(80).optional().describe('With status "deferred": a prerequisite bead id; Hive raises this bead to the queen when it closes. Empty string clears it.'),
+    resume_review_at: z.string().max(40).optional().describe('With status "blocked" or "deferred": a review date (e.g. 2026-12-01) after which Hive raises the bead to the queen. Empty string clears it. Blocked/deferred requires a structured condition.'),
+    resume_after_bead: z.string().max(80).optional().describe('With status "blocked" or "deferred": a prerequisite bead id; Hive raises this bead to the queen when it closes. Empty string clears it.'),
     parent_id: z.string().max(80).optional().describe('New parent bead id; empty string moves it under the cell goal.'),
     expected_updated_at: z.string().max(80).optional().describe('Optional guard: the bead\'s updated_at as hive_context showed it. The update is refused if the bead has changed since. Omit to overwrite as before.'),
     add_evidence: z.array(evidenceSchema).max(20).optional(),

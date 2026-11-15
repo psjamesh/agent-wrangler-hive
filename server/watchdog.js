@@ -1,3 +1,4 @@
+import { explicitResume, linksResolved, prerequisites, resolveLinkWaits, structuredWait, waitStatus, STRUCTURED_WAIT_HELP } from './link-waits.js';
 import { pickupState } from './pickup.js';
 import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
@@ -135,18 +136,27 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       }
     }
     const updated = stamp(bead.updatedAt);
-    if ((bead.status === 'blocked' || bead.waitingFor) && updated && now - updated >= settings.waitHours * 3600000) {
+    if (waitStatus(bead.status) && !structuredWait(rt.snapshots.graph, bead) && !linksResolved(rt.snapshots.graph, bead.id)) {
+      add('unstructured_wait', bead.id, bead.status, updated || now, `Legacy wait has no structured condition. ${STRUCTURED_WAIT_HELP}`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
+    }
+    if (!explicitResume(bead) && !waitStatus(bead.status) && linksResolved(rt.snapshots.graph, bead.id)) {
+      const sources = prerequisites(rt.snapshots.graph, bead.id).map(e => beads[e.prerequisite]);
+      const state = sources.map(b => [b.id, b.closedAt || 'closed']).sort((a, b) => a[0].localeCompare(b[0]));
+      add('prerequisites_resolved', bead.id, state, Math.max(...sources.map(b => stamp(b.closedAt || b.updatedAt))) || now, 'All blocking prerequisites have closed; work is ready to continue.', { bead_id: bead.id, session_id: bead.ownerSessionId || null });
+    }
+
+    if ((bead.status === 'blocked' || bead.waitingFor || index.blockers.get(bead.id)) && updated && now - updated >= settings.waitHours * 3600000) {
       add('stale_wait', bead.id, [updated, bead.status, bead.waitingFor || ''], updated, 'Blocked or waiting work has not been touched.', { bead_id: bead.id, session_id: bead.ownerSessionId || null });
     }
-    if (bead.status === 'deferred') {
+    if ((waitStatus(bead.status) && explicitResume(bead)) || bead.status === 'deferred') {
       const resume = bead.resume || {};
       const reviewAt = stamp(resume.reviewAt);
       const prerequisite = resume.afterBead ? beads[resume.afterBead] : null;
       if (reviewAt && now >= reviewAt) {
-        add('deferred_due', bead.id, ['review', reviewAt], reviewAt, `Deferred bead's review date has passed.`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
+        add('deferred_due', bead.id, ['review', reviewAt], reviewAt, `Waiting bead's review date has passed.`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
       } else if (resume.afterBead && (!prerequisite || prerequisite.status === 'closed')) {
         const since = prerequisite ? stamp(prerequisite.closedAt) || stamp(prerequisite.updatedAt) || now : now;
-        add('deferred_due', bead.id, ['prerequisite', resume.afterBead], since, `Deferred bead's prerequisite ${resume.afterBead} has closed.`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
+        add('deferred_due', bead.id, ['prerequisite', resume.afterBead], since, `Waiting bead's prerequisite ${resume.afterBead} has closed.`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
       } else if (!reviewAt && !resume.afterBead && updated && now - updated >= settings.deferredDays * DAY_MS) {
         add('deferred_due', bead.id, ['age', updated], updated, `Deferred bead has not been reviewed for ${plural(settings.deferredDays, 'day')}.`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
       }
@@ -163,7 +173,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     const reviewOpen = history.some(r => OPEN_REVIEW_STATES.has(r.state));
     if (!claimed && !GROUP_KINDS.has(bead.kind) && updated) {
       const exitedClaim = session && ['exited', 'error', 'errored'].includes(session.status) && !session.archived;
-      const finished = !['blocked', 'deferred'].includes(bead.status) && !bead.waitingFor
+      const finished = !['blocked', 'deferred'].includes(bead.status) && !bead.waitingFor && !index.blockers.get(bead.id)
         && recordsCompletion(bead, sid ? [...QUEEN_ASKED, ...WORK_DONE] : QUEEN_ASKED);
       if (finished && !reviewOpen && now - updated >= settings.untrackedMinutes * 60000) {
         add('finished_open', bead.id, [updated, bead.status], updated, 'No worker holds this bead and its record says the work is finished or asks the queen to close it.', { bead_id: bead.id, session_id: sid || null });
@@ -184,7 +194,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     }
     const handedOff = reviewOpen || index.requesters.get(cell.id)?.has(sid)
       || recordsCompletion(bead, [...QUEEN_ASKED, ...WORK_DONE]);
-    if (bead.status === 'in_progress' && !session.archived && !handedOff && !bead.waitingFor
+    if (bead.status === 'in_progress' && !session.archived && !handedOff && !bead.waitingFor && !index.blockers.get(bead.id)
       && ['api-error', 'api-error-blocking'].includes(session.waitingReason) && session.status !== 'working') {
       add('stalled_worker', bead.id, [sid, 'api-error'], activity || now, 'Claimed worker ended its turn with an API error.', { bead_id: bead.id, session_id: sid });
       continue;
@@ -192,13 +202,13 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     const sleeping = sleepingReason(session);
     if (sleeping && !GROUP_KINDS.has(bead.kind) && !reviewOpen && !(session.hasBackgroundShell)) {
       const since = activity;
-      const waiting = bead.status === 'blocked' || bead.status === 'deferred' || bead.waitingFor || index.requesters.get(cell.id)?.has(sid);
+      const waiting = bead.status === 'blocked' || bead.status === 'deferred' || bead.waitingFor || index.blockers.get(bead.id) || index.requesters.get(cell.id)?.has(sid);
       if (!waiting && since && now - since >= settings.workerMinutes * 60000) {
         add('dormant_claim', bead.id, [sid, sleeping], since, `Claim is held by a ${sleeping} session with no recorded wait, request or review.`, { bead_id: bead.id, session_id: sid });
       }
       continue;
     }
-    if (session.status !== 'idle' || session.hasBackgroundShell || session.archived || ['blocked', 'deferred'].includes(bead.status) || bead.waitingFor) continue;
+    if (session.status !== 'idle' || session.hasBackgroundShell || session.archived || ['blocked', 'deferred'].includes(bead.status) || bead.waitingFor || index.blockers.get(bead.id)) continue;
     if (handedOff) continue;
     const latest = history.toSorted((a, b) => stamp(b.createdAt) - stamp(a.createdAt)).at(0);
     const since = Math.max(activity, latest?.state === 'approved' ? stamp(latest.completedAt || latest.verdict?.at || latest.updatedAt) : 0);
@@ -327,6 +337,8 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
     } finally { clearTimer(timer); }
   }
   async function pass() {
+    if (!usable()) return;
+    await resolveLinkWaits(rt, host);
     if (!usable()) return;
     const index = watchdogIndex(rt, host);
     saveWorkerActivity(rt, host, index.activity);
