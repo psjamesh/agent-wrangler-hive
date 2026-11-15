@@ -158,3 +158,16 @@ for (const input of ['human', 'request']) test(`dormant queen grace and failed $
   Object.assign(graph.sessions[0], { status: 'idle', managed: false });
   assert.deepEqual(needsRows(ctx, [cell]), []);
 });
+
+test('unresolved idle-ready watchdog attention reaches Needs you if queen stays idle', t => {
+  t.mock.method(Date, 'now', () => now);
+  const { cell, doc, graph } = fixture();
+  cell.watchdogFlags = { ready: { kind: 'idle_ready_work', episodeAt: old, bead_id: 'work', since: old - 15 * 60000 } };
+  cell.queenResponse = queenResponseState(doc, cell);
+  assert.equal(queenNotResponding(graph, cell, now), true);
+  const ctx = { graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
+  assert.equal(needsRows(ctx, [cell])[0].title, 'Queen not responding');
+  delete cell.watchdogFlags.ready;
+  cell.queenResponse = queenResponseState(doc, cell);
+  assert.deepEqual(needsRows(ctx, [cell]), []);
+});

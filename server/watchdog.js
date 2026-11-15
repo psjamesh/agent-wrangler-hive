@@ -1,6 +1,6 @@
 import { ciWaitAttention, ciWaitSuppresses, reconcileCiWaits } from './ci-waits.js';
 import { explicitResume, linksResolved, resolveLinkWaits, structuredWait, waitStatus, STRUCTURED_WAIT_HELP } from './link-waits.js';
-import { pickupState, defaultPickupProblem } from './pickup.js';
+import { pickupState, defaultPickupProblem, idleReadyProblem, idleReadyAvailable } from './pickup.js';
 import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
 import { awaitingQueen } from './conversation.js';
@@ -13,7 +13,7 @@ import { GROUP_KINDS, descendantIds } from './bead-model.js';
 import { humanWaitText } from './human-wait.js';
 import { observedWorkerActivityIndex, workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
 
-export const WATCHDOG_DEFAULTS = Object.freeze({ workerMinutes: 30, idleMinutes: 30, reviewMinutes: 60, messageMinutes: 30, queenResponseMinutes: 30, waitHours: 24, deferredDays: 7, untrackedMinutes: 30, waitGraceMinutes: 30, humanWaitMinutes: 10, pickupHeldMinutes: 5 });
+export const WATCHDOG_DEFAULTS = Object.freeze({ workerMinutes: 30, idleMinutes: 30, reviewMinutes: 60, messageMinutes: 30, queenResponseMinutes: 30, waitHours: 24, deferredDays: 7, untrackedMinutes: 30, waitGraceMinutes: 30, humanWaitMinutes: 10, pickupHeldMinutes: 5, idleReadyMinutes: 15 });
 const DAY_MS = 86400000;
 const stamp = value => typeof value === 'number' && Number.isFinite(value) ? value : typeof value === 'string' ? Date.parse(value) || 0 : 0;
 export const watchdogSettings = cell => {
@@ -67,7 +67,7 @@ export function setWatchdogSettings(rt, { cellId, settings }) {
   refuseSnapshot(cell);
   if (!settings || typeof settings !== 'object' || Array.isArray(settings) || !Object.keys(settings).length
     || Object.entries(settings).some(([key, value]) => !Object.hasOwn(WATCHDOG_DEFAULTS, key) || !Number.isFinite(value) || value <= 0 || value > 525600)) {
-    throw new HiveError('Watchdog thresholds must be positive numbers up to 525600, using workerMinutes, idleMinutes, reviewMinutes, messageMinutes, queenResponseMinutes, waitHours, deferredDays, untrackedMinutes, waitGraceMinutes, humanWaitMinutes and pickupHeldMinutes.');
+    throw new HiveError('Watchdog thresholds must be positive numbers up to 525600, using workerMinutes, idleMinutes, reviewMinutes, messageMinutes, queenResponseMinutes, waitHours, deferredDays, untrackedMinutes, waitGraceMinutes, humanWaitMinutes, pickupHeldMinutes and idleReadyMinutes.');
   }
   rt.metadata.mutate(d => { d.cells[cellId].watchdogSettings = { ...watchdogSettings(cell), ...settings }; });
   return { cellId, settings: watchdogSettings(rt.metadata.cell(cellId)) };
@@ -136,7 +136,14 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     add('blocked_status_migrated', cell.id, migrations.map(([id, migration]) => [id, migration.at]), Math.min(...migrations.map(([, migration]) => migration.at)),
       `Migrated blocked beads to open: ${ids.map(id => `${id} (${beads[id]?.title || id})`).join(', ')}. Links and waiting annotations were preserved. Waiting now comes from open blocks prerequisites.`, { migrated_bead_ids: ids });
   }
+  const idleAvailable = open.some(bead => idleReadyCandidate(bead, cell)) && idleReadyAvailable(rt, host, cell);
   for (const bead of open) {
+    const idleProblem = idleReadyProblem(rt, host, cell, bead, rt.snapshots.graph, now, idleAvailable);
+    const idleAnchor = cell.idleReadyAnchors?.[bead.id];
+    if (idleProblem && idleAnchor && now - idleAnchor.at >= settings.idleReadyMinutes * 60000) {
+      add('idle_ready_work', bead.id, idleAnchor.at, idleAnchor.at,
+        `Ready work ${bead.title || bead.id} cannot start despite free capacity: ${idleProblem}.`, { bead_id: bead.id });
+    }
     const pickupProblem = defaultPickupProblem(rt, host, cell, bead, rt.snapshots.graph, index.asked.get(cell.id) || new Set(), now);
     if (pickupProblem) add('pickup_unavailable', bead.id, pickupProblem, now, `Free work capacity cannot start scoped work: ${pickupProblem}`, { bead_id: bead.id });
     if (bead.pickup?.armed) {
@@ -286,6 +293,28 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
   return flags;
 }
 
+function idleReadyCandidate(bead, cell) {
+  return bead.id !== cell.rootBeadId && bead.status === 'open' && !bead.assignee
+    && !GROUP_KINDS.has(bead.kind) && !['decision', 'external', 'idea'].includes(bead.kind);
+}
+
+function syncIdleReadyAnchors(rt, host, now) {
+  const graph = rt.snapshots.graph;
+  const edits = [];
+  for (const cell of rt.metadata.cells()) {
+    const next = {};
+    const ids = cell.enabled && !cell.snapshot && cell.rootBeadId && graph.beads[cell.rootBeadId] ? descendantIds(graph.beads, cell.rootBeadId) : new Set();
+    const candidates = [...ids].filter(id => idleReadyCandidate(graph.beads[id], cell));
+    const available = candidates.length > 0 && idleReadyAvailable(rt, host, cell, graph);
+    for (const id of candidates) {
+      if (!available || !idleReadyProblem(rt, host, cell, graph.beads[id], graph, now, available)) continue;
+      next[id] = cell.idleReadyAnchors?.[id] || { at: now };
+    }
+    if (JSON.stringify(next) !== JSON.stringify(cell.idleReadyAnchors || {})) edits.push([cell.id, next]);
+  }
+  if (edits.length) rt.metadata.mutate(d => { for (const [id, anchors] of edits) d.cells[id].idleReadyAnchors = anchors; });
+}
+
 function syncPickupHoldAnchors(rt, host, now) {
   const beads = rt.snapshots.graph.beads;
   const edits = [];
@@ -382,6 +411,7 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
     const index = watchdogIndex(rt, host);
     saveWorkerActivity(rt, host, index.activity);
     syncWaitAnchors(rt);
+    syncIdleReadyAnchors(rt, host, now());
     syncPickupHoldAnchors(rt, host, now());
     const changes = new Map(), groups = new Map();
     for (const cell of rt.metadata.cells()) {
