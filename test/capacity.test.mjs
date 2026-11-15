@@ -75,7 +75,7 @@ test('per-cell occupied counts sum to capacity and mixed-hive summaries partitio
   setGraph([
     heading('root', null, 'goal', true), heading('stream', 'root', 'workstream', true),
     raw('a', 'stream', true), { ...raw('unowned', 'stream'), status: 'in_progress' },
-    { ...raw('blocked', 'root', true), status: 'blocked' },
+    { ...raw('deferred', 'root', true), status: 'deferred' },
     heading('external', 'root', 'external', true),
     heading('other', null, 'goal'), heading('heading', 'other', 'workstream'),
     raw('b', 'heading', true), raw('review', 'heading'), raw('launch', 'other'),
@@ -88,7 +88,7 @@ test('per-cell occupied counts sum to capacity and mixed-hive summaries partitio
   assert.equal(counts.reduce((sum, count) => sum + count, 0), hive.capacity.used);
   for (const cell of cells) {
     for (const c of [cellCounts(hive, cell), workCounts(hive, childrenMap(hive.beads), cell.rootBeadId)]) {
-      assert.equal(c.open + c.in_progress + c.in_review + c.blocked + c.closed + c.not_active, c.total);
+      assert.equal(c.open + c.in_progress + c.in_review + c.closed + c.not_active, c.total);
     }
   }
   assert.equal(workCounts(hive, childrenMap(hive.beads), 'stream').in_progress, 0);
@@ -128,7 +128,7 @@ test('summary categories partition reviewed, closed and status-only work without
     assert.equal(c.in_review, 1);
     assert.equal(c.closed, 1);
     assert.equal(c.not_active, 2);
-    assert.equal(c.open + c.in_progress + c.in_review + c.blocked + c.closed + c.not_active, c.total);
+    assert.equal(c.open + c.in_progress + c.in_review + c.closed + c.not_active, c.total);
     assert.match(countsSentence(c), /2 not active/);
   }
   assert.equal(hive.cells.one.occupiedCount, 2);

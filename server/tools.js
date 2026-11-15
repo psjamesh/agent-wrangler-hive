@@ -1,3 +1,4 @@
+import { hasBlockingPrerequisite } from './human-wait.js';
 import { setPickup, pickupState } from './pickup.js';
 import { collectWatchdog, watchdogSettings, archiveSuggestions } from './watchdog.js';
 import { reviewPolicy } from './review-policy.js';
@@ -17,7 +18,7 @@ import { HiveError } from './ops.js';
 import { sessionSummary } from './sessions.js';
 import { handoffQueen } from './queen-handoff.js';
 import { ungovernedDescendants } from './tracking.js';
-import { descendantIds, openDescendants, LINK_TYPES, OUTCOMES, SETTABLE_STATUSES } from './bead-model.js';
+import { BLOCKED_STATUS_HELP, descendantIds, openDescendants, LINK_TYPES, OUTCOMES, SETTABLE_STATUSES } from './bead-model.js';
 import { cellContextConversation, publish, acknowledgeInput, updateThread } from './conversation.js';
 
 const KNOWN_CODES = new Set(['access', 'invalid', 'conflict', 'refused', 'uncertain', 'partial', 'failed', 'busy', 'setup-required', 'metadata-unavailable']);
@@ -244,7 +245,7 @@ export async function buildContext(rt, host, actor, { include_closed = false, be
       attention: {
         watchdog: collectWatchdog(rt, host, cell),
         workstreams_needing_refresh: Object.values(doc.workstreamRefresh || {}).filter(entry => entry.cellId === cell.id && ids.has(entry.bead_id) && beads[entry.bead_id]?.kind === 'workstream' && beads[entry.bead_id].status !== 'closed'),
-        waiting_beads: open.filter((b) => b.waitingFor).map((b) => ({ bead_id: b.id, title: b.title, status: b.status, owner_session_id: b.ownerSessionId, waiting_for: b.waitingFor })),
+        waiting_beads: open.filter((b) => hasBlockingPrerequisite(rt.snapshots.graph, b.id)).map((b) => ({ bead_id: b.id, title: b.title, status: b.status, owner_session_id: b.ownerSessionId, waiting_for: b.waitingFor })),
         in_progress_without_owner: open.filter((b) => b.status === 'in_progress' && !b.assignee).map((b) => ({ bead_id: b.id, title: b.title, next_action: b.nextAction || undefined })),
         untracked_beads: open.filter((b) => isUntracked(host, rt.snapshots.graph, { ...b, ...reviewFields(rt, b.id) })).map((b) => ({ bead_id: b.id, title: b.title, owner_session_id: b.ownerSessionId })),
         untracked_sessions: sessions.filter((s) => s.session_id !== cell.queenSessionId && s.known && !s.archived && s.status !== 'exited' && !s.claims.length && !Object.values(doc.reviews || {}).some((r) => OPEN_REVIEW_STATES.has(r.state) && r.reviewerSessionId === s.session_id)).map((s) => ({ session_id: s.session_id, status: s.status, note: 'No claimed open bead; sessions started outside Hive are untracked until claimed.' })),
@@ -303,7 +304,7 @@ export const createBeadsTool = hiveTool({
       acceptance: z.string().max(20000).optional().describe('How anyone can tell it is achieved.'),
       summary: z.string().max(20000).optional().describe('Current understanding (Markdown).'),
       next_action: z.string().max(2000).optional(),
-      status: z.enum(SETTABLE_STATUSES).optional(),
+      status: z.enum(SETTABLE_STATUSES, { error: BLOCKED_STATUS_HELP }).optional(),
     })).min(1).max(50),
     links: z.array(strictObject({
       dependent: z.string().max(80).describe('Bead id or ref that depends on `prerequisite`.'),
@@ -315,7 +316,7 @@ export const createBeadsTool = hiveTool({
 
 export const updateBeadTool = hiveTool({
   name: 'hive_update_bead',
-  description: 'Update a bead in your cell: title, kind, goal, acceptance, summary (replace it, do not append a log), next action, waiting reason, status (open, in_progress, blocked, deferred) or parent, and add or remove evidence. Omitted fields are unchanged; an empty string clears a text field. Blocked/deferred requires an open blocks prerequisite or resume_after_bead/resume_review_at. Use hive_finish_bead to close work.',
+  description: 'Update a bead in your cell: title, kind, goal, acceptance, summary (replace it, do not append a log), next action, waiting reason, status (open, in_progress, deferred) or parent, and add or remove evidence. Omitted fields are unchanged; an empty string clears a text field. Deferred requires an open blocks prerequisite or resume_after_bead/resume_review_at. Use hive_finish_bead to close work.',
   inputSchema: {
     bead_id: beadId,
     title: z.string().max(200).optional().describe('Short, self-contained action or outcome in plain words. Clarify, never change scope.'),
@@ -325,9 +326,9 @@ export const updateBeadTool = hiveTool({
     summary: z.string().max(20000).optional(),
     next_action: z.string().max(2000).optional(),
     waiting_for: z.string().max(2000).optional().describe('What it is waiting on and why. Waiting is normal, not failure.'),
-    status: z.enum(SETTABLE_STATUSES).optional(),
-    resume_review_at: z.string().max(40).optional().describe('With status "blocked" or "deferred": a review date (e.g. 2026-12-01) after which Hive raises the bead to the queen. Empty string clears it. Blocked/deferred requires a structured condition.'),
-    resume_after_bead: z.string().max(80).optional().describe('With status "blocked" or "deferred": a prerequisite bead id; Hive raises this bead to the queen when it closes. Empty string clears it.'),
+    status: z.enum(SETTABLE_STATUSES, { error: BLOCKED_STATUS_HELP }).optional(),
+    resume_review_at: z.string().max(40).optional().describe('With status "deferred": a review date (e.g. 2026-12-01) after which Hive raises the bead to the queen. Empty string clears it. Deferred requires a structured condition.'),
+    resume_after_bead: z.string().max(80).optional().describe('With status "deferred": a prerequisite bead id; Hive raises this bead to the queen when it closes. Empty string clears it.'),
     parent_id: z.string().max(80).optional().describe('New parent bead id; empty string moves it under the cell goal.'),
     expected_updated_at: z.string().max(80).optional().describe('Optional guard: the bead\'s updated_at as hive_context showed it. The update is refused if the bead has changed since. Omit to overwrite as before.'),
     add_evidence: z.array(evidenceSchema).max(20).optional(),
@@ -361,7 +362,7 @@ export const releaseBeadTool = hiveTool({
     bead_id: beadId,
     reason: z.string().max(2000).optional(),
     force: z.boolean().optional(),
-    status: z.enum(SETTABLE_STATUSES).optional().describe('Status after release. Omit to keep the current status.'),
+    status: z.enum(SETTABLE_STATUSES, { error: BLOCKED_STATUS_HELP }).optional().describe('Status after release. Omit to keep the current status.'),
   },
 }, ({ rt, actor, args }) => ops.releaseBead(rt, actor, args));
 

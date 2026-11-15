@@ -138,7 +138,7 @@ test('idle workers, exited and errored claims flag; handoffs suppress idle only'
   f.advance(1); assert.equal(f.flags()[0].kind, 'stalled_worker');
   f.sessions.worker.status = 'working'; assert.deepEqual(f.flags(), []);
   f.sessions.worker.status = 'idle';
-  for (const status of ['blocked', 'deferred']) { f.beads.work.status = status; f.beads.work.resume = { reviewAt: '2099-01-01' }; f.beads.work.waitingFor = 'prerequisite'; assert.deepEqual(f.flags(), []); }
+  for (const status of ['deferred']) { f.beads.work.status = status; f.beads.work.resume = { reviewAt: '2099-01-01' }; f.beads.work.waitingFor = 'prerequisite'; assert.deepEqual(f.flags(), []); }
   f.beads.work.status = 'in_progress'; f.beads.work.waitingFor = 'Waiting for merge'; assert.deepEqual(f.flags(), []);
   for (const status of ['exited', 'error']) { f.sessions.worker.status = status; assert.equal(f.flags()[0].kind, 'stalled_worker'); }
   f.beads.work.status = 'closed'; assert.deepEqual(f.flags(), []);
@@ -256,7 +256,7 @@ test('all thresholds are hive-specific and review/message/wait clear before thei
     d.reviews.r = { id: 'r', cellId: 'cell', workBeadId: 'work', state: 'requested', createdAt: f.now() };
     d.conversation.cell = [{ id: 'm', author: 'human', at: f.now(), response: { required: true } }];
   });
-  f.beads.work.status = 'blocked'; f.beads.work.resume = { reviewAt: '2099-01-01' };
+  f.beads.work.status = 'deferred'; f.beads.work.resume = { reviewAt: '2099-01-01' }; f.beads.work.waitingFor = 'Awaiting prerequisite';
   setWatchdogSettings(f.rt, { cellId: 'cell', settings: { workerMinutes: 1, reviewMinutes: 1, messageMinutes: 1, waitHours: 1 / 60 } });
   f.advance(MIN - 1); assert.deepEqual(f.flags(), []);
   f.advance(1); assert.equal(f.flags().length, 3);
@@ -330,7 +330,7 @@ test('large conversations and requests are traversed once rather than once per b
 
 test('backlogs and queen replacement send one readable digest with a receipt per item', async t => {
   const f = fixture(t);
-  for (let i = 0; i < 50; i++) f.beads[`wait${i}`] = { id: `wait${i}`, parentId: 'root', status: 'blocked', resume: { reviewAt: '2099-01-01' }, waitingFor: 'dependency', updatedAt: f.now() - 25 * 3600000 };
+  for (let i = 0; i < 50; i++) f.beads[`wait${i}`] = { id: `wait${i}`, parentId: 'root', status: 'deferred', resume: { reviewAt: '2099-01-01' }, waitingFor: 'dependency', updatedAt: f.now() - 25 * 3600000 };
   await f.watchdog.run(); assert.equal(f.sent.length, 1);
   assert.match(f.sent[0].text, /50/); assert.match(f.sent[0].text, /stale_wait/); assert.match(f.sent[0].text, /full list/i);
   assert.ok(f.sent[0].text.length < 4000);
@@ -359,7 +359,7 @@ test('a hung delivery times out while all cells still flag and later clear', asy
   f.host.deliver = () => new Promise(() => {});
   const watchdog = createWatchdog({ runtime: f.rt, host: f.host, now: f.now, setTimer: fn => { timeout = fn; return 1; }, clearTimer() {} });
   const pass = watchdog.run();
-  await Promise.resolve();
+  await new Promise(resolve => setImmediate(resolve));
   assert.ok(Object.keys(f.rt.metadata.cell('second').watchdogFlags || {}).length);
   assert.equal(typeof timeout, 'function'); timeout(); await pass;
   for (const cell of f.rt.metadata.cells()) assert.equal(Object.values(cell.watchdogFlags)[0].noticed['queen:0'].state, 'uncertain');

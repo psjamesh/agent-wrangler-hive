@@ -60,7 +60,7 @@ async function fixture(t, status = 'in_progress') {
   return { rt, actor, host, id: ids.work, dir, control, native: (args) => JSON.parse(execFileSync(executable, args, { ...nativeOptions, encoding: 'utf8' })) };
 }
 
-for (const status of ['open', 'in_progress', 'blocked', 'deferred']) {
+for (const status of ['open', 'in_progress', 'deferred']) {
   test(`release preserves ${status} in a native embedded store`, async (t) => {
     const { rt, actor, id } = await fixture(t, status);
     await releaseBead(rt, actor, { bead_id: id });
@@ -74,9 +74,9 @@ for (const status of ['open', 'in_progress', 'blocked', 'deferred']) {
 }
 
 test('explicit release status overrides the prior status', async (t) => {
-  const { rt, actor, id } = await fixture(t, 'blocked');
-  await releaseBead(rt, actor, { bead_id: id, status: 'deferred' });
-  assert.equal((await rt.beads.show(id)).status, 'deferred');
+  const { rt, actor, id } = await fixture(t, 'deferred');
+  await releaseBead(rt, actor, { bead_id: id, status: 'open' });
+  assert.equal((await rt.beads.show(id)).status, 'open');
 });
 
 test('human release also preserves the prior status', async (t) => {
@@ -107,10 +107,10 @@ test('an unresolved release fences new claims', async (t) => {
 for (const step of ['prepare', 'unclaim', 'restore']) {
   for (const timing of ['before', 'after']) {
     test(`native failure ${timing} ${step} remains durable and is never replayed`, async (t) => {
-      const f = await fixture(t, 'blocked');
+      const f = await fixture(t, 'deferred');
       let fired = false;
       const match = (args) => step === 'unclaim' ? args[0] === 'unclaim'
-        : args[0] === 'update' && args[args.indexOf('--status') + 1] === (step === 'prepare' ? 'open' : 'blocked');
+        : args[0] === 'update' && args[args.indexOf('--status') + 1] === (step === 'prepare' ? 'open' : 'deferred');
       f.control[timing] = (args) => {
         if (!fired && match(args)) { fired = true; throw Object.assign(new Error('injected native failure'), { code: timing === 'before' ? 1 : null }); }
       };
@@ -124,7 +124,7 @@ for (const step of ['prepare', 'unclaim', 'restore']) {
       const unclaims = f.control.calls.filter((args) => args[0] === 'unclaim').length;
       const current = await rt.beads.show(f.id);
       const settled = await settleOne(rt, op.id);
-      assert.equal(settled.settled, !current.assignee && current.status === 'blocked');
+      assert.equal(settled.settled, !current.assignee && current.status === 'deferred');
       assert.equal(f.control.calls.filter((args) => args[0] === 'unclaim').length, unclaims);
       const context = await buildContext(rt, f.host, f.actor);
       assert.equal(context.attention.operations_to_reconcile.length, settled.settled ? 0 : 1);
@@ -144,11 +144,11 @@ test('context lists in-progress work without an owner after release', async (t) 
 });
 
 test('holder guards reject another actor and stale holders without changing status', async (t) => {
-  const f = await fixture(t, 'blocked');
+  const f = await fixture(t, 'deferred');
   const other = 'aw:00000000-0000-4000-8000-000000000002';
   await assert.rejects(releaseBead(f.rt, { ...f.actor, sessionId: other.slice(3) }, { bead_id: f.id }), { code: 'conflict' });
-  await assert.rejects(f.rt.beads.release(f.id, who, { holder: other, priorStatus: 'blocked', status: 'blocked' }), { code: 'conflict' });
-  assert.equal((await f.rt.beads.show(f.id)).status, 'blocked');
+  await assert.rejects(f.rt.beads.release(f.id, who, { holder: other, priorStatus: 'deferred', status: 'deferred' }), { code: 'conflict' });
+  assert.equal((await f.rt.beads.show(f.id)).status, 'deferred');
   assert.equal((await f.rt.beads.show(f.id)).assignee, who);
 });
 
@@ -193,7 +193,7 @@ test('native unclaim clears the lease and started_at and records its event', asy
 });
 
 test('process crashes at every journal and native boundary remain reconcilable after restart', async (t) => {
-  const f = await fixture(t, 'blocked');
+  const f = await fixture(t, 'deferred');
   const moduleUrls = Object.fromEntries(['beads', 'metadata-store', 'snapshots', 'ops'].map((name) => [name, new URL(`../../server/${name}.js`, import.meta.url).href]));
   const boundaries = ['journal', ...['prepare', 'unclaim', 'restore'].flatMap((step) => [`${step}:started`, `${step}:native`, `${step}:done`])];
   for (const boundary of boundaries) {
@@ -201,7 +201,7 @@ test('process crashes at every journal and native boundary remain reconcilable a
       const { ids } = await f.rt.beads.createMany({ nodes: [{ key: 'work', title: boundary, parentId: f.actor.cell.rootBeadId }] }, who, `op_${boundary.replace(':', '_')}`);
       const id = ids.work;
       await f.rt.beads.claim(id, who);
-      await f.rt.beads.update(id, { status: 'blocked' }, who);
+      await f.rt.beads.update(id, { status: 'deferred' }, who);
       const script = `
         import path from 'node:path';
         import { execFile } from 'node:child_process';
@@ -247,7 +247,7 @@ test('process crashes at every journal and native boundary remain reconcilable a
       const before = await f.rt.beads.show(id);
       const calls = f.control.calls.length;
       const settled = await settleOne(f.rt, op.id);
-      assert.equal(settled.settled, !before.assignee && before.status === 'blocked');
+      assert.equal(settled.settled, !before.assignee && before.status === 'deferred');
       assert.ok(f.control.calls.slice(calls).every((args) => args[0] === '--readonly'));
       assert.deepEqual(await f.rt.beads.show(id), before);
       const context = await buildContext(f.rt, f.host, f.actor);
@@ -296,13 +296,13 @@ for (const failedReceipt of ['unclaim', 'applied']) {
 }
 
 test('other adapter commands cannot enter between release steps', async (t) => {
-  const f = await fixture(t, 'blocked');
+  const f = await fixture(t, 'deferred');
   let queued;
   f.control.before = (args) => {
     if (!queued && args[0] === 'update' && args.includes('--if-status')) queued = f.rt.beads.show(f.id);
   };
   await releaseBead(f.rt, f.actor, { bead_id: f.id });
-  assert.equal((await queued).status, 'blocked');
+  assert.equal((await queued).status, 'deferred');
   assert.ok(!(await queued).assignee);
 });
 
@@ -311,12 +311,12 @@ function pendingRelease(f) {
   f.rt.metadata.mutate((d) => {
     d.operations.op_interrupted = { id: 'op_interrupted', kind: 'release', cellId: f.actor.cell.id, state: 'pending',
       updatedAt: Date.now(), beadIds: [f.id], releaseStep: { step: 'prepare', state: 'done' },
-      intent: { beadId: f.id, holder: who, priorStatus: 'blocked', status: 'blocked' } };
+      intent: { beadId: f.id, holder: who, priorStatus: 'deferred', status: 'deferred' } };
   });
 }
 
 test('R1 compound creation fences existing link endpoints and parents before native writes', async (t) => {
-  const f = await fixture(t, 'blocked');
+  const f = await fixture(t, 'deferred');
   let interrupted = false;
   f.control.after = (args) => {
     if (!interrupted && args[0] === 'update' && args.includes('--if-status')) {
@@ -342,7 +342,7 @@ test('R1 compound creation fences existing link endpoints and parents before nat
 });
 
 test('R1 reparenting fences both the old and new existing parent', async (t) => {
-  const f = await fixture(t, 'blocked');
+  const f = await fixture(t, 'deferred');
   const { ids } = await f.rt.beads.createMany({ nodes: [
     { key: 'inside', title: 'Inside', parentId: f.id },
     { key: 'outside', title: 'Outside', parentId: f.actor.cell.rootBeadId },
@@ -358,7 +358,7 @@ test('R1 reparenting fences both the old and new existing parent', async (t) => 
 });
 
 test('review control: unrelated creation stays writable and reconciliation clears the fence', async (t) => {
-  const f = await fixture(t, 'blocked');
+  const f = await fixture(t, 'deferred');
   pendingRelease(f);
   const result = await createBeads(f.rt, f.actor, { beads: [{ ref: 'new', title: 'Unrelated' }] });
   await updateBead(f.rt, f.actor, { bead_id: result.ids.new, summary: 'Unrelated writes work' });
@@ -368,7 +368,7 @@ test('review control: unrelated creation stays writable and reconciliation clear
   assert.equal(f.rt.metadata.read().operations.op_interrupted.state, 'resolved');
 });
 
-for (const status of ['in_progress', 'blocked']) {
+for (const status of ['in_progress', 'deferred']) {
   test(`R2 first-step holder mismatch from ${status} leaves the new holder writable`, async (t) => {
     const f = await fixture(t, status);
     const otherId = '00000000-0000-4000-8000-000000000002';
@@ -377,7 +377,7 @@ for (const status of ['in_progress', 'blocked']) {
     f.control.before = (args, options) => {
       if (!raced && (status === 'in_progress' ? args[0] === 'unclaim' : args[0] === 'update' && args.includes('--if-status'))) {
         raced = true;
-        if (status === 'blocked') execFileSync(executable, ['update', f.id, '--status', 'open', '--json', '--actor', who], options);
+        if (status === 'deferred') execFileSync(executable, ['update', f.id, '--status', 'open', '--json', '--actor', who], options);
         execFileSync(executable, ['unclaim', f.id, '--if-assignee', who, '--json', '--actor', who], options);
         execFileSync(executable, ['update', f.id, '--if-assignee', '', '--assignee', other, '--status', 'in_progress', '--json', '--actor', other], options);
       }
@@ -394,9 +394,9 @@ for (const status of ['in_progress', 'blocked']) {
   });
 }
 
-test('review control: blocked and deferred releases retain native cleanup and unclaimed events', async (t) => {
-  const f = await fixture(t, 'blocked');
-  for (const status of ['blocked', 'deferred']) {
+test('review control: deferred releases retain native cleanup and unclaimed events', async (t) => {
+  const f = await fixture(t, 'deferred');
+  for (const status of ['deferred']) {
     await f.rt.beads.update(f.id, { status: 'in_progress' }, who);
     f.native(['heartbeat', f.id, '--actor', who, '--json']);
     await f.rt.beads.update(f.id, { status }, who);
@@ -416,7 +416,7 @@ test('review control: blocked and deferred releases retain native cleanup and un
 });
 
 test('R2 a holder mismatch after successful prepare still requires reconciliation', async (t) => {
-  const f = await fixture(t, 'blocked');
+  const f = await fixture(t, 'deferred');
   const other = 'aw:00000000-0000-4000-8000-000000000002';
   let raced = false;
   f.control.before = (args, options) => {
@@ -436,7 +436,7 @@ test('R2 a holder mismatch after successful prepare still requires reconciliatio
 
 
 test('R1 deletion respects a fenced existing parent at preview and execution', async (t) => {
-  const f = await fixture(t, 'blocked');
+  const f = await fixture(t, 'deferred');
   f.rt.metadata.mutate((d) => { d.cells[f.actor.cell.id].queenSessionId = sessionId; });
   const actor = { ...f.actor, role: 'queen' };
   const { ids } = await f.rt.beads.createMany({ nodes: [{ key: 'child', title: 'Removable child', parentId: f.id }] }, who, 'op_child');
@@ -468,7 +468,7 @@ test('R2 an ambiguous verification mismatch after native unclaim remains uncerta
   assert.equal(needsSettling(Object.values(f.rt.metadata.read().operations)[0]), true);
 });
 
-for (const status of ['open', 'in_progress', 'blocked', 'deferred']) {
+for (const status of ['open', 'in_progress', 'deferred']) {
   test(`archive cleanup preserves ${status} with the native release sequence`, async (t) => {
     const { releaseArchivedClaims } = await import('../../server/archived-claims.js');
     const { rt, host, id } = await fixture(t, status);
@@ -484,7 +484,7 @@ for (const status of ['open', 'in_progress', 'blocked', 'deferred']) {
 
 test('native archive cleanup does not write when the session is restored during its queued pre-read', async (t) => {
   const { releaseArchivedClaims } = await import('../../server/archived-claims.js');
-  const { rt, host, id, control } = await fixture(t, 'blocked');
+  const { rt, host, id, control } = await fixture(t, 'deferred');
   let archived = true;
   let shows = 0;
   host.sessions.get = (sid) => sid === sessionId ? { sessionId, archived } : null;
@@ -495,6 +495,6 @@ test('native archive cleanup does not write when the session is restored during 
   control.before = null;
   const after = await rt.beads.show(id);
   assert.equal(after.assignee, who);
-  assert.equal(after.status, 'blocked');
+  assert.equal(after.status, 'deferred');
   assert.equal(control.calls.some((args) => args.includes('update') || args.includes('unclaim')), false);
 });

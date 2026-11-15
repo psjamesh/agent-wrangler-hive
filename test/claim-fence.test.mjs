@@ -51,7 +51,7 @@ test('claim export, capacity check and guarded write share one adapter queue job
     assert.equal(issues.find((b) => b.id === 'b').status, 'open');
     assert.equal(f.calls.length, 1);
     checked = true;
-  }), f.adapter.update('b', { status: 'blocked' }, 'aw:queen')]);
+  }), f.adapter.update('b', { status: 'deferred' }, 'aw:queen')]);
   assert(checked);
   assert.deepEqual(f.calls.map((a) => a.filter((s) => s !== '--readonly').slice(0, 2)), [['export', '--all'], ['update', 'a'], ['update', 'b']]);
   assert.equal(f.live.a.assignee, 'aw:worker');
@@ -64,7 +64,7 @@ test('retirement after a queued claim export prevents its write and later queued
   const lifetime = new RuntimeLifetime();
   const f = await adapterFixture(t, { assertCurrent: () => lifetime.assertCurrent() });
   const claim = f.adapter.claim('a', 'aw:worker', () => lifetime.stop());
-  const update = f.adapter.update('b', { status: 'blocked' }, 'aw:queen');
+  const update = f.adapter.update('b', { status: 'deferred' }, 'aw:queen');
   const outcomes = await Promise.allSettled([claim, update]);
   assert.deepEqual(outcomes.map(row => row.reason?.code), ['runtime-stopped', 'runtime-stopped']);
   assert.equal(f.live.a.assignee, null);
@@ -94,29 +94,29 @@ test('a foreign claim read at the fence is preserved and nothing is written', as
 test('a start update carries both native guards and preserves a holder replaced after export', async (t) => {
   const f = await adapterFixture(t);
   f.live.a.assignee = 'aw:worker';
-  f.live.a.status = 'blocked';
+  f.live.a.status = 'deferred';
   await assert.rejects(f.adapter.update('a', { status: 'in_progress' }, 'aw:worker', ({ issues }) => {
     const before = issues.find((b) => b.id === 'a');
     f.live.a.assignee = 'aw:replacement';
     return { assignee: before.assignee, status: before.status };
   }), /guard mismatch/);
   assert.equal(f.live.a.assignee, 'aw:replacement');
-  assert.equal(f.live.a.status, 'blocked');
+  assert.equal(f.live.a.status, 'deferred');
   assert(f.calls[1].includes('--if-status'));
-  assert.equal(f.calls[1][f.calls[1].indexOf('--if-status') + 1], 'blocked');
+  assert.equal(f.calls[1][f.calls[1].indexOf('--if-status') + 1], 'deferred');
 });
 
 
 test('a start update preserves a status changed after its admission export', async (t) => {
   const f = await adapterFixture(t);
   f.live.a.assignee = 'aw:worker';
-  f.live.a.status = 'blocked';
+  f.live.a.status = 'deferred';
   await assert.rejects(f.adapter.update('a', { status: 'in_progress' }, 'aw:worker', ({ issues }) => {
     const before = issues.find((b) => b.id === 'a');
-    f.live.a.status = 'deferred';
+    f.live.a.status = 'open';
     return { assignee: before.assignee, status: before.status };
   }), /guard mismatch/);
-  assert.equal(f.live.a.status, 'deferred');
+  assert.equal(f.live.a.status, 'open');
 });
 
 test('display snapshots may tolerate malformed lines but admission snapshots reject the incomplete export', async (t) => {
@@ -125,4 +125,13 @@ test('display snapshots may tolerate malformed lines but admission snapshots rej
   assert.deepEqual((await f.adapter.loadSnapshot()).beads, {});
   await assert.rejects(f.adapter.loadSnapshot({ all: true }), /incomplete/);
   assert.equal(f.calls.filter((a) => a.includes('update')).length, 0);
+});
+
+test('adapter refuses blocked targets for update, creation and managed release', async t => {
+  const f = await adapterFixture(t);
+  const message = /blocked.*no longer stored.*hive_link_beads/;
+  await assert.rejects(f.adapter.update('a', { status: 'blocked' }, 'aw:queen'), message);
+  await assert.rejects(f.adapter.createMany({ nodes: [{ key: 'a', title: 'No', status: 'blocked' }] }, 'aw:queen', 'op'), message);
+  await assert.rejects(f.adapter.release('a', 'aw:queen', { holder: 'aw:queen', priorStatus: 'open', status: 'blocked' }), message);
+  assert.equal(f.calls.length, 0);
 });

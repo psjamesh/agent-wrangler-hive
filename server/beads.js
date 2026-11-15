@@ -1,3 +1,4 @@
+import { BLOCKED_STATUS_HELP } from './bead-model.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFile as nodeExecFile } from 'node:child_process';
@@ -407,6 +408,7 @@ export function createBeadsAdapter({
 
   async function createManyNow({ nodes, edges = [] }, actor, opId) {
     requireReady();
+    if (Array.isArray(nodes) && nodes.some(n => n.status === 'blocked')) throw new BeadsError('refused', BLOCKED_STATUS_HELP);
     if (!Array.isArray(nodes) || !nodes.length) throw new BeadsError('invalid', 'Nothing to create.');
     for (const e of edges) {
       if (e.fromId) checkId(e.fromId, 'link end');
@@ -459,6 +461,7 @@ export function createBeadsAdapter({
 
   async function updateNow(id, patch, actor, check) {
     requireReady();
+    if (patch.status === 'blocked') throw new BeadsError('refused', BLOCKED_STATUS_HELP);
     if (check) {
       const exe = state.executable;
       const args = updateArgs(id, patch, actor);
@@ -572,6 +575,7 @@ export function createBeadsAdapter({
   }
 
   async function managedRelease(id, actor, { reason, holder, priorStatus, status, onStep, check }) {
+    if (status === 'blocked') throw new BeadsError('refused', BLOCKED_STATUS_HELP);
     const statuses = ['open', 'in_progress', 'blocked', 'deferred'];
     if (!holder || !statuses.includes(priorStatus) || !statuses.includes(status)) {
       throw new BeadsError('invalid', 'A managed release needs a holder and supported prior and target statuses.');

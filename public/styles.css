@@ -761,7 +761,7 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 /* The primary mark: one per item, centred at the bottom, in Agent
    Wrangler's own status colours and never a workstream hue. Solid red person
    (an agent waiting for input) and solid green robot (an agent working),
-   each with the theme's paired bar ink; a bare warning-ink cross (blocked or
+   each with the theme's paired bar ink; a bare warning-ink cross (prerequisite
    waiting on a prerequisite); an outlined grey tick (done), so it never
    reads as the green of work in progress; grey minus (closed otherwise) and
    grey pause (deferred). Words are in its title and the tile's name. */
@@ -1060,7 +1060,6 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 
 .hive-status-pill.hive-status-in_progress { background: var(--hive-fill); }
 .hive-status-pill.hive-status-closed { background: var(--hive-cap); }
-.hive-status-pill.hive-status-blocked { border-color: var(--warn, var(--border)); color: var(--warn-fg, var(--fg)); }
 
 .hive-row { margin: 5px 0; overflow-wrap: anywhere; }
 
