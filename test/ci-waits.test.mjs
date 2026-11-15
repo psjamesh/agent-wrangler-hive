@@ -31,8 +31,8 @@ test('selects named checks including status contexts without guessing missing or
   assert.match(evaluateCiWait(selected, snapshot({ statusCheckRollup: [{ name: 'test' }, { name: 'test' }] }), NOW).unavailable, /ambiguous/i);
 });
 test('head changes and URL identity replacement supersede the target, never advance it', () => {
-  assert.equal(evaluateCiWait(wait(), snapshot({ headSha: 'b'.repeat(40) }), NOW).outcome, 'superseded');
-  assert.equal(evaluateCiWait(wait(), snapshot({ nodeId: 'PR_new' }), NOW).outcome, 'superseded');
+  assert.equal(evaluateCiWait(wait(), snapshot({ headSha: 'b'.repeat(40), fetchedAt: NOW + 1 }), NOW + 1).outcome, 'superseded');
+  assert.equal(evaluateCiWait(wait(), snapshot({ nodeId: 'PR_new', fetchedAt: NOW + 1 }), NOW + 1).outcome, 'superseded');
 });
 test('stale, absent and failed observations cannot establish success; deadline remains fixed', () => {
   for (const obs of [null, snapshot({ lastError: 'no permission' }), snapshot({ fetchedAt: new Date(NOW - 240000).toISOString() })]) assert.ok(evaluateCiWait(wait(), obs, NOW).unavailable);
@@ -210,7 +210,7 @@ test('real wait tool enforces caller identity and exposes the persisted outcome 
 test('superseding a head permanently resolves the old wait without registering a continuation', async () => {
   const f = fixture(); await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
   const id = f.doc().ciWaits.a.id;
-  f.observe(snapshot({ headSha: 'b'.repeat(40) })); await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+  f.observe(snapshot({ headSha: 'b'.repeat(40), fetchedAt: NOW + 1 })); await reconcileCiWaits(f.rt, f.host, NOW + 1000);
   assert.equal(f.doc().ciWaits.a.outcome, 'superseded');
   f.observe(snapshot()); await reconcileCiWaits(f.rt, f.host, NOW + 2000);
   assert.equal(f.doc().ciWaits.a.outcome, 'superseded'); assert.equal(f.doc().ciWaits.a.id, id); assert.equal(f.delivered.length, 1);
@@ -230,7 +230,7 @@ test('late reconciliation preserves terminal evidence and expires only unfinishe
   assert.equal(evaluateCiWait(expired, snapshot(), NOW + 1000).outcome, 'success');
   assert.equal(evaluateCiWait({ ...expired, target: 'merge' }, snapshot({ state: 'merged' }), NOW + 1000).outcome, 'success');
   assert.equal(evaluateCiWait(expired, snapshot({ statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion: 'FAILURE' }] }), NOW + 1000).outcome, 'failure');
-  assert.equal(evaluateCiWait(expired, snapshot({ headSha: 'b'.repeat(40) }), NOW + 1000).outcome, 'superseded');
+  assert.equal(evaluateCiWait(expired, snapshot({ headSha: 'b'.repeat(40), fetchedAt: NOW + 1 }), NOW + 1000).outcome, 'superseded');
   assert.equal(evaluateCiWait(expired, null, NOW + 1000).outcome, 'overdue');
   assert.equal(evaluateCiWait(expired, snapshot({ statusCheckRollup: [{ name: 'test', status: 'IN_PROGRESS' }] }), NOW + 1000).outcome, 'overdue');
 });
@@ -375,7 +375,8 @@ test('immediate enrollment preserves known node identity and other bead associat
   const f = fixture();
   f.rt.metadata.mutate(d => { d.prLabels[URL] = { url: URL, nodeId: 'PR_original', firstSeenAt: NOW - 1000, associations: [{ cellId: 'cell', beadId: 'b' }] }; });
   f.host.links.get = () => [{ type: 'pr', url: URL }];
-  const registered = await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  f.observe(snapshot({ fetchedAt: NOW }));
+  const registered = await reportCiWait(f.rt, f.host, f.actor(), args(), NOW - 1);
   assert.equal(registered.outcome, 'superseded');
   assert.equal(registered.nodeId, 'PR_original');
   assert.equal(f.doc().prLabels[URL].associations.length, 2);
@@ -523,3 +524,24 @@ for (const source of ['delete cleanup', 'legacy deletion']) {
     }
   });
 }
+
+for (const fetchedAt of [NOW - 1000, NOW]) {
+  test(`pre-registration head observation at ${fetchedAt - NOW}ms stays pending until fresh evidence or deadline`, async () => {
+    const f = fixture();
+    f.observe(snapshot({ headSha: 'b'.repeat(40), fetchedAt: new Date(fetchedAt).toISOString() }));
+    const registered = await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+    assert.equal(registered.state, 'pending');
+    assert.equal(f.delivered.length, 0);
+    await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+    assert.equal(f.doc().ciWaits.a.state, 'pending');
+    f.observe(snapshot({ fetchedAt: NOW + 2000 }));
+    await reconcileCiWaits(f.rt, f.host, NOW + 2000);
+    assert.equal(f.doc().ciWaits.a.outcome, 'success');
+    assert.equal(f.delivered.length, 1);
+  });
+}
+
+test('a pre-registration different head cannot supersede an expired wait', () => {
+  const observed = snapshot({ headSha: 'b'.repeat(40), fetchedAt: NOW - 1000 });
+  assert.deepEqual(evaluateCiWait(wait({ deadline: NOW + 1000 }), observed, NOW + 1000), { outcome: 'overdue' });
+});

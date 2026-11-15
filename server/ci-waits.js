@@ -49,7 +49,9 @@ function evaluateObservation(wait, observed, now) {
   if (observed.lastError) return { unavailable: 'Core could not refresh the PR. Restore GitHub access and verify the linked PR.' };
   if (!stamp(observed.fetchedAt) || (observed.state !== 'merged' && now - stamp(observed.fetchedAt) > FRESH_MS)) return { unavailable: 'Shared PR observation is stale. Keep the PR linked and restore core observation.' };
   if (!observed.nodeId || !SHA.test(observed.headSha || '')) return { unavailable: 'Shared PR identity or head is unavailable.' };
-  if ((wait.nodeId && observed.nodeId !== wait.nodeId) || observed.headSha.toLowerCase() !== wait.headSha.toLowerCase()) return { outcome: 'superseded' };
+  if ((wait.nodeId && observed.nodeId !== wait.nodeId) || observed.headSha.toLowerCase() !== wait.headSha.toLowerCase()) {
+    return stamp(observed.fetchedAt) > wait.createdAt ? { outcome: 'superseded' } : {};
+  }
   if (observed.state === 'closed') return { outcome: 'cancelled' };
   const merged = observed.state === 'merged';
   if (merged && ['merge', 'mergeable'].includes(wait.target)) return { outcome: 'success' };
