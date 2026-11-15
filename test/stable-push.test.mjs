@@ -113,13 +113,14 @@ test('conversation cache skips builds for metadata and other-thread messages, bu
 });
 
 test('map renderer caches actual builds across conversation updates and rebuilds on status changes', async () => {
+  const { overviewCells } = await import('../public/model.js');
   const { mapInputs } = await import('../public/view-inputs.js');
   const source = fs.readFileSync(new URL('../public/hive-view.js', import.meta.url), 'utf8');
   const code = source.slice(source.indexOf('export function renderHive('), source.indexOf('\nexport function disposeHiveView')).replace('export ', '');
   let builds = 0;
   const h = () => ({ querySelector: () => ({}) });
   const render = vm.runInNewContext(code + '; renderHive', {
-    hiveViews: new WeakMap(), mapInputs, h,
+    hiveViews: new WeakMap(), mapInputs, overviewCells, h,
     globalSearchBox: () => null, cellPanels: () => ({ header: h(), related: null, dock: h() }),
     cellMap: () => { builds++; return h(); },
     syncChildren: (el, children) => {

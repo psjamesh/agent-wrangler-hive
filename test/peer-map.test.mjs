@@ -9,6 +9,7 @@ import { membersOf, previewMove, planMove, planReveal, createDragPlanner, planHi
 import { layoutBase, stackable } from '../public/layout-base.js';
 import { hiddenWork } from '../public/region-visibility.js';
 import { mapInputs } from '../public/view-inputs.js';
+import { overviewCells } from '../public/model.js';
 import { relationsFor, describeRelations } from '../public/cell-view.js';
 import { toPixel, pixelBounds, key, normalAspect } from '../public/hex-layout.js';
 
@@ -60,7 +61,7 @@ function mapFixture({contact=false,enclosed=false,hiveHidingStart=true,related=n
   let tileNodes = [];
   const element = { classList: { add() {} }, addEventListener() {}, querySelectorAll: () => tileNodes };
   const sandbox = {
-    mapInputs, hiveViews: new WeakMap(), automaticPlacements: new WeakMap(), globalSearchBox: () => null, cellPanels: () => ({ header: [], related: null }),
+    mapInputs, overviewCells, hiveViews: new WeakMap(), automaticPlacements: new WeakMap(), globalSearchBox: () => null, cellPanels: () => ({ header: [], related: null }),
     syncChildren: (el, children) => {
       for (const child of el.children || []) if (child && !children.includes(child)) child.parentNode = null;
       el.children = children;

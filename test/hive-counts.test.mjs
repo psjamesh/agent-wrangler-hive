@@ -318,6 +318,7 @@ test('tile and header share counts for blocked work, requests, worker input and 
     const local = renderHive({ ...ctx(), ui: { ...f.ui, cellId: () => f.cell.id } }).top;
     const header = local.querySelector('.hive-cellhead');
     assert.equal(counter(tile, 'needs')?.querySelector('text')?.textContent || '0', String(needs));
+    assert.equal(f.view.badge({ ...f.graph, hive }), needs);
     assert.equal(header.querySelector('[data-focus-key="waiting-header"]')?.textContent || '', needs ? `${needs} need you` : '');
     assert.equal(header.querySelector('.hive-headprogress').textContent, '1/6 closed');
     assert.match(tile.getAttribute('aria-label'), /1 in progress, 1 in review, 1 not active, 1 waiting, 2 open, 1 of 6 closed/);
@@ -373,4 +374,19 @@ test('captured hive request totals agree in tile and header without live actions
   assert.equal(needs.textContent, '1 need you');
   assert.equal(needs.tagName, 'span');
   assert.equal(needs.getAttribute('aria-haspopup'), null);
+});
+
+
+test('navigation badge matches rendered tiles when a hive task is archived', t => {
+  const f = fixture(t);
+  delete f.beads.work.assignee;
+  f.doc.requests = { r: { id: 'r', cellId: f.cell.id, beadId: 'root', title: 'Decision', audience: 'human', state: 'open' } };
+  f.graph.tasks = { tasks: [{ id: f.cell.taskId }] };
+  for (const archived of [false, true, false]) {
+    f.graph.tasks.tasks[0].archived = archived;
+    const tile = f.draw();
+    const count = tile ? Number(counter(tile, 'needs')?.querySelector('text')?.textContent || 0) : 0;
+    assert.equal(count, archived ? 0 : 1);
+    assert.equal(f.view.badge({ ...f.graph, hive: f.hive }), count);
+  }
 });

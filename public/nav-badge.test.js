@@ -48,3 +48,33 @@ test('navigation badge handles absent or corrupt Hive metadata', () => {
   assert.equal(count({ hive: { requestCount: 9 } }), 0);
   assert.equal(count({ ...fixture(), hive: { ...fixture().hive, metadataError: 'Corrupt metadata' } }), 0);
 });
+
+for (const archived of [{ archived: true }, { archivedAt: '2026-01-01' }]) {
+  test(`navigation badge excludes archived-task tiles (${Object.keys(archived)[0]}) but keeps occupied and captured hives`, () => {
+    const count = badge(), graph = fixture();
+    const cell = graph.hive.cells.live;
+    graph.hive.cells = { live: cell };
+    graph.tasks = { tasks: [{ id: cell.taskId, ...archived }] };
+    assert.equal(count(graph), 0);
+    cell.occupiedCount = 1;
+    assert.equal(count(graph), 4);
+    cell.occupiedCount = 0;
+    cell.snapshot = {};
+    cell.requestCounts = { human: 2 };
+    assert.equal(count(graph), 2);
+  });
+}
+
+test('navigation badge follows task visibility changes and missing task records', () => {
+  const count = badge(), graph = fixture();
+  const cell = graph.hive.cells.live;
+  graph.hive.cells = { live: cell };
+  graph.tasks = { tasks: [{ id: cell.taskId }] };
+  assert.equal(count(graph), 4);
+  graph.tasks.tasks[0].archived = true;
+  assert.equal(count(graph), 0);
+  graph.tasks.tasks = [];
+  assert.equal(count(graph), 0);
+  delete graph.tasks;
+  assert.equal(count(graph), 4);
+});

@@ -1,3 +1,7 @@
+export function overviewCells(graph, hive) {
+  return Object.values(hive?.cells || {}).filter(c => c.occupiedCount > 0 || c.snapshot || (graph?.tasks?.tasks?.some(t => t.id === c.taskId && !t.archivedAt && !t.archived) ?? true));
+}
+
 export function taskOf(graph, taskId) {
   return (graph?.tasks?.tasks || []).find((t) => t.id === taskId) || null;
 }
