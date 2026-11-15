@@ -83,7 +83,7 @@ function mapFixture({contact=false,enclosed=false,hiveHidingStart=true,related=n
       });
       return { el: element };
     },
-    workstreamMenu: (o) => { menu = o; return []; }, groupClosed: () => false,
+    closedButton: () => null, workstreamMenu: (o) => { menu = o; return []; }, groupClosed: () => false,
     focusTile(id) { located.push(id); }, revealWarning: () => 'Move this region?',
     document: { querySelector: () => null },
   };
@@ -485,3 +485,20 @@ for (const [name, update] of [
     assert.equal(f.mapRenders(), builds + 2);
   });
 }
+
+test('closed workstream drawer visibility invalidates the retained cell map', () => {
+  const f = mapFixture({ cached: true });
+  const originalForm = f.ctx.ui.form;
+  let closed = null;
+  f.ctx.ui.form = name => name === 'closed:cell' ? closed : originalForm(name);
+  const before = mapInputs(f.ctx, f.cell);
+  const initialRenders = f.mapRenders();
+  closed = {};
+  assert.notEqual(mapInputs(f.ctx, f.cell), before);
+  f.render();
+  assert.equal(f.mapRenders(), initialRenders + 1);
+  closed = null;
+  assert.equal(mapInputs(f.ctx, f.cell), before);
+  f.render();
+  assert.equal(f.mapRenders(), initialRenders + 2);
+});

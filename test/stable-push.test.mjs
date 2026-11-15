@@ -154,6 +154,7 @@ test('removing the root cleans read listeners from the old conversation before h
   const removed = [];
   const h = () => ({ dataset: {}, addEventListener() {}, removeEventListener(type) { removed.push(type); } });
   const render = vm.runInNewContext(code + '; cellPanels', {
+    closedButton: () => null,
     panelViews: new WeakMap(), h, hasPanels: (_cell, root) => Boolean(root),
     renderConversation: () => ({ list: h(), scrollKey: 'messages:cell', onReadInteraction() {} }),
     syncChildren: el => el, beadDetails: h, cellHeader: h, workstreamDrawer: () => null, retireDrawer: () => null, isRetired: () => false, paneTabs: h,
@@ -215,4 +216,22 @@ test('continued momentum renews the scroll guard after the initial wheel ends', 
   f.advance(250);
   f.putBack(f.el, true);
   assert.equal(f.el.scrollTop, 400);
+});
+
+
+test('history remains in Details when an enabled hive cannot show a map', () => {
+  const source = fs.readFileSync(new URL('../public/cell-view.js', import.meta.url), 'utf8');
+  const code = source.slice(source.indexOf('export function cellPanels(')).replace('export ', '');
+  const h = () => ({ dataset: {}, children: [], append(child) { this.children.push(child); } });
+  const history = h();
+  const render = vm.runInNewContext(code + '; cellPanels', {
+    panelViews: new WeakMap(), h, hasPanels: () => false, renderConversation: () => null,
+    syncChildren: (el, children) => { el.children = children; return el; }, beadDetails: h,
+    cellHeader: h, closedButton: () => history, workstreamDrawer: () => null,
+    retireDrawer: () => null, isRetired: () => false, paneTabs: h,
+  });
+  const ctx = { ui: { inspecting: () => null }, hive: { beads: {} } };
+  const panels = render(ctx, { id: 'cell', rootBeadId: 'root', enabled: true });
+  assert.ok(panels.dock);
+  assert.deepEqual(panels.dock.children[1].children, [history]);
 });

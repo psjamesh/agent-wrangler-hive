@@ -41,7 +41,7 @@ export function groupClosed(hive, headId) {
   return [...under(activeKids(hive.beads), headId)].every((id) => hive.beads[id]?.status === 'closed');
 }
 
-export function closedButton(ctx, cell) {
+export function closedButton(ctx, cell, className = 'hive-quiet-btn') {
   const { ui, hive } = ctx;
   const n = closedWorkstreams(hive, cell).length;
   if (!n) return null;
@@ -49,7 +49,7 @@ export function closedButton(ctx, cell) {
   const open = Boolean(ui.form(k));
   return h('button', {
     type: 'button',
-    class: 'hive-quiet-btn',
+    class: className,
     'aria-expanded': open ? 'true' : 'false',
     'aria-controls': `hive-closed-${cell.id}`,
     'data-focus-key': `closed-open:${cell.id}`,

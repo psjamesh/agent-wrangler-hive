@@ -1230,10 +1230,9 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   overflow: hidden;
 }
 
-/* Compact header: name, queen, progress and actions on one line; the rest of
-   the hive's settings open from the cog. */
+/* Header controls wrap within narrow panes; settings open from the cog. */
 
-.hive-cellhead-top { flex-wrap: nowrap; min-width: 0; }
+.hive-cellhead-top { flex-wrap: wrap; min-width: 0; }
 .hive-cellhead-top > * { flex: 0 0 auto; }
 .hive-celltitle {
   flex: 0 1 auto;
@@ -1247,17 +1246,18 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 .hive-cellstate {
   display: flex;
   align-items: center;
-  gap: 6px 14px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   min-width: 0;
   flex: 0 1 auto;
-  overflow: hidden;
-  white-space: nowrap;
 }
 
 .hive-cellstate > * { flex: 0 0 auto; }
 .hive-cellstate > .hive-headprogress,
-.hive-cellstate > .hive-waiting { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.hive-headprogress { display: inline-flex; align-items: center; gap: 8px; }
+.hive-cellstate > .hive-waiting { white-space: nowrap; }
+.hive-headprogress { display: inline-flex; align-items: center; gap: 6px; }
+.hive-cellhead .hive-progress-inline,
+.hive-capacity-count .hive-progress-inline { width: 56px; flex: 0 0 56px; }
 .hive-waiting { color: var(--red-fg, var(--fg)); }
 
 .hive-queen-pill,
@@ -1635,7 +1635,7 @@ body.light .hive-message.is-conversation-selected::before { background: #186879;
 body.light .hive-related-chip { border-color: #186879; }
 .hive-related-hidden { color: var(--fg-muted, var(--fg)); }
 .hive-capacity-control { display: contents; }
-.hive-capacity-count { white-space: nowrap; }
+.hive-capacity-count { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .hive-capacity-note { font-size: 12px; }
 .hive-cellhead-top:has(.hive-capacity-note) { flex-wrap: wrap; }
 .hive-capacity-editor {

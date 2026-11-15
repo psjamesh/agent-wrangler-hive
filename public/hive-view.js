@@ -14,7 +14,7 @@ import { normalAspect } from './hex-layout.js';
 import { previewMove, planMove, planGroupArrange, planReveal, membersOf, createDragPlanner, planHide, planHiveReveal } from './cell-move.js';
 import { layoutBase, stackable } from './layout-base.js';
 import { archiveHidden, activeKids } from './archive-layout.js';
-import { openComplete, groupClosed, archiveReply } from './workstream-view.js';
+import { openComplete, groupClosed, archiveReply, closedButton } from './workstream-view.js';
 import {
   cellName, cellCounts, agentSummary, capturedAgentSummary, isDone, queenNeedsAttention, sessionLabel,
 } from './model.js';
@@ -609,6 +609,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
         'data-focus-key': `hide-done:${cell.id}`, 'aria-pressed': String(!hiveHiding),
         title: hiveHiding ? 'Show done work across this hive' : 'Hide done work across this hive',
       }, 'Show done'),
+      cell.enabled && !cell.snapshot ? closedButton(ctx, cell, 'hive-zoom-btn') : null,
       h('button', {
         type: 'button', class: 'hive-zoom-btn', 'aria-pressed': String(keyOpen),
         'aria-expanded': String(keyOpen), 'data-focus-key': 'key',
