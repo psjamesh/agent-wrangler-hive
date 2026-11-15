@@ -7,6 +7,12 @@ description: Use when your session takes part in a Hive cell as a worker, review
 
 A Hive cell is one Agent Wrangler task with a durable work record: a graph of *beads* that Hive keeps in a Beads store. The cell's queen keeps the record coherent. You own a piece of it.
 
+## Precedence inside Hive
+
+Inside a Hive cell, the hive-queen and hive-worker skills take precedence over conflicting orchestration personas, including mob-boss and mob-worker. Use `hive_spawn_worker` for tracked work and `hive_spawn_worker(role: "review")` for reviews (`hive_request_review` is its alias), rather than persona-directed `spawn_session`, `spawn_workflow`, `schedule_session` or `adversarial-pr-review`. Workers ask the queen to launch helpers; claim holders may launch reviews of their own bead. This precedence also applies to personas loaded through queen instructions or a brief; loading a persona does not require escalating these settled conflicts. References below to following global review and merge skills preserve their review requirements, not conflicting launch mechanisms.
+
+Follow Hive’s archive and handover rules: a closed PR alone does not authorize archiving a session. Archive an ordinary worker only after its bead is closed following verified delivery (including merge and required install), with no open claims, reviews or remaining obligations; archive a handover source only when the current launch requests it and the handover requirements are met. Archived workers cannot be resumed; reconcile their claim and launch a fresh worker through Hive.
+
 ## First contact
 
 1. Call `hive_context` with `scope: "bead"`. It returns your bead, its parent chain and direct links, its visible topics and requests, and your own claims and bindings. Pass your brief's bead as `bead_id`; otherwise it defaults to your single claimed or bound bead. If there are several, supply `bead_id` explicitly. If you take part in several cells, pass `cell_id`. With no assigned bead, omit scope to find work; the full cell read remains the queen's default.
