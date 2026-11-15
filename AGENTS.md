@@ -58,7 +58,7 @@ The queen does not perform routine Hive merges or prepare feature version bumps.
 
 Installation is delegated to **configured core extension auto-update**. The builder retains its claim through merge and records that delegation before finishing the bead. Workers do not hand-install Hive, and the queen does not run an install script for every PR.
 
-Auto-update requires an unpinned, opted-in installation with core’s update service available in Notify or Auto mode and a disposable-instance restart-survival check completed. Capability additions and downgrade confirmation retain their consent gates. If these prerequisites are unknown or unmet, record the install obligation and ask the queen through `hive_request_input` rather than claiming auto-update is active.
+If an install doesn't appear within about an hour of merge, tell the queen.
 
 Core installs from main and activates the generation at a supervised core restart once nothing is working, after in-flight requests and writes finish. Busy sessions can delay activation. The queen owns any pending activation and may trigger a restart if it remains pending well after installation. This follows main’s head, not an exact CI-selected SHA, and does not drain interactive workers.
 
