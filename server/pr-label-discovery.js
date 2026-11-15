@@ -49,13 +49,19 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
           } catch {}
         }
         const known = runtime.metadata.read().prLabels || {};
-        const fresh = [...discovered.values()].filter(record => !Object.hasOwn(known, record.url) || known[record.url]?.source === 'label-search');
+        const fresh = [...discovered.values()].filter(record => !Object.hasOwn(known, record.url) || ['label-search', 'bead-evidence'].includes(known[record.url]?.source));
         if (active() && fresh.length) runtime.metadata.mutate(doc => {
           doc.prLabels ||= {};
           for (const record of fresh) {
             const existing = doc.prLabels[record.url];
             if (!existing) doc.prLabels[record.url] = record;
-            else if (existing.source === 'label-search') Object.assign(existing, { source: record.source, sessionId: record.sessionId, cellIds: record.cellIds, associations: record.associations, beadIds: record.beadIds, enrolledAt: record.enrolledAt, status: existing.labelledAt == null ? 'pending' : existing.status });
+            else if (['label-search', 'bead-evidence'].includes(existing.source)) {
+              const associations = [...new Map([...(existing.associations || []), ...record.associations].map(row => [JSON.stringify([row.cellId, row.beadId]), row])).values()];
+              Object.assign(existing, { source: record.source, sessionId: record.sessionId,
+                cellIds: [...new Set([...(existing.cellIds || []), ...record.cellIds])], associations,
+                beadIds: [...new Set([...(existing.beadIds || []), ...record.beadIds])],
+                enrolledAt: record.enrolledAt, status: existing.labelledAt == null ? 'pending' : existing.status });
+            }
           }
         });
         const searchHits = new Map();

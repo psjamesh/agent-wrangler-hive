@@ -376,3 +376,35 @@ test('a claimant worker can enroll its own linked PR without exposing other sess
   assert.equal(registered.sessionId, 'worker');
   assert.equal(registered.state, 'pending');
 });
+
+for (const source of ['bead-evidence', 'label-search']) {
+  test(`discovery labels registration-enrolled ${source} PRs without losing bead associations`, async () => {
+    const { createPrLabelSweep } = await import('../server/pr-label-discovery.js');
+    const f = fixture();
+    f.rt.metadata.mutate(d => {
+      delete d.prLabels;
+      if (source === 'label-search') d.prLabels = { [URL]: { url: URL, source, associations: [], firstSeenAt: NOW - 1000 } };
+    });
+    f.live.a.metadata.hive_evidence = [{ kind: 'pr', label: 'New PR', url: URL }];
+    f.rt.snapshots.graph = f.graph();
+    await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+    f.host.version = '1.93.0';
+    f.host.sessions.list = () => [{ sessionId: 'queen' }];
+    f.host.links.get = () => [{ type: 'pr', url: URL }];
+    f.rt.metadata.mutate(d => { d.bindings.cell = [{ sessionId: 'queen', beadId: 'b', active: true, role: 'worker' }]; });
+    const labelled = [];
+    const sweep = createPrLabelSweep({ runtime: f.rt, host: f.host, now: () => NOW + 1000,
+      labeler: { apply: async (url, eligible) => { assert.equal(eligible(), true); labelled.push(url); return 'labelled'; }, stop() {} },
+      tracker: { search: async () => [], state: async () => null, stop() {} },
+    });
+    await sweep.run();
+    assert.deepEqual(labelled, [URL]);
+    const record = f.doc().prLabels[URL];
+    assert.equal(record.source, 'session-link');
+    assert.equal(record.status, 'labelled');
+    assert.deepEqual(new Set(record.associations.map(a => a.beadId)), new Set(['a', 'b']));
+    assert.deepEqual(new Set(record.beadIds), new Set(['a', 'b']));
+    await sweep.run();
+    assert.deepEqual(labelled, [URL]);
+  });
+}
