@@ -138,12 +138,78 @@ test('wait resolution preserves a hold from an unrelated native edit', async () 
   assert.equal(f.live.a.status, 'open'); assert.equal(f.spawned.length, 0);
 });
 
-test('link-only deferred status and open wait annotations also resolve', async () => {
-  for (const status of ['deferred', 'open']) {
+test('link-only deferred status resolves but historic open annotations are preserved', async () => {
+  for (const status of ['deferred', 'open', 'in_progress']) {
     const f = await fixture(); link(f); f.live.b.status = 'closed';
-    f.live.a.status = status; f.live.a.metadata.hive_waiting_for = 'Needs b';
+    f.live.a.status = status; f.live.a.metadata.hive_waiting_for = 'PR checks running';
     await f.rt.snapshots.refresh(); await f.rt.watchdog.run();
-    assert.equal(f.live.a.status, 'open'); assert.equal(f.graph().beads.a.waitingFor, '');
-    assert.equal(f.delivered.length, 1);
+    assert.equal(f.live.a.status, status === 'deferred' ? 'open' : status);
+    assert.equal(f.graph().beads.a.waitingFor, status === 'deferred' ? '' : 'PR checks running');
+    assert.equal(f.delivered.length, status === 'deferred' ? 1 : 0);
   }
+});
+
+test('open link-derived waiting notifies once on resolution then clears attention across queen handoff', async () => {
+  const f = await fixture(); link(f);
+  await f.rt.snapshots.refresh(); await f.rt.watchdog.run();
+  f.live.b.status = 'closed';
+  await f.rt.snapshots.refresh(); await f.rt.watchdog.run();
+  assert.equal(f.delivered.length, 1);
+  assert.ok(!flags(f).some(x => x.kind === 'prerequisites_resolved'));
+  assert.ok(!Object.values(f.doc().cells.cell.watchdogFlags).some(x => x.kind === 'prerequisites_resolved'));
+  f.doc().cells.cell.queenGeneration++;
+  await f.rt.watchdog.run(); assert.equal(f.delivered.length, 1);
+  f.live.a.status = 'in_progress'; f.live.a.metadata.hive_waiting_for = 'Awaiting hreq_123'; f.bump('a');
+  await f.rt.snapshots.refresh(); await f.rt.watchdog.run();
+  assert.equal(f.graph().beads.a.waitingFor, 'Awaiting hreq_123');
+  assert.equal(f.delivered.length, 1);
+});
+
+test('historic closed prerequisites do not produce an upgrade notification backlog', async () => {
+  const f = await fixture(); link(f); f.live.b.status = 'closed'; f.live.a.status = 'in_progress';
+  await f.rt.snapshots.refresh(); await f.rt.watchdog.run();
+  assert.deepEqual(flags(f), []); assert.equal(f.delivered.length, 0);
+});
+
+test('resolution observed after restart retains the pending dependency transition', async () => {
+  const f = await fixture(); link(f);
+  await f.rt.snapshots.refresh(); await f.rt.watchdog.run();
+  f.live.b.status = 'closed'; await f.rt.snapshots.refresh();
+  const restarted = createWatchdog({ runtime: f.rt, host: f.host, now: f.now });
+  await restarted.run(); assert.equal(f.delivered.length, 1);
+  await restarted.run(); assert.equal(f.delivered.length, 1);
+});
+
+test('snapshot observations capture short waits before the watchdog runs', async () => {
+  const { observeLinkWaits } = await import('../server/link-waits.js');
+  const f = await fixture(); link(f);
+  await f.rt.snapshots.refresh(); observeLinkWaits(f.rt, f.now());
+  f.live.b.status = 'closed'; await f.rt.snapshots.refresh(); observeLinkWaits(f.rt, f.now());
+  await f.rt.watchdog.run(); assert.equal(f.delivered.length, 1);
+  assert.deepEqual(flags(f), []);
+});
+
+test('resolution stays pending without a recipient and is consumed even if delivery fails', async () => {
+  const f = await fixture(); link(f);
+  await f.rt.snapshots.refresh(); await f.rt.watchdog.run();
+  f.live.b.status = 'closed'; f.board.delete('queen');
+  await f.rt.snapshots.refresh(); await f.rt.watchdog.run();
+  assert.equal(flags(f).filter(x => x.kind === 'prerequisites_resolved').length, 1);
+  f.board.set('queen', { sessionId: 'queen', taskId: 'task', status: 'idle' });
+  let attempts = 0;
+  f.host.deliver = async () => { attempts++; throw new Error('Uncertain mail delivery'); };
+  await f.rt.watchdog.run(); assert.equal(attempts, 1);
+  assert.ok(!flags(f).some(x => x.kind === 'prerequisites_resolved'));
+  f.doc().cells.cell.queenGeneration++;
+  const restarted = createWatchdog({ runtime: f.rt, host: f.host, now: f.now });
+  await restarted.run(); assert.equal(attempts, 1);
+});
+
+test('an ordinary link wait does not raise stale_wait while its prerequisite is active', async () => {
+  const f = await fixture(); link(f);
+  f.live.a.updated_at = new Date(f.now()).toISOString();
+  f.live.b.status = 'in_progress'; f.live.b.assignee = 'aw:queen';
+  await f.rt.snapshots.refresh(); f.advance(48 * 3600000);
+  f.board.get('queen').status = 'working'; f.board.get('queen').lastActivity = f.now();
+  assert.ok(!flags(f).some(x => x.bead_id === 'a' && x.kind === 'stale_wait'));
 });

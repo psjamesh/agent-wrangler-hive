@@ -3,6 +3,7 @@ import { exportedGraph } from './admission.js';
 import { HiveError, journaled, withLocks } from './ops.js';
 import { managedPickupReceipt } from './pickup.js';
 import { isCurrent } from './lifetime.js';
+import { newId } from './metadata-store.js';
 
 export const STRUCTURED_WAIT_HELP = 'A blocked or deferred bead needs a structured condition: add an open prerequisite with hive_link_beads (type "blocks", using a normal or external bead), or set resume_after_bead or resume_review_at with hive_update_bead. Prose in waiting_for is only an annotation.';
 export const waitStatus = status => ['blocked', 'deferred'].includes(status);
@@ -19,24 +20,65 @@ export function requireStructuredWait(graph, bead) {
   if (waitStatus(bead.status) && !structuredWait(graph, bead)) throw new HiveError(STRUCTURED_WAIT_HELP, 'refused');
 }
 
-const needsResolution = (graph, bead) => bead.status !== 'closed' && !explicitResume(bead) && linksResolved(graph, bead.id) && (waitStatus(bead.status) || bead.waitingFor);
+const needsResolution = (graph, bead) => bead.status !== 'closed' && !explicitResume(bead) && linksResolved(graph, bead.id) && waitStatus(bead.status);
 
-export async function resolveLinkWaits(rt, host) {
+function recordResolution(doc, cellId, id, refs, at) {
+  const records = doc.cells[cellId].linkWaits ||= {};
+  if (records[id]?.refs === refs && records[id].resolution && !records[id].waiting) return;
+  records[id] = { refs, waiting: false, resolution: { id: newId('wait'), at } };
+}
+
+export function observeLinkWaits(rt, at = Date.now()) {
+  if (!isCurrent(rt) || rt.metadata.error || rt.snapshots.hierarchyCurrent === false || rt.snapshots.current.error) return;
+  const graph = rt.snapshots.graph;
+  const edits = [];
+  for (const cell of rt.metadata.cells()) {
+    if (!cell.enabled || cell.snapshot) continue;
+    const ids = descendantIds(graph.beads, cell.rootBeadId);
+    for (const id of new Set([...ids, ...Object.keys(cell.linkWaits || {})])) {
+      const bead = graph.beads[id];
+      const edges = prerequisites(graph, id);
+      const refs = JSON.stringify([...new Set(edges.map(e => e.prerequisite))].sort());
+      const previous = cell.linkWaits?.[id];
+      if (!ids.has(id) || !bead || bead.status === 'closed' || explicitResume(bead) || !edges.length) {
+        if (previous) edits.push({ cellId: cell.id, id, remove: true });
+      } else if (!linksResolved(graph, id)) {
+        if (!previous?.waiting || previous.refs !== refs) edits.push({ cellId: cell.id, id, refs, waiting: true });
+      } else if (previous?.waiting && previous.refs === refs) {
+        edits.push({ cellId: cell.id, id, refs });
+      } else if (previous && previous.refs !== refs) {
+        edits.push({ cellId: cell.id, id, remove: true });
+      }
+    }
+  }
+  if (edits.length) rt.metadata.mutate(d => {
+    for (const edit of edits) {
+      const records = d.cells[edit.cellId].linkWaits ||= {};
+      if (edit.remove) delete records[edit.id];
+      else if (edit.waiting) records[edit.id] = { refs: edit.refs, waiting: true };
+      else recordResolution(d, edit.cellId, edit.id, edit.refs, at);
+    }
+  });
+}
+
+export async function resolveLinkWaits(rt, host, at = Date.now()) {
   const usable = () => isCurrent(rt, host) && !rt.metadata.error && rt.snapshots.hierarchyCurrent !== false && !rt.snapshots.current.error;
   if (!usable()) return;
+  observeLinkWaits(rt, at);
   for (const cell of rt.metadata.cells()) {
     if (!cell.enabled || cell.snapshot) continue;
     for (const id of descendantIds(rt.snapshots.graph.beads, cell.rootBeadId)) {
       const bead = rt.snapshots.graph.beads[id];
       if (!bead || !needsResolution(rt.snapshots.graph, bead)) continue;
+      const refs = JSON.stringify([...new Set(prerequisites(rt.snapshots.graph, id).map(e => e.prerequisite))].sort());
       await withLocks([`bead:${id}`], async () => {
         if (!usable()) return;
         const unsettled = Object.values(rt.metadata.read().operations || {}).some(o => ['pending', 'uncertain', 'partial'].includes(o.state) && (o.beadIds?.includes(id) || o.intent?.beadId === id));
         if (unsettled) return;
         try {
-          await journaled(rt, { kind: 'resolve-link-wait', cellId: cell.id, actor: 'hive', summary: `Resolve prerequisites for ${id}`, beadIds: [id], intent: { beadId: id } }, async (opId, phase) => {
+          await journaled(rt, { kind: 'resolve-link-wait', cellId: cell.id, actor: 'hive', summary: `Resolve prerequisites for ${id}`, beadIds: [id], intent: { beadId: id }, onApplied: d => recordResolution(d, cell.id, id, refs, at) }, async (opId, phase) => {
             let before;
-            const patch = { waitingFor: '', ...(waitStatus(bead.status) ? { status: 'open' } : {}) };
+            const patch = { waitingFor: '', status: 'open' };
             const written = await rt.beads.update(id, patch, 'hive', context => {
               if (!usable() || !rt.metadata.cell(cell.id)?.enabled || rt.metadata.cell(cell.id)?.snapshot) throw new HiveError('Hive changed before resolving the wait.', 'conflict');
               const graph = exportedGraph(context);

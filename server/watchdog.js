@@ -1,4 +1,4 @@
-import { explicitResume, linksResolved, prerequisites, resolveLinkWaits, structuredWait, waitStatus, STRUCTURED_WAIT_HELP } from './link-waits.js';
+import { explicitResume, linksResolved, resolveLinkWaits, structuredWait, waitStatus, STRUCTURED_WAIT_HELP } from './link-waits.js';
 import { pickupState } from './pickup.js';
 import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
@@ -139,13 +139,12 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     if (waitStatus(bead.status) && !structuredWait(rt.snapshots.graph, bead) && !linksResolved(rt.snapshots.graph, bead.id)) {
       add('unstructured_wait', bead.id, bead.status, updated || now, `Legacy wait has no structured condition. ${STRUCTURED_WAIT_HELP}`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
     }
-    if (!explicitResume(bead) && !waitStatus(bead.status) && linksResolved(rt.snapshots.graph, bead.id)) {
-      const sources = prerequisites(rt.snapshots.graph, bead.id).map(e => beads[e.prerequisite]);
-      const state = sources.map(b => [b.id, b.closedAt || 'closed']).sort((a, b) => a[0].localeCompare(b[0]));
-      add('prerequisites_resolved', bead.id, state, Math.max(...sources.map(b => stamp(b.closedAt || b.updatedAt))) || now, 'All blocking prerequisites have closed; work is ready to continue.', { bead_id: bead.id, session_id: bead.ownerSessionId || null });
+    const resolution = cell.linkWaits?.[bead.id]?.resolution;
+    if (resolution && !resolution.notice && !waitStatus(bead.status) && !explicitResume(bead) && linksResolved(rt.snapshots.graph, bead.id)) {
+      add('prerequisites_resolved', bead.id, resolution.id, resolution.at, 'All blocking prerequisites have closed; work is ready to continue.', { bead_id: bead.id, session_id: bead.ownerSessionId || null, resolution_id: resolution.id });
     }
 
-    if ((bead.status === 'blocked' || bead.waitingFor || index.blockers.get(bead.id)) && updated && now - updated >= settings.waitHours * 3600000) {
+    if ((bead.status === 'blocked' || bead.waitingFor) && updated && now - updated >= settings.waitHours * 3600000) {
       add('stale_wait', bead.id, [updated, bead.status, bead.waitingFor || ''], updated, 'Blocked or waiting work has not been touched.', { bead_id: bead.id, session_id: bead.ownerSessionId || null });
     }
     if ((waitStatus(bead.status) && explicitResume(bead)) || bead.status === 'deferred') {
@@ -338,7 +337,7 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
   }
   async function pass() {
     if (!usable()) return;
-    await resolveLinkWaits(rt, host);
+    await resolveLinkWaits(rt, host, now());
     if (!usable()) return;
     const index = watchdogIndex(rt, host);
     saveWorkerActivity(rt, host, index.activity);
@@ -391,7 +390,11 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
           const kept = d.cells[cellId].archiveSuggested;
           if (kept) for (const sid of Object.keys(kept)) if (!current.has(sid)) delete kept[sid];
         }
-        for (const { cellId, key, flag } of items) d.cells[cellId].watchdogFlags[flag.id].noticed[key] = { state: 'sending', at };
+        for (const { cellId, key, flag } of items) {
+          d.cells[cellId].watchdogFlags[flag.id].noticed[key] = { state: 'sending', at };
+          const event = d.cells[cellId].linkWaits?.[flag.bead_id]?.resolution;
+          if (flag.kind === 'prerequisites_resolved' && event?.id === flag.resolution_id) event.notice = { state: 'sending', at };
+        }
         for (const { cellId, key, session_id } of archive) (d.cells[cellId].archiveSuggested ||= {})[session_id] = key;
       });
       attempts++;
@@ -401,6 +404,11 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
         for (const { cellId, key, flag } of items) {
           const receipt = d.cells[cellId]?.watchdogFlags?.[flag.id]?.noticed?.[key];
           if (receipt?.at === at) Object.assign(receipt, result);
+          const event = d.cells[cellId]?.linkWaits?.[flag.bead_id]?.resolution;
+          if (flag.kind === 'prerequisites_resolved' && event?.id === flag.resolution_id) {
+            if (event.notice?.at === at) Object.assign(event.notice, result);
+            delete d.cells[cellId].watchdogFlags[flag.id];
+          }
         }
       });
       rt.changed();

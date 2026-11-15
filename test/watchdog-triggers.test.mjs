@@ -113,7 +113,7 @@ test('untracked ignores live claimants, goals, blocking prerequisites, open revi
   f.rt.metadata.mutate(d => { d.reviews.r = { id: 'r', state: 'in_review', cellId: 'cell', workBeadId: 'reviewed', createdAt: f.now() }; });
   f.bead('done', { status: 'closed' });
   f.advance(DAY); f.sessions.worker.lastActivity = f.now();
-  assert.deepEqual(kinds(f), ['stale_wait', 'stuck_review']);
+  assert.deepEqual(kinds(f), ['stuck_review']);
 });
 
 test('an exited claimant raises stalled_worker only, not a second untracked flag', t => {
