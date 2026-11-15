@@ -2386,3 +2386,27 @@ test('failed core restore reservations expire without leaving capacity stuck', a
   assert.equal(capacity(f.rt).used, 0);
   assert.equal(f.rt.workerRestores.size, 0);
 });
+
+test('a refused scheduled resume preserves an in-flight manual restore reservation', async () => {
+  const f = fixture(1);
+  f.host.version = '1.95.0';
+  const launch = await dormantWorker(f);
+  f.board.get('worker-1').archived = true;
+  const context = { sid: 'worker-1', task: { id: 'task' }, host: f.host };
+  assert.equal((await workers.workerLaunchContext({ ...context, reason: 'restore' }))?.refuse, undefined);
+  const reservation = f.rt.workerRestores.get('worker-1');
+  assert.ok(reservation);
+  const binding = structuredClone(f.doc().bindings.cell);
+  assert.match((await workers.workerLaunchContext({ ...context, reason: 'resume' }))?.refuse || '', /scheduled resumes remain refused/);
+  assert.equal(f.rt.workerRestores.get('worker-1'), reservation);
+  assert.equal(capacity(f.rt).used, 1);
+  await archival.releaseArchivedClaims(f.rt, f.host);
+  assert.equal(f.live.a.assignee, 'aw:worker-1');
+  assert.equal(f.doc().workerLaunches[launch.launch_id].state, 'launched');
+  assert.deepEqual(f.doc().bindings.cell, binding);
+  f.board.get('worker-1').archived = false;
+  const { createManifest } = await import('../server/manifest.js');
+  createManifest({ dir: '.' }).session.onResume({ sessionId: 'worker-1', reason: 'restore', host: f.host });
+  assert.equal(f.rt.workerRestores.size, 0);
+  assert.equal(capacity(f.rt).used, 1);
+});

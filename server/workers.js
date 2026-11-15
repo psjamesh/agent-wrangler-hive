@@ -160,6 +160,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
   if (!launchId) return;
   return withLock(`worker-launch:${launchId}`, async () => {
     let reserved = false;
+    let restoreReserved = false;
     let held = null;
     let target = null;
     let closedTarget = false;
@@ -198,7 +199,10 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
           const rec = d.workerLaunches[launchId];
           Object.assign(rec, { sessionId: sid, state: 'binding', claimStarted: true, updatedAt: Date.now() });
         });
-        if (restoring) activeWorkerRestores(rt).set(sid, { beadId: target, cellId: launch.cellId, at: Date.now() });
+        if (restoring) {
+          activeWorkerRestores(rt).set(sid, { beadId: target, cellId: launch.cellId, at: Date.now() });
+          restoreReserved = true;
+        }
         reserved = true;
       });
       if (launch.role === 'worker') await claimBead(rt, actor, { bead_id: target }, { launchId: held ? null : launchId, revalidateCapacity: restoring, validate: (context) => {
@@ -234,7 +238,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
       });
       rt.changed();
     } catch (err) {
-      rt?.workerRestores?.delete(sid);
+      if (restoreReserved) rt.workerRestores.delete(sid);
       if (reserved) {
         try { recordLaunchFailure(rt, launchId, err); }
         catch (recordError) { rt.log(`hive: could not record refused relaunch: ${recordError.message}`); }
