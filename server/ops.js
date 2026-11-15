@@ -1,3 +1,4 @@
+import { requireStructuredWait, waitStatus } from './link-waits.js';
 import { consumePickup, managedPickupReceipt, pickupState } from './pickup.js';
 import { storedRole, apiRole, holdsBead } from './bead-sessions.js';
 import { REGION_LAYOUT_VERSION } from './region-migration.js';
@@ -881,6 +882,11 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
     if (dep.key && pre.key && dep.key === pre.key) throw new HiveError(`links[${i}] links a bead to itself.`);
     return { fromKey: dep.key, fromId: dep.id, toKey: pre.key, toId: pre.id, type };
   });
+  const waitGraph = {
+    beads: { ...rt.snapshots.graph.beads, ...Object.fromEntries(nodes.map(n => [`new:${n.key}`, { ...n, id: `new:${n.key}`, status: n.status || 'open' }])) },
+    edges: edges.map(e => ({ dependent: e.fromKey ? `new:${e.fromKey}` : e.fromId, prerequisite: e.toKey ? `new:${e.toKey}` : e.toId, blocking: e.type === 'blocks' })),
+  };
+  for (const node of nodes) requireStructuredWait(waitGraph, waitGraph.beads[`new:${node.key}`]);
   const affected = [...new Set([...nodes.map((n) => n.parentId), ...edges.flatMap((e) => [e.fromId, e.toId])].filter(Boolean))];
   const out = await journaled(rt, { kind: 'create-beads', cellId: cell.id, actor: actorFor(actor.sessionId), summary: `Create ${nodes.length} bead(s)`, beadIds: affected }, async (opId, phase) => {
     const { ids } = await rt.beads.createMany({ nodes, edges }, actorFor(actor.sessionId), opId);
@@ -945,9 +951,9 @@ export async function updateBead(rt, actor, input) {
       } else delete resume.afterBead;
     }
     const cleared = !resume.reviewAt && !resume.afterBead;
-    if (!cleared && finalStatus !== 'deferred') throw new HiveError('A resume condition only applies to a deferred bead; set status "deferred" too.');
+    if (!cleared && !waitStatus(finalStatus)) throw new HiveError('A resume condition only applies to a blocked or deferred bead; set status "blocked" or "deferred" too.');
     patch.resume = cleared ? '' : resume;
-  } else if (patch.status !== undefined && bead.resume && (patch.status !== 'deferred' || bead.status !== 'deferred')) {
+  } else if (patch.status !== undefined && bead.resume && !waitStatus(patch.status)) {
     patch.resume = '';
   }
   const add = evidenceInput(input.add_evidence, actor.sessionId ? actorFor(actor.sessionId) : 'aw:human');
@@ -956,6 +962,8 @@ export async function updateBead(rt, actor, input) {
   if (!Object.keys(patch).length && !add.length && !removeLabels.length) throw new HiveError('Nothing to update.');
   const expectedUpdatedAt = input.expected_updated_at;
   if (expectedUpdatedAt !== undefined && (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt)) throw new HiveError('expected_updated_at must be the updated_at that hive_context showed for this bead.');
+  const validatesWait = input.status !== undefined || resumeAt !== undefined || resumeAfter !== undefined;
+  if (validatesWait) requireStructuredWait(rt.snapshots.graph, { ...bead, ...patch });
   const affectsCapacity = patch.status !== undefined || patch.kind !== undefined || patch.parentId !== undefined;
   let applied = null;
   return withLocks([`bead:${id}`, ...(affectsCapacity ? [ADMISSION_LOCK] : [])], async () => {
@@ -978,12 +986,13 @@ export async function updateBead(rt, actor, input) {
       }
       const refreshToken = rt.metadata.read().workstreamRefresh?.[id]?.token;
       let pickupBefore = null;
-      const written = await rt.beads.update(id, patch, actorFor(actor.sessionId), affectsCapacity || expectedUpdatedAt || bead.pickup?.armed ? (context) => {
+      const written = await rt.beads.update(id, patch, actorFor(actor.sessionId), affectsCapacity || validatesWait || expectedUpdatedAt || bead.pickup?.armed ? (context) => {
         const graph = exportedGraph(context);
         const current = graph.beads[id];
         if (!current) throw new HiveError(`Bead ${id} no longer exists.`, 'conflict');
         pickupBefore = current;
         if (expectedUpdatedAt && current.updatedAt !== expectedUpdatedAt) throw new HiveError(`Bead ${id} changed since ${expectedUpdatedAt} (now ${current.updatedAt}); nothing was applied. Re-read it with hive_context and resend against the current version.`, 'conflict');
+        if (validatesWait) requireStructuredWait(graph, { ...current, ...patch });
         if (!affectsCapacity) return;
         const nextBead = { ...current, ...patch };
         if (patch.kind === 'external') {
@@ -1106,6 +1115,10 @@ export async function releaseBead(rt, actor, { bead_id, reason, force, status })
       if (!force) throw new HiveError(`Bead ${id} is claimed by ${holder}, not you. A queen or coordinator can release it with force: true and a reason, after checking with the holder.`, 'conflict');
       requireCoordinator({ role }, `release another session's claim in cell ${cell.id}`);
       if (!cleanReason) throw new HiveError('Releasing another session\'s claim needs a reason.');
+    }
+    if (status !== undefined && waitStatus(status)) {
+      const graph = await rt.beads.loadSnapshot({ all: true });
+      requireStructuredWait(graph, { ...normalizeIssue(fresh), status });
     }
     const out = await releaseWithStatus(rt, { cellId: cell.id, actor: who, id, fresh, reason: cleanReason, status,
       summary: `Release ${id}${mine ? '' : ` held by ${holder}`}` });
