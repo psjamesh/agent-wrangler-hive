@@ -254,8 +254,8 @@ export async function setWorkerProfile(rt, host, { cellId, beadId, profile, brie
   });
 }
 
-export function pickupBlockingSessions(rt, host, cell) {
-  return cell ? ungovernedDescendants(rt, host, cell, Object.values(rt.snapshots.graph?.beads || {}).filter(b => b.status !== 'closed')).filter(s => s.live).map(s => s.session_id).sort() : [];
+export function pickupBlockingSessions(rt, host, cell, graph = rt.snapshots.graph) {
+  return cell ? ungovernedDescendants(rt, host, cell, Object.values(graph?.beads || {}).filter(b => b.status !== 'closed')).filter(s => s.live).map(s => s.session_id).sort() : [];
 }
 
 function cellReasons(rt, host, cell, blockingSessions = pickupBlockingSessions(rt, host, cell)) {
@@ -272,7 +272,7 @@ function cellReasons(rt, host, cell, blockingSessions = pickupBlockingSessions(r
   return reasons;
 }
 
-export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { launchId = null, ownOperationId = null, now = Date.now(), checkVersion = true, rates = true, ignoreProfileHold = false } = {}) {
+export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { launchId = null, ownOperationId = null, now = Date.now(), checkVersion = true, rates = true, ignoreProfileHold = false, checkHierarchy = true } = {}) {
   const mark = bead?.pickup;
   const unmarked = { ...mark, armed: false, eligible: false, state: 'unmarked', reason: 'Not marked ready for pickup' };
   if (!mark?.armToken) {
@@ -284,13 +284,13 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
   const base = { ...mark, nativeVersion: receipt(rt, bead)?.nativeVersion, eligible: false, launchId: launch?.id };
   if (attempt && attempt.launchId !== launchId) return { ...base, state: launch && ['reserved', 'binding', 'claimed'].includes(launch.state) ? 'starting' : launch && ATTENTION.has(launch.state) ? 'attention' : 'consumed', reason: (launch && ATTENTION.has(launch.state) ? launch.error : '') || (launch?.state === 'launched' ? 'Worker launched; readiness was consumed' : 'Readiness was consumed; deliberate rearm is required') };
   if (!mark.armed) return unmarked;
-  const blockingSessions = pickupBlockingSessions(rt, host, cell);
+  const blockingSessions = pickupBlockingSessions(rt, host, cell, graph);
   const reasons = cellReasons(rt, host, cell, blockingSessions);
   if (mark.source === 'default' || mark.armedBy === 'hive:default') reasons.push(...defaultOnlyReasons(rt, cell, bead, null, now));
   const hold = rt.metadata.read().pickupHolds?.[bead.id];
   if (!ignoreProfileHold && hold?.token === mark.armToken && hold.reason) reasons.push(hold.reason);
   if (receipt(rt, bead)?.heldReason) reasons.push(receipt(rt, bead).heldReason);
-  if (rt.snapshots.current?.error || rt.snapshots.hierarchyCurrent === false) reasons.push('Current Beads hierarchy is incomplete');
+  if (checkHierarchy && (rt.snapshots.current?.error || rt.snapshots.hierarchyCurrent === false)) reasons.push('Current Beads hierarchy is incomplete');
   if (cell && (!descendantIds(graph.beads, cell.rootBeadId).has(bead.id) || bead.id === cell.rootBeadId || mark.cellId !== cell.id || pickupCell(rt, graph, bead.id)?.id !== cell.id)) reasons.push('Bead moved outside its authorized hive');
   if (typeof mark.armToken !== 'string' || !mark.profile || typeof mark.profileRevision !== 'string') reasons.push('Readiness record or worker profile is invalid');
   if (mark.briefDigest !== briefDigest(bead, cell?.id)) reasons.push('The executable brief changed; rearm after review');
@@ -309,14 +309,14 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
   return { ...base, eligible: !reasons.length, state: reasons.length ? 'queued' : 'ready', blocking_session_ids: blockingSessions, reconciliation_reasons: reconciliationReasons, reason: reasons[0] || 'Ready for pickup', reasons };
 }
 
-export function assertPickupAuthorization(rt, host, launch, graph, { ownOperationId = null, checkVersion = true } = {}) {
+export function assertPickupAuthorization(rt, host, launch, graph, { ownOperationId = null, checkVersion = true, checkHierarchy = true } = {}) {
   const cell = rt.metadata.cell(launch.cellId);
   if (!cell || (launch.taskId && cell.taskId !== launch.taskId) || cell.queenSessionId !== launch.authorizedBy || (cell.queenGeneration || 0) !== launch.queenGeneration) throw new HiveError('Pickup queen authority changed.', 'refused');
   if (launch.profileObservedAt && Date.now() - launch.profileObservedAt > 60000) throw pickupReadUnavailable('Pickup profile observation expired before startup.');
   const bead = graph.beads[launch.beadId];
   if (launch.profile && JSON.stringify(launch.profile) !== JSON.stringify(bead?.pickup?.profile)) throw new HiveError('Pickup profile changed.', 'refused');
   if (bead?.pickup?.armToken !== launch.armToken || bead.pickup.profileRevision !== launch.profileRevision) throw new HiveError('Pickup readiness or profile changed.', 'refused');
-  const state = pickupState(rt, host, cell, bead, graph, { launchId: launch.id, ownOperationId, checkVersion, rates: false });
+  const state = pickupState(rt, host, cell, bead, graph, { launchId: launch.id, ownOperationId, checkVersion, checkHierarchy, rates: false });
   if (!state.eligible) throw state.reason === 'Current Beads hierarchy is incomplete' ? pickupReadUnavailable(state.reason) : new HiveError(state.reason, 'refused');
 }
 
@@ -324,7 +324,7 @@ export function assertPickupClaimed(rt, host, launch, graph, sid) {
   const bead = graph.beads[launch.beadId];
   if (!bead || bead.status !== 'in_progress' || bead.assignee !== actorFor(sid)) throw new HiveError('Pickup ownership changed before first action.', 'refused');
   const beforeClaim = { ...graph, beads: { ...graph.beads, [bead.id]: { ...bead, status: 'open', assignee: null } } };
-  assertPickupAuthorization(rt, host, launch, beforeClaim, { checkVersion: false });
+  assertPickupAuthorization(rt, host, launch, beforeClaim, { checkVersion: false, checkHierarchy: false });
 }
 
 export async function setPickup(rt, host, actor, input, { automatic = false, now = Date.now } = {}) {

@@ -110,6 +110,7 @@ export async function waitForHierarchy(rt, { read, refresh = false, timeoutMs = 
   }
   while (true) {
     assertCurrent(rt);
+    if (rt.beads.status.state !== 'ready') throw Object.assign(new AccessError(`Hive's Beads store is not ready (${rt.beads.status.state}). Finish setup in the Hive view before retrying.`), { code: 'setup-required', noWrite: true });
     if (rt.snapshots.current?.error) requireCompleteHierarchy(rt);
     if ((refresh || rt.snapshots.hierarchyCurrent === false) && !rt.beads.hierarchy?.writing) {
       await bounded(() => rt.snapshots.refresh());

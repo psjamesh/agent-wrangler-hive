@@ -203,3 +203,32 @@ test('settlement during a running refresh waits for the coalesced follow-up expo
   assert.equal(f.rt.snapshots.hierarchyCurrent, true);
   assert.equal(reads, 2);
 });
+
+test('journal admission permits annotation changes during an unrelated hierarchy wait', async () => {
+  const { journaled } = await import('../server/ops.js');
+  const f = fixture(); await f.rt.snapshots.refresh();
+  f.rt.beads.hierarchy.writing = true;
+  f.rt.beads.hierarchy.generation++;
+  setImmediate(() => {
+    const next = structuredClone(f.current());
+    next.beads['hive-dep'].summary = 'A concurrent note';
+    next.beads['hive-dep'].updatedAt = 'new-version';
+    f.setRead(async () => next);
+    f.rt.beads.hierarchy.writing = false;
+    f.rt.beads.hierarchy.generation++;
+  });
+  let calls = 0;
+  await journaled(f.rt, { kind: 'example', beadIds: ['hive-dep'] }, async () => { calls++; return {}; });
+  assert.equal(calls, 1);
+});
+
+test('hierarchy admission reports an unavailable backend without a transient wait', async () => {
+  const { waitForHierarchy } = await import('../server/access.js');
+  const f = fixture();
+  f.rt.beads.status.state = 'missing';
+  await assert.rejects(waitForHierarchy(f.rt, { timeoutMs: 0 }), error => {
+    assert.equal(error.code, 'setup-required');
+    assert.doesNotMatch(error.message, /hierarchy change/i);
+    return true;
+  });
+});

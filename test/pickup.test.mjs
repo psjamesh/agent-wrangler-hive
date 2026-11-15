@@ -740,3 +740,27 @@ for (const change of ['cancelled', 'retryPending']) {
     assert.equal(f.actions.length, 0);
   });
 }
+
+for (const phase of ['export', 'applied']) test(`automatic startup uses its claim export when hierarchy invalidates at ${phase}`, async () => {
+  const f = pickupFixture(); await arm(f);
+  const { createSnapshotCache } = await import('../server/snapshots.js');
+  let settled;
+  f.rt.beads.hierarchy = { generation: 0, writing: false };
+  f.rt.beads.onHierarchySettled = fn => { settled = fn; };
+  f.rt.snapshots = createSnapshotCache({ beads: f.rt.beads });
+  await f.rt.snapshots.refresh();
+  const claim = f.rt.beads.claim;
+  const start = () => { f.rt.beads.hierarchy.writing = true; f.rt.beads.hierarchy.generation++; };
+  f.rt.beads.claim = async (id, who, check) => {
+    if (phase === 'export') start();
+    const out = await claim(id, who, check);
+    if (phase === 'applied') start();
+    setImmediate(() => { f.rt.beads.hierarchy.writing = false; f.rt.beads.hierarchy.generation++; settled(); });
+    return out;
+  };
+  await run(f);
+  assert.equal(f.spawned.length, 1);
+  assert.equal(f.actions.length, 1);
+  assert.equal(Object.values(f.doc().workerLaunches)[0].state, 'launched');
+  assert.equal(f.live.a.assignee, 'aw:worker-1');
+});

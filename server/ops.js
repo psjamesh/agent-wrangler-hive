@@ -46,12 +46,16 @@ export function beadIdArg(value, field) {
   return value;
 }
 
-export function ensureWritable(rt) {
+export function ensureStoreWritable(rt) {
   assertCurrent(rt);
   if (rt.metadata.error) throw new HiveError(rt.metadata.error, 'metadata-unavailable');
   if (rt.beads.status.state !== 'ready') {
     throw new HiveError(`Hive's Beads store is not ready (${rt.beads.status.state}). Nothing was changed. ${rt.beads.status.detail || ''} The human can finish setup in the Hive view.`, 'setup-required');
   }
+}
+
+export function ensureWritable(rt) {
+  ensureStoreWritable(rt);
   requireCompleteHierarchy(rt);
 }
 
@@ -102,7 +106,11 @@ function stamp(op, patch) {
 // "error". `intent` is the requested final state in structured form (ids and
 // expected values, never free text), so recovery can check the store for it.
 export async function journaled(rt, { kind, cellId = null, actor, summary = '', beadIds = [], intent = null, onApplied = null }, fn) {
-  const prepared = beadIds.map(id => [id, rt.snapshots.graph.beads[id], cellOfBead(rt, id)?.id]);
+  const structure = id => {
+    const bead = rt.snapshots.graph.beads[id];
+    return [cellOfBead(rt, id)?.id, bead?.parentId, bead?.kind, bead?.status, bead?.assignee];
+  };
+  const prepared = beadIds.map(id => [id, structure(id)]);
   const sessionId = actor?.startsWith('aw:') && actor !== 'aw:human' ? actor.slice(3) : null;
   const caller = sessionId && cellId && rt.host ? participation(rt, rt.host, sessionId).find(p => p.cell.id === cellId) : null;
   await waitForWritable(rt);
@@ -110,8 +118,8 @@ export async function journaled(rt, { kind, cellId = null, actor, summary = '', 
     const fresh = resolveCaller(rt, rt.host, sessionId, cellId);
     if (fresh.role !== caller.role) throw new HiveError('Your role changed while waiting for the hierarchy. Re-read the work before retrying.', 'conflict');
   }
-  for (const [id, bead, scope] of prepared) {
-    if (cellOfBead(rt, id)?.id !== scope || JSON.stringify(rt.snapshots.graph.beads[id]) !== JSON.stringify(bead)) {
+  for (const [id, before] of prepared) {
+    if (JSON.stringify(structure(id)) !== JSON.stringify(before)) {
       throw new HiveError(`Bead ${id} changed while waiting for the hierarchy. Re-read the work before retrying.`, 'conflict');
     }
   }
