@@ -145,7 +145,7 @@ const watchdogSettings = humanHandler('hive-watchdog-settings', ({ msg, rt }) =>
 
 const codexApprovalsH = humanHandler('hive-codex-approvals', ({ msg, rt }) => setCodexApprovals(rt, { cellId: str(msg.cellId, 80), value: msg.value }));
 
-const reviewPolicyH = humanHandler('hive-review-policy', ({ msg, rt }) => setReviewPolicy(rt, { cellId: str(msg.cellId, 80), policy: msg.policy }));
+const reviewPolicyH = humanHandler('hive-review-policy', ({ msg, rt, host }) => setReviewPolicy(rt, { cellId: str(msg.cellId, 80), policy: msg.policy }, host));
 
 const renameCellH = humanHandler('hive-cell-rename', ({ msg, host, rt }) => renameCell(rt, host, { cellId: str(msg.cellId, 80), name: msg.name }));
 const cellGoalH = humanHandler('hive-cell-goal', ({ msg, host, rt }) => saveCellGoal(rt, host, { cellId: str(msg.cellId, 80), goal: msg.goal, acceptance: msg.acceptance, expectedUpdatedAt: msg.expectedUpdatedAt }));

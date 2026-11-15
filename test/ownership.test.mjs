@@ -1592,7 +1592,8 @@ test('a Claude builder gets the secondary reviewer; when neither differs the pri
   assert.deepEqual([f.launched[0].agent, f.launched[0].model], ['codex', 'gpt-6.1-sol']);
   assert.equal(out.policy.sameProvider, false);
   const g = holderFixture('claude'); await launchRecording(g);
-  setReviewPolicy(g.rt, { cellId: 'cell', policy: { secondary: { agent: 'claude', model: 'sonnet', effort: 'high' } } });
+  g.host.agents = { list: async () => [{ id: 'claude', available: true, models: [{ value: 'opus', efforts: ['medium'] }, { value: 'sonnet', efforts: ['high'] }] }] };
+  await setReviewPolicy(g.rt, { cellId: 'cell', policy: { secondary: { agent: 'claude', model: 'sonnet', effort: 'high' } } });
   const same = await reviews.requestReview(g.rt, g.host, g.worker('builder'), { bead_id: 'a', intent: 'review' });
   assert.equal(g.launched[0].model, 'opus');
   assert.equal(same.policy.sameProvider, true);
@@ -1614,7 +1615,7 @@ test('queen overrides need an override_reason, recorded on the review; terra is 
   const out = await reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review', model: 'sonnet', override_reason: 'cheaper check' });
   assert.equal(f.launched[0].model, 'sonnet');
   assert.equal(f.doc().reviews[out.review_id].policy.overrideReason, 'cheaper check');
-  assert.throws(() => setReviewPolicy(f.rt, { cellId: 'cell', policy: { primary: { agent: 'codex', model: 'gpt-5.6-terra', effort: 'high' } } }), /Terra/);
+  await assert.rejects(setReviewPolicy(f.rt, { cellId: 'cell', policy: { primary: { agent: 'codex', model: 'gpt-5.6-terra', effort: 'high' } } }), /Terra/);
   assert.equal(reviewPolicy(f.doc().cells.cell).primary.model, 'opus');
 });
 
@@ -2013,4 +2014,16 @@ test('a closed workstream still prompts when writing its outcome fails', async t
   await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'stream', outcome: 'done', summary: 'Released' }));
   const out = await buildContext(f.rt, f.host, f.actor());
   assert.deepEqual(out.attention.workstreams_needing_refresh.map(b => b.bead_id), ['outer']);
+});
+
+test('review launch records a stale-pin fallback and preserves the pinned settings', async () => {
+  const f = holderFixture('claude'); await launchRecording(f);
+  const pinned = { mode: 'pinned', agent: 'codex', model: 'removed-model', effort: 'medium' };
+  f.rt.metadata.mutate(d => { d.cells.cell.reviewPolicy = { secondary: pinned }; });
+  const out = await reviews.requestReview(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'review' });
+  assert.equal(f.launched[0].agent, 'codex');
+  assert.equal(f.launched[0].model, 'gpt-6.1-sol');
+  assert.equal(f.doc().reviews[out.review_id].policy.fallback.pinned.model, 'removed-model');
+  assert.deepEqual(f.doc().cells.cell.reviewPolicy.secondary, pinned);
+  assert.ok(f.sent.some(m => /Automatic host defaults/.test(m.text)));
 });
