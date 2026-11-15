@@ -6,6 +6,7 @@ import * as workers from '../server/workers.js';
 import { requestReview } from '../server/reviews.js';
 import { handoffQueen } from '../server/queen-handoff.js';
 import { createManifest } from '../server/manifest.js';
+import { capacity } from '../server/admission.js';
 import { resolveCaller } from '../server/access.js';
 import { spawnRestriction, workTools } from '../server/tools.js';
 import { ungovernedDescendants } from '../server/tracking.js';
@@ -304,8 +305,15 @@ test('a helper shares a builder bead through the tool and spawn path', async () 
   const tool = workTools.find((t) => t.name === 'hive_spawn_worker');
   assert.equal(tool.inputSchema.safeParse({ bead_id: 'a', intent: 'x', role: 'helper' }).success, true);
   await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build' });
-  await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'advise' }, { role: 'investigator' });
+  const helper = await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'advise' }, { role: 'investigator' });
   assert.equal(Object.values(f.live).filter((b) => b.assignee).length, 1);
+  assert.equal(capacity(f.rt).used, 1);
+  f.live.a.assignee = '';
+  f.live.a.status = 'open';
+  await f.rt.snapshots.refresh();
+  assert.equal(capacity(f.rt).used, 1);
+  f.board.get(helper.session_id).status = 'exited';
+  assert.equal(capacity(f.rt).used, 0);
 });
 
 test('descendants are found transitively across tasks, through exited intermediates, with cycle protection', () => {

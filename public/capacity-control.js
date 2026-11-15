@@ -25,7 +25,7 @@ export function capacityControl({ hive, ui, api }) {
   if (!usage) return null;
   const limit = capacityLimit(api, usage.limit);
   const breakdown = usage.breakdown;
-  const detail = breakdown ? `Across all hives: ${breakdown.claimed} claimed, ${breakdown.reviews} additional open reviews, ${breakdown.launching} launching or claim reservations${breakdown.helpers ? `, ${breakdown.helpers} additional helper slots` : ''}. Each work bead counts once; reviews and launches share its slot. Helpers each use an additional slot.` : 'Across all hives. Each work bead counts once.';
+  const detail = breakdown ? `Across all hives: ${breakdown.claimed} claimed, ${breakdown.reviews} additional open reviews, ${breakdown.launching} launching or claim reservations${breakdown.helpers ? `, ${breakdown.helpers} held by helpers` : ''}. Each work bead counts once; reviews, launches and helpers share its slot. Live helpers retain the slot after holder release.` : 'Across all hives. Each work bead counts once.';
   return h('div', { class: 'hive-capacity-control' },
     h('button', {
       type: 'button', class: 'hive-quiet-btn hive-capacity-count',

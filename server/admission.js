@@ -33,13 +33,13 @@ export function helperSlots(rt, graph = rt.snapshots.graph, now = Date.now()) {
   const eligible = (cellId, beadId) => liveCells.has(cellId) && graph.beads[beadId] && graph.beads[beadId].status !== 'closed';
   for (const [id, admission] of rt.spawnAdmissions || []) {
     if (now - admission.at >= 10 * 60 * 1000) rt.spawnAdmissions.delete(id);
-    else if (eligible(admission.cellId, admission.beadId)) slots.set(`helper:${id}`, admission);
+    else if (eligible(admission.cellId, admission.beadId)) slots.set(admission.beadId, admission);
   }
   for (const [cellId, list] of Object.entries(rt.metadata.read().bindings || {})) {
     for (const b of list) {
       if (!b.active || !b.autoEnrolled || !eligible(cellId, b.beadId)) continue;
       const session = rt.host?.sessions.get(b.sessionId);
-      if (session && !session.archived && session.status !== 'exited') slots.set(`helper:${b.sessionId}`, { beadId: b.beadId, cellId });
+      if (session && !session.archived && session.status !== 'exited') slots.set(b.beadId, { beadId: b.beadId, cellId });
     }
   }
   return slots;
@@ -76,8 +76,9 @@ export function capacity(rt, graph = rt.snapshots.graph, { reserve = [], breakdo
   const { claimed, reserved, reviews, helpers } = slots;
   const used = new Set([...claimed, ...reserved]).size;
   const limit = workLimit(rt);
+  const helperCount = [...helpers.keys()].filter((id) => !claimed.has(id) && !reviews.has(id)).length;
   return { limit, unlimited: limit === 0, claimed: claimed.size, reserved: [...reserved].filter((id) => !claimed.has(id)).length, used, available: limit === 0 ? null : Math.max(0, limit - used),
-    ...(breakdown ? { breakdown: { claimed: claimed.size, reviews: [...reviews].filter((id) => !claimed.has(id)).length, launching: [...reserved].filter((id) => !claimed.has(id) && !reviews.has(id) && !helpers.has(id)).length, ...(helpers.size ? { helpers: helpers.size } : {}) } } : {}),
+    ...(breakdown ? { breakdown: { claimed: claimed.size, reviews: [...reviews].filter((id) => !claimed.has(id)).length, launching: [...reserved].filter((id) => !claimed.has(id) && !reviews.has(id) && !helpers.has(id)).length, ...(helperCount ? { helpers: helperCount } : {}) } } : {}),
   };
 }
 

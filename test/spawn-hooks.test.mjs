@@ -20,7 +20,7 @@ async function setup(limit = 3) {
   return { ...f, briefs, manifest, args, before: input => manifest.hooks['session.beforeSpawn']({ ...args, ...input }), spawned: input => manifest.hooks['session.spawned']({ ...args, ...input }) };
 }
 
-test('ordinary spawns and forks from every provider attach a charged helper and send Hive rules', async () => {
+test('ordinary spawns and forks from every provider attach a shared helper and send Hive rules', async () => {
   for (const agent of ['claude', 'codex', 'gemini']) for (const source of ['agent', 'workflow', 'schedule', 'fork']) {
     const f = await setup();
     const input = { agent, source, ...(source === 'fork' ? { spawnedBy: null, parentSession: 'parent' } : {}) };
@@ -30,7 +30,7 @@ test('ordinary spawns and forks from every provider attach a charged helper and 
     await f.spawned({ ...input, sessionId: 'child', data: admission.data });
     assert.equal(f.live.a.assignee, 'aw:parent');
     assert.equal(attachmentsFor(f.rt, f.host, 'a').find(a => a.session_id === 'child').role, 'helper');
-    assert.equal(capacity(f.rt).used, 2);
+    assert.equal(capacity(f.rt).used, 1);
     assert.match(f.briefs[0].body, /hive_context.*a/s);
     assert.match(f.briefs[0].body, /hive_request_input/);
     assert.match(f.briefs[0].body, /hive-worker/);
@@ -39,12 +39,12 @@ test('ordinary spawns and forks from every provider attach a charged helper and 
   }
 });
 
-test('full capacity refuses before a launch and simultaneous admissions reserve separate slots', async () => {
-  const f = await setup(2);
+test('simultaneous admissions share an occupied bead at full capacity', async () => {
+  const f = await setup(1);
   const [one, two] = await Promise.all([f.before(), f.before()]);
   assert.ok(one.data);
-  assert.match(two.refuse, /Hive.*(capacity|limit).*2/i);
-  assert.equal(capacity(f.rt).used, 2);
+  assert.ok(two.data);
+  assert.equal(capacity(f.rt).used, 1);
   assert.equal(f.briefs.length, 0);
 });
 
@@ -71,8 +71,8 @@ test('closing the parent bead releases an idle helper and its projected capacity
   await f.spawned({ sessionId: 'child', data });
   f.rt.paths = { beadsWorkspace: '.scratch' };
   const projected = () => projectForGraph({ runtime: f.rt, snapshot: { graph: f.rt.snapshots.graph, revision: 1 } });
-  assert.equal(capacity(f.rt).used, 2);
-  assert.equal(projected().cells.cell.occupiedCount, 2);
+  assert.equal(capacity(f.rt).used, 1);
+  assert.equal(projected().cells.cell.occupiedCount, 1);
   f.live.a.status = 'closed';
   f.live.a.assignee = '';
   await f.rt.snapshots.refresh();
@@ -88,6 +88,9 @@ test('pending and bound helpers require an open bead and live cell', async () =>
       f.board.set('child', { sessionId: 'child', status: 'idle' });
       await f.spawned({ sessionId: 'child', data });
     }
+    f.live.a.assignee = '';
+    f.live.a.status = 'open';
+    await f.rt.snapshots.refresh();
     assert.equal(capacity(f.rt).reserved, 1);
     if (state === 'missing') delete f.live.a;
     if (state === 'closed') { f.live.a.status = 'closed'; f.live.a.assignee = ''; }
@@ -132,7 +135,7 @@ test('duplicate completion callbacks neither charge nor brief a helper twice', a
   f.board.set('child', { sessionId: 'child', status: 'idle', dormant: true });
   await f.spawned({ sessionId: 'child', data });
   await f.spawned({ sessionId: 'child', data });
-  assert.equal(capacity(f.rt).used, 2);
+  assert.equal(capacity(f.rt).used, 1);
   assert.equal(f.briefs.length, 1);
   f.rt.metadata.mutate(d => { d.bindings.cell.find(b => b.sessionId === 'child').active = false; });
   assert.equal(capacity(f.rt).used, 1);
@@ -146,5 +149,27 @@ test('a slow successful launch is enrolled even after its transient capacity res
   f.board.set('slow', { sessionId: 'slow', status: 'working' });
   await f.spawned({ sessionId: 'slow', data });
   assert.equal(attachmentsFor(f.rt, f.host, 'a').find(a => a.session_id === 'slow')?.role, 'helper');
-  assert.equal(capacity(f.rt).used, 2);
+  assert.equal(capacity(f.rt).used, 1);
+});
+
+for (const ended of ['exited', 'archived']) test(`helpers share a full holder slot and retain it after release until all are ${ended}`, async () => {
+  const f = await setup(1);
+  const admissions = await Promise.all([f.before(), f.before()]);
+  for (let i = 0; i < admissions.length; i++) {
+    assert.ok(admissions[i].data, admissions[i].refuse);
+    assert.equal(capacity(f.rt).used, 1);
+    f.board.set(`helper-${i}`, { sessionId: `helper-${i}`, status: 'working' });
+    await f.spawned({ sessionId: `helper-${i}`, data: admissions[i].data });
+  }
+  assert.equal(capacity(f.rt).used, 1);
+  f.live.a.status = 'open';
+  f.live.a.assignee = '';
+  await f.rt.snapshots.refresh();
+  assert.equal(capacity(f.rt).used, 1);
+  for (let i = 0; i < admissions.length; i++) {
+    const session = f.board.get(`helper-${i}`);
+    if (ended === 'archived') session.archived = true;
+    else session.status = 'exited';
+    assert.equal(capacity(f.rt).used, i === 0 ? 1 : 0);
+  }
 });

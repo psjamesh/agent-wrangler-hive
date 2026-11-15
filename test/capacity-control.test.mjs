@@ -255,11 +255,11 @@ test('external popup changes invalidate the client render signature and stored b
 });
 
 
-test('capacity tooltip explains the additional slots charged for helpers', t => {
+test('capacity tooltip explains helpers retaining shared slots', t => {
   const f = fixture(t);
   f.ctx.hive.capacity.breakdown.helpers = 2;
   f.draw();
-  assert.match(f.control('capacity-toggle').attrs.title, /2 additional helper slots/);
+  assert.match(f.control('capacity-toggle').attrs.title, /2 held by helpers/);
 });
 
 test('capacity shortcut opens General and focuses its limit despite remembered Advanced', t => {
