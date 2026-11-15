@@ -27,7 +27,7 @@ test('distinguishes completion, readiness and merge and ignores incomplete or un
 test('selects named checks including status contexts without guessing missing or ambiguous identities', () => {
   const selected = wait({ target: 'check', checkName: 'test' });
   assert.equal(evaluateCiWait(selected, snapshot({ statusCheckRollup: [{ context: 'test', state: 'SUCCESS' }, { name: 'other', status: 'IN_PROGRESS' }] }), NOW).outcome, 'success');
-  assert.match(evaluateCiWait(selected, snapshot({ statusCheckRollup: [] }), NOW).unavailable, /check/i);
+  assert.deepEqual(evaluateCiWait(selected, snapshot({ statusCheckRollup: [] }), NOW), {});
   assert.match(evaluateCiWait(selected, snapshot({ statusCheckRollup: [{ name: 'test' }, { name: 'test' }] }), NOW).unavailable, /ambiguous/i);
 });
 test('head changes and URL identity replacement supersede the target, never advance it', () => {
@@ -77,11 +77,11 @@ test('interrupted, uncertain and unavailable wake delivery is retained for queen
     assert.equal(f.doc().ciWaits.a.acknowledgedAt, undefined);
   }
 });
-test('missing owner cancels continuation and notifies queen attention rather than a replacement worker', async () => {
+test('missing owner preserves pending observation and notifies queen attention rather than a replacement worker', async () => {
   const f = fixture(); await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
   f.live.a.assignee = 'aw:other'; f.rt.snapshots.graph = f.graph();
   await reconcileCiWaits(f.rt, f.host, NOW + 1000);
-  assert.equal(f.doc().ciWaits.a.outcome, 'unavailable'); assert.equal(f.delivered.length, 0);
+  assert.equal(f.doc().ciWaits.a.state, 'pending'); assert.equal(f.doc().ciWaits.a.outcome, undefined); assert.equal(f.delivered.length, 0);
   assert.ok(ciWaitAttention(f.rt, f.doc().cells.cell, NOW + 1000).length);
 });
 test('unsupported selectors, unassociated PRs and nonclaimants are refused before registration', () => {
@@ -223,4 +223,78 @@ test('older hosts retain unavailable waits and deadlines without any fallback ob
   assert.ok(ciWaitAttention(f.rt, f.doc().cells.cell, NOW).some(flag => flag.kind === 'ci_wait_unavailable'));
   await reconcileCiWaits(f.rt, f.host, NOW + 600000);
   assert.equal(f.doc().ciWaits.a.outcome, 'overdue'); assert.equal(f.delivered.length, 1);
+});
+
+test('late reconciliation preserves terminal evidence and expires only unfinished waits', () => {
+  const expired = wait({ deadline: NOW });
+  assert.equal(evaluateCiWait(expired, snapshot(), NOW + 1000).outcome, 'success');
+  assert.equal(evaluateCiWait({ ...expired, target: 'merge' }, snapshot({ state: 'merged' }), NOW + 1000).outcome, 'success');
+  assert.equal(evaluateCiWait(expired, snapshot({ statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion: 'FAILURE' }] }), NOW + 1000).outcome, 'failure');
+  assert.equal(evaluateCiWait(expired, snapshot({ headSha: 'b'.repeat(40) }), NOW + 1000).outcome, 'superseded');
+  assert.equal(evaluateCiWait(expired, null, NOW + 1000).outcome, 'overdue');
+  assert.equal(evaluateCiWait(expired, snapshot({ statusCheckRollup: [{ name: 'test', status: 'IN_PROGRESS' }] }), NOW + 1000).outcome, 'overdue');
+});
+
+test('retry-wake refuses a send active in this process without discarding its receipt', async () => {
+  const f = fixture(); f.observe(snapshot());
+  let finish, calls = 0;
+  const delivery = new Promise(resolve => { finish = resolve; });
+  f.host.deliver = () => { calls++; return delivery; };
+  const registration = reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  const id = f.doc().ciWaits.a.id;
+  let rejection;
+  try { reportCiWait(f.rt, f.host, f.actor(), { bead_id: 'a', state: 'retry-wake', wait_id: id }, NOW + 1000); }
+  catch (err) { rejection = err; }
+  finish({ mode: 'live' }); await registration;
+  assert.match(rejection?.message || '', /in.flight|active|sending/i);
+  assert.equal(calls, 1); assert.equal(f.doc().ciWaits.a.wake.state, 'delivered');
+});
+
+for (const target of ['checks', 'check', 'mergeable', 'merge']) {
+  test(`expected-head merge preserves the ${target} outcome`, () => {
+    const selected = wait({ target, ...(target === 'check' ? { checkName: 'test' } : {}) });
+    assert.equal(evaluateCiWait(selected, snapshot({ state: 'merged', checkStatus: null }), NOW).outcome, 'success');
+    if (['checks', 'check'].includes(target)) {
+      assert.equal(evaluateCiWait(selected, snapshot({ state: 'merged', statusCheckRollup: [] }), NOW).outcome, 'reconciliation-required');
+      assert.equal(evaluateCiWait(selected, snapshot({ state: 'merged', statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion: 'FAILURE' }] }), NOW).outcome, 'failure');
+    }
+  });
+}
+
+test('checks not yet attached stay pending and suppressing until their deadline', async () => {
+  const { ciWaitSuppresses } = await import('../server/ci-waits.js');
+  for (const selected of [{ target: 'checks' }, { target: 'check', check_name: 'deploy' }]) {
+    const f = fixture(); f.observe(snapshot({ statusCheckRollup: [] }));
+    const record = await reportCiWait(f.rt, f.host, f.actor(), { ...args(), ...selected }, NOW);
+    assert.equal(record.state, 'pending'); assert.deepEqual(ciWaitAttention(f.rt, f.doc().cells.cell, NOW), []);
+    assert.equal(ciWaitSuppresses(f.rt, f.host, f.rt.snapshots.graph.beads.a, NOW), true);
+    f.observe(snapshot({ statusCheckRollup: [{ name: 'build', status: 'IN_PROGRESS' }] }));
+    await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+    assert.deepEqual(ciWaitAttention(f.rt, f.doc().cells.cell, NOW + 1000), []);
+    f.observe(snapshot({ fetchedAt: new Date(NOW + 600000).toISOString(), statusCheckRollup: [] }));
+    await reconcileCiWaits(f.rt, f.host, NOW + 600000);
+    assert.equal(f.doc().ciWaits.a.outcome, 'overdue');
+  }
+});
+
+test('claim handoff preserves merge observation, records success and flags the queen without waking a former owner', async () => {
+  const f = fixture(); await reportCiWait(f.rt, f.host, f.actor(), { ...args(), target: 'merge' }, NOW);
+  delete f.live.a.assignee; f.live.a.status = 'open'; f.rt.snapshots.graph = f.graph();
+  await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+  assert.equal(f.doc().ciWaits.a.state, 'pending'); assert.equal(f.doc().ciWaits.a.outcome, undefined);
+  assert.ok(ciWaitAttention(f.rt, f.doc().cells.cell, NOW + 1000).some(flag => flag.kind === 'ci_wait_unavailable'));
+  f.observe(snapshot({ state: 'merged' })); await reconcileCiWaits(f.rt, f.host, NOW + 2000);
+  assert.equal(f.doc().ciWaits.a.outcome, 'success'); assert.equal(f.delivered.length, 0);
+  assert.ok(ciWaitAttention(f.rt, f.doc().cells.cell, NOW + 2000).some(flag => flag.kind === 'ci_wait_delivery'));
+});
+
+test('transient worker errors do not consume the wait; recovery wakes the same owner once', async () => {
+  const f = fixture(); await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  f.board.get('queen').status = 'error';
+  await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+  assert.equal(f.doc().ciWaits.a.state, 'pending');
+  f.observe(snapshot()); await reconcileCiWaits(f.rt, f.host, NOW + 2000);
+  assert.equal(f.doc().ciWaits.a.outcome, 'success'); assert.equal(f.delivered.length, 0);
+  f.board.get('queen').status = 'idle'; await reconcileCiWaits(f.rt, f.host, NOW + 3000);
+  assert.equal(f.delivered.length, 1);
 });

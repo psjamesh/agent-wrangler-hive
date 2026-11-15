@@ -12,6 +12,7 @@ const TARGETS = ['checks', 'check', 'mergeable', 'merge'];
 const stamp = value => typeof value === 'number' ? value : Date.parse(value) || 0;
 const line = value => typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, 500) : '';
 const inflight = new WeakMap();
+const activeWakes = new WeakMap();
 
 function observation(host, url) {
   try { return host?.links?.prObservation?.(url) || null; } catch { return null; }
@@ -26,34 +27,42 @@ function checkOutcome(row) {
   return null;
 }
 
-export function evaluateCiWait(wait, observed, now = Date.now()) {
-  if (now >= wait.deadline) return { outcome: 'overdue' };
+function evaluateObservation(wait, observed, now) {
   if (!observed || observed.url !== wait.url || !observed.state) return { unavailable: 'No shared PR observation. Link the PR to a session or task so core observes it.' };
   if (observed.lastError) return { unavailable: 'Core could not refresh the PR. Restore GitHub access and verify the linked PR.' };
   if (!stamp(observed.fetchedAt) || (observed.state !== 'merged' && now - stamp(observed.fetchedAt) > FRESH_MS)) return { unavailable: 'Shared PR observation is stale. Keep the PR linked and restore core observation.' };
   if (!observed.nodeId || !SHA.test(observed.headSha || '')) return { unavailable: 'Shared PR identity or head is unavailable.' };
   if ((wait.nodeId && observed.nodeId !== wait.nodeId) || observed.headSha.toLowerCase() !== wait.headSha.toLowerCase()) return { outcome: 'superseded' };
   if (observed.state === 'closed') return { outcome: 'cancelled' };
-  if (observed.state === 'merged') return { outcome: wait.target === 'merge' ? 'success' : 'cancelled' };
-  if (observed.state !== 'open') return { unavailable: 'Unknown PR state requires reconciliation.' };
+  const merged = observed.state === 'merged';
+  if (merged && ['merge', 'mergeable'].includes(wait.target)) return { outcome: 'success' };
+  if (observed.state !== 'open' && !merged) return { unavailable: 'Unknown PR state requires reconciliation.' };
   if (wait.target === 'merge') return {};
   if (wait.target === 'mergeable') {
     if (observed.checkStatus === 'passing' && observed.isDraft === false) return { outcome: 'success' };
     if (observed.checkStatus !== 'failing') return {};
   }
+  const unfinished = () => merged ? { outcome: 'reconciliation-required' } : {};
   let rows = observed.statusCheckRollup;
-  if (!Array.isArray(rows) || !rows.length) return { unavailable: 'No qualifying check has been observed yet.' };
+  if (!Array.isArray(rows)) return { unavailable: 'Shared check rollup is unavailable.' };
+  if (!rows.length) return unfinished();
   if (wait.target === 'check') {
     rows = rows.filter(row => (row?.name || row?.context) === wait.checkName);
-    if (!rows.length) return { unavailable: `Selected check ${wait.checkName} has not been observed.` };
+    if (!rows.length) return unfinished();
     if (rows.length !== 1) return { unavailable: `Selected check ${wait.checkName} is ambiguous; choose a unique check name.` };
   }
   const outcomes = rows.map(row => row && checkOutcome(row));
-  if (wait.desiredOutcome === 'completed' && outcomes.some(outcome => !outcome)) return {};
+  if (wait.desiredOutcome === 'completed' && outcomes.some(outcome => !outcome)) return unfinished();
   const outcome = ['failure', 'action-required', 'cancelled'].find(value => outcomes.includes(value));
   if (outcome) return { outcome };
   if (wait.target !== 'mergeable' && outcomes.every(value => value === 'success')) return { outcome: 'success' };
-  return {};
+  return unfinished();
+}
+
+export function evaluateCiWait(wait, observed, now = Date.now()) {
+  const result = evaluateObservation(wait, observed, now);
+  if (result.outcome) return result;
+  return now < wait.deadline ? result : { outcome: 'overdue' };
 }
 
 function waitFor(rt, beadId) { return rt.metadata.read().ciWaits?.[beadId]; }
@@ -66,6 +75,7 @@ export function reportCiWait(rt, host, actor, args, now = Date.now()) {
   if (['acknowledge', 'retry-wake', 'cancel-wait'].includes(args.state)) {
     if (!current || args.wait_id !== current.id) throw new HiveError('Use the current exact wait_id from hive_context.');
     if (args.state !== 'cancel-wait' && current.state !== 'resolved') throw new HiveError('Only a resolved wait can be acknowledged or its wake retried.');
+    if (args.state === 'retry-wake' && activeWakes.get(rt)?.has(current.id)) throw new HiveError('Wake delivery is still in flight; reconcile its receipt before retrying.');
     if (args.state === 'retry-wake' && (current.acknowledgedAt || !['failed', 'uncertain', 'sending'].includes(current.wake?.state))) throw new HiveError('Only a failed or uncertain unacknowledged wake can be retried.');
     rt.metadata.mutate(doc => {
       const saved = doc.ciWaits[bead.id];
@@ -107,6 +117,9 @@ function ownerProblem(rt, host, wait) {
 async function deliverWake(rt, host, wait, now) {
   if (wait.acknowledgedAt || wait.wake || ownerProblem(rt, host, wait)) return;
   rt.metadata.mutate(doc => { doc.ciWaits[wait.beadId].wake = { state: 'sending', at: now }; });
+  const sending = activeWakes.get(rt) || new Set();
+  activeWakes.set(rt, sending);
+  sending.add(wait.id);
   let timer;
   let receipt;
   try {
@@ -114,7 +127,7 @@ async function deliverWake(rt, host, wait, now) {
       safeDeliver(host, wait.sessionId, `[Hive] CI wait ${wait.id} for bead ${wait.beadId}: ${wait.outcome}. PR ${wait.url}, expected head ${wait.headSha}, target ${wait.target}${wait.checkName ? ` (${wait.checkName})` : ''}. Purpose: ${wait.purpose}. Read hive_context, verify the outcome, then call hive_report_pr_wait with bead_id, state: "acknowledge", wait_id: "${wait.id}". Continue only the authorized work; this notice does not authorize merge or deployment.`, rt),
       new Promise(resolve => { timer = setTimeout(() => resolve({ state: 'uncertain', error: 'Wake delivery timed out; it may still arrive.' }), 15000); timer.unref?.(); }),
     ]);
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); sending.delete(wait.id); }
   if (!isCurrent(rt, host)) return;
   rt.metadata.mutate(doc => {
     const saved = doc.ciWaits[wait.beadId];
@@ -133,7 +146,7 @@ async function reconcilePass(rt, host, now) {
     const problem = ownerProblem(rt, host, wait);
     if (wait.state === 'pending') {
       const observed = observation(host, wait.url);
-      const result = problem ? { outcome: 'unavailable', unavailable: problem } : evaluateCiWait(wait, observed, now);
+      const result = evaluateCiWait(wait, observed, now);
       const patch = { observerProblem: result.unavailable || null };
       if (!wait.nodeId && observed?.nodeId && !observed.lastError) patch.nodeId = observed.nodeId;
       if (result.outcome) Object.assign(patch, { state: 'resolved', outcome: result.outcome, resolvedAt: now });
@@ -181,8 +194,8 @@ export function ciWaitAttention(rt, cell, now = Date.now()) {
       else if (problem || result.unavailable) add('ci_wait_unavailable', problem || result.unavailable);
     } else {
       if (wait.outcome === 'overdue') add('ci_wait_overdue', 'CI wait deadline passed; worker must reconcile the selected target.');
-      if (problem || wait.outcome === 'unavailable') add('ci_wait_unavailable', problem || wait.observerProblem || 'Wait continuation is unavailable.');
-      if (problem || ['sending', 'uncertain', 'failed'].includes(wait.wake?.state) || !wait.wake) add('ci_wait_delivery', 'Finished CI wait needs queen attention: worker wake is unavailable or uncertain. Inspect the worker before retry-wake with the exact wait_id.');
+      if (problem || ['unavailable', 'reconciliation-required'].includes(wait.outcome)) add('ci_wait_unavailable', problem || wait.observerProblem || 'Merged PR does not establish the selected check outcome; reconcile its retained evidence.');
+      if (!activeWakes.get(rt)?.has(wait.id) && (problem || ['sending', 'uncertain', 'failed'].includes(wait.wake?.state) || !wait.wake)) add('ci_wait_delivery', 'Finished CI wait needs queen attention: worker wake is unavailable or uncertain. Inspect the worker before retry-wake with the exact wait_id.');
       else if (now - (wait.wake.at || wait.resolvedAt) >= ACK_MS) add('ci_wait_unacknowledged', 'Finished CI wait has no worker acknowledgement. Inspect the worker and reconcile its continuation.');
     }
   }
