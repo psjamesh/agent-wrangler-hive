@@ -15,7 +15,7 @@ export function capacityLimit(api, fallback = 8) {
 }
 
 export function openHiveSettings(ui, returnKey = 'open-settings', cellId = null) {
-  ui.setForm('settings', { returnKey, cellId, tab: cellId ? 'hive' : 'all' });
+  ui.setForm('settings', { returnKey, cellId, tab: cellId ? 'hive' : 'all', ...(returnKey === 'capacity-toggle' ? { 'section:all': 'general' } : {}) });
   requestAnimationFrame(() => (document.querySelector(`[data-focus-key="${cellId ? 'settings-close' : 'capacity-limit'}"]`) || document.querySelector('[data-focus-key="settings-close"]'))?.focus());
 }
 

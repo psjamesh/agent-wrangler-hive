@@ -255,3 +255,12 @@ test('capacity tooltip explains the additional slots charged for helpers', t => 
   f.draw();
   assert.match(f.control('capacity-toggle').attrs.title, /2 additional helper slots/);
 });
+
+test('capacity shortcut opens General and focuses its limit despite remembered Advanced', t => {
+  const previous = globalThis.localStorage;
+  globalThis.localStorage = { getItem: () => 'advanced' };
+  t.after(() => { globalThis.localStorage = previous; });
+  const f = fixture(t); f.open();
+  assert.equal(f.control('settings-section-all-general').attrs['aria-selected'], 'true');
+  assert.equal(globalThis.document.activeElement.attrs['data-focus-key'], 'capacity-limit');
+});

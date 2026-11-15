@@ -320,3 +320,13 @@ test('section selection and resets redraw immediately through the UI state API',
   f.button('Reset to defaults').click();
   assert.equal(f.key('settings-bd-path').value, '');
 });
+
+for (const section of ['agents', 'advanced']) test(`retired hive explains its remembered ${section} section`, t => {
+  const previous = globalThis.localStorage;
+  globalThis.localStorage = { getItem: () => section };
+  t.after(() => { globalThis.localStorage = previous; });
+  const f = fixture(t, { enabled: false, retired: { outcome: 'done', summary: 'Shipped' } });
+  f.open();
+  assert.equal(f.key(`settings-section-hive-${section}`).getAttribute('aria-selected'), 'true');
+  assert.match(f.dialog().textContent, /Reopen the hive in Lifecycle to change these settings/);
+});

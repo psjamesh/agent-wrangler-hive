@@ -516,6 +516,7 @@ export function hiveSettings(ctx, cell, leave = () => true, section = null) {
   const reopen = () => { if (leave()) openReopen(ctx, cell); };
   const show = id => section === null || section === id;
   const editable = !cell.snapshot && !isRetired(cell);
+  if (isRetired(cell) && ['agents', 'advanced'].includes(section)) return h('p', { class: 'hive-muted' }, 'Reopen the hive in Lifecycle to change these settings.');
   return [
     show('general') ? [h('div', { class: 'hive-settings-name' }, h('span', {}, 'Name'), cellTitle(ctx, cell, 'settings-rename')), cellGoalForm(ctx, cell),
       editable ? queenInstructions(ctx, cell) : null] : null,
