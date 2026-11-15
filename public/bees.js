@@ -8,13 +8,6 @@ import { reducedMotion } from './hex-grid.js';
 // right is one occasional visitor.
 
 export const BEE_LEVEL_SETTING = 'beeLevel';
-export const BEE_BEHAVIOUR_SETTING = 'beeBehaviour';
-export const BEE_BEHAVIOURS = ['Plain', 'Trails', 'Acrobatics'];
-
-export function beeBehaviourOf(values) {
-  const value = values?.[BEE_BEHAVIOUR_SETTING];
-  return Number.isInteger(value) && value >= 0 && value < BEE_BEHAVIOURS.length ? value : 0;
-}
 // Hive 0.1.9 and earlier read only this switch. It is kept in step with the
 // level, and read when no level has been stored yet: off means None.
 export const BEES_SETTING = 'showBees';
@@ -66,7 +59,7 @@ function beeEl(scale = 1) {
 
 // A gentle curve from one side of the box to the other, with a little
 // bobbing. Returns keyframes that turn the bee to follow its path.
-function flightFrames(w, hgt, scale = 1, acrobatics = false) {
+function flightFrames(w, hgt, scale = 1) {
   const size = SIZE * scale;
   const fromLeft = Math.random() < 0.5;
   const y0 = hgt * (0.15 + Math.random() * 0.7);
@@ -82,7 +75,7 @@ function flightFrames(w, hgt, scale = 1, acrobatics = false) {
       y: u * u * u * y0 + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * y3,
     };
   };
-  const loop = acrobatics && Math.random() < 0.35;
+  const loop = Math.random() < 0.35;
   const start = loop ? 0.3 + Math.random() * 0.25 : 0;
   const span = 0.22;
   const anchor = at(start / (1 - span));
@@ -150,14 +143,13 @@ function trailFrames(poses, duration, scale) {
   return trails;
 }
 
-export function createBees({ level, behaviour = () => 0 }) {
+export function createBees({ level }) {
   let root = null;
   let layer = null;
   let timer = 0;
   const flights = new Set();
   let motionQuery = null;
   let lastLevel = null;
-  let lastBehaviour = null;
   const salt = Math.random().toString(36).slice(2);
   let serial = 0;
   const plan = () => BEE_LEVELS[level()] || BEE_LEVELS[0];
@@ -212,16 +204,14 @@ export function createBees({ level, behaviour = () => 0 }) {
     if (layer.parentNode !== root) root.append(layer);
     const scale = beeScaleOf(`${salt}:${serial++}`);
     const el = beeEl(scale);
-    const { frames, poses } = flightFrames(box.width, box.height, scale, behaviour() >= 2);
+    const { frames, poses } = flightFrames(box.width, box.height, scale);
     const duration = rand(FLIGHT_MS);
     const elements = [], animations = [];
-    if (behaviour() >= 1) {
-      for (const dotFrames of trailFrames(poses, duration, scale)) {
-        const dot = h('span', { class: 'hive-bee-trail' });
-        layer.append(dot);
-        elements.push(dot);
-        animations.push(dot.animate(dotFrames, { duration: duration + 2000, easing: 'linear', fill: 'both' }));
-      }
+    for (const dotFrames of trailFrames(poses, duration, scale)) {
+      const dot = h('span', { class: 'hive-bee-trail' });
+      layer.append(dot);
+      elements.push(dot);
+      animations.push(dot.animate(dotFrames, { duration: duration + 2000, easing: 'linear', fill: 'both' }));
     }
     layer.append(el);
     const anim = el.animate(frames, { duration, easing: 'linear', fill: 'forwards' });
@@ -258,7 +248,6 @@ export function createBees({ level, behaviour = () => 0 }) {
       this.unmount();
       root = el;
       lastLevel = level();
-      lastBehaviour = behaviour();
       document.addEventListener('visibilitychange', onVisibility);
       motionQuery = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)') || null;
       motionQuery?.addEventListener?.('change', onMotion);
@@ -293,10 +282,7 @@ export function createBees({ level, behaviour = () => 0 }) {
     // extra bees away; any change starts the new pace from now.
     sync() {
       const next = level();
-      const nextBehaviour = behaviour();
-      if (next === lastLevel && nextBehaviour === lastBehaviour) return;
-      if (nextBehaviour !== lastBehaviour) stopFlights();
-      lastBehaviour = nextBehaviour;
+      if (next === lastLevel) return;
       lastLevel = next;
       const max = plan().max;
       if (!max) { stop(); return; }
@@ -311,7 +297,6 @@ export function createBees({ level, behaviour = () => 0 }) {
       layer = null;
       root = null;
       lastLevel = null;
-      lastBehaviour = null;
     },
   };
 }
@@ -319,10 +304,6 @@ export function createBees({ level, behaviour = () => 0 }) {
 // The Number of bees control, the same wherever it is shown.
 export function beeSlider(options) {
   return beeRange({ ...options, labels: BEE_LEVELS.map(l => l.text), label: 'Number of bees', prefix: 'hive-bees', ticks: ['None', 'About right', 'Frankly too many bees'] });
-}
-
-export function beeBehaviourSlider(options) {
-  return beeRange({ ...options, labels: BEE_BEHAVIOURS, label: 'Bee behaviour', prefix: 'hive-bee-behaviour', ticks: BEE_BEHAVIOURS });
 }
 
 function beeRange({ value, onInput, onCommit, onHold, idKey, labels, label, prefix, ticks }) {
@@ -364,35 +345,4 @@ function beeRange({ value, onInput, onCommit, onHold, idKey, labels, label, pref
     }), h('span', { class: 'hive-bee-thumb-track', 'aria-hidden': 'true' }, thumb)),
     h('div', { class: 'hive-bee-scale', 'aria-hidden': 'true' },
       ticks.map(tick => h('span', {}, tick))));
-}
-
-export function createBeeBehaviourPreference({ settings, save, sync, render, onHold, onError }) {
-  let pending = null, want = null, saving = false, intent = 0, committed = 0;
-  const value = () => {
-    if (pending !== null) return pending;
-    try { return beeBehaviourOf(settings()); } catch { return 0; }
-  };
-  async function persist() {
-    saving = true;
-    let failed = null;
-    while (want !== null) {
-      const next = want;
-      want = null;
-      failed = null;
-      try { await save(BEE_BEHAVIOUR_SETTING, next); } catch (err) { failed = err; }
-    }
-    saving = false;
-    if (intent === committed) { pending = null; sync(); }
-    if (failed) onError(failed);
-    render();
-  }
-  return {
-    value,
-    saving: () => saving,
-    slider: idKey => beeBehaviourSlider({
-      value: value(), idKey, onHold,
-      onInput: next => { intent++; pending = next; sync(); },
-      onCommit: next => { committed = ++intent; pending = next; sync(); want = next; if (!saving) persist(); },
-    }),
-  };
 }

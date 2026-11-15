@@ -43,7 +43,7 @@ function stubWorld(t) {
   const previous = Object.fromEntries(['Element', 'matchMedia', 'setTimeout', 'clearTimeout', 'getComputedStyle'].map(k => [k, globalThis[k]]));
   const animations = [];
   const timers = new Map(); let serial = 0;
-  Element.prototype.animate = function (frames) { animations.push({ el: this, frames }); return { cancel() {}, set onfinish(_) {} }; };
+  Element.prototype.animate = function (frames) { if (this.attrs.class === 'hive-bee') animations.push({ el: this, frames }); return { cancel() {}, set onfinish(_) {} }; };
   Element.prototype.remove = function () { this.removed = true; };
   Element.prototype.querySelector = function () { return comb; };
   const comb = Object.assign(new Element('div'), {

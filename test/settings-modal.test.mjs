@@ -240,7 +240,7 @@ test('sections keep every setting reachable and Advanced collapsed across redraw
   assert.ok(f.key('capacity-limit'));
   assert.match(f.dialog().textContent, /Pop up/);
   assert.ok(walk(f.dialog()).find(el => el.getAttribute('aria-label') === 'Number of bees'));
-  assert.ok(walk(f.dialog()).find(el => el.getAttribute('aria-label') === 'Bee behaviour'));
+  assert.equal(walk(f.dialog()).find(el => el.getAttribute('aria-label') === 'Bee behaviour'), undefined);
   f.key('settings-section-all-advanced').click(); f.draw();
   assert.equal(walk(f.dialog()).find(el => el.tagName === 'details').getAttribute('open'), null);
   assert.ok(f.key('settings-bd-path'));

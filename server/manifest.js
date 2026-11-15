@@ -82,15 +82,6 @@ export function createManifest({ dir }) {
       step: 1,
       hidden: true,
     }, {
-      key: 'beeBehaviour',
-      type: 'number',
-      label: 'Bee behaviour',
-      help: '0 Plain, 1 Trails, 2 Acrobatics. Each level includes the ones below. Default: Plain.',
-      min: 0,
-      max: 2,
-      step: 1,
-      hidden: true,
-    }, {
       key: 'showBees',
       type: 'toggle',
       label: 'Show bees',
