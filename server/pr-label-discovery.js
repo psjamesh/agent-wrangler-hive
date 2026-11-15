@@ -120,6 +120,10 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
           let result;
           try { result = await labeler.apply(record.url, () => eligible(record.url)); } catch {}
           if (!active()) return;
+          if (terminal && result?.status === 'deferred') {
+            runtime.metadata.mutate(doc => { doc.prLabels[record.url].terminalLabelAttempted = false; });
+            continue;
+          }
           const success = result === 'labelled' || result === 'present';
           if (success || terminal || result?.status === 'blocked') runtime.metadata.mutate(doc => {
             const saved = doc.prLabels[record.url];

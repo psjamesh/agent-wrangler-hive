@@ -570,13 +570,17 @@ for (const terminal of ['MERGED', 'CLOSED']) {
 test('repository label configuration attention is shown once until recovery', async t => {
   const f = fixture(t), url = 'https://github.com/example/repo/pull/42';
   f.rt.metadata.mutate(d => {
-    d.prLabels[url] = { url, cellIds: ['cell'] };
+    d.prLabels[url] = { url, cellIds: ['cell'], status: 'pending' };
     d.prLabelRepos = { 'example/repo': { message: 'Label permission denied', at: f.now(), retryAt: f.now() + 900000 } };
   });
   assert.equal(f.flags().filter(flag => flag.kind === 'pr_label_configuration').length, 1);
   await f.watchdog.run(); await f.watchdog.run();
   assert.equal(f.sent.length, 1);
   assert.match(f.sent[0].text, /permission denied/);
+  f.rt.metadata.mutate(d => { d.prLabels[url].status = 'unlabelled'; });
+  assert.deepEqual(f.flags(), [], 'no pending label work means no configuration attention');
+  f.rt.metadata.mutate(d => { d.prLabels[url].status = 'pending'; });
+  assert.equal(f.flags().filter(flag => flag.kind === 'pr_label_configuration').length, 1);
   f.rt.metadata.mutate(d => { delete d.prLabelRepos['example/repo']; });
   assert.deepEqual(f.flags(), []);
 });

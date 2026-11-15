@@ -62,7 +62,7 @@ export function createPrLabeler({ gh = runGh, now = Date.now } = {}) {
       const repo = prRepository(prUrl);
       const repoKey = repo?.toLowerCase();
       if (!repo || stopped || inFlight.has(prUrl) || now() < remoteRetryAt
-        || now() < (negatives.get(prUrl)?.retryAt || 0) || now() < (repoNegatives.get(repoKey)?.retryAt || 0)) return;
+        || now() < (negatives.get(prUrl)?.retryAt || 0) || now() < (repoNegatives.get(repoKey)?.retryAt || 0)) return { status: 'deferred' };
       inFlight.add(prUrl);
       try {
         if (!eligible()) return;

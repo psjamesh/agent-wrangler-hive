@@ -233,7 +233,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       add('stalled_worker', bead.id, [sid, 'idle', since], since, 'Claimed worker is idle without a recorded handoff.', { bead_id: bead.id, session_id: sid });
     }
   }
-  const labelRepos = new Set(Object.values(doc.prLabels || {}).filter(record => record.cellIds?.includes(cell.id) || record.associations?.some(row => row.cellId === cell.id)).map(record => prRepository(record.url)?.toLowerCase()).filter(Boolean));
+  const labelRepos = new Set(Object.values(doc.prLabels || {}).filter(record => record?.status === 'pending' && (record.cellIds?.includes(cell.id) || record.associations?.some(row => row.cellId === cell.id))).map(record => prRepository(record.url)?.toLowerCase()).filter(Boolean));
   for (const repo of labelRepos) {
     const failure = doc.prLabelRepos?.[repo];
     if (failure) add('pr_label_configuration', repo, 'unavailable', failure.at,

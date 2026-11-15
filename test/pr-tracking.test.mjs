@@ -454,3 +454,25 @@ test('repo label configuration failure is persisted and gates every pending PR u
   await f.sweep.run();
   assert.equal(edits, 2);
 });
+
+test('global label backoff defers terminal records without spending their final attempt', async () => {
+  const f = fixture();
+  f.links = [PR, OTHER];
+  f.states.set(PR, 'MERGED'); f.states.set(OTHER, 'MERGED');
+  const gh = f.gh;
+  let labelReads = 0;
+  f.gh = async args => {
+    if (args[4] === 'labels' && ++labelReads === 1) throw new Error('HTTP 429 rate limit');
+    return gh(args);
+  };
+  f.restart();
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].status, 'unlabelled', 'the attempted failure spends its budget');
+  assert.equal(labelReads, 1);
+  assert.equal(f.doc.prLabels[OTHER].status, 'pending', 'a deferred PR keeps its budget');
+  assert.equal(f.doc.prLabels[OTHER].terminalLabelAttempted, false);
+  f.time = 60000;
+  await f.sweep.run();
+  assert.equal(labelReads, 2);
+  assert.equal(f.doc.prLabels[OTHER].status, 'labelled');
+});
