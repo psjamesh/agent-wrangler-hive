@@ -4,20 +4,21 @@ import { pickupDetails } from './pickup.js';
 import { watchdogSettingsForm } from './watchdog-settings.js';
 import { reviewPolicyForm } from './review-policy.js';
 import { confirmHive, promptHive } from './confirm-dialog.js';
-import { allSettings } from './settings-view.js';
+import { settingsModal, settingsButton } from './settings-view.js';
+import { openCellPopover, disposeCellPopover } from './cell-popover.js';
 import { capacityControl } from './capacity-control.js';
 import { waitingItems, cellWaitingItems, waitingSection, openWaitingMenu } from './waiting-view.js';
 import { prSummary, pullRequestsSection } from './pr-view.js';
 import { h, syncChildren, markdown, safeHref, relativeTime } from './dom.js';
 import { hexPath, primaryMark, fitLines } from './hex-grid.js';
 import {
-  cellName, sessionLabel, sessionsInTask, statusDot, STATUS_TEXT, childrenMap, agentSummary, capturedAgentSummary, cellBeadIds, waitingOn, workCounts, countsSentence, closedLabel, isDone, displayStatus, recordedWait,
+  cellName, sessionLabel, statusDot, STATUS_TEXT, childrenMap, agentSummary, capturedAgentSummary, cellBeadIds, waitingOn, workCounts, countsSentence, closedLabel, isDone, displayStatus, recordedWait,
 } from './model.js';
 import { renderConversation } from './conversation.js';
 import { workstreamClasses } from './cell-layout.js';
 import { retireDrawer, openRetire, openReopen } from './retire-view.js';
-import { retireKey, isRetired } from './retired.js';
-import { closedButton, closedKey, completeKey, workstreamDrawer } from './workstream-view.js';
+import { isRetired } from './retired.js';
+import { closedButton, workstreamDrawer } from './workstream-view.js';
 import { attentionEl, launchFields, instructionsField, noticesEl, errorNote } from './widgets.js';
 import { submitForm } from './form-submit.js';
 
@@ -240,7 +241,7 @@ function beadDetails(ctx, cell) {
       root ? pullRequestsSection(ctx, root) : null,
       root?.goal ? markdown(api, root.goal) : h('p', { class: 'hive-muted' }, cell.snapshot ? 'No goal was confirmed on the captured board.' : 'No goal written yet.'),
       root?.acceptance ? [h('h4', {}, 'Done when'), markdown(api, root.acceptance)] : null,
-      h('p', { class: 'hive-muted' }, 'Select a bead or a workstream to see its details here. The queen and its instructions are under Info.'));
+      h('p', { class: 'hive-muted' }, 'Select a bead or a workstream to see its details here. Use the queen pill to manage the queen, and Settings for its instructions.'));
   }
   const detail = ui.beadDetail(bead);
   const full = { goal: bead.goal || '', acceptance: bead.acceptance || '', summary: '', nextAction: '', evidence: [], nativeMetadataKeys: [], ...(detail.bead ? { goal: detail.bead.goal, acceptance: detail.bead.acceptance, summary: detail.bead.summary, nextAction: detail.bead.nextAction, evidence: detail.bead.evidence, nativeMetadataKeys: detail.bead.nativeMetadataKeys } : {}) };
@@ -384,7 +385,7 @@ function queenBar(ctx, cell) {
         send({ type: 'hive-queen-brief', cellId: cell.id });
       },
     }, a && a.sessionId === cell.queenSessionId && a.state !== 'failed' ? 'Send brief again…' : 'Send brief') : null,
-    launch?.active ? null : h('button', { type: 'button', class: cell.queenSessionId ? 'hive-quiet-btn' : 'hive-btn', onclick: () => ui.setForm(`launch:${cell.id}`, launchForm ? null : { autoCompactTokens: 250000, handoverSourceSessionId: cell.queenSessionId || '', archiveSourceAfterHandover: true }) }, launchForm ? 'Cancel launch' : 'Launch a new queen…'),
+    launch?.active ? null : h('button', { type: 'button', class: cell.queenSessionId ? 'hive-quiet-btn' : 'hive-btn', 'data-focus-key': `queen-launch:${cell.id}`, onclick: () => ui.setForm(`launch:${cell.id}`, launchForm ? null : { autoCompactTokens: 250000, handoverSourceSessionId: cell.queenSessionId || '', archiveSourceAfterHandover: true }) }, launchForm ? 'Cancel launch' : 'Launch a new queen…'),
     launchForm ? h('form', {
       class: 'hive-form hive-form-inline',
       onsubmit: (e) => {
@@ -441,16 +442,16 @@ export function snapshotDot(status) {
 // Sessions of a live hive that are asking someone for input right now: its
 // queen, its bound agents and the owners of its work, from AW's own session
 // states. A captured snapshot never reports any.
-function queenPill(ctx, cell, openInfo) {
+function queenPill(ctx, cell, openQueen) {
   const { graph, hive } = ctx;
   if (cell.snapshot) {
     const snap = cell.snapshot;
-    return h('span', { class: 'hive-setup-pill is-snapshot' }, `Captured snapshot${snap.capturedAt ? `, ${relativeTime(snap.capturedAt)}` : ''}: read only`);
+    return h('button', { type: 'button', class: 'hive-setup-pill is-snapshot', 'aria-haspopup': 'dialog', 'data-focus-key': `queen-open:${cell.id}`, onclick: openQueen }, `Captured snapshot${snap.capturedAt ? `, ${relativeTime(snap.capturedAt)}` : ''}: read only`);
   }
-  if (!cell.enabled) return null;
+  if (!cell.enabled) return h('button', { type: 'button', class: 'hive-setup-pill hive-pill-btn', 'aria-haspopup': 'dialog', 'data-focus-key': `queen-open:${cell.id}`, onclick: openQueen }, 'Queen');
   if (!cell.queenSessionId) {
     const launch = launchState(hive, cell);
-    return h('button', { type: 'button', class: 'hive-setup-pill hive-pill-btn', onclick: openInfo, title: 'Open hive info to launch a new queen' }, launch ? launch.text : 'Setup incomplete: no queen');
+    return h('button', { type: 'button', class: 'hive-setup-pill hive-pill-btn', 'aria-haspopup': 'dialog', 'data-focus-key': `queen-open:${cell.id}`, onclick: openQueen, title: 'Manage the queen' }, launch ? launch.text : 'Setup incomplete: no queen');
   }
   const dot = statusDot(graph, cell.queenSessionId);
   const a = cell.activation;
@@ -458,8 +459,8 @@ function queenPill(ctx, cell, openInfo) {
   return h('button', {
     type: 'button',
     class: `hive-queen-pill${brief ? ' is-warn' : ''}`,
-    onclick: openInfo,
-    title: `Queen: ${sessionLabel(graph, cell.queenSessionId)}, ${STATUS_TEXT[dot]}. Open hive info to manage the queen.`,
+    'aria-haspopup': 'dialog', 'data-focus-key': `queen-open:${cell.id}`, onclick: openQueen,
+    title: `Queen: ${sessionLabel(graph, cell.queenSessionId)}, ${STATUS_TEXT[dot]}. Manage the queen.`,
   },
   h('span', { class: `hive-dot-inline hive-dot-${dot}`, 'aria-hidden': 'true' }),
   `Queen ${STATUS_TEXT[dot]}`, brief ? ` · ${brief}` : '');
@@ -474,88 +475,57 @@ function headProgress(counts) {
     counts.total ? `${counts.closed} of ${counts.total} closed` : 'No work yet');
 }
 
-function focusKey(k) {
-  globalThis.document?.querySelector(`.hive-root [data-focus-key="${CSS.escape(k)}"]`)?.focus();
-}
-
 function cellHeader(ctx, cell, root) {
   const { graph, ui, send, hive } = ctx;
   const name = cellName(graph, cell);
   const counts = root && (cell.enabled || isRetired(cell)) ? workCounts(hive, childrenMap(hive.beads), root.id) : null;
   const waiting = cellWaitingItems(ctx, cell);
-  const infoKey = `info:${cell.id}`;
-  const infoOpen = Boolean(ui.form(infoKey));
-  const openInfo = () => {
-    ui.setForm(closedKey(cell.id), null);
-    ui.setForm(completeKey(cell.id), null);
-    ui.setForm(retireKey(cell.id), null);
-    if (!ui.form(infoKey)) ui.setForm(infoKey, {});
-    focusKey(`info-close:${cell.id}`);
-  };
   return h('header', { class: 'hive-cellhead' },
     h('div', { class: 'hive-cellhead-top' },
       h('button', { type: 'button', class: 'hive-back', onclick: () => ui.closeCell(), 'aria-label': 'Show all hives', title: 'Show all hives' },
         h('span', { class: 'hive-back-icon', 'aria-hidden': 'true' }), 'All hives'),
       h('span', { class: 'hive-crumb-sep', 'aria-hidden': 'true' }, '/'),
-      h('h2', { class: 'hive-celltitle', title: name }, name),
+      h('h2', { class: 'hive-celltitle' }, h('button', { type: 'button', class: 'hive-title-btn', title: 'Goal and done when', 'aria-haspopup': 'dialog', 'data-focus-key': `goal-open:${cell.id}`, onclick: event => openGoalPopover(ctx, cell, event.currentTarget) }, name)),
       isRetired(cell) ? h('span', { class: 'hive-badge hive-badge-retired', title: cell.retired.summary }, `Retired · ${cell.retired.outcome}`) : (cell.enabled ? null : h('span', { class: 'hive-badge' }, 'Off')),
       capacityControl(ctx),
       h('div', { class: 'hive-cellstate' },
-        queenPill(ctx, cell, openInfo),
+        queenPill(ctx, cell, event => openQueenPopover(ctx, cell, event.currentTarget)),
         headProgress(counts),
         waiting.length ? h('button', { type: 'button', class: 'hive-quiet-btn hive-waiting', 'aria-haspopup': 'dialog', 'data-focus-key': 'waiting-header', onclick: event => openWaitingMenu(ctx, waiting, event.currentTarget, { cellId: cell.id }) }, `${waiting.length} waiting for you`) : null),
       h('div', { class: 'hive-head-actions' },
         isRetired(cell) ? h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openReopen(ctx, cell), 'data-focus-key': `reopen-open:${cell.id}` }, 'Reopen hive…') : (cell.enabled || cell.snapshot ? null : h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => send({ type: 'hive-cell-enable', cellId: cell.id }) }, 'Turn on')),
         cell.enabled && !cell.snapshot ? closedButton(ctx, cell) : null,
-        h('button', {
-          type: 'button',
-          class: 'hive-quiet-btn',
-          'aria-expanded': infoOpen ? 'true' : 'false',
-          'aria-controls': `hive-info-${cell.id}`,
-          'data-focus-key': `info-open:${cell.id}`,
-          title: 'Goal, queen, instructions and settings for this hive',
-          onclick: () => (infoOpen ? ui.setForm(infoKey, null) : openInfo()),
-        }, 'Info'))),
-    allSettings(ctx),
+        settingsButton(ctx, cell))),
+    settingsModal(ctx, cell, leave => hiveSettings(ctx, cell, leave)),
     attentionEl(ctx, { cellId: cell.id }),
     noticesEl(ctx));
 }
 
-// Everything about the hive that is not the work itself: its full goal, its
-// queen and how to manage it, the queen's instructions, and turning it off.
-function infoDrawer(ctx, cell, root) {
-  const { ui, send, api, graph, hive } = ctx;
-  const infoKey = `info:${cell.id}`;
-  if (!ui.form(infoKey)) return null;
-  const close = () => {
-    ui.setForm(infoKey, null);
-    focusKey(`info-open:${cell.id}`);
-  };
-  const name = cellName(graph, cell);
-  const counts = root && (cell.enabled || isRetired(cell)) ? workCounts(hive, childrenMap(hive.beads), root.id) : null;
-  let goal;
-  if (root?.goal) goal = markdown(api, root.goal);
-  else if (cell.snapshot?.brief) goal = [h('p', { class: 'hive-muted' }, 'Board brief, not a confirmed goal:'), markdown(api, cell.snapshot.brief)];
-  else goal = h('p', { class: 'hive-muted' }, cell.snapshot ? 'No goal was confirmed on the captured board.' : 'No goal written yet.');
-  let queen;
-  if (cell.snapshot) queen = snapshotQueen(ctx, cell);
-  else if (cell.enabled) queen = queenBar(ctx, cell);
-  else queen = h('p', { class: 'hive-muted' }, isRetired(cell) ? 'This hive is retired. Reopen it to manage its queen.' : 'Turn the hive on to manage its queen.');
-  return h('aside', {
-    class: 'hive-info',
-    id: `hive-info-${cell.id}`,
-    role: 'dialog',
-    'aria-label': `About ${name}`,
-    onkeydown: (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } },
-  },
-  h('div', { class: 'hive-info-head' },
-    h('h3', {}, name),
-    h('button', { type: 'button', class: 'hive-quiet-btn', onclick: close, 'data-focus-key': `info-close:${cell.id}` }, 'Close')),
-  h('div', { class: 'hive-info-body', dataset: { scrollKey: `info:${cell.id}` } },
-    h('section', {}, h('h4', {}, 'Goal'), goal),
-    root?.acceptance ? h('section', {}, h('h4', {}, 'Done when'), markdown(api, root.acceptance)) : null,
-    counts ? h('section', {}, h('h4', {}, 'Progress'), h('p', {}, countsSentence(counts))) : null,
-    h('section', {}, h('h4', {}, 'Queen'), queen),
+export function openGoalPopover(ctx, cell, anchor) {
+  openCellPopover(ctx, cell, anchor, 'Goal and done when', (next, current) => {
+    const root = next.hive.beads[current.rootBeadId];
+    const { api } = next;
+    const cell = current;
+    let goal;
+    if (root?.goal) goal = markdown(api, root.goal);
+    else if (cell.snapshot?.brief) goal = [h('p', { class: 'hive-muted' }, 'Board brief, not a confirmed goal:'), markdown(api, cell.snapshot.brief)];
+    else goal = h('p', { class: 'hive-muted' }, cell.snapshot ? 'No goal was confirmed on the captured board.' : 'No goal written yet.');
+    return [h('section', {}, h('h4', {}, 'Goal'), goal),
+      root?.acceptance ? h('section', {}, h('h4', {}, 'Done when'), markdown(api, root.acceptance)) : null];
+  });
+}
+
+export function openQueenPopover(ctx, cell, anchor) {
+  openCellPopover(ctx, cell, anchor, 'Queen', (next, current) => current.snapshot ? snapshotQueen(next, current)
+    : current.enabled ? queenBar({ ...next, ui: { ...next.ui, inspect: id => { disposeCellPopover(); next.ui.inspect(id); } } }, current)
+      : h('p', { class: 'hive-muted' }, isRetired(current) ? 'This hive is retired. Reopen it to manage its queen.' : 'Turn the hive on to manage its queen.'));
+}
+
+export function hiveSettings(ctx, cell, leave = () => true) {
+  const { send } = ctx;
+  const retire = () => { if (leave()) openRetire(ctx, cell); };
+  const reopen = () => { if (leave()) openReopen(ctx, cell); };
+  return [
     cell.snapshot || isRetired(cell) ? null : queenInstructions(ctx, cell),
     cell.snapshot || isRetired(cell) ? null : watchdogSettingsForm(ctx, cell),
     cell.snapshot || isRetired(cell) ? null : codexApprovalsForm(ctx, cell),
@@ -565,17 +535,13 @@ function infoDrawer(ctx, cell, root) {
       h('h4', {}, 'Hive'),
       isRetired(cell)
         ? [h('p', { class: 'hive-muted' }, `Retired as ${cell.retired.outcome}${cell.retired.at ? `, ${relativeTime(cell.retired.at)}` : ''}: ${cell.retired.summary}`),
-          h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openReopen(ctx, cell) }, 'Reopen hive…')]
+          h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: reopen }, 'Reopen hive…')]
         : [h('p', { class: 'hive-muted' }, cell.enabled ? 'Turning the hive off keeps its record. Agents cannot use it until it is turned on again.' : 'This hive is off. Its record is kept; turn it on to see its work and to let agents use it.'),
           cell.enabled
             ? h('button', { type: 'button', class: 'hive-btn', onclick: () => send({ type: 'hive-cell-disable', cellId: cell.id }) }, 'Turn hive off')
             : h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => send({ type: 'hive-cell-enable', cellId: cell.id }) }, 'Turn hive on'),
           h('p', { class: 'hive-muted' }, 'Retiring a finished hive records its outcome and takes it off the All hives map.'),
-          h('button', { type: 'button', class: 'hive-btn', onclick: () => openRetire(ctx, cell), 'data-focus-key': `retire-open:${cell.id}`, 'aria-haspopup': 'dialog' }, 'Retire hive…')]),
-    h('section', {},
-      h('h4', {}, 'All hives'),
-      ctx.bees.slider(`info:${cell.id}`),
-      h('p', { class: 'hive-muted' }, 'This applies to every hive, not only this one.'))));
+          h('button', { type: 'button', class: 'hive-btn', onclick: retire, 'data-focus-key': `retire-open:${cell.id}`, 'aria-haspopup': 'dialog' }, 'Retire hive…')])];
 }
 
 function paneTabs(ui) {
@@ -593,11 +559,7 @@ function paneTabs(ui) {
     tab('conversation', 'Conversation'), tab('details', 'Details'));
 }
 
-function firstParagraph(text) {
-  return String(text || '').split(/\n\s*\n/).map((p) => p.trim()).find(Boolean)?.replace(/\s+/g, ' ') || '';
-}
-
-// The focused task's header and info drawer, and the dock with its
+// The focused task's header and action drawers, and the dock with its
 // conversation and details.
 const panelViews = new WeakMap();
 
@@ -648,7 +610,7 @@ export function cellPanels(ctx, cell) {
   const dock = hasPanels(cell, root) ? syncChildren(cached.dock, [conversation, details]) : null;
   return {
     header: cellHeader(ctx, cell, root),
-    info: infoDrawer(ctx, cell, root) || retireDrawer(ctx, cell) || workstreamDrawer(ctx, cell),
+    drawer: retireDrawer(ctx, cell) || workstreamDrawer(ctx, cell),
     tabs: dock ? paneTabs(ui) : null,
     inspectbar,
     dock,

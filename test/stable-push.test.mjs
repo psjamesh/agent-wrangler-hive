@@ -156,7 +156,7 @@ test('removing the root cleans read listeners from the old conversation before h
   const render = vm.runInNewContext(code + '; cellPanels', {
     panelViews: new WeakMap(), h, hasPanels: (_cell, root) => Boolean(root),
     renderConversation: () => ({ list: h(), scrollKey: 'messages:cell', onReadInteraction() {} }),
-    syncChildren: el => el, beadDetails: h, cellHeader: h, infoDrawer: () => null, workstreamDrawer: () => null, retireDrawer: () => null, isRetired: () => false, paneTabs: h,
+    syncChildren: el => el, beadDetails: h, cellHeader: h, workstreamDrawer: () => null, retireDrawer: () => null, isRetired: () => false, paneTabs: h,
   });
   const ui = { inspecting: () => null };
   const cell = { id: 'cell', rootBeadId: 'root', enabled: true };

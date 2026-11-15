@@ -10,7 +10,6 @@ function focusKey(k) {
 export function openRetire(ctx, cell) {
   const { ui, send } = ctx;
   const k = retireKey(cell.id);
-  ui.setForm(`info:${cell.id}`, null);
   ui.setForm(k, { mode: 'retire', outcome: 'done', summary: '', override: false, archiveSessions: false, check: null, error: null, pending: null });
   send({ type: 'hive-cell-retire-check', cellId: cell.id }, {
     onReply: (frame) => {
@@ -23,7 +22,6 @@ export function openRetire(ctx, cell) {
 }
 
 export function openReopen(ctx, cell) {
-  ctx.ui.setForm(`info:${cell.id}`, null);
   ctx.ui.setForm(retireKey(cell.id), { mode: 'reopen', reason: '', error: null, pending: null });
   focusKey(`reopen-reason:${cell.id}`);
 }

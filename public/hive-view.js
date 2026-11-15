@@ -1,6 +1,6 @@
 import { renderRelatedBeads } from './conversation.js';
 import { confirmHive } from './confirm-dialog.js';
-import { allSettings, settingsButton } from './settings-view.js';
+import { settingsModal, settingsButton } from './settings-view.js';
 import { capacityControl } from './capacity-control.js';
 import { subtreeMembers } from './region-attachments.js';
 import { hiddenWork } from './region-visibility.js';
@@ -733,7 +733,7 @@ export function renderHive(ctx) {
       cached.map.querySelector('.hive-canvas')?.hiveRefreshSearch?.(ctx);
       body = cached.map;
     }
-    const top = syncChildren(cached.top, [panels.header, body, panels.tabs, panels.info], ctx.beforeReplace);
+    const top = syncChildren(cached.top, [panels.header, body, panels.tabs, panels.drawer], ctx.beforeReplace);
     return {
       top,
       bottom: panels.dock,
@@ -763,7 +763,7 @@ export function renderHive(ctx) {
           h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openCellDialog(ui, 'new', 'open-new'), 'data-focus-key': 'open-new', 'aria-haspopup': 'dialog' }, 'New hive'),
           h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => openCellDialog(ui, 'adopt', 'open-adopt'), 'data-focus-key': 'open-adopt', 'aria-haspopup': 'dialog' }, 'Add existing task'),
           settingsButton(ctx)),
-        allSettings(ctx)),
+        settingsModal(ctx)),
       noticesEl(ctx),
       attentionEl(ctx)),
     cached.map,
