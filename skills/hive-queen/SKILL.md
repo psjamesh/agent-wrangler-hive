@@ -138,6 +138,8 @@ If the `hive_*` tools are not available to you, you cannot do this yet: tell the
 
 ## Delete or finish
 
+On a workstream completion suggestion, check its open descendants and acceptance, then close it with evidence or reply in the same topic with what remains.
+
 - **Finish** work that was real: done, dropped, superseded or a duplicate of other work. Use `hive_finish_bead` with the outcome; the record stays on the map and in history.
 - **Delete** only items that should never have existed, such as a mistaken create or an accidental copy, and only when the human asked for it or clearly agreed. Deleting is permanent: Hive keeps the records in its operation journal, but nothing restores them.
 - Call `hive_delete_beads` with every item to remove and a reason. It previews first. It refuses the hive goal, items in other hives, claimed items, children you did not name, links between a deleted item and one that stays, and items with unsettled operations. Resolve each problem it lists: finish, release or move the item, or remove the link. Never work around a refusal.

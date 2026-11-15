@@ -723,6 +723,14 @@ function humanCell(rt, cellId) {
 export const recordHumanInput = (rt, args) => messageWrite(rt, args.cellId, () => recordHumanMessage(rt, args));
 export const recordHumanSettingsInput = (rt, args) => messageWrite(rt, args.cellId, () => recordHumanMessage(rt, args, true));
 
+export const recordCompletionSuggestion = (rt, { cellId, beadId, title }) => messageWrite(rt, cellId, async () => {
+  humanCell(rt, cellId);
+  const pending = messagesOf(rt.metadata.read(), cellId).find(m => m.completionSuggestion && m.beadId === beadId && awaitingQueen(m));
+  if (pending) return { ...pending, created: false };
+  const saved = await recordHumanMessage(rt, { cellId, beadId, text: `Is ${title} ready to close?`, newThread: { beadId }, completionSuggestion: true });
+  return { ...saved, created: true };
+});
+
 export function recordHumanReaction(rt, { cellId, messageId, reaction, rev }) {
   if (!['approve', 'decline'].includes(reaction)) return Promise.reject(new HiveError('Choose Yes or No.'));
   return messageWrite(rt, cellId, () => {
@@ -735,7 +743,7 @@ export function recordHumanReaction(rt, { cellId, messageId, reaction, rev }) {
   });
 }
 
-async function recordHumanMessage(rt, { cellId, text: body, beadId, replyTo, threadId, newThread, ackRev = null, readThrough = null, images, reaction = null }, allowDisabled = false) {
+async function recordHumanMessage(rt, { cellId, text: body, beadId, replyTo, threadId, newThread, ackRev = null, readThrough = null, images, reaction = null, completionSuggestion = false }, allowDisabled = false) {
   const getCell = allowDisabled ? readableCell : humanCell;
   let cell = getCell(rt, cellId);
   const clean = text(body, 'text', MESSAGE_MAX, { required: true });
@@ -787,6 +795,7 @@ async function recordHumanMessage(rt, { cellId, text: body, beadId, replyTo, thr
         response: { required: true, answers: [] },
         context: contextAt(rt, bead, target, t),
         ...(reaction ? { reaction } : {}),
+        ...(completionSuggestion ? { completionSuggestion: true } : {}),
       };
       if (reaction) {
         target.ack.state = { kind: 'reaction', reaction, by: HUMAN, at, replyId: id };

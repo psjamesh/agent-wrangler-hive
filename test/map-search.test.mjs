@@ -245,7 +245,8 @@ for (const saved of [['ws'], { malformed: true }, null]) test(`obsolete workstre
   const menu = f.top.querySelector('.hive-wsmenu');
   assert.ok(menu);
   assert.doesNotMatch(menu.textContent, /Show done|Hide done/);
-  assert.ok(f.top.querySelector('[data-focus-key="wsmenu:arrange"]'));
+  assert.equal(f.top.querySelector('[data-focus-key="wsmenu:arrange"]'), null);
+  assert.equal(f.top.querySelector('[data-focus-key="wsmenu:suggest"]').textContent, 'Suggest completion');
 });
 
 test('opening a hive removes obsolete local keys while preserving the hive setting', t => {
@@ -727,4 +728,25 @@ test('overview has no footer hint and shares bottom-aligned map controls', t => 
   assert.match(css.match(/\.hive-zoom\s*\{([^}]+)\}/)?.[1] || '', /bottom:\s*10px/);
   f.ctx.hive.cells = {};
   assert.match(f.draw().querySelector('.hive-stage-empty').textContent, /No hives yet/);
+});
+
+
+test('workstream menu suggests completion without opening a completion form or moving work', t => {
+  const f = fixture(t);
+  const sent = [], notices = [];
+  f.ctx.send = (message, options) => sent.push([message, options]);
+  f.ctx.notice = (...args) => notices.push(args);
+  f.tile('ws').fire('keydown', { key: 'F10', shiftKey: true }); f.draw();
+  const menu = f.top.querySelector('.hive-wsmenu');
+  assert.doesNotMatch(menu.textContent, /Complete workstream|Arrange this workstream/);
+  f.top.querySelector('[data-focus-key="wsmenu:suggest"]').fire('click');
+  assert.deepEqual(sent[0][0], { type: 'hive-ws-suggest-completion', cellId: 'cell', headId: 'ws' });
+  assert.ok(!f.ui.form('wscomplete:cell'));
+  sent[0][1].onReply({ ok: true, created: true, delivery: { state: 'delivered' } });
+  assert.equal(notices[0][0], 'Completion suggested to the queen.');
+  sent[0][1].onReply({ ok: true, created: false });
+  assert.match(notices[1][0], /already has/);
+  sent[0][1].onReply({ ok: false, error: 'Unavailable' });
+  assert.deepEqual(notices[2], ['Unavailable', { severity: 'error' }]);
+  assert.equal(f.beads.ws.status, 'open');
 });

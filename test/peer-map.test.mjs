@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { layoutCell, groupOutlines, workstreamClasses } from '../public/cell-layout.js';
 import { archiveHidden, activeKids } from '../public/archive-layout.js';
-import { membersOf, previewMove, planMove, planGroupArrange, planReveal, createDragPlanner, planHide } from '../public/cell-move.js';
+import { membersOf, previewMove, planMove, planReveal, createDragPlanner, planHide } from '../public/cell-move.js';
 import { layoutBase, stackable } from '../public/layout-base.js';
 import { hiddenWork } from '../public/region-visibility.js';
 import { mapInputs } from '../public/view-inputs.js';
@@ -69,7 +69,7 @@ function mapFixture({contact=false,enclosed=false,hiveHidingStart=true,related=n
     },
     bindMapSearch() {}, searchReveals: () => false,
     ctx, cell, related, BEAD_SIZE: 60, layoutCell, groupOutlines, workstreamClasses,
-    archiveHidden, activeKids, membersOf, subtreeMembers, previewMove, planMove, planGroupArrange, planReveal, createDragPlanner, planHide, planHiveReveal,
+    archiveHidden, activeKids, membersOf, subtreeMembers, previewMove, planMove, planReveal, createDragPlanner, planHide, planHiveReveal,
     layoutBase, stackable, hiddenWork, toPixel, pixelBounds, key, normalAspect,
     beadTile: (ctx, bead, tile) => ({ id: bead.id, ...tile }), relationsFor, describeRelations,
     h: (...args) => Object.assign(args, { querySelector: () => element }), renderHexMap: (o) => {

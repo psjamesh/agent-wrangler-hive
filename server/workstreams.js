@@ -1,7 +1,7 @@
 import {
   HiveError, LIMITS, text, beadIdArg, ensureWritable, refuseSnapshot, withLocks, journaled, assessCompletion, finishGroup, evidenceInput, CATCHING_UP,
 } from './ops.js';
-import { unsettledMessage, contextOf, humanConversationDoc } from './conversation.js';
+import { unsettledMessage, contextOf, humanConversationDoc, recordCompletionSuggestion } from './conversation.js';
 import { BeadsError } from './beads.js';
 import { OUTCOMES, HUMAN_ACTOR, OPEN_STATUSES, descendantIds, normalizeIssue, buildGraph } from './bead-model.js';
 import { planArchive, planReturn, planPlace, hiddenHead, archiveHidden, activeKids, under, drawnNow } from '../public/archive-layout.js';
@@ -60,6 +60,12 @@ export function checkWorkstream(rt, { cellId, headId }) {
     archived: Boolean(rec),
     hidden: hidden.has(id),
   };
+}
+
+export async function suggestWorkstreamCompletion(rt, { cellId, headId }) {
+  const { cell, id, beads } = workstream(rt, { cellId, headId });
+  if (beads[id].status === 'closed') throw new HiveError('This workstream is already closed.');
+  return recordCompletionSuggestion(rt, { cellId: cell.id, beadId: id, title: beads[id].title || id });
 }
 
 export async function completeWorkstream(rt, { cellId, headId, outcome, summary, evidence, archive = false }) {

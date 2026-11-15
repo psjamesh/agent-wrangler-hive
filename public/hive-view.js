@@ -11,12 +11,12 @@ import { renderHexMap, fitLines } from './hex-grid.js';
 import { toPixel, pixelBounds, key } from './hex-layout.js';
 import { layoutCell, groupOutlines, workstreamClasses } from './cell-layout.js';
 import { normalAspect } from './hex-layout.js';
-import { previewMove, planMove, planGroupArrange, planReveal, membersOf, createDragPlanner, planHide, planHiveReveal } from './cell-move.js';
+import { previewMove, planMove, planReveal, membersOf, createDragPlanner, planHide, planHiveReveal } from './cell-move.js';
 import { layoutBase, stackable } from './layout-base.js';
 import { archiveHidden, activeKids } from './archive-layout.js';
-import { openComplete, groupClosed, archiveReply, closedButton } from './workstream-view.js';
+import { groupClosed, archiveReply, closedButton } from './workstream-view.js';
 import {
-  cellName, cellCounts, agentSummary, capturedAgentSummary, isDone, queenNeedsAttention, queenNotResponding, queenStopped, queenSuspended, sessionLabel,
+  cellName, cellCounts, agentSummary, capturedAgentSummary, queenNeedsAttention, queenNotResponding, queenStopped, queenSuspended, sessionLabel,
 } from './model.js';
 import { attentionEl, noticesEl } from './widgets.js';
 import { hiveTile } from './hive-shape.js';
@@ -226,7 +226,7 @@ function revealWarning(plan, allClosed) {
   return `${verb} will move this workstream ${plural(plan.shift, 'hex', 'hexes')} to make room for ${things(plan.crowded)}. Some ${allClosed ? 'closed items' : 'items'} may also be placed in new spots within the workstream.`;
 }
 
-function workstreamMenu({ title, at, arranging, fitLabel, confirm, onArrange, onFit, onConfirm, onComplete, onArchive, archiveLabel, onClose, onDismiss }) {
+function workstreamMenu({ title, at, arranging, fitLabel, confirm, onFit, onConfirm, onSuggest, onArchive, archiveLabel, onClose, onDismiss }) {
   const extra = (key, label, fn) => (fn ? h('button', {
     type: 'button',
     role: 'menuitem',
@@ -254,15 +254,6 @@ function workstreamMenu({ title, at, arranging, fitLabel, confirm, onArrange, on
       onclick: onClose,
     }, 'Cancel'),
   ] : [
-    h('button', {
-      type: 'button',
-      role: 'menuitem',
-      class: 'hive-wsmenu-item',
-      tabindex: '-1',
-      'aria-disabled': arranging ? 'true' : null,
-      'data-focus-key': 'wsmenu:arrange',
-      onclick: () => { if (!arranging) onArrange(); },
-    }, arranging ? 'Arranging…' : 'Arrange this workstream'),
     fitLabel ? h('button', {
       type: 'button',
       role: 'menuitem',
@@ -272,9 +263,10 @@ function workstreamMenu({ title, at, arranging, fitLabel, confirm, onArrange, on
       'data-focus-key': 'wsmenu:fit',
       onclick: () => { if (!arranging) onFit(); },
     }, fitLabel) : null,
-    extra('complete', 'Complete workstream…', onComplete),
+    extra('suggest', 'Suggest completion', onSuggest),
     extra('archive', archiveLabel, onArchive),
   ].filter(Boolean);
+  if (!items.length) return null;
   const move = (evt) => {
     const i = items.indexOf(document.activeElement);
     let next = null;
@@ -472,22 +464,18 @@ function cellMap(ctx, cell, related = null, previous = null) {
     else save(plan, () => setHiveHiding(false, plan));
     document.querySelector(`[data-focus-key="hide-done:${cell.id}"]`)?.focus();
   };
-  const arrangeGroup = () => {
-    ui.setForm('wsMenu', null);
-    if (!ctx.busy('hive-bead-move')) {
-      const plan = planGroupArrange({ layout, kids, rootId: cell.rootBeadId, saved, aspect: cell.arrangeAspect, headId: menuHead, isDone: (id) => isDone(hive.beads[id]), hidden, yieldIds: closed });
-      if (!plan.ok) ctx.notice(plan.reason);
-      else if (plan.same) ctx.notice('This workstream is already arranged.', { severity: 'info' });
-      else save(plan);
-    }
-    focusTile(menuHead);
-  };
   const writable = cell.enabled && !cell.snapshot;
   const menuOpen = menuHead && hive.beads[menuHead]?.status !== 'closed';
   const menuClosed = menuHead && !menuOpen && hive.beads[menuHead]?.parentId === cell.rootBeadId && groupClosed(hive, menuHead);
-  const completeGroup = () => {
+  const suggestCompletion = () => {
     ui.setForm('wsMenu', null);
-    openComplete(ctx, cell, menuHead);
+    send({ type: 'hive-ws-suggest-completion', cellId: cell.id, headId: menuHead }, {
+      onReply: (frame) => {
+        if (!frame.ok) ctx.notice(frame.error || 'The completion suggestion could not be sent.', { severity: 'error' });
+        else if (['failed', 'uncertain', 'no-queen'].includes(frame.delivery?.state)) ctx.notice('Suggestion saved. Delivery to the queen needs attention.', { severity: 'error' });
+        else ctx.notice(frame.created ? 'Completion suggested to the queen.' : 'The queen already has this completion suggestion.');
+      },
+    });
   };
   const archiveGroup = () => {
     ui.setForm('wsMenu', null);
@@ -535,7 +523,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
     const current = ui.form('wsMenu');
     if (current?.cellId === cell.id && current.headId === headId) return;
     ui.setForm('wsMenu', { cellId: cell.id, headId, at });
-    document.querySelector('[data-focus-key="wsmenu:arrange"]')?.focus();
+    document.querySelector('.hive-wsmenu [role="menuitem"]')?.focus();
   };
   const keyOpen = Boolean(ui.form('key'));
   const map = renderHexMap({
@@ -625,8 +613,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
         arranging,
         fitLabel,
         confirm,
-        onArrange: arrangeGroup,
-        onComplete: writable && menuOpen ? completeGroup : null,
+        onSuggest: writable && menuOpen ? suggestCompletion : null,
         onArchive: writable && menuClosed ? archiveGroup : null,
         archiveLabel: cell.archived?.[menuHead]?.shown ? 'Hide again' : 'Archive workstream',
         onFit: startReveal,
