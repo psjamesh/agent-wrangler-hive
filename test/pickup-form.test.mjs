@@ -47,7 +47,35 @@ test('pickup uses an outline play glyph and the Key explains pickup and external
     const key = vm.runInNewContext(view + `\nlegend(${snapshot})`, { h, hexPath: () => '', primaryMark: kind => ({ tag: kind, attrs: {}, children: [] }) });
     const words = walk(key).flatMap(n => n.children.filter(c => typeof c === 'string')).join(' ');
     assert.match(words, /ready for automatic pickup/);
+    if (!snapshot) {
+      const explanation = walk(key).find(n => n.attrs.class === 'hive-legend-item hive-legend-marks').attrs.title;
+      assert.match(explanation, /Plain magnifier badges.*green.*blue/);
+      assert.match(explanation, /prerequisite cross is grey; amber marks untracked work/);
+      assert.match(explanation, /green outlined triangle/);
+      assert.match(explanation, /chain-link glyph/);
+    }
     assert.match(words, /external: outside this hive \(teammate PR, release, vendor\)/);
     assert.ok(walk(key).some(n => n.tag === 'external'));
   }
+});
+
+test('external mark draws two chain ends and a connecting link at badge scale', () => {
+  const source = fs.readFileSync(new URL('../public/hex-grid.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replaceAll('export ', '');
+  const mark = vm.runInNewContext(source + "\nprimaryMark('external', 'External prerequisite')", { h });
+  const glyphs = walk(mark).filter(n => n.attrs.class === 'hive-pm-line');
+  assert.equal(glyphs.length, 3);
+  assert.ok(glyphs.every(n => n.tag === 'svg:path'));
+  assert.ok(glyphs.slice(0, 2).every(n => /A3,3/.test(n.attrs.d)));
+  assert.equal(glyphs[2].attrs.d, 'M-1.8,1.8 L1.8,-1.8');
+});
+
+test('status styles use theme colours for quiet waits, blue review and green pickup', () => {
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /--hive-pm-waiting: var\(--fg-muted, var\(--fg\)\)/);
+  assert.match(css, /--hive-pm-review: var\(--blue, #[0-9a-f]+\)/);
+  assert.match(css, /\.hive-pm-review-pending \.hive-pm-bg \{ fill: var\(--hive-pm-review\); stroke: var\(--hive-pm-review\)/);
+  assert.match(css, /\.hive-pm-pickup \.hive-pm-line \{ stroke: var\(--hive-pm-busy\)/);
+  assert.match(css, /\.hive-pm-line \{ fill: none;/);
+  assert.match(css, /\.hive-pm-untracked \.hive-pm-line \{ stroke: var\(--warn-fg/);
+  assert.doesNotMatch(css, /\.hive-pm-(?:waiting|review-pending|pickup)[^{]*\{[^}]*var\(--warn-fg/);
 });

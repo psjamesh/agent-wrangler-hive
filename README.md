@@ -120,7 +120,7 @@ Hive is licensed under [Apache-2.0](LICENSE). See the [host contract](docs/host-
 
 ## Third-party icons
 
-The robot, person, review and approved marks reuse the geometry of the `bot`, `user`, `search-check` and `rocket` icons from [Lucide](https://lucide.dev). The robot and person match the icons Agent Wrangler and its Needs You extension draw. Lucide is distributed under the ISC licence:
+The robot, person, review and approved marks reuse the geometry of the `bot`, `user`, `search` and `rocket` icons from [Lucide](https://lucide.dev). The robot and person match the icons Agent Wrangler and its Needs You extension draw. Lucide is distributed under the ISC licence:
 
 > ISC License
 >

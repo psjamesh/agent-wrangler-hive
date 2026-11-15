@@ -60,6 +60,9 @@ export function capacitySlots(rt, graph, reserve = []) {
   for (const op of Object.values(rt.metadata.read().operations)) {
     if (op.kind === 'claim' && ['pending', 'uncertain', 'partial'].includes(op.state) && counts(op.intent?.beadId)) reserved.add(charge(op.intent.beadId));
   }
+  for (const binding of Object.values(rt.metadata.read().bindings || {}).flat()) {
+    if (binding.active && binding.role === 'investigator' && (binding.workerLaunchId || binding.helper) && counts(binding.beadId) && graph.beads[binding.beadId]?.status !== 'closed' && liveClaimant(rt.host, binding.sessionId)) reserved.add(charge(binding.beadId));
+  }
   const reviews = new Set(Object.values(rt.metadata.read().reviews || {}).filter((r) => OPEN_REVIEW_STATES.has(r.state) && reservationActive(r.reviewerSessionId) && counts(r.workBeadId)).map((r) => r.workBeadId));
   for (const id of reviews) reserved.add(id);
   for (const restore of activeWorkerRestores(rt).values()) if (counts(restore.beadId)) reserved.add(charge(restore.beadId));

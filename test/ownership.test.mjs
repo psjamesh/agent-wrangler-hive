@@ -792,7 +792,7 @@ test('review marks have rendered glyphs and both states appear in the map Key', 
     const glyph = mark.children.find(n => n.attributes.class === 'hive-pm-glyph');
     assert.equal(glyph.attributes.transform, 'scale(0.48) translate(-12 -12)');
     assert.deepEqual(glyph.children.map(n => n.attributes), [
-      { d: 'm8 11 2 2 4-4' }, { cx: '11', cy: '11', r: '8' }, { d: 'm21 21-4.3-4.3' },
+      { cx: '11', cy: '11', r: '8' }, { d: 'm21 21-4.3-4.3' },
     ]);
     assert(!mark.children.some(n => n.attributes.class === 'hive-pm-line'));
   }
@@ -1328,7 +1328,7 @@ for (const state of ['pending', 'uncertain', 'partial']) test(`${state} claim re
   await claimBead(f.rt, f.actor(), { bead_id: 'b' });
 });
 
-test('external tile has a labelled hexagonal arrow, dashed rim and normal status priority', () => {
+test('external tile has a labelled hexagonal chain link, dashed rim and normal status priority', () => {
   const external = { id: 'outside', title: 'Vendor approval', kind: 'external', status: 'open' };
   assert.equal(primaryKind(external, [], []), 'external');
   assert.equal(markWords('external', external), 'External prerequisite');
@@ -1622,14 +1622,41 @@ test('queen overrides need an override_reason, recorded on the review; terra is 
   assert.equal(reviewPolicy(f.doc().cells.cell).primary.model, 'opus');
 });
 
-test('a claimless helper can no longer share a builder bead or slot through spawn', async () => {
+for (const launcher of ['builder', 'queen']) test(`${launcher} launches a bound helper sharing the holder slot`, async () => {
   const f = holderFixture('codex', 1); await launchRecording(f);
   const used = capacity(f.rt).used;
-  const before = f.launched.length;
-  for (const who of [f.worker('builder'), f.actor()]) await assert.rejects(workers.spawnWorker(f.rt, f.host, who, { bead_id: 'a', intent: 'investigate' }, { role: 'investigator' }), /own bead/);
+  const { spawnWorkerTool } = await import('../server/tools.js');
+  const response = await spawnWorkerTool.handler({ host: f.host, caller: launcher }, { bead_id: 'a', intent: 'Check the feature', role: 'helper', agent: 'claude', model: 'opus' });
+  assert.equal(response.isError, undefined, JSON.stringify(response));
+  const launch = Object.values(f.doc().workerLaunches).find(l => l.role === 'investigator');
+  assert.ok(launch);
   assert.equal(f.live.a.assignee, 'aw:builder');
   assert.equal(capacity(f.rt).used, used);
-  assert.equal(f.launched.length, before);
+  assert.equal(f.launched[0].taskId, 'task');
+  assert.match(f.launched[0].intent, /You are a helper on Hive bead/);
+  assert.match(f.launched[0].intent, /cannot claim beads/);
+  const { attachmentsFor } = await import('../server/bead-sessions.js');
+  assert.ok(attachmentsFor(f.rt, f.host, 'a').some(a => a.session_id === launch.sessionId && a.role === 'helper' && a.live));
+  const { ungovernedDescendants, reconcileInactiveBindings } = await import('../server/tracking.js');
+  f.host.sessions.list = () => [...f.board.values()];
+  f.board.get(launch.sessionId).spawnedBy = launcher;
+  assert.deepEqual(ungovernedDescendants(f.rt, f.host, f.doc().cells.cell), []);
+
+  const helper = f.worker(launch.sessionId);
+  await assert.rejects(claimBead(f.rt, helper, { bead_id: 'b' }), /helper/i);
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, helper, { bead_id: 'a', intent: 'delegate' }, { role: 'investigator' }), /helper|queen|attach/i);
+  await assert.rejects(reviews.reviewVerdict(f.rt, f.host, helper, { bead_id: 'a', verdict: 'approved', summary: 'ok' }), /review/i);
+  f.live.a.status = 'closed';
+  f.live.a.closed_at = new Date(1000).toISOString();
+  await f.rt.snapshots.refresh();
+  const session = f.board.get(launch.sessionId);
+  Object.assign(session, { status: 'idle', lastActivity: 1000 });
+  const { archiveSuggestions } = await import('../server/watchdog.js');
+  assert.ok(archiveSuggestions(f.rt, f.host, f.doc().cells.cell, Date.now()).some(s => s.session_id === launch.sessionId));
+  session.archived = true;
+  reconcileInactiveBindings(f.rt, f.host);
+  assert.ok(attachmentsFor(f.rt, f.host, 'a').some(a => a.session_id === launch.sessionId && a.role === 'helper' && !a.live && a.ended_at));
+
 });
 
 test('a session started elsewhere is nominated as reviewer by the holder or queen and can give its verdict', async () => {
@@ -2538,4 +2565,54 @@ test('a reviewer admission timeout before reservation leaves a cancelled retryab
   assert.deepEqual(f.doc().workerLaunches, {});
   assert.equal(Object.values(f.doc().reviews)[0].state, 'cancelled');
   assert.equal(capacity(f.rt).used, 0);
+});
+
+for (const target of ['queen', 'coordinator', 'other', 'builder']) test(`helper binding cannot demote ${target}`, async () => {
+  const f = holderFixture('codex', 0);
+  f.board.set('coordinator', { sessionId: 'coordinator', taskId: 'task', status: 'working' });
+  await bindSession(f.rt, f.host, f.actor(), { session_id: 'coordinator', role: 'coordinator' });
+  await claimBead(f.rt, f.worker('other'), { bead_id: 'b' });
+  await assert.rejects(bindSession(f.rt, f.host, f.worker('builder'), { bead_id: 'a', session_id: target, role: 'helper' }), /holder|queen|coordinator|helper/i);
+});
+
+for (const target of ['queen', 'other', 'legacy']) test(`legacy helper metadata preserves ${target} authority`, async () => {
+  const f = holderFixture('codex', 0); await launchRecording(f);
+  if (target === 'other') await claimBead(f.rt, f.worker('other'), { bead_id: 'b' });
+  if (target === 'legacy') f.board.set(target, { sessionId: target, taskId: 'task', status: 'working' });
+  f.rt.metadata.mutate(d => { (d.bindings.cell ||= []).push({ sessionId: target, beadId: 'a', role: 'investigator', active: true, autoEnrolled: true }); });
+  if (target === 'queen') await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'b', intent: 'Build' });
+  else if (target === 'other') await reviews.requestReview(f.rt, f.host, f.worker(target), { bead_id: 'b', intent: 'Review' });
+  else await claimBead(f.rt, f.worker(target), { bead_id: 'b' });
+});
+
+test('a helper requires a live holder and retains the bead slot after release', async () => {
+  const f = holderFixture('codex', 1); await launchRecording(f);
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'b', intent: 'Help' }, { role: 'investigator' }), /live claim holder/i);
+  f.board.get('builder').archived = true;
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'Help' }, { role: 'investigator' }), /live claim holder/i);
+  f.board.get('builder').archived = false;
+  const helper = await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'Help' }, { role: 'investigator' });
+  f.live.a.assignee = null; f.live.a.status = 'open';
+  await f.rt.snapshots.refresh();
+  assert.equal(capacity(f.rt).used, 1);
+  await assert.rejects(claimBead(f.rt, f.worker('other'), { bead_id: 'b' }), /limit/i);
+  f.board.get(helper.session_id).status = 'exited';
+  assert.equal(capacity(f.rt).used, 0);
+});
+
+test('a launched helper cannot be nominated to review another bead', async () => {
+  const f = holderFixture('codex', 0); await launchRecording(f);
+  const helper = await workers.spawnWorker(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'Help' }, { role: 'investigator' });
+  await assert.rejects(bindSession(f.rt, f.host, f.actor(), { bead_id: 'b', session_id: helper.session_id, role: 'review' }), /helper/i);
+});
+
+test('helper startup rechecks the live holder after dispatch', async () => {
+  const f = holderFixture('codex', 0); await launchRecording(f);
+  const spawn = f.host.sessions.spawn;
+  f.host.sessions.spawn = opts => {
+    f.live.a.assignee = null; f.live.a.status = 'open';
+    return spawn(opts);
+  };
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'Help' }, { role: 'investigator' }), /live claim holder/i);
+  assert.equal(f.live.a.assignee, null);
 });

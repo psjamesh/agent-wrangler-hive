@@ -2,7 +2,7 @@ import { readReviewerFront } from './reviewer-front.js';
 import { readAgentCatalog } from './agent-catalog.js';
 import { newId } from './metadata-store.js';
 import { actorFor, normalizeIssue, descendantIds } from './bead-model.js';
-import { COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller, waitForHierarchy } from './access.js';
+import { isHelper, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller, waitForHierarchy } from './access.js';
 import { assertAllowedReviewer, chooseReviewer } from './review-policy.js';
 import { HiveError, waitForWritable, text, withLock, withLocks, journaled, isRunning } from './ops.js';
 import { ADMISSION_LOCK, checkAdmission, exportedGraph, RESERVED_LAUNCH_STATES } from './admission.js';
@@ -12,7 +12,7 @@ import { safeDeliver } from './sessions.js';
 
 export function retainedReviewer(rt, host, record, sid) {
   const session = host.sessions.get(sid);
-  return Boolean(session && !session.archived && session.status !== 'exited') && record.reviewerSessionId === sid
+  return !isHelper(rt, sid, record.cellId) && Boolean(session && !session.archived && session.status !== 'exited') && record.reviewerSessionId === sid
     && (rt.metadata.read().bindings[record.cellId] || []).some((b) => b.active && b.sessionId === sid && b.beadId === record.workBeadId && b.role === 'reviewer' && b.reviewId === record.id);
 }
 
