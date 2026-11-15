@@ -280,6 +280,6 @@ const pickupH = humanHandler('hive-bead-pickup', async ({ msg, host, rt }) => {
   return setPickup(rt, host, actor, { bead_id: msg.beadId, ready: msg.ready, hold: msg.hold, profile: msg.profile, rearm: msg.rearm, reason: msg.reason, expected_token: msg.expectedToken });
 });
 
-const workerProfileH = humanHandler('hive-worker-profile', ({ msg, host, rt }) => setWorkerProfile(rt, host, { cellId: str(msg.cellId, 80), profile: msg.profile }));
+const workerProfileH = humanHandler('hive-worker-profile', ({ msg, host, rt }) => setWorkerProfile(rt, host, { cellId: str(msg.cellId, 80), beadId: str(msg.beadId, 80), profile: msg.profile, auto: msg.auto, briefTemplate: msg.briefTemplate }));
 
 export const configHandlers = [workerProfileH, pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, renameCellH, cellGoalH, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];

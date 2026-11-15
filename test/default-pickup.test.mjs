@@ -5,7 +5,11 @@ import * as pickup from '../server/pickup.js';
 import { collectWatchdog } from '../server/watchdog.js';
 
 const run = f => pickup.createPickupDispatcher({ runtime: f.rt, host: f.host, now: f.now }).run();
-const defaults = f => { f.doc().cells.cell.workerProfile = f.profile; f.live.a.priority = 0; f.live.b.priority = 1; };
+const defaults = f => {
+  f.live.ws = { ...structuredClone(f.live.a), id: 'ws', metadata: { hive_kind: 'workstream', hive_pickup: { workerProfile: f.profile, auto: true, briefTemplate: 'Run the repo tests. Hand back with a merge wait; do not close.' } }, dependencies: [{ issue_id: 'ws', depends_on_id: 'root', type: 'parent-child' }] };
+  for (const id of ['a', 'b']) f.live[id].dependencies[0].depends_on_id = 'ws';
+  f.live.a.priority = 0; f.live.b.priority = 1;
+};
 
 test('default profile starts scoped work once using existing claim and rate guards', async () => {
   const f = pickupFixture(); defaults(f);
@@ -53,10 +57,14 @@ test('hold and unhold persist and explicit marks retain their profiles', async (
 });
 
 test('free capacity watchdog names missing profile and missing cwd, excludes held work', async () => {
-  const f = pickupFixture(); await f.rt.snapshots.refresh();
+  const f = pickupFixture();
+  f.live.a.metadata.hive_pickup = { automatic: true };
+  f.live.b.metadata.hive_pickup = { automatic: true };
+  await f.rt.snapshots.refresh();
   const flags = () => collectWatchdog(f.rt, f.host, f.doc().cells.cell, f.now()).filter(x => x.kind === 'pickup_unavailable');
   assert.match(flags()[0]?.reason || '', /profile/i);
-  f.doc().cells.cell.workerProfile = { ...f.profile, cwd: '' };
+  defaults(f); f.live.ws.metadata.hive_pickup.workerProfile.cwd = '';
+  await f.rt.snapshots.refresh();
   assert.match(flags()[0]?.reason || '', /cwd|folder/i);
   f.live.a.metadata.hive_pickup = { held: true }; f.live.b.status = 'closed';
   await f.rt.snapshots.refresh(); assert.equal(flags().length, 0);
@@ -70,13 +78,15 @@ test('failed implicit startup never retries on later sweeps', async () => {
 });
 
 test('default profile saves only installed resolved models and rejects invalid folders', async () => {
-  const f = pickupFixture();
-  await pickup.setWorkerProfile(f.rt, f.host, { cellId: 'cell', profile: f.profile });
-  assert.equal(f.doc().cells.cell.workerProfile.resolvedModel, 'claude-sonnet-fixed');
-  await assert.rejects(pickup.setWorkerProfile(f.rt, f.host, { cellId: 'cell', profile: { ...f.profile, model: 'missing' } }), /unavailable/i);
-  await assert.rejects(pickup.setWorkerProfile(f.rt, f.host, { cellId: 'cell', profile: { ...f.profile, cwd: 'relative' } }), /absolute/i);
-  await pickup.setWorkerProfile(f.rt, f.host, { cellId: 'cell', profile: null });
-  assert.equal(f.doc().cells.cell.workerProfile, null);
+  const f = pickupFixture(); defaults(f); await f.rt.snapshots.refresh();
+  await pickup.setWorkerProfile(f.rt, f.host, { cellId: 'cell', beadId: 'ws', profile: f.profile, auto: true, briefTemplate: 'Run checks, create PR, wait for queen merge.' });
+  assert.equal(f.live.ws.metadata.hive_pickup.auto, true);
+  assert.match(f.live.ws.metadata.hive_pickup.briefTemplate, /queen merge/);
+  assert.equal(f.live.ws.metadata.hive_pickup.workerProfile.resolvedModel, 'claude-sonnet-fixed');
+  await assert.rejects(pickup.setWorkerProfile(f.rt, f.host, { cellId: 'cell', beadId: 'ws', profile: { ...f.profile, model: 'missing' } }), /unavailable/i);
+  await assert.rejects(pickup.setWorkerProfile(f.rt, f.host, { cellId: 'cell', beadId: 'ws', profile: { ...f.profile, cwd: 'relative' } }), /absolute/i);
+  await pickup.setWorkerProfile(f.rt, f.host, { cellId: 'cell', beadId: 'ws', profile: null });
+  assert.equal(f.live.ws.metadata.hive_pickup.workerProfile, null);
 });
 
 test('holds preserve explicit authorization receipts and do not create watchdog noise', async () => {
@@ -119,4 +129,62 @@ test('default profile catalog problems flag free work and recover without consum
   assert.equal(Object.keys(f.doc().pickupAttempts).length, 0);
   f.host.agents.list = list;
   await run(f); assert.equal(f.spawned.length, 1);
+});
+
+
+test('nearest workstream profile and per-bead override choose their own repositories', async () => {
+  const f = pickupFixture(); defaults(f); f.live.b.status = 'closed';
+  f.live.nested = { ...structuredClone(f.live.ws), id: 'nested', metadata: { hive_kind: 'workstream', hive_pickup: { workerProfile: { ...f.profile, cwd: '/tmp/nested' }, briefTemplate: 'Nested delivery commands' } }, dependencies: [{ issue_id: 'nested', depends_on_id: 'ws', type: 'parent-child' }] };
+  f.live.a.dependencies[0].depends_on_id = 'nested';
+  await run(f);
+  assert.equal(f.live.a.metadata.hive_pickup.profile.cwd, '/tmp/nested');
+  assert.match(f.live.a.metadata.hive_pickup.profile.intent, /Nested delivery commands/);
+  const g = pickupFixture(); defaults(g); g.live.b.status = 'closed';
+  g.live.a.metadata.hive_pickup = { workerProfile: { ...g.profile, cwd: '/tmp/override' } };
+  await run(g); assert.equal(g.live.a.metadata.hive_pickup.profile.cwd, '/tmp/override');
+});
+
+test('legacy unmarked work stays held until its workstream switches to auto; new work opts in', async () => {
+  const f = pickupFixture(); defaults(f); f.live.b.status = 'closed';
+  f.live.ws.metadata.hive_pickup.auto = false;
+  assert.equal(pickup.pickupState(f.rt, f.host, f.doc().cells.cell, f.graph().beads.a, f.graph()).held, true);
+  await run(f); assert.equal(f.spawned.length, 0);
+  f.live.ws.metadata.hive_pickup.auto = true;
+  await run(f); assert.equal(f.spawned.length, 1);
+  const g = pickupFixture(); defaults(g); g.live.b.status = 'closed';
+  g.live.ws.metadata.hive_pickup.auto = false;
+  g.live.a.metadata.hive_pickup = { automatic: true };
+  await run(g); assert.equal(g.spawned.length, 1);
+});
+
+for (const condition of ['open PR', 'approved review', 'merge handoff', 'install handoff', 'live claim']) {
+  test(`structured ${condition} excludes awaiting delivery even after prose waits are cleared`, async () => {
+    const f = pickupFixture(); defaults(f); f.live.b.status = 'closed';
+    if (condition === 'open PR') f.doc().prLabels = { pr: { url: 'https://github.com/example/repo/pull/1', state: 'OPEN', associations: [{ cellId: 'cell', beadId: 'a' }] } };
+    if (condition === 'approved review') f.doc().reviews.r = { workBeadId: 'a', cellId: 'cell', state: 'approved' };
+    if (condition === 'merge handoff') f.live.a.metadata.hive_evidence = [{ kind: 'merge-wait', label: 'Handed to queen for merge' }];
+    if (condition === 'install handoff') f.live.a.metadata.hive_evidence = [{ kind: 'install-wait', label: 'Handed to queen for install' }];
+    if (condition === 'live claim') f.live.a.assignee = 'aw:queen';
+    f.live.a.metadata.hive_waiting_for = '';
+    await run(f); assert.equal(f.spawned.length, 0);
+  });
+}
+
+test('one sweep arms only the worker being launched and does not freeze the backlog profile', async () => {
+  const f = pickupFixture(); defaults(f);
+  await run(f);
+  assert.ok(f.live.a.metadata.hive_pickup.armToken);
+  assert.equal(f.live.a.metadata.hive_pickup.armedBy, 'hive:default');
+  assert.equal(f.live.b.metadata.hive_pickup?.armToken, undefined);
+  f.live.ws.metadata.hive_pickup.workerProfile = null;
+  f.advance(60000); await run(f);
+  assert.equal(f.spawned.length, 1);
+});
+
+test('new Hive-created beads carry their default-pickup eligibility marker', async () => {
+  const { createBeads } = await import('../server/ops.js');
+  const f = pickupFixture(); let created;
+  f.rt.beads.createMany = async ({ nodes }) => { created = nodes; return { ids: { n0: 'new' } }; };
+  await createBeads(f.rt, f.actor(), { beads: [{ title: 'New bounded work' }] });
+  assert.equal(created[0].pickup.automatic, true);
 });

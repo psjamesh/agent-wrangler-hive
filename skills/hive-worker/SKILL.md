@@ -63,7 +63,7 @@ If the queen bound you as `coordinator` for a workstream, you may also delegate 
 
 ## Automatically picked-up work
 
-Scoped open leaf work with a goal and acceptance uses the hive default worker profile unless held. Investigation, decision, external and idea beads are excluded from default pickup. A readiness mark authorizes one worker launch through Hive's ordinary claim-before-action path. Read the assigned bead context and follow its bounded brief. Ask the current queen to change readiness or reconcile a failed/uncertain pickup; workers do not arm or rearm work. Finishing, releasing or reopening a bead never authorizes a replacement worker automatically.
+New scoped open leaf work with a goal and acceptance inherits its nearest workstream worker profile and visible brief template unless held. Existing unmarked work remains held until unheld or its workstream explicitly enables auto. Investigation, decision, external and idea beads are excluded from default pickup. A readiness mark authorizes one worker launch through Hive's ordinary claim-before-action path. Read the assigned bead context and follow its bounded brief. Ask the current queen to change readiness or reconcile a failed/uncertain pickup; workers do not arm or rearm work. Finishing, releasing or reopening a bead never authorizes a replacement worker automatically.
 
 ## Hive repository versions
 

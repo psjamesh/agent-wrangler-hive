@@ -1,4 +1,5 @@
 import { workerProfileForm } from './worker-profile.js';
+import { workstreamProfileSettings } from './worker-profile.js';
 import { cellTitle, cellGoalForm } from './cell-settings.js';
 import { codexApprovalsForm } from './codex-approvals.js';
 import { handoverFields, handoverError } from './handover-fields.js';
@@ -266,6 +267,7 @@ function beadDetails(ctx, cell) {
       h('h3', {}, bead.title),
       h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => ui.selectBead(null), title: 'Show the hive goal' }, 'Hive goal')),
     waitingSection(ctx, bead),
+    !cell.snapshot && !cell.retired && bead.status !== 'closed' && bead.kind === 'workstream' && detail.bead ? workerProfileForm(ctx, cell, detail.bead) : null,
     cell.snapshot ? null : pickupDetails(ctx, cell, { ...bead, pickup: detail.bead?.pickup || bead.pickup }),
     h('p', { class: 'hive-meta' },
       h('span', { class: `hive-status-pill hive-status-${displayStatus(bead)}` }, STATUS_LABEL[displayStatus(bead)] || bead.status),
@@ -521,7 +523,7 @@ export function hiveSettings(ctx, cell, leave = () => true, section = null) {
       editable ? queenInstructions(ctx, cell) : null] : null,
     show('advanced') && editable ? advancedSettings(ctx.ui, cell.id, watchdogSummary(cell), watchdogSettingsForm(ctx, cell)) : null,
     !show('agents') || !editable ? null : codexApprovalsForm(ctx, cell),
-    !show('agents') || !editable ? null : workerProfileForm(ctx, cell),
+    !show('agents') || !editable ? null : workstreamProfileSettings(ctx, cell),
     !show('agents') || !editable ? null : reviewPolicyForm(ctx, cell),
     !show('lifecycle') || cell.snapshot ? null : h('section', {},
       h('h4', {}, 'Lifecycle'),

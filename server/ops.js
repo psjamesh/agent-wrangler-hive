@@ -842,6 +842,7 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
     if (status === 'in_progress' && !GROUP_KINDS.has(kind)) throw new HiveError('Create work as open, then claim it with hive_claim_bead before starting it.');
     return {
       key: ref,
+      pickup: { automatic: true },
       title: text(b.title, `beads[${i}].title`, LIMITS.title, { required: true }),
       kind,
       issueType: issueTypeForKind(kind),

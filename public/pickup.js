@@ -52,7 +52,7 @@ export function pickupDetails({ api, ui, send }, cell, bead) {
     mark.armedBy ? h('p', { class: 'hive-muted' }, `Marked by ${mark.armedBy}`) : null,
     mark.profile ? h('p', { class: 'hive-muted' }, `${mark.profile.agent} · ${mark.profile.model} (${mark.profile.resolvedModel || 'unconfirmed'}) · ${mark.profile.effort || 'No effort control'} · ${mark.profile.cwd}${mark.profile.worktree ? ' · isolated worktree' : ' · shared folder'}`) : null,
     mark.launchId ? h('p', {}, 'Launch: ', h('code', {}, mark.launchId)) : null,
-    editable ? h('button', { type: 'button', class: 'hive-quiet-btn', disabled: draft?.saving, onclick: hold }, mark.held ? 'Unhold automatic pickup' : 'Hold automatic pickup') : null,
+    editable && (!['investigation', 'idea'].includes(bead.kind) || mark.armToken) ? h('button', { type: 'button', class: 'hive-quiet-btn', disabled: draft?.saving, onclick: hold }, mark.held ? 'Unhold automatic pickup' : 'Hold automatic pickup') : null,
     editable && draft?.error ? h('p', { role: 'alert' }, draft.error) : null,
     editable ? h('details', {}, h('summary', {}, mark.armToken ? 'Change readiness…' : 'Mark ready for pickup…'),
       h('form', { class: 'hive-form', onsubmit: e => { e.preventDefault(); sendMark(true); } },
