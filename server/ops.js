@@ -1,3 +1,4 @@
+import { activeWorkerRestores } from './worker-restores.js';
 import { settleClosedBeadWait } from './ci-waits.js';
 import { requireStructuredWait, waitStatus } from './link-waits.js';
 import { consumePickup, managedPickupReceipt, pickupState } from './pickup.js';
@@ -1113,7 +1114,7 @@ export async function linkBeads(rt, actor, { links }) {
   return { op_id: out.opId, changed: clean.length, cross_cell: touched.size > 1 };
 }
 
-export async function claimBead(rt, actor, { bead_id }, { launchId = null, validate = () => {} } = {}) {
+export async function claimBead(rt, actor, { bead_id }, { launchId = null, revalidateCapacity = false, validate = () => {} } = {}) {
   ensureWritable(rt);
   const id = beadIdArg(bead_id, 'bead_id');
   const { cell, bead } = requireBeadAccess(rt, actor, id);
@@ -1130,7 +1131,7 @@ export async function claimBead(rt, actor, { bead_id }, { launchId = null, valid
       }
       const graph = exportedGraph(context);
       if (!descendantIds(graph.beads, cell.rootBeadId).has(id)) throw new HiveError(`Bead ${id} moved outside this cell.`, 'conflict');
-      checkAdmission(rt, graph, id, { sessionId: actor.sessionId, launchId, ownOperationId: opId });
+      checkAdmission(rt, graph, id, { sessionId: actor.sessionId, launchId, ownOperationId: opId, revalidateCapacity });
       rt.metadata.mutate(d => consumePickup(d, graph.beads[id], { source: 'claim', operationId: opId }));
     });
     phase.applied = true;
@@ -1193,14 +1194,14 @@ async function releaseWithStatus(rt, { cellId, actor, id, fresh, reason, status 
 export async function releaseArchivedBead(rt, host, { beadId, sessionId, cellId }) {
   return withLock(`bead:${beadId}`, async () => {
     ensureWritable(rt);
-    if (rt.host !== host || !host.sessions.get(sessionId)?.archived) return { released: false };
+    if (rt.host !== host || !host.sessions.get(sessionId)?.archived || activeWorkerRestores(rt).has(sessionId)) return { released: false };
     const fresh = await rt.beads.show(beadId);
     if (!fresh || fresh.assignee !== actorFor(sessionId) || !SETTABLE_STATUSES.includes(fresh.status)) return { released: false };
-    if (rt.host !== host || !host.sessions.get(sessionId)?.archived) return { released: false };
+    if (rt.host !== host || !host.sessions.get(sessionId)?.archived || activeWorkerRestores(rt).has(sessionId)) return { released: false };
     const out = await releaseWithStatus(rt, { cellId, actor: 'hive', id: beadId, fresh,
       reason: `Session ${sessionId} was archived.`, summary: `Release archived session ${sessionId}'s claim on ${beadId}`,
       check() {
-        if (rt.host !== host || !host.sessions.get(sessionId)?.archived) throw new HiveError('The session is no longer archived or Hive detached; its claim was kept.', 'conflict');
+        if (rt.host !== host || !host.sessions.get(sessionId)?.archived || activeWorkerRestores(rt).has(sessionId)) throw new HiveError('The session is no longer archived or Hive detached; its claim was kept.', 'conflict');
       },
     });
     return { released: true, op_id: out.opId };

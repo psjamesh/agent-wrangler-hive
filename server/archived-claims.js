@@ -1,3 +1,4 @@
+import { activeWorkerRestores } from './worker-restores.js';
 import { recoverReviews } from './reviews.js';
 import { SETTABLE_STATUSES } from './bead-model.js';
 import { releaseArchivedBead, withLock } from './ops.js';
@@ -27,7 +28,7 @@ export async function releaseArchivedClaims(rt, host, sessionId = null) {
     } catch (err) { rt.log(`hive: archived claim ${bead.id} needs reconciliation: ${err.message}`); }
   }
   await withLock(ADMISSION_LOCK, async () => {
-    const changes = Object.values(rt.metadata.read().workerLaunches || {}).filter((l) => l.sessionId && (!sessionId || l.sessionId === sessionId) && RESERVED_LAUNCH_STATES.has(l.state) && host.sessions.get(l.sessionId)?.archived
+    const changes = Object.values(rt.metadata.read().workerLaunches || {}).filter((l) => l.sessionId && (!sessionId || l.sessionId === sessionId) && RESERVED_LAUNCH_STATES.has(l.state) && !activeWorkerRestores(rt).has(l.sessionId) && host.sessions.get(l.sessionId)?.archived
       && !Object.values(rt.metadata.read().operations).some((op) => op.kind === 'release' && op.intent?.beadId === l.beadId && ['pending', 'uncertain', 'partial'].includes(op.state)));
     if (!changes.length) return;
     rt.metadata.mutate((d) => {

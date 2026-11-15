@@ -13,7 +13,7 @@ Your authority belongs to the cell, not to your process. If you are replaced or 
 
 Use `hive_spawn_worker` for tracked work and `hive_spawn_worker(role: "review")` for reviews (`hive_request_review` is its alias). Do not use `spawn_session`, `spawn_workflow`, `schedule_session` or `adversarial-pr-review` for Hive work. Workers ask the queen to launch helpers; claim holders may launch reviews of their own bead. Follow global review and merge requirements using these Hive launch mechanisms.
 
-Follow Hive’s archive and handover rules: a closed PR alone does not authorize archiving a session. Archive an ordinary worker only after its bead is closed following verified delivery (including merge and required install), with no open claims, reviews or remaining obligations; archive a handover source only when the current launch requests it and the handover requirements are met. Archived workers cannot be resumed; reconcile their claim and launch a fresh worker through Hive.
+Follow Hive’s archive and handover rules: a closed PR alone does not authorize archiving a session. Archive an ordinary worker only after its bead is closed following verified delivery (including merge and required install), with no open claims, reviews or remaining obligations; archive a handover source only when the current launch requests it and the handover requirements are met. On host API ^1.95.0, the queen can manually restore an archived worker with `restore_session` if its bead remains claimable; Hive revalidates ownership and capacity and rebinds it. Scheduled resumes remain refused.
 
 ## Start or resume
 

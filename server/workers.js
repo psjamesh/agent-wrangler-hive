@@ -1,3 +1,4 @@
+import { activeWorkerRestores } from './worker-restores.js';
 import { assertAllowedModel } from './review-policy.js';
 import { safeDeliver } from './sessions.js';
 import { prRepository } from './pr-labels.js';
@@ -62,16 +63,16 @@ function reviewForLaunch(rt, launch, { sid, initial = false } = {}) {
   return r;
 }
 
-function gateAuthority(rt, host, launchId, { sid, task, ext, initial }, expected = null) {
+function gateAuthority(rt, host, launchId, { sid, task, ext, initial, restoring }, expected = null) {
   assertCurrent(rt, host);
   const launch = rt.metadata.read().workerLaunches[launchId];
   const allowed = initial ? ['reserved', 'binding'] : ['binding', 'claimed', 'launched', 'archived', 'uncertain'];
   if (!launch || !allowed.includes(launch.state) || (launch.sessionId && launch.sessionId !== sid)) throw new HiveError('This worker launch is missing, abandoned, stale or belongs to a different session.');
   if (expected && ['id', 'cellId', 'taskId', 'beadId', 'requestedBy', 'role', 'reviewId'].some((key) => launch[key] !== expected[key])) throw new HiveError('The worker launch identity changed before startup.');
   if (task?.id !== launch.taskId || (ext?.beadId && ext.beadId !== launch.beadId)) throw new HiveError('This worker launch has a different task or bead.');
-  if (host.sessions.get(sid)?.archived) {
+  if (host.sessions.get(sid)?.archived && !restoring) {
     const holder = rt.snapshots.graph.beads[launch.beadId]?.assignee || 'none';
-    throw new HiveError(`Archived Hive worker ${sid} cannot be restored safely. Bead ${launch.beadId}; last known claim holder: ${holder}. The queen should check hive_context and, if the claim is stale, release it with hive_release_bead (bead_id: ${launch.beadId}, force: true, and a reason). Then launch a fresh worker with hive_spawn_worker on open, unclaimed work.`);
+    throw new HiveError(`Archived Hive worker ${sid} cannot be restored safely. Manual restore requires Agent Wrangler host API ^1.95.0 and an explicit restore; scheduled resumes remain refused. Bead ${launch.beadId}; last known claim holder: ${holder}. The queen should check hive_context and, if the claim is stale, release it with hive_release_bead (bead_id: ${launch.beadId}, force: true, and a reason). Then launch a fresh worker with hive_spawn_worker on open, unclaimed work.`);
   }
   const requester = initial ? coordinator(rt, host, { sessionId: launch.requestedBy, cell: { id: launch.cellId } }, { attach: launch.role !== 'worker', beadId: launch.beadId }) : resolveCaller(rt, host, sid, launch.cellId);
   ensureWritable(rt);
@@ -165,10 +166,12 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
     try {
       if (!rt) throw new HiveError('Hive is unavailable for this worker launch.');
       const initial = ['dispatch', 'spawn'].includes(reason);
+      const api = /^(\d+)\.(\d+)\.\d+(?:\+[\w.-]+)?$/.exec(host.version || '');
+      const restoring = reason === 'restore' && api?.[1] === '1' && Number(api[2]) >= 95 && rt.metadata.read().workerLaunches[launchId]?.role === 'worker';
       let actor;
       let launch;
       await withLock(ADMISSION_LOCK, async () => {
-        const context = { sid, task, ext, initial };
+        const context = { sid, task, ext, initial, restoring };
         let current = gateAuthority(rt, host, launchId, context);
         await rt.snapshots.refresh();
         if (rt.snapshots.current.error) throw new HiveError('Current worker ownership could not be read.');
@@ -184,7 +187,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
           const access = requireBeadAccess(rt, requester, target);
           if (access.cell.id !== l.cellId) throw new HiveError('The worker bead moved to another cell.');
           requireLaunchScope(requester, graph, target);
-          checkAdmission(rt, graph, target, { sessionId: sid, launchId, review: l.role !== 'worker' });
+          checkAdmission(rt, graph, target, { sessionId: sid, launchId, review: l.role !== 'worker', revalidateCapacity: restoring });
         } catch (err) {
           if (held) throw new HiveError(`${String(err.message).replace(/\.?$/, ".")} This worker holds an open claim on ${held}; the queen should release it or hand it over.`, err.code);
           throw err;
@@ -195,13 +198,14 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
           const rec = d.workerLaunches[launchId];
           Object.assign(rec, { sessionId: sid, state: 'binding', claimStarted: true, updatedAt: Date.now() });
         });
+        if (restoring) activeWorkerRestores(rt).set(sid, { beadId: target, cellId: launch.cellId, at: Date.now() });
         reserved = true;
       });
-      if (launch.role === 'worker') await claimBead(rt, actor, { bead_id: target }, { launchId: held ? null : launchId, validate: (context) => {
+      if (launch.role === 'worker') await claimBead(rt, actor, { bead_id: target }, { launchId: held ? null : launchId, revalidateCapacity: restoring, validate: (context) => {
         if (initial && launch.source === 'automatic') assertPickupAuthorization(rt, host, launch, exportedGraph(context), { ownOperationId: context.pickupOperationId });
         if (initial) coordinator(rt, host, { sessionId: launch.requestedBy, cell: { id: launch.cellId } }, { attach: launch.role !== 'worker', beadId: launch.beadId });
         else resolveCaller(rt, host, sid, launch.cellId);
-        if (host.sessions.get(sid)?.archived) throw new HiveError('The worker was archived before claiming.');
+        if (host.sessions.get(sid)?.archived && !restoring) throw new HiveError('The worker was archived before claiming.');
         if (held) {
           const fresh = context?.issues?.find((i) => i.id === held);
           if (!fresh || fresh.status === 'closed' || fresh.assignee !== `aw:${sid}`) throw new HiveError(`Bead ${held} is no longer held by this worker.`, 'conflict');
@@ -212,10 +216,10 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
         const claimedGraph = await rt.beads.loadSnapshot({ all: true });
         assertPickupClaimed(rt, host, launch, claimedGraph, sid);
       }
-      gateAuthority(rt, host, launchId, { sid, task, ext, initial }, launch);
+      gateAuthority(rt, host, launchId, { sid, task, ext, initial, restoring }, launch);
       rt.metadata.mutate((d) => {
         const rec = d.workerLaunches[launchId];
-        if (rec.state !== 'binding' || rec.sessionId !== sid || host.sessions.get(sid)?.archived) throw new HiveError('The worker launch was archived or changed before startup.');
+        if (rec.state !== 'binding' || rec.sessionId !== sid || (host.sessions.get(sid)?.archived && !restoring)) throw new HiveError('The worker launch was archived or changed before startup.');
         if (launch.reviewId) {
           const r = d.reviews[launch.reviewId];
           if (!r || !OPEN_REVIEW_STATES.has(r.state) || r.launchId !== launchId || (!initial && r.reviewerSessionId !== sid)) throw new HiveError('The review ended or its reviewer changed before startup.');
@@ -230,6 +234,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
       });
       rt.changed();
     } catch (err) {
+      rt?.workerRestores?.delete(sid);
       if (reserved) {
         try { recordLaunchFailure(rt, launchId, err); }
         catch (recordError) { rt.log(`hive: could not record refused relaunch: ${recordError.message}`); }
