@@ -1,6 +1,6 @@
 # Hive releases
 
-Feature PRs never bump the package version. Keep `package.json`'s `version`, `package-lock.json`'s `version` and `package-lock.json`'s `packages[""].version` unchanged. Dependency versions may change normally. The Release version policy PR check rejects changes to these fields unless the PR has the `release` label; adding or removing that label reruns the check.
+Feature PRs never bump the package version. Keep `package.json`'s `version`, `package-lock.json`'s `version` and `package-lock.json`'s `packages[""].version` unchanged. Dependency versions may change normally. The check compares the PR head with its merge base, so a named release merged into main does not invalidate older feature branches. The Release version policy PR check rejects changes to these fields unless the PR has the `release` label; adding or removing that label reruns the check.
 
 ## Named releases
 
