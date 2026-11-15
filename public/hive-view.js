@@ -16,7 +16,7 @@ import { layoutBase, stackable } from './layout-base.js';
 import { archiveHidden, activeKids } from './archive-layout.js';
 import { openComplete, groupClosed, archiveReply } from './workstream-view.js';
 import {
-  cellName, cellCounts, agentSummary, capturedAgentSummary, isDone,
+  cellName, cellCounts, agentSummary, capturedAgentSummary, isDone, queenNeedsAttention, sessionLabel,
 } from './model.js';
 import { attentionEl, noticesEl } from './widgets.js';
 import { hiveTile } from './hive-shape.js';
@@ -41,11 +41,7 @@ function cellTile(ctx, cell) {
   const counts = cellCounts(hive, cell);
   const goal = firstLine(root?.goal);
   const launch = launchState(hive, cell);
-  // The overview marks a cell only for attention or activity: a person while
-  // its queen waits for input, a robot while it works, nothing when idle. A
-  // captured queen is described in words only, never as current activity.
   let queen;
-  let mark = null;
   let warn = false;
   if (cell.snapshot) {
     const q = cell.snapshot.sessions?.[cell.snapshot.queenSessionId];
@@ -53,9 +49,7 @@ function cellTile(ctx, cell) {
     queen = captured ? `Captured snapshot. ${captured.text}` : 'Captured snapshot';
   } else if (cell.queenSessionId) {
     const live = agentSummary(graph, [cell.queenSessionId], 'Queen');
-    queen = live.text;
-    if (live.dots.includes('needs')) mark = { kind: 'person', title: `The queen is waiting for input. ${queen}` };
-    else if (live.dots.includes('working')) mark = { kind: 'busy', title: `The queen is working. ${queen}` };
+    queen = queenNeedsAttention(graph, cell) ? `Queen ${sessionLabel(graph, cell.queenSessionId)}: waiting for input` : live.text;
   } else {
     queen = launch ? launch.text : 'Setup incomplete: no queen';
     warn = true;
@@ -65,7 +59,7 @@ function cellTile(ctx, cell) {
   // What each side still owes the other, so it stays in reach from here.
   const toRead = cell.inbox?.human?.count || 0;
   const toAnswer = cell.inbox?.queen?.count || 0;
-  const needs = cell.requestCounts?.human || 0;
+  const needs = (cell.requestCounts?.human || 0) + Number(queenNeedsAttention(graph, cell));
   const counters = [
     { kind: 'inbox', count: cell.retired ? 0 : toRead, label: 'Inbox' },
     { kind: 'queen', count: cell.retired ? 0 : toAnswer, label: 'Waiting for queen' },
@@ -89,9 +83,9 @@ function cellTile(ctx, cell) {
     progress: cell.enabled && counts.total ? { done: counts.closed, total: counts.total } : null,
     lineHeight: 16,
     classes: `hive-cell${cell.retired ? ' is-retired' : (cell.enabled ? '' : ' is-off')}${warn ? ' needs-queen' : ''}${cell.snapshot ? ' is-snapshot' : ''}`,
-    mark: cell.retired ? outcomeMark(cell.retired) : (cell.enabled ? mark : null),
-    ariaLabel: `${name}. ${goal ? `Goal: ${goal}. ` : ''}${detail}. ${owed ? `Messages: ${owed}. ` : ''}${queen}. Enter opens the hive; Shift and an arrow key moves it.`,
-    title: `${name}${goal ? `\n${goal}` : ''}\n${detail}${owed ? `\nMessages: ${owed}` : ''}\n${queen}`,
+    mark: cell.retired ? outcomeMark(cell.retired) : null,
+    ariaLabel: `${name}. ${goal ? `Goal: ${goal}. ` : ''}${detail}. ${owed ? `Attention: ${owed}. ` : ''}${queen}. Enter opens the hive; Shift and an arrow key moves it.`,
+    title: `${name}${goal ? `\n${goal}` : ''}\n${detail}${owed ? `\nAttention: ${owed}` : ''}\n${queen}`,
   };
 }
 

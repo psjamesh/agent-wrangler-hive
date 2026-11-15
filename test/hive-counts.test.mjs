@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderHexMap } from '../public/hex-grid.js';
 import { renderHive } from '../public/hive-view.js';
+import { globalInbox } from '../public/global-inbox.js';
+import { renderConversation } from '../public/conversation.js';
 import client, { createUi } from '../public/client.js';
 import { projectForGraph } from '../server/projection.js';
 
@@ -43,13 +45,14 @@ function fixture(t) {
   const doc = { cells: { [cell.id]: cell }, conversation: {}, threads: {}, inbox: {}, bindings: {}, beadLayout: {}, arrangeAspect: {}, restoreNotices: {}, operations: {}, launches: {}, requests: {} };
   const runtime = { metadata: { read: () => doc, cells: () => Object.values(doc.cells) }, beads: { status: {state:'missing'} }, paths: {} };
   const ui = createUi();
+  const graph = { sessions: [] };
   let hive, top;
   const draw = () => {
     hive = projectForGraph({runtime, snapshot:{graph:{beads,edges:[]}}});
-    top = renderHive({ui,hive,graph:{sessions:[]},api:{},notices:[],busy:()=>false,send(){},notice(){}}).top;
+    top = renderHive({ui,hive,graph,api:{},notices:[],busy:()=>false,send(){},notice(){}}).top;
     return top.querySelector('[data-tile-id="cell_test"]');
   };
-  return {doc,cell,beads,draw,get hive(){return hive;},get top(){return top;}};
+  return {doc,cell,beads,draw,graph,ui,get hive(){return hive;},get top(){return top;}};
 }
 const counter = (tile, kind) => tile.querySelector(`[data-counter="${kind}"]`);
 
@@ -181,5 +184,39 @@ test('metadata-only launch and claim reservations refresh the cached card counte
     delete f.doc[collection].pending;
     assert.equal(progress(), 1, `${collection}: removed`);
     assert.equal(f.hive.capacity.used, 1);
+  }
+});
+
+
+test('queen attention joins Needs you with a session link and clears on resume', t => {
+  const f = fixture(t);
+  const sessionId = 'a1234567-1234-4567-8901-123456789abc';
+  f.cell.queenSessionId = sessionId;
+  f.doc.requests = { a: { id: 'a', cellId: f.cell.id, title: 'Existing request', audience: 'human', state: 'open' } };
+  const queen = { sessionId, name: 'Queen', status: 'needs-input' };
+  f.graph.sessions.push(queen);
+  f.ui.setInboxView(f.cell.id, 'human');
+  for (const status of ['needs-input', 'working', 'idle', 'needs-you', 'working']) {
+    queen.status = status;
+    const needs = status.startsWith('needs-');
+    const tile = f.draw();
+    assert.equal(counter(tile, 'needs').querySelector('text').textContent, needs ? '2' : '1');
+    assert.equal(counter(tile, 'needs').querySelector('title').textContent, `Needs you: ${needs ? 2 : 1}`);
+    assert.match(tile.getAttribute('aria-label'), new RegExp(`${needs ? 2 : 1} need your input`));
+    assert.equal(tile.querySelector('.hive-pm'), null);
+    const context = { hive: f.hive, graph: f.graph, ui: f.ui, api: {}, ctx: { uiVersion: 1, busy: () => false, send() {} } };
+    const projected = f.hive.cells[f.cell.id];
+    const global = globalInbox(context, [projected]);
+    const local = renderConversation({ ...context, cell: projected }).list;
+    for (const list of [global, local]) {
+      assert.equal(list.textContent.includes('Queen needs attention'), needs);
+      if (needs) {
+        const row = list.querySelectorAll('.hive-inbox-item').find(item => item.textContent.includes('Queen needs attention'));
+        assert.equal(row.querySelector('.hive-topic-time'), null);
+      }
+      const links = list.querySelectorAll('a').filter(a => a.getAttribute('href') === `#session=${sessionId}`);
+      assert.equal(links.some(a => a.textContent === 'Open session'), needs);
+    }
+    assert.match(tile.getAttribute('aria-label'), needs ? /waiting for input/ : new RegExp(status));
   }
 });

@@ -1,3 +1,4 @@
+import { queenNeedsAttention } from './model.js';
 import { cellWaitingItems } from './waiting-model.js';
 
 const names = graph => (graph?.sessions || []).map(s => [s.sessionId, s.name, s.label, s.lastLabel]);
@@ -11,7 +12,7 @@ export function conversationInputs(ctx, cell) {
     thread ? cell.threads?.find(t => t.id === thread) : cell.threads,
     thread ? null : [cell.threadsAfter, cell.threadsTruncated],
     cell.inbox, cell.requests, cell.requestCounts, cell.topicRelations,
-    ctx.hive.metaEpoch, beadNames(ctx.hive), names(ctx.graph), ctx.uiVersion, ctx.ui.selectedBeadId?.(), ctx.ui.topicAboutFor?.(cell.id),
+    ctx.hive.metaEpoch, beadNames(ctx.hive), names(ctx.graph), queenNeedsAttention(ctx.graph, cell), ctx.uiVersion, ctx.ui.selectedBeadId?.(), ctx.ui.topicAboutFor?.(cell.id),
     ['hive-send', 'hive-thread-history', 'hive-thread-list', 'hive-inbox', 'hive-thread-rename', 'hive-ack', 'hive-ack-undo', 'hive-withdraw', 'hive-withdraw-undo', 'hive-deliver', 'hive-request-answer', 'hive-request-dismiss', 'hive-request-retry'].map(ctx.busy),
   ]);
 }

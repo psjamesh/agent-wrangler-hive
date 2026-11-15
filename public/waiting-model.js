@@ -1,4 +1,4 @@
-import { cellBeadIds, sessionLabel } from './model.js';
+import { cellBeadIds, sessionLabel, queenNeedsAttention } from './model.js';
 import { needsHuman } from './requests.js';
 
 export function prState(pr, now = Date.now()) {
@@ -28,9 +28,10 @@ export function cellWaitingItems(ctx, cell) {
   }
   const sessions = ctx.graph?.sessions || [];
   for (const s of sessions) {
-    if (s.archived || s.status !== 'needs-you') continue;
+    const queenAttention = s.sessionId === cell.queenSessionId && queenNeedsAttention(ctx.graph, cell);
+    if (s.archived || (s.status !== 'needs-you' && !queenAttention)) continue;
     const beadIds = sessionBeads(ctx, cell, s.sessionId, ids);
-    if (beadIds.length) items.push({ id: `agent:${s.sessionId}`, kind: 'agent', cellId: cell.id, beadIds, sessionId: s.sessionId, title: `${sessionLabel(ctx.graph, s.sessionId)} needs input`, reason: s.waitingReason || 'Open the session to answer its input request.' });
+    if (beadIds.length) items.push({ id: `agent:${s.sessionId}`, kind: 'agent', cellId: cell.id, beadIds, sessionId: s.sessionId, title: queenAttention ? 'Queen needs attention' : `${sessionLabel(ctx.graph, s.sessionId)} needs input`, reason: s.waitingReason || 'Open the session to answer its input request.' });
   }
   for (const pr of cell.pullRequests || []) {
     if (!['ready', 'stuck'].includes(prState(pr))) continue;
