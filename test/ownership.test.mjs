@@ -1466,6 +1466,7 @@ for (const holder of ['aw:worker-1', 'aw:replacement', null]) test(`archived res
 
 for (const reason of ['spawn', 'dispatch', 'message', 'snooze-wake', 'headless', 'resume']) test(`archived startup remains refused for ${reason}`, async () => {
   const f = fixture(2);
+  f.host.version = '1.95.0';
   await dormantWorker(f);
   f.board.get('worker-1').archived = true;
   const before = structuredClone(f.doc());
@@ -2305,4 +2306,107 @@ test('group completion also checks evidence before its fenced writes', async () 
   assert.equal(f.live.a.status, 'open');
   await finishBead(f.rt, f.actor(), { ...input, override_reason: 'All child acceptance verified.' });
   assert.equal(f.live.a.metadata.hive_evidence.at(-1).detail, 'All child acceptance verified.');
+});
+
+
+for (const holder of ['aw:worker-1', null]) test(`manual archived restore reclaims and rebinds available work (${holder})`, async () => {
+  const f = fixture(2);
+  f.host.version = '1.95.0';
+  const launch = await dormantWorker(f);
+  f.board.get('worker-1').archived = true;
+  f.live.a.assignee = holder;
+  f.rt.metadata.mutate(d => {
+    d.workerLaunches[launch.launch_id].state = 'archived';
+    d.bindings.cell.forEach(b => { b.active = false; });
+  });
+  const { createManifest } = await import('../server/manifest.js');
+  const manifest = createManifest({ dir: '.' });
+  assert.equal(manifest.engines.wranglerApi, '^1.80.0');
+  const result = await manifest.hooks['session.launchContext']({ sid: 'worker-1', task: { id: 'task' }, reason: 'restore', host: f.host });
+  assert.equal(result?.refuse, undefined);
+  assert.equal(f.live.a.assignee, 'aw:worker-1');
+  assert.equal(f.doc().workerLaunches[launch.launch_id].state, 'launched');
+  assert(f.doc().bindings.cell.some(b => b.sessionId === 'worker-1' && b.beadId === 'a' && b.active));
+});
+
+for (const change of ['owner', 'closed', 'capacity', 'retained-capacity', 'disabled', 'task']) test(`manual archived restore revalidates ${change}`, async () => {
+  const f = fixture(1);
+  f.host.version = '1.95.0';
+  await dormantWorker(f);
+  f.board.get('worker-1').archived = true;
+  if (change !== 'retained-capacity') f.live.a.assignee = null;
+  if (change === 'owner') f.live.a.assignee = 'aw:replacement';
+  if (change === 'closed') f.live.a.status = 'closed';
+  if (change.endsWith('capacity')) { f.live.b.assignee = 'aw:queen'; f.live.b.status = 'in_progress'; }
+  if (change === 'disabled') f.rt.metadata.mutate(d => { d.cells.cell.enabled = false; });
+  const result = await workers.workerLaunchContext({ sid: 'worker-1', task: { id: change === 'task' ? 'other-task' : 'task' }, reason: 'restore', host: f.host });
+  assert.match(result?.refuse || '', { owner: /already claimed/, closed: /missing or closed/, capacity: /limit/, 'retained-capacity': /limit/, disabled: /turned off/, task: /different task/ }[change]);
+  assert.notEqual(f.doc().workerLaunches[Object.keys(f.doc().workerLaunches)[0]].state, 'binding');
+});
+
+
+for (const version of ['1.94.0', undefined, '2.0.0', '1.95.0-beta.1']) for (const reason of ['resume', 'restore']) test(`archived restore fails safely on unsupported API ${version} (${reason})`, async () => {
+  const f = fixture(2);
+  f.host.version = version;
+  await dormantWorker(f);
+  f.board.get('worker-1').archived = true;
+  const before = structuredClone(f.doc());
+  const result = await workers.workerLaunchContext({ sid: 'worker-1', task: { id: 'task' }, reason, host: f.host });
+  assert.match(result?.refuse || '', /requires Agent Wrangler host API \^1\.95\.0/);
+  assert.deepEqual(f.doc(), before);
+});
+
+
+test('manual restore reserves capacity and protects its claim until core confirms resume', async () => {
+  const f = fixture(1);
+  f.host.version = '1.95.0';
+  const launch = await dormantWorker(f);
+  f.board.get('worker-1').archived = true;
+  const result = await workers.workerLaunchContext({ sid: 'worker-1', task: { id: 'task' }, reason: 'restore', host: f.host });
+  assert.equal(result?.refuse, undefined);
+  assert.equal(capacity(f.rt).used, 1);
+  await archival.releaseArchivedClaims(f.rt, f.host);
+  assert.equal(f.live.a.assignee, 'aw:worker-1');
+  assert.equal(f.doc().workerLaunches[launch.launch_id].state, 'launched');
+  await assert.rejects(claimBead(f.rt, f.actor(), { bead_id: 'b' }), /limit/);
+  f.board.get('worker-1').archived = false;
+  const { createManifest } = await import('../server/manifest.js');
+  createManifest({ dir: '.' }).session.onResume({ sessionId: 'worker-1', reason: 'restore', host: f.host });
+  assert.equal(f.rt.workerRestores.size, 0);
+  assert.equal(capacity(f.rt).used, 1);
+});
+
+test('failed core restore reservations expire without leaving capacity stuck', async () => {
+  const f = fixture(1);
+  f.host.version = '1.95.0';
+  await dormantWorker(f);
+  f.board.get('worker-1').archived = true;
+  assert.equal((await workers.workerLaunchContext({ sid: 'worker-1', task: { id: 'task' }, reason: 'restore', host: f.host }))?.refuse, undefined);
+  f.rt.workerRestores.get('worker-1').at -= 10 * 60 * 1000;
+  assert.equal(capacity(f.rt).used, 0);
+  assert.equal(f.rt.workerRestores.size, 0);
+});
+
+test('a refused scheduled resume preserves an in-flight manual restore reservation', async () => {
+  const f = fixture(1);
+  f.host.version = '1.95.0';
+  const launch = await dormantWorker(f);
+  f.board.get('worker-1').archived = true;
+  const context = { sid: 'worker-1', task: { id: 'task' }, host: f.host };
+  assert.equal((await workers.workerLaunchContext({ ...context, reason: 'restore' }))?.refuse, undefined);
+  const reservation = f.rt.workerRestores.get('worker-1');
+  assert.ok(reservation);
+  const binding = structuredClone(f.doc().bindings.cell);
+  assert.match((await workers.workerLaunchContext({ ...context, reason: 'resume' }))?.refuse || '', /scheduled resumes remain refused/);
+  assert.equal(f.rt.workerRestores.get('worker-1'), reservation);
+  assert.equal(capacity(f.rt).used, 1);
+  await archival.releaseArchivedClaims(f.rt, f.host);
+  assert.equal(f.live.a.assignee, 'aw:worker-1');
+  assert.equal(f.doc().workerLaunches[launch.launch_id].state, 'launched');
+  assert.deepEqual(f.doc().bindings.cell, binding);
+  f.board.get('worker-1').archived = false;
+  const { createManifest } = await import('../server/manifest.js');
+  createManifest({ dir: '.' }).session.onResume({ sessionId: 'worker-1', reason: 'restore', host: f.host });
+  assert.equal(f.rt.workerRestores.size, 0);
+  assert.equal(capacity(f.rt).used, 1);
 });

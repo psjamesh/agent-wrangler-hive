@@ -1,3 +1,4 @@
+import { activeWorkerRestores } from './worker-restores.js';
 import { buildGraph, descendantIds, GROUP_KINDS } from './bead-model.js';
 import { HiveError } from './ops.js';
 import { liveClaimant } from './tracking.js';
@@ -61,6 +62,7 @@ export function capacitySlots(rt, graph, reserve = []) {
   }
   const reviews = new Set(Object.values(rt.metadata.read().reviews || {}).filter((r) => OPEN_REVIEW_STATES.has(r.state) && reservationActive(r.reviewerSessionId) && counts(r.workBeadId)).map((r) => r.workBeadId));
   for (const id of reviews) reserved.add(id);
+  for (const restore of activeWorkerRestores(rt).values()) if (counts(restore.beadId)) reserved.add(charge(restore.beadId));
   for (const id of reserve) if (counts(id)) reserved.add(charge(id));
   const helpers = helperSlots(rt, graph);
   for (const id of helpers.keys()) reserved.add(id);
@@ -81,7 +83,7 @@ export function exportedGraph({ issues, errors }) {
   return buildGraph(issues);
 }
 
-export function checkAdmission(rt, graph, beadId, { sessionId, launchId = null, ownOperationId = null, review = false } = {}) {
+export function checkAdmission(rt, graph, beadId, { sessionId, launchId = null, ownOperationId = null, review = false, revalidateCapacity = false } = {}) {
   const bead = graph.beads[beadId];
   if (!bead || bead.status === 'closed') throw new HiveError(`Bead ${beadId} is missing or closed.`, 'conflict');
   if (bead.kind === 'external') throw new HiveError(`External prerequisite ${beadId} is never claimable work. Close it when the outside prerequisite is met.`, 'refused');
@@ -91,8 +93,8 @@ export function checkAdmission(rt, graph, beadId, { sessionId, launchId = null, 
   for (const op of Object.values(rt.metadata.read().operations)) {
     if (op.id !== ownOperationId && op.kind === 'claim' && op.intent?.beadId === beadId && ['pending', 'uncertain', 'partial'].includes(op.state)) throw new HiveError(`The claim for ${beadId} is unsettled (${op.id}). Reconcile it first.`, 'uncertain');
   }
-  if (!review && bead.assignee === `aw:${sessionId}`) return;
-  if (!review && bead.assignee) throw new HiveError(`Bead ${beadId} is already claimed by ${bead.assignee}.`, 'conflict');
+  if (!review && bead.assignee === `aw:${sessionId}` && !revalidateCapacity) return;
+  if (!review && bead.assignee && bead.assignee !== `aw:${sessionId}`) throw new HiveError(`Bead ${beadId} is already claimed by ${bead.assignee}.`, 'conflict');
   if (!hiveWorkIds(rt, graph).has(beadId)) return;
   const usage = capacity(rt, graph, { reserve: [beadId] });
   if (usage.limit && usage.used > usage.limit) throw new HiveError(`Hive's global work limit is ${usage.limit}; ${usage.used} slots are claimed or reserved across all hives. Do not record this in the bead summary or next action: raise it to the queen now with hive_request_input, naming this bead, so the queen can free capacity or change Maximum active workers in Hive settings.`, 'busy');

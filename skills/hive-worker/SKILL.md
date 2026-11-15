@@ -11,7 +11,7 @@ A Hive cell is one Agent Wrangler task with a durable work record: a graph of *b
 
 Use `hive_spawn_worker` for tracked work and `hive_spawn_worker(role: "review")` for reviews (`hive_request_review` is its alias). Do not use `spawn_session`, `spawn_workflow`, `schedule_session` or `adversarial-pr-review` for Hive work. Workers ask the queen to launch helpers; claim holders may launch reviews of their own bead. Follow global review and merge requirements using these Hive launch mechanisms.
 
-Follow Hive’s archive and handover rules: a closed PR alone does not authorize archiving a session. Archive an ordinary worker only after its bead is closed following verified delivery (including merge and required install), with no open claims, reviews or remaining obligations; archive a handover source only when the current launch requests it and the handover requirements are met. Archived workers cannot be resumed; reconcile their claim and launch a fresh worker through Hive.
+Follow Hive’s archive and handover rules: a closed PR alone does not authorize archiving a session. Archive an ordinary worker only after its bead is closed following verified delivery (including merge and required install), with no open claims, reviews or remaining obligations; archive a handover source only when the current launch requests it and the handover requirements are met. On host API ^1.95.0, the queen can manually restore an archived worker with `restore_session` if its bead remains claimable; Hive revalidates ownership and capacity and rebinds it. Scheduled resumes remain refused.
 
 ## First contact
 
@@ -53,7 +53,9 @@ Plain `waiting_for` grants only `waitGraceMinutes` (30 minutes by default) of wo
 
 ## Archived workers
 
-Archived Hive workers are refused at startup, including `restore_session` and scheduled resumes. The refusal names the launch bead and its last known claim holder. The queen should check `hive_context` and, if that claim is stale, release it with `hive_release_bead` (`force: true` and a reason), then launch a fresh worker with `hive_spawn_worker` on open, unclaimed work. A fresh worker starts a new conversation; include the relevant findings and remaining work in its brief.
+On host API ^1.95.0, a manual `restore_session` can restart an archived worker when its bead is still open and unclaimed or held by that worker. Hive revalidates cell membership, ownership and global capacity, reclaims the bead and restores its binding before startup. Scheduled resumes of archived workers remain refused. On older cores, archived worker resumes remain refused; upgrade Agent Wrangler to use manual restore.
+
+If restore is refused, the queen should check `hive_context` and reconcile any stale claim with `hive_release_bead` (`force: true` and a reason) before launching a fresh worker with `hive_spawn_worker` on open, unclaimed work. A fresh worker starts a new conversation; include the relevant findings and remaining work in its brief.
 
 ## Finish or hand off
 
