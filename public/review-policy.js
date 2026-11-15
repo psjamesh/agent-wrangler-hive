@@ -1,5 +1,5 @@
 import { h } from './dom.js';
-import { frontPick } from './reviewer-front.js';
+import { frontPick, reviewerSlot, FRONT_LIMITATION, TIER_FALLBACK_WARNING } from './reviewer-front.js';
 
 const defaults = { primary: { agent: 'claude', model: 'opus', effort: 'medium' }, secondary: { agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' } };
 const slots = [['primary', 'Primary reviewer'], ['secondary', 'Secondary reviewer']];
@@ -9,7 +9,7 @@ export function reviewPolicyForm({ ui, send, hive }, cell) {
   const key = `review-policy:${cell.id}`;
   let draft = ui.form(key);
   if (!draft) {
-    draft = Object.fromEntries(slots.map(([slot]) => [slot, { ...defaults[slot], mode: cell.reviewPolicy?.[slot] ? 'pinned' : 'automatic', minQuality: 0, ...(cell.reviewPolicy?.[slot] || {}) }]));
+    draft = Object.fromEntries(slots.map(([slot]) => [slot, { ...defaults[slot], mode: cell.reviewPolicy?.[slot] ? 'pinned' : 'automatic', tier: 'balanced', minQuality: 55, ...(cell.reviewPolicy?.[slot] || {}) }]));
     ui.setForm(key, draft);
   }
   const agents = hive?.agents || [];
@@ -37,7 +37,7 @@ export function reviewPolicyForm({ ui, send, hive }, cell) {
       event.preventDefault();
       if (ui.form(key)?.saving || !canSave(ui.form(key))) return;
       const current = ui.form(key);
-      const policy = Object.fromEntries(slots.map(([slot]) => [slot, { mode: current[slot].mode, ...(current[slot].mode === 'automatic' ? { minQuality: current[slot].minQuality, ...(current[slot].maxUsd !== undefined ? { maxUsd: current[slot].maxUsd } : {}) } : {}), ...Object.fromEntries(fields.map(([name]) => [name, String(current[slot][name] || '').trim()])) }]));
+      const policy = Object.fromEntries(slots.map(([slot]) => [slot, { mode: current[slot].mode, ...(current[slot].mode === 'automatic' ? { tier: current[slot].tier, minQuality: current[slot].minQuality, ...(current[slot].maxUsd !== undefined ? { maxUsd: current[slot].maxUsd } : {}) } : {}), ...Object.fromEntries(fields.map(([name]) => [name, String(current[slot][name] || '').trim()])) }]));
       ui.patchForm(key, { saving: true, error: '', saved: false });
       send({ type: 'hive-review-policy', cellId: cell.id, policy }, {
         onReply: reply => ui.patchForm(key, { saving: false, error: reply.ok ? '' : reply.error || 'Review policy could not be saved.', saved: Boolean(reply.ok) }),
@@ -49,11 +49,13 @@ export function reviewPolicyForm({ ui, send, hive }, cell) {
   ...slots.map(([slot, label]) => h('div', { class: 'hive-row' }, h('strong', {}, label),
     h('label', {}, 'Mode', h('select', { 'data-focus-key': `review-policy:${cell.id}:${slot}:mode`, disabled: draft.saving, onchange: event => ui.patchForm(key, { [slot]: { ...ui.form(key)[slot], mode: event.target.value }, saved: false }) }, ...['automatic', 'pinned'].map(mode => h('option', { value: mode, selected: draft[slot].mode === mode }, mode === 'automatic' ? 'Automatic' : 'Pinned')))),
     draft[slot].mode === 'automatic' ? h('div', {},
-      ...[['minQuality', 'Minimum quality (0–100)'], ['maxUsd', 'Maximum dollars per task (optional)']].map(([name, title]) => h('label', {}, title, h('input', { type: 'number', 'data-focus-key': `review-policy:${cell.id}:${slot}:${name}`, min: 0, max: name === 'minQuality' ? 100 : null, step: 'any', value: draft[slot][name] ?? '', disabled: draft.saving, oninput: event => ui.patchForm(key, { [slot]: { ...ui.form(key)[slot], [name]: event.target.value === '' ? (name === 'minQuality' ? 0 : undefined) : Number(event.target.value) }, saved: false }) }))),
-      h('p', { class: 'hive-muted' }, 'Coding-task benchmark tiers; these are not review-specific scores. The cheapest eligible different-provider setting is chosen at launch.'),
-      ...(agents.filter(a => a.available === true).map(builder => {
+      h('label', {}, 'Tier', h('select', { 'data-focus-key': `review-policy:${cell.id}:${slot}:tier`, disabled: draft.saving, onchange: event => ui.patchForm(key, { [slot]: { ...ui.form(key)[slot], tier: event.target.value }, saved: false }) }, ...[['balanced', 'Balanced — quality 55 or higher'], ['strongest', 'Strongest — highest quality'], ['cheapest', 'Cheapest — meet quality floor']].map(([value, label]) => h('option', { value, selected: draft[slot].tier === value }, label)))),
+      ...[['minQuality', 'Minimum quality (0–100)'], ['maxUsd', 'Maximum dollars per task (optional)']].filter(([name]) => name !== 'minQuality' || draft[slot].tier !== 'strongest').map(([name, title]) => h('label', {}, title, h('input', { type: 'number', 'data-focus-key': `review-policy:${cell.id}:${slot}:${name}`, min: 0, max: name === 'minQuality' ? 100 : null, step: 'any', value: name === 'minQuality' && draft[slot].tier === 'balanced' ? 55 : draft[slot][name] ?? '', disabled: draft.saving || name === 'minQuality' && draft[slot].tier !== 'cheapest', oninput: event => ui.patchForm(key, { [slot]: { ...ui.form(key)[slot], [name]: event.target.value === '' ? (name === 'minQuality' ? 55 : undefined) : Number(event.target.value) }, saved: false }) }))),
+      h('p', { class: 'hive-muted' }, 'Coding-task benchmark tiers; these are not review-specific scores. Balanced chooses the cheapest at quality 55 or higher; Strongest maximizes quality; Cheapest meets your floor. Fallbacks do not guarantee the tier.'),
+      h('p', { class: 'hive-muted' }, FRONT_LIMITATION),
+      ...(agents.filter(a => a.available === true && reviewerSlot(draft, a.id) === slot).map(builder => {
         const pick = frontPick(hive?.reviewerFront?.front, draft[slot], builder.id, agents);
-        return h('p', { role: 'status' }, `Builder ${builder.label || builder.id}: ${pick ? `${pick.agent} / ${pick.model} / ${pick.effort || 'default effort'} ($${pick.usd}, quality ${pick.quality})` : hive?.reviewerFront?.error || 'No eligible front setting; using configured policy.'}`);
+        return h('p', { role: 'status', class: pick ? 'hive-muted' : 'hive-error' }, `Builder ${builder.label || builder.id}: ${pick ? `${pick.agent} / ${pick.model} / ${pick.effort || 'default effort'} ($${pick.usd}, quality ${pick.quality})` : `${hive?.reviewerFront?.error || 'No eligible global-front setting.'} ${TIER_FALLBACK_WARNING}`}`);
       }))) : null,
     draft[slot].mode !== 'automatic' && catalogReady && fields.some(([name]) => invalid(draft[slot], name)) ? h('p', { class: 'hive-error', role: 'status' }, 'Pinned model no longer available, using Automatic host defaults at launch. The saved pin is kept.') : null, ...fields.map(([name, title]) => {
     const id = `hive-review-${cell.id}-${slot}-${name}`;

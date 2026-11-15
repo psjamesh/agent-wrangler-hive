@@ -2066,3 +2066,11 @@ test('automatic review resolves the current host front at launch and persists it
   assert.equal(f.doc().reviews[out.review_id].policy.selection.pick.quality, 80);
   assert.equal(out.policy.sameProvider, false);
 });
+
+test('Automatic launch fallback records and notifies the queen that the tier is not guaranteed', async () => {
+  const f = holderFixture('claude'); await launchRecording(f);
+  f.host.agents.front = async () => ({ front: [] });
+  const out = await reviews.requestReview(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'review' });
+  assert.match(out.policy.selection.warning, /tier is not guaranteed/);
+  assert.ok(f.sent.some(m => m.sid === 'queen' && /WARNING:.*tier is not guaranteed/.test(m.text)));
+});

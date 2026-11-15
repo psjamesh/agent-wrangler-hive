@@ -1,4 +1,4 @@
-import { frontPick } from '../public/reviewer-front.js';
+import { frontPick, reviewerSlot, qualityFloor, FRONT_LIMITATION, TIER_FALLBACK_WARNING } from '../public/reviewer-front.js';
 import { readAgentCatalog } from './agent-catalog.js';
 import { assertCurrent } from './lifetime.js';
 import { HiveError } from './ops.js';
@@ -18,7 +18,7 @@ function config(value, fallback) {
 export function reviewPolicy(cell) {
   return Object.fromEntries(Object.entries(REVIEW_POLICY_DEFAULTS).map(([slot, fallback]) => {
     const value = cell?.reviewPolicy?.[slot];
-    return [slot, { ...config(value, fallback), ...(!value || value.mode === 'automatic' ? { mode: 'automatic', minQuality: 0, ...Object.fromEntries(['minQuality', 'maxUsd'].filter(k => value?.[k] !== undefined).map(k => [k, value[k]])) } : {}) }];
+    return [slot, { ...config(value, fallback), ...(!value || value.mode === 'automatic' ? { mode: 'automatic', tier: value?.tier || 'balanced', minQuality: 55, ...Object.fromEntries(['minQuality', 'maxUsd'].filter(k => value?.[k] !== undefined).map(k => [k, value[k]])) } : {}) }];
   }));
 }
 
@@ -39,13 +39,14 @@ export async function setReviewPolicy(rt, { cellId, policy }, host = rt.host) {
   }
   const updates = {};
   for (const [slot, value] of Object.entries(policy)) {
-    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((k) => ![...FIELDS, 'mode', 'minQuality', 'maxUsd'].includes(k)) || (value.mode !== undefined && !['pinned', 'automatic'].includes(value.mode))
+    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((k) => ![...FIELDS, 'mode', 'tier', 'minQuality', 'maxUsd'].includes(k)) || (value.mode !== undefined && !['pinned', 'automatic'].includes(value.mode))
       || FIELDS.some((f) => typeof value[f] !== 'string' || (f !== 'effort' && !value[f].trim()) || value[f].length > 120)) {
       throw new HiveError(`The ${slot} reviewer needs an agent, model and effort.`);
     }
+    if (value.tier !== undefined && !['balanced', 'strongest', 'cheapest'].includes(value.tier)) throw new HiveError('Unknown reviewer tier.');
     if ((value.minQuality !== undefined && (!Number.isFinite(value.minQuality) || value.minQuality < 0 || value.minQuality > 100)) || (value.maxUsd !== undefined && (!Number.isFinite(value.maxUsd) || value.maxUsd <= 0))) throw new HiveError('Reviewer quality must be 0–100 and cost cap must be positive.');
     assertAllowedReviewer(value, slot);
-    updates[slot] = { ...config(value, REVIEW_POLICY_DEFAULTS[slot]), ...(value.mode === 'automatic' ? { mode: 'automatic', minQuality: value.minQuality ?? 0, ...(value.maxUsd !== undefined ? { maxUsd: value.maxUsd } : {}) } : {}) };
+    updates[slot] = { ...config(value, REVIEW_POLICY_DEFAULTS[slot]), ...(value.mode === 'automatic' ? { mode: 'automatic', tier: value.tier || 'balanced', minQuality: value.minQuality ?? 55, ...(value.maxUsd !== undefined ? { maxUsd: value.maxUsd } : {}) } : {}) };
   }
   const agents = await readAgentCatalog(host);
   assertCurrent(rt, host);
@@ -69,14 +70,13 @@ export async function setReviewPolicy(rt, { cellId, policy }, host = rt.host) {
 
 export function chooseReviewer(cell, builderAgent, agents, frontResult) {
   const policy = reviewPolicy(cell);
-  const differing = builderAgent && [policy.primary, policy.secondary].find(c => c.agent !== builderAgent);
-  const pinned = differing || policy.primary;
+  const pinned = policy[reviewerSlot(policy, builderAgent)];
   const pinnedConfig = config(pinned, REVIEW_POLICY_DEFAULTS.primary);
   let selection;
   if (pinned.mode === 'automatic') {
     const pick = builderAgent && frontPick(frontResult?.front, pinned, builderAgent, agents);
-    if (pick) return { config: config(pick, pinnedConfig), sameProvider: false, ...(!builderAgent ? { unknownBuilder: true } : {}), selection: { mode: 'automatic', reason: 'Cheapest installed model on the host front meeting the tier and differing from the builder.', tier: { minQuality: pinned.minQuality, maxUsd: pinned.maxUsd }, pick, read: frontResult.read } };
-    selection = { mode: 'automatic', tier: { minQuality: pinned.minQuality, maxUsd: pinned.maxUsd }, reason: !builderAgent ? 'Builder provider unknown; using configured policy.' : frontResult?.error || 'No installed different-provider model meets this tier on the host front; using configured policy.' };
+    if (pick) return { config: config(pick, pinnedConfig), sameProvider: false, ...(!builderAgent ? { unknownBuilder: true } : {}), selection: { mode: 'automatic', scope: 'global-front', limitation: FRONT_LIMITATION, reason: `${pinned.tier === 'strongest' ? 'Highest-quality' : 'Cheapest'} installed model on the host front meeting the tier and differing from the builder.`, tier: { name: pinned.tier, minQuality: qualityFloor(pinned), maxUsd: pinned.maxUsd }, pick, read: frontResult.read } };
+    selection = { mode: 'automatic', scope: 'global-front', limitation: FRONT_LIMITATION, warning: TIER_FALLBACK_WARNING, tier: { name: pinned.tier, minQuality: qualityFloor(pinned), maxUsd: pinned.maxUsd }, reason: !builderAgent ? 'Builder provider unknown; using configured policy.' : frontResult?.error || 'No eligible different-provider row meets this tier on the global host front. Settings dominated by the builder provider or Terra may be absent. Using configured fallback; tier is not guaranteed.' };
   }
   const chosen = { ...(selection ? { selection } : {}), config: pinnedConfig, sameProvider: Boolean(builderAgent && pinned.agent === builderAgent), ...(!builderAgent ? { unknownBuilder: true } : {}) };
   if (!agents || installedReviewer(agents, pinnedConfig)) return chosen;
