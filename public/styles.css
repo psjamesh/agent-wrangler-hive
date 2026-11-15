@@ -1767,3 +1767,7 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 
 .hive-overview-head { flex-shrink: 0; }
 .hive-root[data-layout="small"] .hive-overview-head { min-height: max-content; }
+
+.hive-title-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.hive-title-edit input { min-width: 6em; width: 12em; max-width: 100%; font: inherit; color: inherit; }
+.hive-title-edit [role="alert"] { flex-basis: 100%; font-size: 12px; font-weight: normal; }

@@ -1,3 +1,4 @@
+import { cellTitle, cellGoalForm } from './cell-settings.js';
 import { codexApprovalsForm } from './codex-approvals.js';
 import { handoverFields, handoverError } from './handover-fields.js';
 import { pickupDetails } from './pickup.js';
@@ -12,7 +13,7 @@ import { prSummary, pullRequestsSection } from './pr-view.js';
 import { h, syncChildren, markdown, safeHref, relativeTime } from './dom.js';
 import { hexPath, primaryMark, fitLines } from './hex-grid.js';
 import {
-  cellName, sessionLabel, statusDot, STATUS_TEXT, childrenMap, agentSummary, capturedAgentSummary, cellBeadIds, waitingOn, workCounts, countsSentence, closedLabel, isDone, displayStatus, recordedWait,
+  sessionLabel, statusDot, STATUS_TEXT, childrenMap, agentSummary, capturedAgentSummary, cellBeadIds, waitingOn, workCounts, countsSentence, closedLabel, isDone, displayStatus, recordedWait,
 } from './model.js';
 import { renderConversation } from './conversation.js';
 import { workstreamClasses } from './cell-layout.js';
@@ -478,7 +479,6 @@ function headProgress(counts) {
 
 function cellHeader(ctx, cell, root) {
   const { graph, ui, send, hive } = ctx;
-  const name = cellName(graph, cell);
   const counts = root && (cell.enabled || isRetired(cell)) ? workCounts(hive, childrenMap(hive.beads), root.id) : null;
   const waiting = cellWaitingItems(ctx, cell);
   return h('header', { class: 'hive-cellhead' },
@@ -486,7 +486,7 @@ function cellHeader(ctx, cell, root) {
       h('button', { type: 'button', class: 'hive-back', onclick: () => ui.closeCell(), 'aria-label': 'Show all hives', title: 'Show all hives' },
         h('span', { class: 'hive-back-icon', 'aria-hidden': 'true' }), 'All hives'),
       h('span', { class: 'hive-crumb-sep', 'aria-hidden': 'true' }, '/'),
-      h('h2', { class: 'hive-celltitle' }, h('button', { type: 'button', class: 'hive-title-btn', title: `${name}: goal and done when`, 'aria-haspopup': 'dialog', 'data-focus-key': `goal-open:${cell.id}`, onclick: event => openGoalPopover(ctx, cell, event.currentTarget) }, name)),
+      h('h2', { class: 'hive-celltitle' }, cellTitle(ctx, cell)),
       isRetired(cell) ? h('span', { class: 'hive-badge hive-badge-retired', title: cell.retired.summary }, `Retired · ${cell.retired.outcome}`) : (cell.enabled ? null : h('span', { class: 'hive-badge' }, 'Off')),
       capacityControl(ctx),
       h('div', { class: 'hive-cellstate' },
@@ -502,20 +502,6 @@ function cellHeader(ctx, cell, root) {
     noticesEl(ctx));
 }
 
-export function openGoalPopover(ctx, cell, anchor) {
-  openCellPopover(ctx, cell, anchor, 'Goal and done when', (next, current) => {
-    const root = next.hive.beads[current.rootBeadId];
-    const { api } = next;
-    const cell = current;
-    let goal;
-    if (root?.goal) goal = markdown(api, root.goal);
-    else if (cell.snapshot?.brief) goal = [h('p', { class: 'hive-muted' }, 'Board brief, not a confirmed goal:'), markdown(api, cell.snapshot.brief)];
-    else goal = h('p', { class: 'hive-muted' }, cell.snapshot ? 'No goal was confirmed on the captured board.' : 'No goal written yet.');
-    return [h('section', {}, h('h4', {}, 'Goal'), goal),
-      root?.acceptance ? h('section', {}, h('h4', {}, 'Done when'), markdown(api, root.acceptance)) : null];
-  });
-}
-
 export function openQueenPopover(ctx, cell, anchor) {
   openCellPopover(ctx, cell, anchor, 'Queen', (next, current) => current.snapshot ? snapshotQueen(next, current)
     : current.enabled ? queenBar({ ...next, ui: { ...next.ui, inspect: id => { disposeCellPopover(); next.ui.inspect(id); } } }, current)
@@ -527,6 +513,7 @@ export function hiveSettings(ctx, cell, leave = () => true) {
   const retire = () => { if (leave()) openRetire(ctx, cell); };
   const reopen = () => { if (leave()) openReopen(ctx, cell); };
   return [
+    cellGoalForm(ctx, cell),
     cell.snapshot || isRetired(cell) ? null : queenInstructions(ctx, cell),
     cell.snapshot || isRetired(cell) ? null : watchdogSettingsForm(ctx, cell),
     cell.snapshot || isRetired(cell) ? null : codexApprovalsForm(ctx, cell),

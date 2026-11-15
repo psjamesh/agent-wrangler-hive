@@ -1,3 +1,4 @@
+import { renameCell, saveCellGoal } from './cell-settings.js';
 import { setCodexApprovals } from './codex-policy.js';
 import { setPickup } from './pickup.js';
 import { setWatchdogSettings } from './watchdog.js';
@@ -146,6 +147,9 @@ const codexApprovalsH = humanHandler('hive-codex-approvals', ({ msg, rt }) => se
 
 const reviewPolicyH = humanHandler('hive-review-policy', ({ msg, rt }) => setReviewPolicy(rt, { cellId: str(msg.cellId, 80), policy: msg.policy }));
 
+const renameCellH = humanHandler('hive-cell-rename', ({ msg, host, rt }) => renameCell(rt, host, { cellId: str(msg.cellId, 80), name: msg.name }));
+const cellGoalH = humanHandler('hive-cell-goal', ({ msg, host, rt }) => saveCellGoal(rt, host, { cellId: str(msg.cellId, 80), goal: msg.goal, acceptance: msg.acceptance, expectedUpdatedAt: msg.expectedUpdatedAt }));
+
 const setInstructions = humanHandler('hive-cell-instructions', ({ msg, rt }) => ops.setQueenInstructions(rt, { cellId: str(msg.cellId, 80), instructions: msg.instructions }));
 
 const reconcileLaunchH = humanHandler('hive-launch-reconcile', ({ msg, host, rt }) => reconcileLaunch(rt, host, { launchId: str(msg.launchId, 80), dismiss: msg.dismiss === true, abandon: msg.abandon === true }));
@@ -276,4 +280,4 @@ const pickupH = humanHandler('hive-bead-pickup', async ({ msg, host, rt }) => {
   return setPickup(rt, host, actor, { bead_id: msg.beadId, ready: msg.ready, profile: msg.profile, rearm: msg.rearm, reason: msg.reason, expected_token: msg.expectedToken });
 });
 
-export const configHandlers = [pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];
+export const configHandlers = [pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, renameCellH, cellGoalH, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];

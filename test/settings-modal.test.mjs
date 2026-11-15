@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { installDom, walk, fire, press } from './helpers/dom.mjs';
 import { h } from '../public/dom.js';
 import { settingsButton, settingsModal } from '../public/settings-view.js';
-import { hiveSettings, openGoalPopover, openQueenPopover } from '../public/cell-view.js';
+import { hiveSettings, openQueenPopover } from '../public/cell-view.js';
 import { disposeCellPopover, refreshCellPopover } from '../public/cell-popover.js';
 
 function fixture(t, extra = {}) {
@@ -131,34 +131,10 @@ test('retired hives retain reopening and snapshots only offer All hives settings
   assert.match(f.dialog().textContent, /Maximum active workers/);
 });
 
-test('goal popover shows Goal and Done when and closes back to its opener', t => {
-  const f = fixture(t);
-  f.draw();
-  const opener = f.key('open-settings');
-  openGoalPopover(f.ctx, f.cell, null);
-  let dialog = document.body.querySelector('dialog');
-  assert.equal(dialog.open, true);
-  assert.match(dialog.textContent, /Goal.*Ship useful work.*Done when.*People can use it/s);
-  dialog.querySelector('button').click();
-  assert.equal(dialog.isConnected, false);
-  opener.getBoundingClientRect = () => ({ left: 10, bottom: 20 });
-  const oldWindow = globalThis.window; globalThis.window = { innerWidth: 1000, innerHeight: 900 };
-  t.after(() => { globalThis.window = oldWindow; });
-  openGoalPopover(f.ctx, f.cell, opener);
-  dialog = document.body.querySelector('dialog');
-  f.draw();
-  press(dialog, 'Escape');
-  assert.equal(document.activeElement, f.key('open-settings'));
-});
-
-test('snapshot goal falls back to the brief and queen popover remains read only', t => {
-  const f = fixture(t, { snapshot: { brief: 'Board intention', sessions: { q: { label: 'Captured queen', status: 'working' } }, queenSessionId: 'q' } });
-  delete f.root.goal;
-  openGoalPopover(f.ctx, f.cell, null);
-  let dialog = document.body.querySelector('dialog');
-  assert.match(dialog.textContent, /Board brief, not a confirmed goal.*Board intention/s);
+test('snapshot queen popover remains read only', t => {
+  const f = fixture(t, { snapshot: { sessions: { q: { label: 'Captured queen', status: 'working' } }, queenSessionId: 'q' } });
   openQueenPopover(f.ctx, f.cell, null);
-  dialog = document.body.querySelector('dialog');
+  const dialog = document.body.querySelector('dialog');
   assert.match(dialog.textContent, /Captured queen, working when captured.*read only/s);
   assert.doesNotMatch(dialog.textContent, /Launch a new queen|Send brief/);
 });
@@ -202,9 +178,24 @@ test('bee saves prevent closing settings until complete', t => {
   assert.equal(f.dialog(), undefined);
 });
 
-test('Info drawer and form state are removed and title and queen pill open their popovers', () => {
+test('title edits inline and queen pill opens its popover', () => {
   const source = readFileSync(new URL('../public/cell-view.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /infoDrawer|info:|openInfo|['"]Info['"]/);
-  assert.match(source, /onclick: event => openGoalPopover\(ctx, cell, event.currentTarget\)/);
+  assert.doesNotMatch(source, /openGoalPopover/);
+  assert.match(source, /cellTitle\(ctx, cell\)/);
   assert.match(source, /queenPill\(ctx, cell, event => openQueenPopover\(ctx, cell, event.currentTarget\)\)/);
+});
+
+test('goal saves prevent closing settings across tabs and closing clears the goal draft', t => {
+  const f = fixture(t); f.open();
+  const form = walk(f.dialog()).find(el => el.getAttribute('class') === 'hive-form hive-goal');
+  fire(form, 'submit'); f.draw();
+  assert.equal(f.sent[0].msg.type, 'hive-cell-goal');
+  f.key('settings-tab-all').click(); f.draw();
+  press(f.dialog(), 'Escape'); f.draw();
+  assert.ok(f.dialog());
+  f.sent[0].options.onReply({ ok: true, updatedAt: 'v2' }); f.draw();
+  f.key('settings-close').click(); f.draw();
+  assert.equal(f.dialog(), undefined);
+  assert.equal(f.forms.get('goal:c'), null);
 });
