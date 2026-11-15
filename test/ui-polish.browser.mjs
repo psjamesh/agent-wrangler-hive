@@ -76,6 +76,16 @@ test('ui-polish browser layout', { skip: chrome ? false : 'Set HIVE_TEST_CHROME 
         await new Promise(resolve => setTimeout(resolve, 50));
       }
       assert.ok(ready, `${phase} ${theme} ${view} rendered`);
+      if (view === 'overview') {
+        await run(`document.querySelector('[data-focus-key="global-inbox-toggle"]').click()`);
+        let dockReady = false;
+        for (let i = 0; i < 100; i++) {
+          dockReady = await run(`Boolean(document.querySelector('.hive-dock'))`);
+          if (dockReady) break;
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        assert.ok(dockReady, 'overview inbox panel opened');
+      }
       await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
       const measure = await run(`(() => {
         const root = document.getElementById('root'), divider = root.querySelector('.hive-divider');

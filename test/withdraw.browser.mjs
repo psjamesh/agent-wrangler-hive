@@ -115,7 +115,8 @@ test('withdrawing and undoing in the Waiting for queen list and the conversation
   await click('Withdraw');
   assert.deepEqual(s.metadata.read().conversation[CELL].filter(awaitingQueen).map((m) => m.id), [first.id]);
   assert.equal(inboxSlice(s.metadata.read(), CELL, 'queen').count, 1);
-  assert.equal(await run(`document.querySelector('#root .hive-unread').textContent`), '1');
+  assert.equal(await rows(), 1);
+  assert.equal(await run(`document.querySelector('#root .hive-unread') === null`), true, 'single-message rows omit the count badge');
   assert.match(await run(`document.querySelector('#root .hive-inbox-withdrawn').textContent`), /Withdrawn: .*Undo/);
   const shot = await call('Page.captureScreenshot', { format: 'png' });
   if (process.env.HIVE_TEST_SHOT) fs.writeFileSync(process.env.HIVE_TEST_SHOT, Buffer.from(shot.data, 'base64'));

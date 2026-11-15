@@ -118,7 +118,7 @@ for (const view of ['overview', 'cell']) {
       socket?.close();
       if (child.exitCode === null && child.signalCode === null && !launchError) child.kill();
       await exited;
-      await rm(profile, { recursive: true, force: true });
+      await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 }
