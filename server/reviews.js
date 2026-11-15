@@ -22,7 +22,7 @@ function boundReviewer(rt, host, record, sid) {
 
 export function startReviewRound(rt, reviewId, { commit, summary } = {}) {
   const current = rt.metadata.read().reviews[reviewId];
-  if (!current || current.state !== 'changes_requested' || !current.verdict) throw new HiveError('A new review round needs a settled changes_requested verdict.', 'conflict');
+  if (!current || !['approved', 'changes_requested'].includes(current.state) || !current.verdict) throw new HiveError('A new review round needs a settled approved or changes_requested verdict.', 'conflict');
   if (['pending', 'uncertain', 'partial'].includes(rt.metadata.read().operations[current.verdictOpId]?.state)) throw new HiveError('The earlier verdict write is unsettled; reconcile it before a new round.', 'uncertain');
   rt.metadata.mutate((d) => {
     const r = d.reviews[reviewId];

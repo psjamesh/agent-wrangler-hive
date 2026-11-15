@@ -595,13 +595,14 @@ test('a new round is not opened on work that closed meanwhile, and the reopen ho
   assert.equal(record().history, undefined);
 });
 
-test('startReviewRound only starts from a settled changes_requested verdict and replaces the stale summary', async () => {
+test('startReviewRound only starts from a settled verdict and replaces the stale summary', async () => {
   const f = fixture(1); reviewFixture(f); await dispatchFixture(f);
   const { give, record, out } = await reviewRounds(f);
-  assert.throws(() => reviews.startReviewRound(f.rt, out.review_id, { commit: 'c1' }), /settled changes_requested/);
+  assert.throws(() => reviews.startReviewRound(f.rt, out.review_id, { commit: 'c1' }), /settled.*verdict/);
   await give('approved', 'c1', 'Looks fine');
-  assert.throws(() => reviews.startReviewRound(f.rt, out.review_id, { commit: 'c2' }), /settled changes_requested/);
-  assert.equal(record().history, undefined);
+  reviews.startReviewRound(f.rt, out.review_id, { commit: 'c2' });
+  assert.equal(record().state, 'in_review');
+  assert.equal(record().history[0].verdict.value, 'approved');
   const g = fixture(1); reviewFixture(g); await dispatchFixture(g);
   const second = await reviewRounds(g);
   await second.give('changes_requested', 'c1', 'Old findings');
@@ -1796,13 +1797,13 @@ test('closed-bead refusal without PR links does not send; another held open clai
   assert.equal(sent.length, 0);
 });
 
-for (const toolName of ['requestReviewTool', 'spawnWorkerTool']) test(`${toolName} lets the queen reopen a retained reviewer, preserving receipts without spawning`, async () => {
+for (const verdict of ['changes_requested', 'approved']) for (const toolName of ['requestReviewTool', 'spawnWorkerTool']) test(`${toolName} lets the queen reopen a retained reviewer after ${verdict}, preserving receipts without spawning`, async () => {
   const tool = (await import('../server/tools.js'))[toolName];
   const { reviewFields } = await import('../server/review-state.js');
   const { cellCounts } = await import('../public/model.js');
   const f = fixture(1); reviewFixture(f); await dispatchFixture(f);
   const { give, record, out } = await reviewRounds(f);
-  await give('changes_requested', 'c1');
+  await give(verdict, 'c1');
   const receipt = structuredClone(f.doc().operations[record().verdictOpId]);
   const earlier = structuredClone(record().verdict);
   const sent = [];
@@ -1841,10 +1842,10 @@ for (const toolName of ['requestReviewTool', 'spawnWorkerTool']) test(`${toolNam
   assert.deepEqual(f.doc().operations[receipt.id], receipt);
 });
 
-for (const invalid of ['archived', 'other-bead', 'builder', 'same-commit', 'missing-commit', 'unsettled']) test(`retained review refuses ${invalid} without opening a round`, async () => {
+for (const verdict of ['changes_requested', 'approved']) for (const invalid of ['archived', 'other-bead', 'builder', 'same-commit', 'missing-commit', 'unsettled']) test(`retained review after ${verdict} refuses ${invalid} without opening a round`, async () => {
   const f = fixture(1); reviewFixture(f); await dispatchFixture(f);
   const { give, record, out } = await reviewRounds(f);
-  await give('changes_requested', 'c1');
+  await give(verdict, 'c1');
   let sid = out.session_id;
   if (invalid === 'archived') f.board.get(sid).archived = true;
   if (invalid === 'other-bead') f.doc().bindings.cell.find(b => b.sessionId === sid).beadId = 'b';
@@ -1852,7 +1853,7 @@ for (const invalid of ['archived', 'other-bead', 'builder', 'same-commit', 'miss
   if (invalid === 'unsettled') f.doc().operations[record().verdictOpId].state = 'uncertain';
   f.host.sessions.spawn = async () => { assert.fail('invalid retained review must not spawn'); };
   await assert.rejects(reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'Check fix', reviewer_session_id: sid, ...(invalid === 'missing-commit' ? {} : { commit: invalid === 'same-commit' ? 'c1' : 'c2' }) }), /archived|bound reviewer|worked on|new commit|requires.*commit|unsettled/i);
-  assert.equal(record().state, 'changes_requested');
+  assert.equal(record().state, verdict);
   assert.equal(record().history, undefined);
 });
 
