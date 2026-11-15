@@ -98,3 +98,38 @@ test('a low cap on the real global front records both missing-point limits and f
   assert.match(chosen.selection.reason, /builder provider or Terra/);
   assert.match(chosen.selection.warning, /tier is not guaranteed/);
 });
+
+test('modern hosts compute each eligible front before tier selection, including resolved Terra aliases', async () => {
+  const catalog = structuredClone(agents);
+  catalog[1].models.push({ value: 'auto-terra', resolved: 'gpt-6-terra' });
+  catalog.push({ id: 'offline', available: false, models: [] });
+  const calls = [];
+  const host = { version: '1.94.0', agents: { front: async options => {
+    calls.push(options);
+    return { read: front.read, front: [{ ...front.front[1], usd: 0.5 }] };
+  } } };
+  const result = await readReviewerFront(host, { agents: catalog, builderAgent: 'claude' });
+  assert.deepEqual(calls, [{ agents: ['codex'], excludeModels: ['auto-terra'] }]);
+  const chosen = chooseReviewer(automatic({ maxUsd: 1 }), 'claude', catalog, result);
+  assert.equal(chosen.selection.pick.usd, 0.5);
+  assert.equal(chosen.selection.scope, 'eligible-front');
+  assert.equal(chosen.selection.limitation, undefined);
+});
+
+test('older hosts keep unrestricted front reads and the documented post-filter limitation', async () => {
+  const calls = [];
+  const host = { version: '1.93.0', agents: { front: async (...args) => { calls.push(args); return front; } } };
+  const result = await readReviewerFront(host, { agents, builderAgent: 'claude' });
+  assert.deepEqual(calls, [[]]);
+  assert.equal(chooseReviewer(automatic({}), 'claude', agents, result).selection.scope, 'global-front');
+});
+
+test('modern preview reads separate eligible fronts for installed builders', async () => {
+  const calls = [];
+  const host = { version: '2.0.0', agents: { front: async options => { calls.push(options); return front; } } };
+  const result = await readReviewerFront(host, { agents });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(c => c.agents), [['codex'], ['claude']]);
+  assert.ok(result.byBuilder.claude);
+  assert.ok(result.byBuilder.codex);
+});

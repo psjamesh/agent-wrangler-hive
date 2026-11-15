@@ -2055,7 +2055,10 @@ test('full coordinator override can launch while no pinned reviewer is installed
 test('automatic review resolves the current host front at launch and persists its selection', async () => {
   const f = holderFixture('codex'); await launchRecording(f);
   let reads = 0;
-  f.host.agents.front = async () => {
+  f.host.version = '1.94.0';
+  f.host.agents.front = async options => {
+    assert.deepEqual(options.agents, ['claude']);
+    assert.ok(Array.isArray(options.excludeModels));
     reads++;
     return { read: '2026-11-01', front: [{ agent: 'claude', model: 'opus', effort: 'high', usd: 2, quality: 80, minutes: 4 }] };
   };

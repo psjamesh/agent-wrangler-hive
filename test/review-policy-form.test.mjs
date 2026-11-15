@@ -1,4 +1,4 @@
-import { frontPick, reviewerSlot, FRONT_LIMITATION, TIER_FALLBACK_WARNING } from '../public/reviewer-front.js';
+import { frontForBuilder, frontPick, reviewerSlot, FRONT_LIMITATION, TIER_FALLBACK_WARNING } from '../public/reviewer-front.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -14,7 +14,7 @@ const agents = [
 ];
 function fixture(policy) {
   const source = fs.readFileSync(new URL('../public/review-policy.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace(/export /g, '');
-  const draw = vm.runInNewContext(source + '\nreviewPolicyForm', { h, frontPick, reviewerSlot, FRONT_LIMITATION, TIER_FALLBACK_WARNING });
+  const draw = vm.runInNewContext(source + '\nreviewPolicyForm', { h, frontForBuilder, frontPick, reviewerSlot, FRONT_LIMITATION, TIER_FALLBACK_WARNING });
   const forms = new Map(), sent = [];
   const ctx = { hive: { agents }, ui: { form: key => forms.get(key), setForm: (key, value) => forms.set(key, value), patchForm: (key, value) => forms.set(key, { ...forms.get(key), ...value }) }, send: (msg, options) => sent.push({ msg, options }) };
   const cell = { id: 'one', reviewPolicy: policy || { primary: { agent: 'claude', model: 'opus', effort: 'high' }, secondary: { agent: 'codex', model: 'sol', effort: 'low' } } };
@@ -91,4 +91,16 @@ test('Automatic preview shows only applicable builders and visible tier and fall
   assert.ok(nodes.some(el => el.children.includes(FRONT_LIMITATION)));
   const options = nodes.filter(el => el.tag === 'option').map(el => el.attrs.value);
   for (const tier of ['balanced', 'strongest', 'cheapest']) assert.ok(options.includes(tier));
+});
+
+test('modern Automatic preview uses the builder-specific eligible front without the legacy warning', () => {
+  const f = fixture({ primary: { mode: 'automatic', agent: 'claude', model: 'opus', effort: 'high' }, secondary: { mode: 'automatic', agent: 'codex', model: 'sol', effort: 'low' } });
+  f.ctx.hive.reviewerFront = { scope: 'eligible-front', byBuilder: {
+    claude: { front: [{ agent: 'codex', model: 'sol', effort: 'low', usd: 1, quality: 80 }] },
+    codex: { front: [{ agent: 'claude', model: 'opus', effort: 'high', usd: 2, quality: 90 }] },
+  } };
+  const text = JSON.stringify(f.render());
+  assert.match(text, /codex \/ sol \/ low/);
+  assert.match(text, /claude \/ opus \/ high/);
+  assert.doesNotMatch(text, /dominated by the builder/);
 });
