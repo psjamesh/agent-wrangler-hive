@@ -810,7 +810,7 @@ export function evidenceInput(list, by) {
     const url = text(e.url, `evidence[${i}].url`, LIMITS.url);
     if (url && !/^https?:\/\//i.test(url)) throw new HiveError(`evidence[${i}].url must be an http(s) URL.`);
     const detail = text(e.detail, `evidence[${i}].detail`, LIMITS.short) || '';
-    const kind = text(e.kind, `evidence[${i}].kind`, 40) || 'note';
+    const kind = (text(e.kind, `evidence[${i}].kind`, 40) || 'note').toLowerCase();
     const mergedHead = text(e.merged_head, `evidence[${i}].merged_head`, 40);
     if (mergedHead !== undefined && !/^[a-f0-9]{40}$/i.test(mergedHead)) throw new HiveError('merged_head must be a full 40-character commit SHA.');
     return { label, url: url || null, detail, kind, by, at: new Date().toISOString(), ...(mergedHead ? { merged_head: mergedHead.toLowerCase() } : {}) };
@@ -822,7 +822,7 @@ function requireApprovedMergeHead(rt, cellId, beadId, evidence) {
     if (!['merge', 'merged'].includes(entry.kind)) continue;
     if (!entry.url) throw new HiveError('Merge evidence requires the PR URL.');
     const url = new URL(entry.url);
-    if (url.hostname.toLowerCase() !== 'github.com' || !/^\/psjamesh\/agent-wrangler-hive\/pull\/\d+\/?$/i.test(url.pathname)) continue;
+    if (!['github.com', 'www.github.com'].includes(url.hostname.toLowerCase()) || !/^\/psjamesh\/agent-wrangler-hive\/pull\/\d+(?:\/.*)?$/i.test(url.pathname)) continue;
     const latest = Object.values(rt.metadata.read().reviews || {})
       .filter(r => r.cellId === cellId && r.workBeadId === beadId)
       .sort((a, b) => (a.updatedAt || a.createdAt || 0) - (b.updatedAt || b.createdAt || 0)).at(-1);

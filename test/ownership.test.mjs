@@ -2110,3 +2110,31 @@ for (const action of ['update', 'finish']) {
     });
   }
 }
+
+for (const action of ['update', 'finish']) {
+  for (const extra of [
+    { url: 'https://github.com/psjamesh/agent-wrangler-hive/pull/123/files' },
+    { url: 'https://github.com/psjamesh/agent-wrangler-hive/pull/123/commits' },
+    { url: 'https://github.com/psjamesh/agent-wrangler-hive/pull/123/checks' },
+    { url: 'https://www.github.com/psjamesh/agent-wrangler-hive/pull/123' },
+    { kind: 'Merge' },
+    { kind: 'MERGED' },
+  ]) {
+    test(`${action} rejects mismatched Hive merge evidence with variant ${JSON.stringify(extra)}`, async () => {
+      const f = mergeFixture();
+      const evidence = hiveMerge({ merged_head: 'b'.repeat(40), ...extra });
+      const input = { bead_id: 'a', outcome: 'done', summary: 'Delivered' };
+      await assert.rejects(action === 'update'
+        ? updateBead(f.rt, f.actor(), { ...input, add_evidence: [evidence] })
+        : finishBead(f.rt, f.actor(), { ...input, evidence: [evidence] }), /merge.*(head|review)/i);
+      assert.equal(f.live.a.metadata.hive_evidence, undefined);
+      assert.notEqual(f.live.a.status, 'closed');
+    });
+  }
+}
+
+test('merge evidence kinds are stored in lowercase for pickup handoff detection', async () => {
+  const f = mergeFixture();
+  await updateBead(f.rt, f.actor(), { bead_id: 'a', add_evidence: [hiveMerge({ kind: 'Merge' })] });
+  assert.equal(f.live.a.metadata.hive_evidence[0].kind, 'merge');
+});
