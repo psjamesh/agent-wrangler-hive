@@ -23,7 +23,7 @@ export function agentCatalogForGraph(rt, host) {
     catalogs.set(rt, state);
   }
   if (!state.pending && Date.now() - state.checkedAt >= REFRESH_MS && isCurrent(rt, host)) {
-    state.pending = Promise.all([readAgentCatalog(host).then(agents => ({ agents, agentsError: '' }), error => ({ agents: null, agentsError: error.message })), readReviewerFront(host)]).then(([catalog, reviewerFront]) => ({ ...catalog, reviewerFront })).then(value => {
+    state.pending = readAgentCatalog(host).then(agents => ({ agents, agentsError: '' }), error => ({ agents: null, agentsError: error.message })).then(async catalog => ({ ...catalog, reviewerFront: await readReviewerFront(host, { agents: catalog.agents }) })).then(value => {
       if (!isCurrent(rt, host)) return;
       const changed = JSON.stringify(value) !== JSON.stringify(state.value);
       state.value = value;

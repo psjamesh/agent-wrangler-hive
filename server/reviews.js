@@ -167,7 +167,7 @@ export async function requestReview(rt, host, actor, input) {
       let agents, catalogUnavailable;
       try { agents = await readAgentCatalog(host); }
       catch (error) { catalogUnavailable = error.message; }
-      const front = await readReviewerFront(host);
+      const front = await readReviewerFront(host, { agents, builderAgent: builderAgentOf(host, bead) });
       ensureWritable(rt);
       policy = resolveReviewPolicy(cell, builderAgentOf(host, bead), input, byHolder, agents, front);
       if (catalogUnavailable) policy.catalogUnavailable = catalogUnavailable;

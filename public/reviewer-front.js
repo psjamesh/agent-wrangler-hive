@@ -24,3 +24,7 @@ export function qualityFloor(slot) {
 
 export const FRONT_LIMITATION = 'The host returns a global model front. Settings dominated by the builder’s provider or by Terra can be missing, even when they meet this tier.';
 export const TIER_FALLBACK_WARNING = 'Using configured fallback or installed host defaults; the selected tier is not guaranteed.';
+
+export function frontForBuilder(result, builderAgent) {
+  return result?.byBuilder ? result.byBuilder[builderAgent] : result;
+}
