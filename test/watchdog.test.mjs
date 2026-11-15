@@ -47,6 +47,62 @@ test('each timed condition flags at its boundary and carries subject, reason and
   assert.deepEqual(f.flags(), []);
 });
 
+for (const outcome of ['aborted', 'error']) {
+  test(`a worker's ${outcome} turn flags immediately and receipts survive a watchdog restart`, async t => {
+    const f = fixture(t);
+    Object.assign(f.sessions.worker, { status: 'idle', managed: false, lastTurn: { outcome, at: f.now(), ...(outcome === 'error' ? { errorKind: 'provider_failure' } : {}) } });
+    const [flag] = f.flags();
+    assert.equal(flag?.kind, outcome === 'aborted' ? 'aborted_turn' : 'errored_turn');
+    assert.equal(flag.bead_id, 'work'); assert.equal(flag.session_id, 'worker');
+    assert.equal(flag.age_ms, 0); assert.match(flag.reason, new RegExp(outcome));
+    if (outcome === 'error') assert.match(flag.reason, /provider_failure/);
+    await f.watchdog.run();
+    assert.equal(f.sent.length, 1); assert.match(f.sent[0].text, new RegExp(flag.kind));
+    const restarted = createWatchdog({ runtime: f.rt, host: f.host, now: f.now });
+    f.advance(MIN); await restarted.run(); assert.equal(f.sent.length, 1);
+    f.sessions.worker.lastTurn = null; await restarted.run();
+    assert.deepEqual(f.rt.metadata.cell('cell').watchdogFlags, {});
+    f.sessions.worker.lastTurn = { outcome, at: f.now() };
+    await restarted.run(); assert.equal(f.sent.length, 2);
+  });
+}
+
+test('last-turn flags clear on later progress or worker mail and tolerate older hosts', t => {
+  const f = fixture(t); f.sessions.worker.status = 'idle';
+  assert.deepEqual(f.flags(), []);
+  for (const lastTurn of [null, { outcome: 'ok', at: f.now() }]) {
+    f.sessions.worker.lastTurn = lastTurn; assert.deepEqual(f.flags(), []);
+  }
+  f.sessions.worker.lastTurn = { outcome: 'aborted', at: f.now() };
+  assert.equal(f.flags()[0]?.kind, 'aborted_turn');
+  f.advance(1);
+  f.sessions.worker.lastActivity = f.now(); assert.deepEqual(f.flags(), []);
+  f.sessions.worker.lastActivity--;
+  f.beads.work.updatedAt = f.now(); assert.deepEqual(f.flags(), []);
+  f.beads.work.updatedAt--;
+  f.host.mail = { list: id => id === 'queen' ? [{ from: 'worker', at: f.now() }] : [] };
+  assert.deepEqual(f.flags(), []);
+});
+
+test('last-turn flags respect waits, requests, reviews, background shells and archived sessions', t => {
+  const f = fixture(t);
+  Object.assign(f.sessions.worker, { status: 'idle', lastTurn: { outcome: 'aborted', at: f.now() } });
+  for (const patch of [{ waitingFor: 'Awaiting merge' }, { status: 'blocked', resume: { reviewAt: '2099-01-01' } }, { status: 'deferred', resume: { reviewAt: '2099-01-01' } }, { status: 'closed' }, { summary: 'Implementation is done.' }]) {
+    const prior = { ...f.beads.work };
+    Object.assign(f.beads.work, patch); assert.deepEqual(f.flags(), []);
+    f.beads.work = prior;
+  }
+  for (const field of ['hasBackgroundShell', 'archived']) {
+    f.sessions.worker[field] = true; assert.deepEqual(f.flags(), []); delete f.sessions.worker[field];
+  }
+  f.rt.snapshots.graph.edges.push({ dependent: 'work', prerequisite: 'root', blocking: true });
+  assert.deepEqual(f.flags(), []); f.rt.snapshots.graph.edges = [];
+  f.rt.metadata.mutate(d => { d.requests.r = { state: 'open', cellId: 'cell', requesterSessionId: 'worker' }; });
+  assert.deepEqual(f.flags(), []);
+  f.rt.metadata.mutate(d => { d.requests.r.state = 'answered'; d.reviews.r = { state: 'in_review', cellId: 'cell', workBeadId: 'work', createdAt: f.now() }; });
+  assert.deepEqual(f.flags(), []);
+});
+
 test('idle workers, exited and errored claims flag; handoffs suppress idle only', t => {
   const f = fixture(t);
   f.sessions.worker.status = 'idle';
