@@ -12,7 +12,7 @@ export class RuntimeLifetime {
   #host = null;
 
   isCurrent(host = this.#host) {
-    return !this.#stopped && (!this.#runtime || (host === this.#host && this.#runtime.host === host && host?.stores?.hive === this.#runtime));
+    return !this.#stopped && (!this.#runtime || (host === this.#host && this.#runtime.host === host && host?.stores?.hive?.metadata?.lifetime === this));
   }
 
   assertCurrent(host = this.#host) {
