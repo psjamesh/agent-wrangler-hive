@@ -1,5 +1,5 @@
 import { h } from './dom.js';
-import { frontPick, reviewerSlot, FRONT_LIMITATION, TIER_FALLBACK_WARNING } from './reviewer-front.js';
+import { frontForBuilder, frontPick, reviewerSlot, FRONT_LIMITATION, TIER_FALLBACK_WARNING } from './reviewer-front.js';
 
 const defaults = { primary: { agent: 'claude', model: 'opus', effort: 'medium' }, secondary: { agent: 'codex', model: 'gpt-6.1-sol', effort: 'medium' } };
 const slots = [['primary', 'Primary reviewer'], ['secondary', 'Secondary reviewer']];
@@ -52,10 +52,11 @@ export function reviewPolicyForm({ ui, send, hive }, cell) {
       h('label', {}, 'Tier', h('select', { 'data-focus-key': `review-policy:${cell.id}:${slot}:tier`, disabled: draft.saving, onchange: event => ui.patchForm(key, { [slot]: { ...ui.form(key)[slot], tier: event.target.value }, saved: false }) }, ...[['balanced', 'Balanced — quality 55 or higher'], ['strongest', 'Strongest — highest quality'], ['cheapest', 'Cheapest — meet quality floor']].map(([value, label]) => h('option', { value, selected: draft[slot].tier === value }, label)))),
       ...[['minQuality', 'Minimum quality (0–100)'], ['maxUsd', 'Maximum dollars per task (optional)']].filter(([name]) => name !== 'minQuality' || draft[slot].tier !== 'strongest').map(([name, title]) => h('label', {}, title, h('input', { type: 'number', 'data-focus-key': `review-policy:${cell.id}:${slot}:${name}`, min: 0, max: name === 'minQuality' ? 100 : null, step: 'any', value: name === 'minQuality' && draft[slot].tier === 'balanced' ? 55 : draft[slot][name] ?? '', disabled: draft.saving || name === 'minQuality' && draft[slot].tier !== 'cheapest', oninput: event => ui.patchForm(key, { [slot]: { ...ui.form(key)[slot], [name]: event.target.value === '' ? (name === 'minQuality' ? 55 : undefined) : Number(event.target.value) }, saved: false }) }))),
       h('p', { class: 'hive-muted' }, 'Coding-task benchmark tiers; these are not review-specific scores. Balanced chooses the cheapest at quality 55 or higher; Strongest maximizes quality; Cheapest meets your floor. Fallbacks do not guarantee the tier.'),
-      h('p', { class: 'hive-muted' }, FRONT_LIMITATION),
+      h('p', { class: 'hive-muted' }, hive?.reviewerFront?.scope === 'eligible-front' ? 'The host computes the front over installed providers other than the builder, excluding Terra models.' : FRONT_LIMITATION),
       ...(agents.filter(a => a.available === true && reviewerSlot(draft, a.id) === slot).map(builder => {
-        const pick = frontPick(hive?.reviewerFront?.front, draft[slot], builder.id, agents);
-        return h('p', { role: 'status', class: pick ? 'hive-muted' : 'hive-error' }, `Builder ${builder.label || builder.id}: ${pick ? `${pick.agent} / ${pick.model} / ${pick.effort || 'default effort'} ($${pick.usd}, quality ${pick.quality})` : `${hive?.reviewerFront?.error || 'No eligible global-front setting.'} ${TIER_FALLBACK_WARNING}`}`);
+        const front = frontForBuilder(hive?.reviewerFront, builder.id);
+        const pick = frontPick(front?.front, draft[slot], builder.id, agents);
+        return h('p', { role: 'status', class: pick ? 'hive-muted' : 'hive-error' }, `Builder ${builder.label || builder.id}: ${pick ? `${pick.agent} / ${pick.model} / ${pick.effort || 'default effort'} ($${pick.usd}, quality ${pick.quality})` : `${front?.error || 'No eligible front setting.'} ${TIER_FALLBACK_WARNING}`}`);
       }))) : null,
     draft[slot].mode !== 'automatic' && catalogReady && fields.some(([name]) => invalid(draft[slot], name)) ? h('p', { class: 'hive-error', role: 'status' }, 'Pinned model no longer available, using Automatic host defaults at launch. The saved pin is kept.') : null, ...fields.map(([name, title]) => {
     const id = `hive-review-${cell.id}-${slot}-${name}`;

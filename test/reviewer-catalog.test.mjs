@@ -151,3 +151,15 @@ test('graph projects a refreshed front for the settings preview and caches concu
   assert.deepEqual(manifest.graph({ host: f.host }).hive.reviewerFront, front);
   assert.equal(calls, 1);
 });
+
+test('modern graph refresh computes eligible fronts from its fresh catalogue', async () => {
+  const f = fixture(), manifest = createManifest({ dir: '.' }), calls = [];
+  f.host.version = '1.94.0';
+  f.host.agents.front = async options => { calls.push(options); return { front: [] }; };
+  manifest.graph({ host: f.host });
+  await new Promise(resolve => setImmediate(resolve));
+  const result = manifest.graph({ host: f.host }).hive.reviewerFront;
+  assert.deepEqual(Object.keys(result.byBuilder), ['claude', 'codex', 'simple']);
+  assert.deepEqual(calls[0].agents, ['codex', 'simple']);
+  assert.equal(f.calls(), 1);
+});

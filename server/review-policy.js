@@ -1,4 +1,4 @@
-import { frontPick, reviewerSlot, qualityFloor, FRONT_LIMITATION, TIER_FALLBACK_WARNING } from '../public/reviewer-front.js';
+import { frontForBuilder, frontPick, reviewerSlot, qualityFloor, FRONT_LIMITATION, TIER_FALLBACK_WARNING } from '../public/reviewer-front.js';
 import { readAgentCatalog } from './agent-catalog.js';
 import { assertCurrent } from './lifetime.js';
 import { HiveError } from './ops.js';
@@ -69,14 +69,17 @@ export async function setReviewPolicy(rt, { cellId, policy }, host = rt.host) {
 }
 
 export function chooseReviewer(cell, builderAgent, agents, frontResult) {
+  frontResult = frontForBuilder(frontResult, builderAgent);
   const policy = reviewPolicy(cell);
   const pinned = policy[reviewerSlot(policy, builderAgent)];
   const pinnedConfig = config(pinned, REVIEW_POLICY_DEFAULTS.primary);
   let selection;
+  const scope = frontResult?.scope || 'global-front';
+  const limitation = scope === 'global-front' ? FRONT_LIMITATION : undefined;
   if (pinned.mode === 'automatic') {
     const pick = builderAgent && frontPick(frontResult?.front, pinned, builderAgent, agents);
-    if (pick) return { config: config(pick, pinnedConfig), sameProvider: false, ...(!builderAgent ? { unknownBuilder: true } : {}), selection: { mode: 'automatic', scope: 'global-front', limitation: FRONT_LIMITATION, reason: `${pinned.tier === 'strongest' ? 'Highest-quality' : 'Cheapest'} installed model on the host front meeting the tier and differing from the builder.`, tier: { name: pinned.tier, minQuality: qualityFloor(pinned), maxUsd: pinned.maxUsd }, pick, read: frontResult.read } };
-    selection = { mode: 'automatic', scope: 'global-front', limitation: FRONT_LIMITATION, warning: TIER_FALLBACK_WARNING, tier: { name: pinned.tier, minQuality: qualityFloor(pinned), maxUsd: pinned.maxUsd }, reason: !builderAgent ? 'Builder provider unknown; using configured policy.' : frontResult?.error || 'No eligible different-provider row meets this tier on the global host front. Settings dominated by the builder provider or Terra may be absent. Using configured fallback; tier is not guaranteed.' };
+    if (pick) return { config: config(pick, pinnedConfig), sameProvider: false, ...(!builderAgent ? { unknownBuilder: true } : {}), selection: { mode: 'automatic', scope, limitation, reason: `${pinned.tier === 'strongest' ? 'Highest-quality' : 'Cheapest'} installed model on the host front meeting the tier and differing from the builder.`, tier: { name: pinned.tier, minQuality: qualityFloor(pinned), maxUsd: pinned.maxUsd }, pick, read: frontResult.read } };
+    selection = { mode: 'automatic', scope, limitation, warning: TIER_FALLBACK_WARNING, tier: { name: pinned.tier, minQuality: qualityFloor(pinned), maxUsd: pinned.maxUsd }, reason: !builderAgent ? 'Builder provider unknown; using configured policy.' : frontResult?.error || `No eligible different-provider row meets this tier on the ${scope === 'eligible-front' ? 'eligible host front.' : 'global host front. Settings dominated by the builder provider or Terra may be absent.'} Using configured fallback; tier is not guaranteed.` };
   }
   const chosen = { ...(selection ? { selection } : {}), config: pinnedConfig, sameProvider: Boolean(builderAgent && pinned.agent === builderAgent), ...(!builderAgent ? { unknownBuilder: true } : {}) };
   if (!agents || installedReviewer(agents, pinnedConfig)) return chosen;
