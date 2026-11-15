@@ -1,6 +1,6 @@
 import { renameCell, saveCellGoal } from './cell-settings.js';
 import { setCodexApprovals } from './codex-policy.js';
-import { setPickup } from './pickup.js';
+import { setPickup, setWorkerProfile } from './pickup.js';
 import { setWatchdogSettings } from './watchdog.js';
 import { setReviewPolicy } from './review-policy.js';
 import { humanAnswer, dismissRequest, retryDelivery } from './requests.js';
@@ -277,7 +277,9 @@ const pickupH = humanHandler('hive-bead-pickup', async ({ msg, host, rt }) => {
   const cell = rt.metadata.cell(msg.cellId);
   if (!cell || !cell.enabled || cell.snapshot) throw new HumanError('Choose an enabled hive.');
   const actor = { sessionId: null, role: 'human', cell, cells: [{ cell, role: 'human' }] };
-  return setPickup(rt, host, actor, { bead_id: msg.beadId, ready: msg.ready, profile: msg.profile, rearm: msg.rearm, reason: msg.reason, expected_token: msg.expectedToken });
+  return setPickup(rt, host, actor, { bead_id: msg.beadId, ready: msg.ready, hold: msg.hold, profile: msg.profile, rearm: msg.rearm, reason: msg.reason, expected_token: msg.expectedToken });
 });
 
-export const configHandlers = [pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, renameCellH, cellGoalH, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];
+const workerProfileH = humanHandler('hive-worker-profile', ({ msg, host, rt }) => setWorkerProfile(rt, host, { cellId: str(msg.cellId, 80), profile: msg.profile }));
+
+export const configHandlers = [workerProfileH, pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, renameCellH, cellGoalH, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];

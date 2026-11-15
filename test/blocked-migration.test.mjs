@@ -26,6 +26,7 @@ for (const prerequisite of [false, true]) test(`blocked writes are refused with 
 
 test('upgrade preserves links, annotations, resume and ownership and reports migrations once across restart and queen handoff', async () => {
   const f = pickupFixture();
+  f.live.b.metadata.hive_pickup = { held: true };
   f.live.a.status = 'blocked'; f.live.b.status = 'blocked';
   f.live.a.assignee = 'aw:queen';
   f.live.a.metadata.hive_waiting_for = 'Human: approve design';

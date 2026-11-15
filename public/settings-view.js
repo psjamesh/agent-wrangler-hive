@@ -130,7 +130,7 @@ export function settingsModal(ctx, cell = null, thisHive = () => null) {
     },
   }, id[0].toUpperCase() + id.slice(1));
   const keys = ['global-capacity', 'global-bd', 'global-notifications',
-    ...(cell ? [`settings-rename:${cell.id}`, `goal:${cell.id}`, `instructions:${cell.id}`, `watchdog:${cell.id}`, `codex-approvals:${cell.id}`, `review-policy:${cell.id}`] : [])];
+    ...(cell ? [`settings-rename:${cell.id}`, `goal:${cell.id}`, `instructions:${cell.id}`, `watchdog:${cell.id}`, `codex-approvals:${cell.id}`, `review-policy:${cell.id}`, `worker-profile:${cell.id}`] : [])];
   const saving = () => keys.some(key => ui.form(key)?.saving || ui.form(key)?.pending) || ctx.bees.saving?.();
   const close = (restore = true) => {
     if (saving()) return false;

@@ -1,3 +1,4 @@
+import { workerProfileForm } from './worker-profile.js';
 import { cellTitle, cellGoalForm } from './cell-settings.js';
 import { codexApprovalsForm } from './codex-approvals.js';
 import { handoverFields, handoverError } from './handover-fields.js';
@@ -520,7 +521,7 @@ export function hiveSettings(ctx, cell, leave = () => true, section = null) {
       editable ? queenInstructions(ctx, cell) : null] : null,
     show('advanced') && editable ? advancedSettings(ctx.ui, cell.id, watchdogSummary(cell), watchdogSettingsForm(ctx, cell)) : null,
     !show('agents') || !editable ? null : codexApprovalsForm(ctx, cell),
-    !show('agents') || !editable ? null : h('p', { class: 'hive-muted' }, 'Automatic pickup starts ready-marked work whenever global work capacity is available. Each mark carries its worker profile. Maximum active workers controls concurrency; starts are limited to one per hive and two overall per minute.'),
+    !show('agents') || !editable ? null : workerProfileForm(ctx, cell),
     !show('agents') || !editable ? null : reviewPolicyForm(ctx, cell),
     !show('lifecycle') || cell.snapshot ? null : h('section', {},
       h('h4', {}, 'Lifecycle'),

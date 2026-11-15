@@ -1093,7 +1093,7 @@ export async function claimBead(rt, actor, { bead_id }, { launchId = null, valid
       const graph = exportedGraph(context);
       if (!descendantIds(graph.beads, cell.rootBeadId).has(id)) throw new HiveError(`Bead ${id} moved outside this cell.`, 'conflict');
       checkAdmission(rt, graph, id, { sessionId: actor.sessionId, launchId, ownOperationId: opId });
-      if (graph.beads[id]?.pickup?.armToken) rt.metadata.mutate(d => consumePickup(d, graph.beads[id], { source: 'claim', operationId: opId }));
+      rt.metadata.mutate(d => consumePickup(d, graph.beads[id], { source: 'claim', operationId: opId }));
     });
     phase.applied = true;
     return { already: res.already, journal: { already: res.already } };
@@ -1338,7 +1338,7 @@ export async function finishBead(rt, actor, input) {
       throw new HiveError(`Bead ${id} is claimed by ${fresh.assignee}, so only that session can finish it. Nothing was changed. Ask the holder to finish it with hive_finish_bead; if it cannot, a queen or coordinator can check with it and then release the claim with hive_release_bead (force: true and a reason) before finishing.`, 'conflict');
     }
     const normalized = normalizeIssue(fresh);
-    if (normalized.pickup?.armToken) rt.metadata.mutate(d => consumePickup(d, normalized, { source: 'finish', operationId: opId }));
+    rt.metadata.mutate(d => consumePickup(d, normalized, { source: 'finish', operationId: opId }));
     const { evidence } = normalized;
     const next = [...evidence, ...add].slice(-LIMITS.evidence);
     await rt.beads.update(id, { summary, evidence: next }, who);
