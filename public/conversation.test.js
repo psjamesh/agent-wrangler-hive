@@ -2234,11 +2234,13 @@ test('resolved message links win over repeated scroll restoration after late lay
   restoreScroll(root);
   assert.equal(view.atTop('q9'), true);
   assert.equal(f.ui.linkedMessage(f.cell.id, thr).pending, false);
+  assert.match(out.list.children.find(item => item.dataset?.id === 'q9').attributes.class, /is-link-target/);
   t.mock.timers.tick(2500);
   assert.equal(f.ui.linkedMessage(f.cell.id, thr).highlight, false);
   shift += 100;
   restoreScroll(root);
   assert.equal(view.atTop('q9'), true, 'alignment outlives the temporary highlight');
+  assert.doesNotMatch(f.draw().list.children.find(item => item.dataset?.id === 'q9').attributes.class, /is-link-target/);
 });
 
 for (const kind of ['request', 'unread']) for (const inbox of ['cell', 'global']) {
