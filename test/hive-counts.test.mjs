@@ -210,6 +210,10 @@ test('queen attention joins Needs you with a session link and clears on resume',
     const local = renderConversation({ ...context, cell: projected }).list;
     for (const list of [global, local]) {
       assert.equal(list.textContent.includes('Queen needs attention'), needs);
+      if (needs) {
+        const row = list.querySelectorAll('.hive-inbox-item').find(item => item.textContent.includes('Queen needs attention'));
+        assert.equal(row.querySelector('.hive-topic-time'), null);
+      }
       const links = list.querySelectorAll('a').filter(a => a.getAttribute('href') === `#session=${sessionId}`);
       assert.equal(links.some(a => a.textContent === 'Open session'), needs);
     }

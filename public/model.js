@@ -35,7 +35,7 @@ export function statusDot(graph, sessionId) {
   if (!s) return 'gone';
   if (s.archived) return 'archived';
   if (s.status === 'working') return 'working';
-  if (['needs-input', 'needs-you'].includes(s.status)) return 'needs';
+  if (s.status === 'needs-you') return 'needs';
   if (s.exitOutput || s.status === 'exited') return 'exited';
   return 'idle';
 }

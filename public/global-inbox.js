@@ -17,7 +17,7 @@ export function needsRows(ctx, cells) {
   const rows = [];
   for (const cell of cells) {
     if (queenNeedsAttention(graph, cell)) rows.push({
-      key: `queen:${cell.id}`, cellId: cell.id, hive: cellName(graph, cell), title: 'Queen needs attention', at: 0,
+      key: `queen:${cell.id}`, cellId: cell.id, hive: cellName(graph, cell), title: 'Queen needs attention', at: 0, hideTime: true,
       preview: 'The queen is waiting for input at its terminal.', texts: ['Queen needs attention', 'The queen is waiting for input at its terminal.'], beadIds: [],
       needsCount: 1, count: 0, sessionLinks: [{ sessionId: cell.queenSessionId, label: 'Open session' }],
       link: `#session=${encodeURIComponent(cell.queenSessionId)}`,
@@ -225,7 +225,7 @@ export function inboxRow(ctx, r, { query = '', open, id = r.key, action, showCon
         h('strong', { class: 'hive-topic-title' }, query ? marked(r.title, query) : r.title),
         r.count > 1 ? h('span', { class: 'hive-unread', 'aria-label': messageCount(r.count) }, String(r.count)) : null,
         r.needsCount ? needsBadge(r.needsCount) : null,
-        h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(r.at))),
+        r.hideTime ? null : h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(r.at))),
       h('span', { class: 'hive-topic-line' },
         showContext ? h('span', { class: 'hive-chip hive-topic-context' }, r.hive) : null,
         h('span', { class: 'hive-muted hive-topic-preview' }, query ? [r.author ? `${r.author}: ` : '', marked(r.snippet || r.preview || '', query)] : [r.author, r.preview].filter(Boolean).join(': ')),
