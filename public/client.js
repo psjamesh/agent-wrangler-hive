@@ -21,7 +21,7 @@ import { renderSetup, setupNeeded } from './setup.js';
 import { renderHive, disposeHiveView, menuRenderStart, menuRenderEnd, disposeMenuWatch } from './hive-view.js';
 import { reducedMotion } from './hex-grid.js';
 import {
-  createBees, beeLevelOf, beeSlider, BEE_LEVEL_SETTING, BEES_SETTING,
+  createBees, beeLevelOf, beeSlider, createBeeBehaviourPreference, BEE_LEVEL_SETTING, BEES_SETTING,
 } from './bees.js';
 
 const SEND_TIMEOUT_MS = 30000;
@@ -757,7 +757,7 @@ function signature(hive, graph) {
     .map((s) => `${s.sessionId}:${s.status}:${s.waitingReason || ''}:${s.exitOutput ? 'x' : ''}:${s.archived ? 'a' : ''}:${s.name || s.label || ''}`)
     .join('|');
   const names = (graph?.tasks?.tasks || []).map((t) => `${t.id}:${t.name}`).join('|');
-  return [hive.revision, hive.metaEpoch, hive.metaVersion, hive.backend.state, hive.backend.checkedAt, hive.metadataError || '', sessions, waitingGraphKey(graph), Object.values(hive.cells).some(c => c.pullRequests?.length || c.queenResponse?.pendingSince) ? Math.floor(Date.now() / 60000) : '', names, state.uiVersion, state.pending.size, state.placements.length, beeLevel(), JSON.stringify(hive.capacity), JSON.stringify([hive.agents, hive.agentsError]), capacityLimit(state.api), state.api?.settings?.()?.requestNotifications !== false].join('#');
+  return [hive.revision, hive.metaEpoch, hive.metaVersion, hive.backend.state, hive.backend.checkedAt, hive.metadataError || '', sessions, waitingGraphKey(graph), Object.values(hive.cells).some(c => c.pullRequests?.length || c.queenResponse?.pendingSince) ? Math.floor(Date.now() / 60000) : '', names, state.uiVersion, state.pending.size, state.placements.length, beeLevel(), beeBehaviour.value(), JSON.stringify(hive.capacity), JSON.stringify([hive.agents, hive.agentsError]), capacityLimit(state.api), state.api?.settings?.()?.requestNotifications !== false].join('#');
 }
 
 export function captureFocus(root) {
@@ -1236,8 +1236,18 @@ function holdBees(on) {
   state.ui?.setDragging(on);
 }
 
+const beeBehaviour = createBeeBehaviourPreference({
+  settings: () => state.api?.settings?.(),
+  save: setSetting,
+  sync: () => state.bees?.sync(),
+  render: () => forceRender(),
+  onHold: holdBees,
+  onError: err => notice(`Bee behaviour was not saved: ${err?.message || err}`, { severity: 'error' }),
+});
+
 const beeControls = {
-  saving: () => beeSaving,
+  saving: () => beeSaving || beeBehaviour.saving(),
+  behaviourSlider: idKey => beeBehaviour.slider(idKey),
   slider: (idKey) => beeSlider({ value: beeLevel(), onInput: previewBees, onCommit: commitBees, onHold: holdBees, idKey }),
 };
 
@@ -1377,7 +1387,7 @@ export default {
       state.startAt.clear();
       if (state.root && !state.hiveShown) forceRender();
     });
-    state.bees = createBees({ level: beeLevel });
+    state.bees = createBees({ level: beeLevel, behaviour: beeBehaviour.value });
     registrar.api?.settings?.onChange?.(() => {
       state.bees?.sync();
       rerender();

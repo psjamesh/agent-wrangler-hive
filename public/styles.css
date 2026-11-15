@@ -1453,6 +1453,18 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.25));
 }
 
+.hive-bee-trail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px;
+  border-radius: 50%;
+  background: #c18b32;
+  will-change: transform;
+}
+
 .hive-bee svg { display: block; overflow: visible; }
 .hive-bee-body { fill: #f2b53a; stroke: #2a1d0c; stroke-width: 1.2; }
 .hive-bee-stripe { fill: #1f160a; }
