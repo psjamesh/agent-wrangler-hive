@@ -225,13 +225,13 @@ test('sections keep every setting reachable and Advanced collapsed across redraw
   details.open = true; fire(details, 'toggle'); f.draw();
   details = walk(f.dialog()).find(el => el.tagName === 'details');
   assert.equal(details.getAttribute('open'), '');
-  assert.equal(walk(details).filter(el => el.getAttribute('type') === 'number').length, 10);
+  assert.equal(walk(details).filter(el => el.getAttribute('type') === 'number').length, 11);
   f.key('watchdog:c:workerMinutes').value = '19'; fire(f.key('watchdog:c:workerMinutes'), 'input'); f.draw();
   f.button('Reset to defaults').click(); f.draw();
   assert.equal(f.key('watchdog:c:workerMinutes').value, 30);
   const form = walk(f.dialog()).find(el => el.getAttribute('class') === 'hive-form hive-watchdog');
   fire(form, 'submit');
-  assert.deepEqual(Object.values(f.sent.at(-1).msg.settings), [30, 30, 60, 30, 24, 7, 30, 30, 5, 10]);
+  assert.deepEqual(Object.values(f.sent.at(-1).msg.settings), [30, 30, 60, 30, 24, 7, 30, 30, 5, 30, 10]);
   f.sent.at(-1).options.onReply({ ok: true });
   details = walk(f.dialog()).find(el => el.tagName === 'details');
   details.open = false; fire(details, 'toggle'); f.draw();

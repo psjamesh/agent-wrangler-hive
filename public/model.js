@@ -24,10 +24,23 @@ export function sessionsInTask(graph, taskId) {
   return (graph?.sessions || []).filter((s) => assignments[s.sessionId] === taskId && !s.archived);
 }
 
-export function queenNeedsAttention(graph, cell) {
+const stamp = value => typeof value === 'number' && Number.isFinite(value) ? value : Date.parse(value) || 0;
+
+export function queenNotResponding(graph, cell, now = Date.now()) {
   if (!cell.enabled || cell.snapshot || cell.retired) return false;
   const queen = sessionNode(graph, cell.queenSessionId);
-  return Boolean(queen && !queen.archived && ['needs-input', 'needs-you'].includes(queen.status));
+  if (!queen || queen.archived || !cell.queenResponse?.pendingSince) return false;
+  const saved = cell.watchdogSettings?.queenResponseMinutes;
+  const minutes = Number.isFinite(saved) && saved > 0 ? saved : 30;
+  const since = Math.max(cell.queenResponse.pendingSince, cell.queenResponse.lastActivity || 0,
+    stamp(queen.lastActivity), stamp(queen.createdAt), stamp(queen.relaunchedAt));
+  return now - since >= minutes * 60000;
+}
+
+export function queenNeedsAttention(graph, cell, now = Date.now()) {
+  if (!cell.enabled || cell.snapshot || cell.retired) return false;
+  const queen = sessionNode(graph, cell.queenSessionId);
+  return Boolean(queen && !queen.archived && (['needs-input', 'needs-you'].includes(queen.status) || queenNotResponding(graph, cell, now)));
 }
 
 export function statusDot(graph, sessionId) {
