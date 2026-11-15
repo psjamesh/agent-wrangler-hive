@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import client, { createUi, restoreScroll, captureFocus, restoreFocus, resolveLink } from './client.js';
+import { capturePanelState, restorePanelState } from './panel-state.js';
+import client, { createUi, captureScroll, restoreScroll, captureFocus, restoreFocus, resolveLink } from './client.js';
 import { parseHiveLink } from './deep-links.js';
 import { requestCard, requestList } from './requests.js';
 import { cellPanels } from './cell-view.js';
@@ -8,7 +9,7 @@ import { renderConversation, earliestWaiting, startTarget } from './conversation
 
 class Element {
   constructor(tag) { this.tagName = tag; this.children = []; this.attributes = {}; this.events = {}; this.dataset = {}; this.style = {}; this.classList = { add() {}, remove() {} }; this.value = ''; }
-  setAttribute(key, value) { this.attributes[key] = value; if (key === 'checked') this.checked = true; if (key === 'data-focus-key') this.dataset.focusKey = value; }
+  setAttribute(key, value) { this.attributes[key] = value; if (key === 'checked') this.checked = true; if (key === 'data-focus-key') this.dataset.focusKey = value; if (key === 'data-pane') this.dataset.pane = value; }
   getAttribute(key) { return this.attributes[key] ?? null; }
   isEqualNode(other) {
     if (!(other instanceof Element) || this.tagName !== other.tagName || this.children.length !== other.children.length) return false;
@@ -27,7 +28,7 @@ class Element {
   append(...nodes) { for (const node of nodes) { if (node instanceof Element) { node.parentElement?.removeChild(node); node.parentElement = this; } this.children.push(node); } }
   replaceChildren(...nodes) { for (const child of [...this.children]) this.removeChild(child); this.append(...nodes); }
   insertBefore(node, before) { if (node === before) return; if (node instanceof Element) { node.parentElement?.removeChild(node); node.parentElement = this; } const i = this.children.indexOf(before); this.children.splice(i < 0 ? this.children.length : i, 0, node); }
-  querySelectorAll(selector) { return descendants(this).slice(1).filter((el) => selector.startsWith('.') ? (el.attributes.class || '').split(' ').includes(selector.slice(1)) : el.tagName === selector); }
+  querySelectorAll(selector) { return descendants(this).slice(1).filter((el) => selector === 'button,input,select,textarea,summary,a[href]' ? ['button', 'input', 'select', 'textarea', 'summary'].includes(el.tagName) : selector === '[data-pane][data-scroll-key]' ? el.dataset.pane !== undefined && el.dataset.scrollKey !== undefined : selector.startsWith('.') ? (el.attributes.class || '').split(' ').includes(selector.slice(1)) : el.tagName === selector); }
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   contains(node) { return descendants(this).includes(node); }
   get textContent() { return this.children.map((el) => el instanceof Element ? el.textContent : el).join(''); }
@@ -2332,4 +2333,110 @@ test('approval cards show the pinned revision and changed version without adding
   card = draw({ ...r, subjectPin: { kind: 'document', path: 'docs/design.md', revision: 'revision-7' } });
   assert.match(card.textContent, /docs\/design.md/);
   assert.equal(card.querySelector('a'), null);
+});
+
+test('Details replacement captures scroll before removal and restores disclosure state per bead', t => {
+  const f = fixture(t);
+  Object.assign(f.hive, { cells: { [f.cell.id]: f.cell }, operations: [], launches: [], edges: [] });
+  f.hive.beads[f.cell.rootBeadId] = { id: f.cell.rootBeadId, title: 'Root', status: 'open' };
+  f.cell.bindings = [];
+  let selected = 'hive-one';
+  f.ui.selectedBeadId = () => selected;
+  f.ui.beadDetail = () => ({});
+  const style = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({ overflowY: 'visible' });
+  t.after(() => { globalThis.getComputedStyle = style; });
+  const captured = [];
+  const ctx = { hive: f.hive, graph: { sessions: [] }, ui: f.ui, api: {}, notices: [], busy: () => false, send() {}, notice() {}, beforeReplace: el => { captured.push([el, el.scrollTop]); captureScroll({ querySelectorAll: () => [el] }); } };
+  const memory = new Map();
+  let dock;
+  const draw = () => {
+    if (dock) capturePanelState(dock, memory);
+    dock = cellPanels(ctx, f.cell).dock;
+    restorePanelState(dock, memory);
+    const details = dock.querySelector('.hive-details');
+    Object.assign(details, { clientWidth: 300, scrollTop: 0, getBoundingClientRect: () => ({ top: 0, bottom: 500 }) });
+    restoreScroll({ querySelectorAll: () => [details] });
+    return details;
+  };
+  const first = draw();
+  first.scrollTop = 240;
+  first.querySelector('details').open = true;
+  const next = draw();
+  assert.ok(captured.some(([el, top]) => el === first && top === 240));
+  assert.equal(next.scrollTop, 240);
+  assert.equal(next.querySelector('details').open, true);
+  selected = 'hive-two';
+  const other = draw();
+  assert.equal(other.scrollTop, 0);
+  assert.ok(!other.querySelector('details').open);
+  selected = 'hive-one';
+  const restored = draw();
+  assert.equal(restored.scrollTop, 240);
+  assert.equal(restored.querySelector('details').open, true);
+  restored.querySelector('details').open = false;
+  assert.equal(draw().querySelector('details').open, false);
+});
+
+for (const pane of ['details', 'conversation']) test(`${pane} restores text selection and unkeyed control focus keys after replacement`, t => {
+  fixture(t);
+  const originalGetSelection = globalThis.getSelection;
+  t.after(() => { globalThis.getSelection = originalGetSelection; });
+  const root = new Element('div');
+  const build = key => {
+    const panel = new Element('section');
+    Object.assign(panel.dataset, { pane, scrollKey: key });
+    const text = new Element('p'); text.textContent = 'Stable selected text';
+    const summary = new Element('summary'); summary.textContent = 'Expand';
+    panel.append(text, summary);
+    return panel;
+  };
+  const first = build('one'); root.append(first);
+  const selection = { isCollapsed: false, anchorNode: first.children[0], focusNode: first.children[0], anchorOffset: 0, focusOffset: 1,
+    setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset) { Object.assign(this, { anchorNode, anchorOffset, focusNode, focusOffset }); } };
+  globalThis.getSelection = () => selection;
+  const memory = new Map();
+  const range = capturePanelState(root, memory);
+  const next = build('one'); root.replaceChildren(next);
+  restorePanelState(root, memory, range);
+  assert.equal(selection.anchorNode, next.children[0]);
+  assert.equal(selection.focusOffset, 1);
+  assert.equal(first.children[1].dataset.focusKey, next.children[1].dataset.focusKey);
+  assert.ok(next.children[1].dataset.focusKey);
+  const shifted = build('one');
+  const prefix = new Element('p'); prefix.textContent = 'New live status';
+  shifted.insertBefore(prefix, shifted.firstChild);
+  root.replaceChildren(shifted);
+  restorePanelState(root, memory, range);
+  assert.equal(selection.anchorNode, shifted.children[1], 'inserted status must not clear unchanged selected text');
+  const other = build('two'); root.replaceChildren(other);
+  restorePanelState(root, memory, range);
+  assert.equal(selection.anchorNode, shifted.children[1], 'a different bead or topic must not inherit selection');
+});
+
+for (const kind of ['focus', 'selection']) test(`retained ${kind} stays on its message when identical controls arrive above it`, t => {
+  fixture(t);
+  const original = { getSelection: globalThis.getSelection, CSS: globalThis.CSS };
+  t.after(() => Object.assign(globalThis, original));
+  globalThis.CSS = { escape: x => x };
+  const root = new Element('div'), panel = new Element('section');
+  Object.assign(panel.dataset, { pane: 'conversation', scrollKey: 'retained' });
+  root.append(panel);
+  const row = () => { const el = new Element('button'); el.textContent = 'Reply'; return el; };
+  panel.append(row(), row());
+  const retained = panel.children[1];
+  retained.focus();
+  const selection = { isCollapsed: false, anchorNode: retained, focusNode: retained, anchorOffset: 0, focusOffset: 1,
+    setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset) { Object.assign(this, { anchorNode, anchorOffset, focusNode, focusOffset }); } };
+  globalThis.getSelection = () => selection;
+  const memory = new Map();
+  const range = capturePanelState(root, memory), focus = captureFocus(root);
+  panel.removeChild(panel.firstChild);
+  panel.insertBefore(row(), retained);
+  panel.insertBefore(row(), retained);
+  restorePanelState(root, memory, range);
+  root.querySelector = selector => descendants(root).find(el => selector === `[data-focus-key="${el.dataset.focusKey}"]`) || null;
+  restoreFocus(root, focus);
+  if (kind === 'focus') assert.equal(document.activeElement, retained);
+  else assert.equal(selection.anchorNode, retained);
 });

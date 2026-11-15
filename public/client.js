@@ -1,3 +1,4 @@
+import { capturePanelState, restorePanelState } from './panel-state.js';
 import { queenNeedsAttention } from './model.js';
 import { createWatchdogNotifications } from './watchdog-notifications.js';
 import { createDrafts, DRAFT_PREFIX, DRAFT_TEXT_MAX } from './ui-drafts.js';
@@ -764,12 +765,14 @@ export function captureFocus(root) {
   const a = document.activeElement;
   if (!a || !root.contains(a)) return null;
   return {
+    element: a,
     tileId: a.dataset?.tileId || null,
     focusKey: a.dataset?.focusKey || null,
     focusFallback: a.dataset?.focusFallback || null,
     focusFinal: a.dataset?.focusFinal || null,
     start: typeof a.selectionStart === 'number' ? a.selectionStart : null,
     end: typeof a.selectionEnd === 'number' ? a.selectionEnd : null,
+    direction: a.selectionDirection,
   };
 }
 
@@ -777,6 +780,7 @@ export function restoreFocus(root, f) {
   const next = state.focusNext;
   state.focusNext = null;
   if (!f) return;
+  if (f.element && f.element === document.activeElement && root.contains(f.element) && !f.element.disabled && !f.element.closest?.('.hive-map-menu')?.hidden) return;
   let el = null;
   if (f.focusKey) el = root.querySelector(`[data-focus-key="${CSS.escape(f.focusKey)}"]`);
   else if (f.tileId) el = root.querySelector(`[data-tile-id="${CSS.escape(f.tileId)}"]`);
@@ -790,7 +794,7 @@ export function restoreFocus(root, f) {
   state.restoringFocus = true;
   try { el.focus({ preventScroll: true }); } finally { state.restoringFocus = false; }
   if (f.start !== null && typeof el.setSelectionRange === 'function') {
-    try { el.setSelectionRange(f.start, f.end); } catch { }
+    try { el.setSelectionRange(f.start, f.end, f.direction); } catch { }
   }
 }
 
@@ -806,7 +810,7 @@ function persistView() {
   if (typeof hash === 'string') saveScrollState(hash, state.scrollMemo, state.follow);
 }
 
-function captureScroll(root) {
+export function captureScroll(root) {
   for (const el of [...(root.matches?.('[data-scroll-key]') ? [root] : []), ...root.querySelectorAll('[data-scroll-key]')]) {
     if (el.clientWidth > 0 && !el.hivePending) {
       state.scrollMemo.set(el.dataset.scrollKey, { left: el.scrollLeft, top: el.scrollTop, anchor: anchorOf(el) });
@@ -1103,6 +1107,7 @@ export function rerender() {
   if (sig === state.lastSig) return;
   state.lastSig = sig;
   menuRenderStart();
+  const selection = capturePanelState(root, state.panelState ||= new Map());
   const focus = captureFocus(root);
   const ctx = { hive, graph: state.graph, api: state.api, send, busy, notice, ui: state.ui, uiVersion: state.uiVersion, beforeReplace: captureScroll, bees: beeControls };
   let out;
@@ -1132,6 +1137,7 @@ export function rerender() {
   } else if (l.slot.firstChild) {
     clear(l.slot);
   }
+  restorePanelState(root, state.panelState, selection);
   restoreScroll(root);
   for (const el of root.querySelectorAll('.hive-canvas')) if (!el.hiveMounted) { el.hiveMounted = true; el.hiveViewMounted?.(); }
   restoreFocus(root, focus);
