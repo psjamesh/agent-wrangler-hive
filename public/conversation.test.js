@@ -53,6 +53,12 @@ function fixture(t, saved = {}) {
   return { ui, cell, hive, sent, replies, relationRequests, ctx, draw, send, storage, view };
 }
 
+function openInboxRow(f, row = f.draw().list.querySelector('.hive-topic-btn')) {
+  const target = parseHiveLink(row.attributes.href);
+  if (!target) { row.fire('click'); return; }
+  f.ui.openDeepLink({ ...target, thread: f.cell.threads.find(t => t.id === target.threadId), messages: f.cell.messages, more: false, anchorN: Math.max(...f.cell.messages.map(m => m.n || 0)) + 1 }, f.hive.metaEpoch);
+}
+
 test('new topics carry the selected bead as the selection and draft text change', (t) => {
   const f = fixture(t);
   let out = f.draw();
@@ -242,7 +248,7 @@ function topicFixture(t, waiting, saved = { 'read:cell_test': { baseline: 0, thr
   f.cell.threads = [{ id: thr, title: 'Topic', beadId: null, beads: [], count: 4, retained: 4, lastAt: 40, windowFrom: 'm1' }];
   f.cell.messages = [m('m1', 10), { id: 'h1', author: 'human', text: 'mine', at: 20, threadId: thr, n: 20 }, m('m2', 30), m('m3', 40)];
   f.ui.setAllTopics(f.cell.id, true);
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  openInboxRow(f);
   return f;
 }
 
@@ -285,11 +291,13 @@ for (const inbox of [false, true]) test(`opening from ${inbox ? 'Inbox' : 'Topic
     f.cell.inbox = { human: { count: 2, ids: ['m2', 'm3'], rev: 1 }, queen: { count: 0, ids: [], rev: 1 } };
     f.ui.setInboxView(f.cell.id, 'human');
   }
-  const open = f.ui.openThreadFor;
+  const method = inbox ? 'openDeepLink' : 'openThreadFor';
+  const open = f.ui[method];
   let navigated;
-  f.ui.openThreadFor = (...args) => { open.apply(f.ui, args); navigated = f.draw(); };
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
-  assert.equal(navigated.list.dataset.startAt, 'm2');
+  f.ui[method] = (...args) => { open.apply(f.ui, args); navigated = f.draw(); };
+  openInboxRow(f);
+  if (inbox) assert.equal(f.ui.linkedMessage(f.cell.id, thr).messageId, 'm2');
+  else assert.equal(navigated.list.dataset.startAt, 'm2');
 });
 
 test('a topic-only deep link opens at its first waiting message', t => {
@@ -312,7 +320,7 @@ for (const inbox of [false, true]) test(`an unprojected ${inbox ? 'queen Inbox' 
   } else f.ui.addOlderTopics(f.cell.id, f.hive.metaEpoch, [topic], false, null);
   const open = f.ui.openThreadFor;
   f.ui.openThreadFor = (...args) => { const token = open.apply(f.ui, args); laidOut(t, f.draw()); return token; };
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  openInboxRow(f);
   assert.equal(f.sent.filter(x => x.type === 'hive-thread-history').length, 1);
   f.replies.at(-1).onReply({ ok: true, messages: range(1, 4), more: false, anchorN: 5 });
   assert.equal(f.draw().list.querySelectorAll('.hive-message').length, 4);
@@ -347,7 +355,7 @@ test('R5: a message undone elsewhere is where the topic opens, whatever this bro
   const f = topicFixture(t, [], { 'read:cell_test': { baseline: 0, threads: { [thr]: 40 } } });
   f.ui.closeThread(f.cell.id);
   f.cell.messages[0] = { ...f.cell.messages[0], ack: { required: true, state: null, rev: 2 } };
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  openInboxRow(f);
   assert.equal(f.draw().list.dataset.startAt, 'm1');
 });
 
@@ -360,7 +368,7 @@ test('R5: undo here lowers where the topic next opens', (t) => {
   const f = topicFixture(t, ['m3']);
   f.ui.closeThread(f.cell.id);
   f.ui.noteAck(f.cell.id, 'm1', { required: true, state: null, rev: 2 });
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  openInboxRow(f);
   assert.equal(f.draw().list.dataset.startAt, 'm1');
 });
 
@@ -434,8 +442,8 @@ test('V2: a topic\'s row counts and shows the whole topic as the server does, no
 test('opening a topic\'s Inbox row starts at its earliest waiting message', (t) => {
   const f = busyInbox(t);
   f.ui.setInboxView(f.cell.id, 'human');
-  f.draw().list.children.find((li) => li.dataset?.id === 'm3').querySelector('.hive-topic-btn').fire('click');
-  assert.equal(f.draw().list.dataset.startAt, 'm1');
+  openInboxRow(f, f.draw().list.children.find((li) => li.dataset?.id === 'm3').querySelector('.hive-topic-btn'));
+  assert.equal(f.ui.linkedMessage(f.cell.id, thr).messageId, 'm1');
 });
 
 test('reacting to a message advances the topic read mark to it and shows the earlier ones read', (t) => {
@@ -458,7 +466,7 @@ test('a topic with waiting messages in a gap before its window loads that gap be
   f.cell.threads = [{ id: thr, title: 'Topic', beadId: null, beads: [], count: 100, retained: 100, lastAt: 100, windowFrom: 'q61', waitingFrom: WAITING_51 }];
   f.cell.messages = [...range(1, 50), ...range(61, 100)];
   f.ui.setAllTopics(f.cell.id, true);
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  openInboxRow(f);
   assert.equal('startAt' in f.draw().list.dataset, false);
   const asks = f.sent.filter((x) => x.type === 'hive-thread-history');
   assert.equal(asks.length, 1);
@@ -476,7 +484,7 @@ test('R8: when the server still names a message settled here, the gap after it l
   f.cell.messages = [...range(1, 50).map(stale), ...range(61, 100)];
   for (let n = 1; n <= 50; n++) f.ui.noteAck(f.cell.id, `q${n}`, { required: true, state: READ, rev: 1 });
   f.ui.setAllTopics(f.cell.id, true);
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  openInboxRow(f);
   assert.equal('startAt' in f.draw().list.dataset, false);
   const asks = f.sent.filter((x) => x.type === 'hive-thread-history');
   assert.equal(asks.length, 1);
@@ -492,7 +500,7 @@ function staleHistory(t, waitingFrom, before = () => {}) {
   f.cell.messages = range(61, 100);
   f.ui.addHistory(f.cell.id, thr, 'test', { messages: range(1, 60), more: false, anchorN: 61 }, null);
   f.ui.setAllTopics(f.cell.id, true);
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  openInboxRow(f);
   return f;
 }
 
@@ -538,7 +546,7 @@ function gapTopic(t) {
   f.cell.threads = [{ id: thr, title: 'Topic', beadId: null, beads: [], count: 100, retained: 100, lastAt: 100, windowFrom: 'q61', waitingFrom: WAITING_51 }];
   f.cell.messages = [...range(1, 50), ...range(61, 100)];
   f.ui.setAllTopics(f.cell.id, true);
-  f.open = () => { f.draw().list.querySelector('.hive-topic-btn').fire('click'); return f.draw(); };
+  f.open = () => { openInboxRow(f); return f.draw(); };
   f.ask = () => f.replies[f.sent.findLastIndex((x) => x.type === 'hive-thread-history')];
   f.mark = () => f.ui.readMarks(f.cell.id).threads[thr];
   return f;
@@ -837,13 +845,14 @@ test('a reload restore of a topic waiting on the human reads and settles nothing
   f.ui.setInboxView(f.cell.id, 'human');
   const shown = () => descendants(f.draw().list).filter((el) => el.dataset.id).map((el) => el.dataset.id);
   assert.deepEqual(shown(), ['m2']);
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  openInboxRow(f);
   descendants(f.draw().list).find((el) => el.attributes['data-focus-key'] === 'ack:m2:approve').fire('click');
   f.replies.at(-1).onReply({ ok: true, ack: { required: true, state: { kind: 'reaction', reaction: 'approve' }, rev: 1 }, marked: [{ messageId: 'm1', ack: { required: true, state: READ, rev: 1 } }], inboxRev: 2 });
   descendants(f.draw().list).find((el) => el.attributes['data-focus-key'] === 'ack:m2:approve').fire('click');
   assert.deepEqual(f.sent.at(-1), { type: 'hive-ack-undo', cellId: f.cell.id, messageId: 'm2', rev: 1 });
   f.replies.at(-1).onReply({ ok: true, ack: { required: true, state: null, rev: 2 }, inboxRev: 3 });
   f.ui.closeThread(f.cell.id);
+  f.ui.setInboxView(f.cell.id, 'human');
   assert.deepEqual(shown(), ['m2']);
   assert.equal(f.ui.inboxView(f.cell.id), 'human');
 });
@@ -1149,7 +1158,7 @@ test('Inbox rows have no reaction controls; threads keep exactly Read, Yes and N
   assert.equal(out.list.querySelector('.hive-ack'), null);
   assert.equal(out.toast, null);
   assert.equal(f.sent.length, 0);
-  out.list.querySelector('.hive-topic-btn').fire('click');
+  openInboxRow(f, out.list.querySelector('.hive-topic-btn'));
   out = f.draw();
   const controls = descendants(out.list);
   assert.ok(controls.find(el => el.attributes['data-focus-key'] === 'ack:m2:seen'));
@@ -1183,12 +1192,13 @@ test('messages without controls omit the footer in disabled and snapshot hives',
 
 test('Inbox follows server membership after a thread acknowledgement and Undo', t => {
   const f = inboxFixture(t);
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  openInboxRow(f);
   descendants(f.draw().list).find(el => el.attributes['data-focus-key'] === 'ack:m2:approve').fire('click');
   f.replies.at(-1).onReply({ ok: true, ack: { required: true, state: { kind: 'reaction', reaction: 'approve' }, rev: 1 }, marked: [{ messageId: 'm1', ack: { required: true, state: READ, rev: 1 } }] });
   descendants(f.draw().list).find(el => el.attributes['data-focus-key'] === 'ack:m2:approve').fire('click');
   f.replies.at(-1).onReply({ ok: true, ack: { required: true, state: null, rev: 2 } });
   f.ui.closeThread(f.cell.id);
+  f.ui.setInboxView(f.cell.id, 'human');
   f.cell.inbox.human = { count: 0, ids: [], rev: 2 };
   assert.deepEqual(f.shown(), []);
   f.cell.inbox.human = { count: 1, ids: ['m2'], rev: 3 };
@@ -1507,7 +1517,9 @@ test('merged Inbox opens the canonical request topic and preserves its answer dr
   const f = nativeFixture(t);
   const filter = descendants(f.draw().head).find(el => el.tagName === 'button' && el.textContent.startsWith('Inbox'));
   assert.ok(filter); filter.fire('click');
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  const target = parseHiveLink(f.draw().list.querySelector('.hive-topic-btn').attributes.href);
+  assert.equal(target.messageId, 'native-message');
+  f.ui.openDeepLink({ ...target, thread: f.cell.threads[0], messages: f.cell.messages, more: false, anchorN: 2 }, f.hive.metaEpoch);
   let out = f.draw();
   assert.match(out.list.textContent, /Keep compatibility/);
   const text = out.list.querySelector('textarea');
@@ -2173,4 +2185,119 @@ test('filtered history keeps its bridge when no message after the gap matches', 
   bridge.fire('click');
   assert.equal(f.sent.at(-1).type, 'hive-thread-history');
   assert.equal(f.sent.at(-1).before, 'm1');
+});
+
+test('per-cell request cards link to their exact message instead of opening the topic at its default position', t => {
+  const f = fixture(t);
+  const thread = { id: thr, title: 'Decision', beads: [], retained: 1, count: 1 };
+  const r = { id: 'request-open', cellId: f.cell.id, threadId: thr, messageId: 'request-message', audience: 'human', state: 'open', title: 'Choose', body: 'Choose one', createdAt: 1 };
+  f.cell.threads = [thread];
+  f.cell.requests = { [r.id]: r };
+  f.cell.inbox = { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } };
+  f.ui.setInboxView(f.cell.id, 'human');
+  const row = f.draw().list.querySelector('.hive-topic-btn');
+  assert.deepEqual(parseHiveLink(row.attributes.href), { cellId: f.cell.id, threadId: thr, messageId: r.messageId });
+});
+
+test('resolved message links win over repeated scroll restoration after late layout', t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = fixture(t);
+  const thread = { id: thr, title: 'Decision', beads: [], retained: 10, count: 10 };
+  const messages = range(1, 10);
+  f.cell.threads = [thread];
+  f.cell.messages = messages;
+  f.ui.openDeepLink({ cellId: f.cell.id, thread, messageId: 'q9', messages, more: false, anchorN: 11 }, f.hive.metaEpoch);
+  const out = f.draw();
+  const view = laidOut(t, out);
+  let space = '', shift = 0;
+  out.list.style.getPropertyValue = () => space;
+  out.list.style.setProperty = (_k, value) => { space = value; };
+  Object.defineProperty(out.list, 'scrollHeight', { get: () => out.list.children.length * 100 + shift + (parseFloat(space) || 0) });
+  out.list.children.forEach((item, i) => {
+    item.getBoundingClientRect = () => ({ top: i * 100 + shift - view.top(), bottom: (i + 1) * 100 + shift - view.top(), width: 300 });
+  });
+  const root = { clientWidth: 800, querySelectorAll: selector => selector === '.hive-message' ? out.list.children.filter(item => item.dataset?.id) : [out.list] };
+  restoreScroll(root);
+  assert.equal(view.atTop('q9'), true);
+  shift = 150;
+  out.list.hiveRebuilt = true;
+  restoreScroll(root);
+  assert.equal(view.atTop('q9'), true);
+  assert.equal(f.ui.linkedMessage(f.cell.id, thr).pending, false);
+  t.mock.timers.tick(2500);
+  assert.equal(f.ui.linkedMessage(f.cell.id, thr).highlight, false);
+  shift += 100;
+  restoreScroll(root);
+  assert.equal(view.atTop('q9'), true, 'alignment outlives the temporary highlight');
+});
+
+for (const kind of ['request', 'unread']) for (const inbox of ['cell', 'global']) {
+  test(`${inbox} inbox opens a ${kind} at its exact message and keeps it aligned after restoration`, async t => {
+    const f = fixture(t);
+    const messages = range(1, 10);
+    const target = messages[8];
+    const thread = { id: thr, title: 'Inbox topic', beads: [], retained: 10, count: 10 };
+    f.cell.threads = [thread];
+    f.cell.messages = messages;
+    if (kind === 'request') {
+      target.requestId = 'request-inbox';
+      f.cell.requests = { 'request-inbox': { id: 'request-inbox', cellId: f.cell.id, threadId: thr, messageId: target.id, audience: 'human', state: 'open', title: 'Choose', body: 'Choose one', createdAt: 1 } };
+    } else target.ack = { required: true, state: null, rev: 0 };
+    f.cell.inbox = { human: { ids: kind === 'unread' ? [target.id] : [], count: kind === 'unread' ? 1 : 0 }, queen: { ids: [], count: 0 } };
+    f.ui.setInboxView(f.cell.id, 'human');
+    let list;
+    if (inbox === 'cell') list = f.draw().list;
+    else {
+      const { globalInbox } = await import('./global-inbox.js');
+      f.ui.setGlobalInboxView('human');
+      list = globalInbox({ hive: f.hive, graph: { sessions: [] }, ui: f.ui, ...f.ctx }, [f.cell]);
+    }
+    const href = list.querySelector('.hive-topic-btn').attributes.href;
+    const link = parseHiveLink(href);
+    if (link) {
+      assert.deepEqual(link, { cellId: f.cell.id, threadId: thr, messageId: target.id });
+      f.ui.openDeepLink({ ...link, thread, messages, more: false, anchorN: 11 }, f.hive.metaEpoch);
+    } else list.querySelector('.hive-topic-btn').fire('click');
+    const out = f.draw(), view = laidOut(t, out);
+    let space = '', shift = 0;
+    out.list.style.getPropertyValue = () => space;
+    out.list.style.setProperty = (_k, value) => { space = value; };
+    Object.defineProperty(out.list, 'scrollHeight', { get: () => out.list.children.length * 100 + shift + (parseFloat(space) || 0) });
+    out.list.children.forEach((item, i) => {
+      item.getBoundingClientRect = () => ({ top: i * 100 + shift - view.top(), bottom: (i + 1) * 100 + shift - view.top(), width: 300 });
+    });
+    const root = { clientWidth: 800, querySelectorAll: selector => selector === '.hive-message' ? out.list.children.filter(item => item.dataset?.id) : [out.list] };
+    restoreScroll(root);
+    assert.equal(view.atTop(target.id), true);
+    shift = 180;
+    out.list.hiveRebuilt = true;
+    restoreScroll(root);
+    assert.equal(view.atTop(target.id), true);
+  });
+}
+
+test('following after a released reveal removes trailing space and shows the newest message', t => {
+  const f = fixture(t);
+  const messages = range(1, 10), thread = { id: thr, title: 'Topic', retained: 10, count: 10 };
+  f.cell.threads = [thread];
+  f.cell.messages = messages;
+  f.ui.openDeepLink({ cellId: f.cell.id, thread, messageId: 'q9', messages, more: false, anchorN: 11 }, f.hive.metaEpoch);
+  const out = f.draw(), view = laidOut(t, out);
+  let space = '';
+  out.list.style.getPropertyValue = () => space;
+  out.list.style.setProperty = (_k, value) => { space = value; };
+  Object.defineProperty(out.list, 'scrollHeight', { get: () => out.list.children.length * 100 + (parseFloat(space) || 0) });
+  out.list.children.forEach((item, i) => {
+    item.getBoundingClientRect = () => ({ top: i * 100 - view.top(), bottom: (i + 1) * 100 - view.top(), width: 300 });
+  });
+  const events = {};
+  const root = { clientWidth: 800, querySelectorAll: selector => selector === '.hive-message' ? out.list.children.filter(item => item.dataset?.id) : [out.list], addEventListener(type, fn) { events[type] = fn; }, removeEventListener(type) { delete events[type]; } };
+  restoreScroll(root);
+  assert.notEqual(space, '');
+  events.pointerdown({ type: 'pointerdown' });
+  f.ui.followMessages(`${f.cell.id}:${thr}`);
+  out.list.hiveRebuilt = true;
+  restoreScroll(root);
+  assert.equal(space, '');
+  assert.equal(out.list.lastChild.getBoundingClientRect().bottom, 250);
 });
