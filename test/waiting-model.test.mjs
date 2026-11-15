@@ -36,7 +36,7 @@ test('native human requests join the unified waits with exact bead and topic att
   assert.ok(items.some(x => x.id === 'agent:s'));
   assert.equal(items.length, 3);
   f.cell.enabled = false;
-  assert.deepEqual(model.cellWaitingItems(f, f.cell), []);
+  assert.deepEqual(model.cellWaitingItems(f, f.cell).map(item => item.id), ['request:human', 'request:unbound']);
 });
 test('native human routing and answer repair follow the existing Needs you predicate', () => {
   const f = fixture();

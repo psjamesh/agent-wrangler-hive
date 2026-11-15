@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderHexMap } from '../public/hex-grid.js';
 import { renderHive } from '../public/hive-view.js';
-import { globalInbox } from '../public/global-inbox.js';
+import { needsRows, globalInbox } from '../public/global-inbox.js';
 import { renderConversation } from '../public/conversation.js';
 import client, { createUi } from '../public/client.js';
 import { projectForGraph } from '../server/projection.js';
@@ -337,4 +337,40 @@ test('tile and header share counts for blocked work, requests, worker input and 
   check(1);
   cell.requests = {};
   check(0);
+});
+
+
+test('Off hive request needs agree in tile, header and global Inbox without live waits', t => {
+  const f = fixture(t);
+  f.cell.enabled = false;
+  f.doc.requests = { r: { id: 'r', cellId: f.cell.id, audience: 'human', state: 'open', title: 'Still owed' } };
+  f.graph.tasks = { assignments: { worker: f.cell.taskId } };
+  f.graph.sessions.push({ sessionId: 'worker', status: 'needs-you' });
+  const tile = f.draw();
+  const cell = f.hive.cells[f.cell.id];
+  const ctx = { ui: f.ui, hive: f.hive, graph: f.graph, api: {}, notices: [], busy: () => false, send() {}, notice() {} };
+  const header = renderHive({ ...ctx, ui: { ...f.ui, cellId: () => cell.id } }).top.querySelector('.hive-cellhead');
+  assert.equal(counter(tile, 'needs')?.querySelector('text')?.textContent, '1');
+  assert.equal(header.querySelector('[data-focus-key="waiting-header"]').textContent, '1 need you');
+  assert.equal(needsRows(ctx, [cell]).reduce((n, row) => n + row.needsCount, 0), 1);
+});
+
+test('captured hive request totals agree in tile and header without live actions', t => {
+  const f = fixture(t);
+  f.draw();
+  const hive = structuredClone(f.hive);
+  const cell = hive.cells[f.cell.id];
+  cell.snapshot = {};
+  cell.requests = { r: { id: 'r', audience: 'human', state: 'open', title: 'Captured request' } };
+  cell.requestCounts = { human: 1 };
+  f.graph.tasks = { assignments: { worker: f.cell.taskId } };
+  f.graph.sessions.push({ sessionId: 'worker', status: 'needs-you' });
+  const ctx = { ui: f.ui, hive, graph: f.graph, api: {}, notices: [], busy: () => false, send() {}, notice() {} };
+  const tile = renderHive(ctx).top.querySelector('[data-tile-id="cell_test"]');
+  const header = renderHive({ ...ctx, ui: { ...f.ui, cellId: () => cell.id } }).top.querySelector('.hive-cellhead');
+  assert.equal(counter(tile, 'needs')?.querySelector('text')?.textContent, '1');
+  const needs = header.querySelector('.hive-waiting');
+  assert.equal(needs.textContent, '1 need you');
+  assert.equal(needs.tagName, 'span');
+  assert.equal(needs.getAttribute('aria-haspopup'), null);
 });
