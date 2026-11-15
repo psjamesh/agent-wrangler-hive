@@ -100,6 +100,7 @@ export function beadTile(ctx, bead, tile, kids) {
   const agentText = agents ? agents.text : 'No agent attached';
   const groupId = layout.parentHead[bead.id];
   const groupName = groupId && groupId !== bead.id ? hive.beads[groupId]?.title : (isHead && bead.parentId && bead.parentId !== layout.rootId ? hive.beads[bead.parentId]?.title : null);
+  const externalWait = waits.some(id => hive.beads[id]?.kind === 'external');
   const designWait = waits.some(id => ['decision', 'investigation'].includes(hive.beads[id]?.kind));
   let badge = designWait ? 'Waiting on design' : undefined;
   const parentLabel = isHead && bead.parentId !== layout.rootId ? groupName : null;
@@ -133,9 +134,10 @@ export function beadTile(ctx, bead, tile, kids) {
   const prs = prSummary((cell?.pullRequests || []).filter(pr => pr.beadIds.some(id => prIds.has(id))));
   const marks = [];
   if (kind) marks.push({ kind, focus: kind === 'waiting' && Boolean(waitReason), count: waiting.length, onMark: waiting.length ? anchor => openWaitingMenu(ctx, waiting, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true }) : null, title: [attention || markWords(kind, bead), kind === 'waiting' && waitReason ? `Waiting for: ${waitReason}` : ''].filter(Boolean).join('. ') });
+  if (kind === 'waiting' && externalWait) marks.push({ kind: 'external', title: 'Waiting on something outside this hive' });
   if (status === 'in_review' && !kind?.startsWith('review-')) marks.push({ kind: bead.reviewWorking ? 'review-working' : 'review-pending', title: markWords(bead.reviewWorking ? 'review-working' : 'review-pending', bead) });
   if (waitReason && kind !== 'waiting') marks.push({ kind: 'recorded-wait', title: `Waiting for: ${waitReason}` });
-  const detail = `${waitReason ? `Waiting for: ${waitReason}. ` : ''}${attachmentText ? `${attachmentText} ` : ''}Work: ${isHead ? `${countText}; ` : ''}${own}. ${agentText}.${waitReasons.length ? ` Waiting: ${waitReasons.join('; ')}.` : ''}`;
+  const detail = `${externalWait ? 'Waiting on something outside this hive. ' : ''}${waitReason ? `Waiting for: ${waitReason}. ` : ''}${attachmentText ? `${attachmentText} ` : ''}Work: ${isHead ? `${countText}; ` : ''}${own}. ${agentText}.${waitReasons.length ? ` Waiting: ${waitReasons.join('; ')}.` : ''}`;
   return {
     id: bead.id,
     cellId: tile.cellId,
@@ -207,9 +209,13 @@ export function legend(snapshot = false) {
       class: 'hive-legend-item hive-legend-marks',
       title: snapshot
         ? 'One mark per item, from its recorded work status. Captured sessions describe the capture, not now, so this hive never shows an agent working or waiting for input; their states are in each tooltip.'
-        : 'One person icon for every human wait: agent input, a Hive decision or action request or a PR explicitly waiting on you. Unread messages stay in Topics and Inbox. Several waits get a count badge. Worker-handled failing checks stay quiet. One mark per item, most urgent first. Waiting for input means an attached agent is asking someone something; the cross means the work itself waits on a prerequisite. Plain magnifier badges show review: green while the reviewer works, blue while pending. The prerequisite cross is grey; amber marks untracked work. A green outlined triangle means ready for automatic pickup. A chain-link glyph marks an external prerequisite. Review marks remain visible alongside them. A recorded wait uses an hourglass unless the primary mark is a waiting cross; then its reason is included in the cross tooltip. The outlined progress arc means in-progress work with an idle live owner. Items with no mark have no activity or recorded wait. Each tooltip names every agent and its state.',
+        : 'One person icon for every human wait: agent input, a Hive decision or action request or a PR explicitly waiting on you. Unread messages stay in Topics and Inbox. Several waits get a count badge. Worker-handled failing checks stay quiet. One mark per item, most urgent first. Waiting for input means an attached agent is asking someone something; the cross means the work itself waits on a prerequisite. Plain magnifier badges show review: green while the reviewer works, blue while pending. The prerequisite cross is grey; amber marks untracked work. A green outlined triangle means ready for automatic pickup. A chain-link glyph marks an external prerequisite; a cross beside a chain-link means waiting on something outside this hive. Review marks remain visible alongside them. A recorded wait uses an hourglass unless the primary mark is a waiting cross; then its reason is included in the cross tooltip. The outlined progress arc means in-progress work with an idle live owner. Items with no mark have no activity or recorded wait. Each tooltip names every agent and its state.',
     }, [...(snapshot ? [] : [['person', 'waiting for you (count when several)'], ['busy', 'agent working'], ['review-working', 'in review: reviewer working'], ['review-pending', 'in review: review pending'], ['in-progress', 'in progress; agent idle']]), ['approved', MARK_WORDS.approved], ['pickup', 'ready for automatic pickup'], ['external', 'external: outside this hive (teammate PR, release, vendor)'], ['recorded-wait', 'recorded wait (cross carries reason when waiting)'], ['untracked', 'untracked work'], ['waiting', 'waiting on prerequisites'], ['deferred', 'deferred'], ['done', 'done'], ['closed', 'closed otherwise']].map(([k, label]) => h('span', { class: 'hive-legend-st' },
-      h('svg:svg', { viewBox: '-8 -8 16 16', width: '14', height: '14', 'aria-hidden': 'true' }, primaryMark(k, label)), label))),
+      h('svg:svg', { viewBox: '-8 -8 16 16', width: '14', height: '14', 'aria-hidden': 'true' }, primaryMark(k, label)), label)),
+      h('span', { class: 'hive-legend-st' },
+        h('svg:svg', { viewBox: '-8 -8 36 16', width: '32', height: '14', 'aria-hidden': 'true' },
+          primaryMark('waiting', 'Waiting on a prerequisite'), primaryMark('external', 'External prerequisite', 20)),
+        'waiting on something outside this hive')),
     h('span', { class: 'hive-legend-item hive-legend-note' }, 'No mark: no activity or recorded wait'),
     swatch('is-done', 'Closed work'),
     swatch('is-group', 'Workstream'),

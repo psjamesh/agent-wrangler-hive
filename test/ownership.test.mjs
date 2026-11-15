@@ -1328,7 +1328,7 @@ for (const state of ['pending', 'uncertain', 'partial']) test(`${state} claim re
   await claimBead(f.rt, f.actor(), { bead_id: 'b' });
 });
 
-test('external tile has a labelled hexagonal chain link, dashed rim and normal status priority', () => {
+test('external tile has a labelled circular chain link, dashed rim and normal status priority', () => {
   const external = { id: 'outside', title: 'Vendor approval', kind: 'external', status: 'open' };
   assert.equal(primaryKind(external, [], []), 'external');
   assert.equal(markWords('external', external), 'External prerequisite');
@@ -1342,9 +1342,9 @@ test('external tile has a labelled hexagonal chain link, dashed rim and normal s
   assert.match(css, /\.hive-kind-external \.hive-hex-rim\s*\{[^}]*stroke-dasharray:/);
   const source = fs.readFileSync(new URL('../public/hex-grid.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replaceAll('export ', '');
   const mark = vm.runInNewContext(`${source}\nprimaryMark('external', 'External')`, { h: (tag, attrs, ...children) => ({ tag, attrs, children }), document: undefined });
-  assert.equal(mark.children[1].tag, 'svg:path');
+  assert.equal(mark.children[1].tag, 'svg:circle');
   assert.equal(mark.children[1].attrs.class, 'hive-pm-bg');
-  assert.match(mark.children[1].attrs.d, /^M.*Z$/);
+  assert.equal(mark.children[1].attrs.r, '7.5');
   assert.match(fs.readFileSync(new URL('../public/cell-view.js', import.meta.url), 'utf8'), /swatch\('is-external', 'External'\)/);
 });
 
