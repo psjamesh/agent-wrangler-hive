@@ -48,11 +48,11 @@ Archived Hive workers are refused at startup, including `restore_session` and sc
 
 ## Finish or hand off
 
-- Closure releases dependents for automatic pickup: **closed means delivered**. When your work ships through a PR the queen merges, keep the bead open (`in_progress`, with review approval recorded separately) until the PR is merged and any required install is verified. Opening a PR or passing review is not delivery. Report the PR, reviewed commit, tests and remaining merge/install steps; add evidence with kind `merge-wait` or `install-wait` for the delivery handoff, record `waiting_for` as "Awaiting queen merge/install of PR …" and release your claim with `hive_release_bead(status: "open")` when handing that delivery to the queen, so the queen can claim and finish it after delivery. Do not close early to report your implementation finished.
+- Closure releases dependents for automatic pickup: **closed means delivered**. For Hive-repository PRs, the builder retains its claim, merges under the exact-head rules below, and closes the bead once install is verified or explicitly delegated to the configured core auto-update. Record that delegation and its remaining operational obligation; do not claim a running revision without verification. Opening a PR or passing review is not delivery. For other repositories, follow their assigned delivery contract; a queen delivery handoff records `merge-wait` or `install-wait`, the remaining steps and `waiting_for`, then releases the claim with `hive_release_bead(status: "open")`.
 - When the acceptance, including required delivery, is met, call `hive_finish_bead` with `outcome: "done"`, a summary of what was achieved and the evidence.
 - If the work should stop, use `dropped`, `superseded` or `duplicate` and say why.
 - If you can't finish, leave the summary and next action accurate and release your claim with `hive_release_bead` and a reason, so someone else can pick it up. Stopping without finishing leaves the bead open; it never counts as done.
-- Only the session holding a claimed bead can finish it. If you hold it, finish it yourself, except for the queen-merged PR delivery handoff above; release that claim to `open` and let the queen claim it after delivery. If someone else holds it, ask them, or ask the queen to coordinate. Don't try to close it.
+- Only the session holding a claimed bead can finish it. If you hold it, finish it yourself, except for an explicitly assigned queen delivery handoff; release that claim to `open` and let the queen claim it after delivery. If someone else holds it, ask them, or ask the queen to coordinate. Don't try to close it.
 - If a Hive write reports an unclear or partial outcome, don't repeat it. Hive checks the store for it, and the queen settles anything still unclear.
 
 ## Review and merge
@@ -61,7 +61,11 @@ When you hold a bead's claim and want a review, launch it yourself with `hive_sp
 
 If you are a bound reviewer, give the verdict with `hive_review_verdict(bead_id, verdict, summary, commit)` (`approved` or `changes_requested`, with findings and the reviewed commit). It records evidence on that work and ends its review wait. There is no separate review bead. Changes requested return the work to its builder without changing its claim. Do not claim or finish the builder's work. Only a queen/coordinator may explicitly cancel the review. If a verdict receipt was interrupted, retry only the same verdict; Hive observes evidence to recover it and refuses replay while the write remains uncertain.
 
-Follow the review and merge instructions you have: your brief, the repository and your global skills. Hive adds no gate of its own and doesn't change those instructions.
+For `psjamesh/agent-wrangler-hive`, the **builder merges its own PR** after Hive records an `approved` review for the exact full head SHA and the required `test` check from workflow `Test` is green on that head. Read the current PR head and required-check results immediately before merging. Use `gh pr merge <url> --merge --match-head-commit <approved-head>`: a merge commit, no `--admin`, no branch-protection bypass and no deferred `--auto` merge. A changed head, including a clean rebase or mechanical version bump, needs a fresh exact-head Hive approval. Missing or unknown required checks block merging. The queen neither merges Hive PRs nor prepares version bumps for them; release version changes belong in a separately named release PR.
+
+After GitHub confirms the merge, record evidence through `hive_update_bead` (or `hive_finish_bead` at completion) with `kind: "merge"`, the PR `url`, and `merged_head` containing the full merged PR head SHA, **not** the merge commit SHA. Put the merge commit and check verification in `detail`. Hive refuses this evidence unless `merged_head` equals the latest approved review's commit on that bead. Observe GitHub's actual merged head rather than copying the expected SHA into evidence. Keep responsibility through install verification or recorded delegation to core auto-update, then finish your own bead.
+
+For other repositories, follow your brief, repository and global review/merge instructions; this Hive-repository rule grants no merge authority elsewhere.
 
 ## Coordinators
 
