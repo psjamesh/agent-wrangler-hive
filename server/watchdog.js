@@ -10,7 +10,7 @@ import { HiveError, refuseSnapshot } from './ops.js';
 import { liveClaimant, sleepingReason } from './tracking.js';
 import { GROUP_KINDS, descendantIds } from './bead-model.js';
 import { humanWaitText } from './human-wait.js';
-import { workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
+import { observedWorkerActivityIndex, workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
 
 export const WATCHDOG_DEFAULTS = Object.freeze({ workerMinutes: 30, idleMinutes: 30, reviewMinutes: 60, messageMinutes: 30, waitHours: 24, deferredDays: 7, untrackedMinutes: 30, waitGraceMinutes: 30, humanWaitMinutes: 10, pickupHeldMinutes: 5 });
 const DAY_MS = 86400000;
@@ -96,7 +96,8 @@ function watchdogIndex(rt, host = rt.host) {
     const prerequisite = rt.snapshots.graph.beads[edge.prerequisite];
     if (edge.blocking && prerequisite && prerequisite.status !== 'closed') blockers.set(edge.dependent, true);
   }
-  return { children, reviews, requesters, blockers, asked, activity: workerActivityIndex(rt, host) };
+  const observedActivity = observedWorkerActivityIndex(rt, host);
+  return { children, reviews, requesters, blockers, asked, observedActivity, activity: workerActivityIndex(rt, host, observedActivity) };
 }
 
 export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchdogIndex(rt, host)) {
@@ -187,12 +188,23 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     }
     if (!session) continue;
     const activity = workerLastActivity(session, bead, index.activity);
+    const handedOff = reviewOpen || index.requesters.get(cell.id)?.has(sid)
+      || recordsCompletion(bead, [...QUEEN_ASKED, ...WORK_DONE]);
+    const turn = session.lastTurn;
+    if (bead.status === 'in_progress' && !session.archived && !session.hasBackgroundShell && !handedOff
+      && !bead.waitingFor && !index.blockers.get(bead.id) && ['aborted', 'error'].includes(turn?.outcome)
+      && Number.isFinite(turn.at) && turn.at > 0 && turn.at <= now
+      && Math.max(updated, index.observedActivity.get(sid) || 0) <= turn.at) {
+      const reason = turn.outcome === 'aborted' ? 'Claimed worker’s last turn was aborted.'
+        : `Claimed worker’s last turn ended with an error${turn.errorKind ? ` (${turn.errorKind})` : ''}.`;
+      add(turn.outcome === 'aborted' ? 'aborted_turn' : 'errored_turn', bead.id, [sid, turn.at, turn.errorKind || ''], turn.at,
+        reason, { bead_id: bead.id, session_id: sid });
+      continue;
+    }
     if (['exited', 'error', 'errored'].includes(session.status)) {
       add('stalled_worker', bead.id, [sid, session.status], activity || now, `Claimed worker ${session.status}.`, { bead_id: bead.id, session_id: sid });
       continue;
     }
-    const handedOff = reviewOpen || index.requesters.get(cell.id)?.has(sid)
-      || recordsCompletion(bead, [...QUEEN_ASKED, ...WORK_DONE]);
     if (bead.status === 'in_progress' && !session.archived && !handedOff && !bead.waitingFor && !index.blockers.get(bead.id)
       && ['api-error', 'api-error-blocking'].includes(session.waitingReason) && session.status !== 'working') {
       add('stalled_worker', bead.id, [sid, 'api-error'], activity || now, 'Claimed worker ended its turn with an API error.', { bead_id: bead.id, session_id: sid });

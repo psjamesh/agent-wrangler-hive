@@ -8,7 +8,7 @@ export function createWatchdogNotifications(api, { read = () => [], write = () =
     for (const cell of Object.values(hive.cells || {})) {
       if (!cell.enabled || cell.snapshot) continue;
       for (const flag of Object.values(cell.watchdogFlags || {})) {
-        if (flag.kind !== 'stalled_worker') continue;
+        if (!['stalled_worker', 'aborted_turn', 'errored_turn'].includes(flag.kind)) continue;
         const episode = JSON.stringify([cell.id, flag.id, flag.episodeAt ?? flag.since]);
         current.set(episode, { cell, flag });
       }

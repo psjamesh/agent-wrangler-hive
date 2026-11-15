@@ -1,8 +1,8 @@
 const stamp = value => typeof value === 'number' && Number.isFinite(value) ? value : typeof value === 'string' ? Date.parse(value) || 0 : 0;
 
-export function workerActivityIndex(rt, host) {
+export function observedWorkerActivityIndex(rt, host) {
   const doc = rt.metadata.read();
-  const activity = new Map(Object.entries(doc.workerActivity || {}).map(([sid, at]) => [sid, stamp(at)]));
+  const activity = new Map();
   const record = (sid, at) => {
     if (sid) activity.set(sid, Math.max(activity.get(sid) || 0, stamp(at)));
   };
@@ -20,6 +20,12 @@ export function workerActivityIndex(rt, host) {
   if (host?.mail?.list) for (const sid of recipients) {
     for (const mail of host.mail.list(sid)) record(mail.from, mail.at);
   }
+  return activity;
+}
+
+export function workerActivityIndex(rt, host, observed = observedWorkerActivityIndex(rt, host)) {
+  const activity = new Map(Object.entries(rt.metadata.read().workerActivity || {}).map(([sid, at]) => [sid, stamp(at)]));
+  for (const [sid, at] of observed) activity.set(sid, Math.max(activity.get(sid) || 0, at));
   return activity;
 }
 
