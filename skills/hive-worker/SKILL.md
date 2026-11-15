@@ -9,9 +9,9 @@ A Hive cell is one Agent Wrangler task with a durable work record: a graph of *b
 
 ## Precedence inside Hive
 
-Inside a Hive cell, the hive-queen and hive-worker skills take precedence over conflicting orchestration personas, including mob-boss and mob-worker. Use `hive_spawn_worker` for tracked work and `hive_spawn_worker(role: "review")` for reviews (`hive_request_review` is its alias), rather than persona-directed `spawn_session`, `spawn_workflow`, `schedule_session` or `adversarial-pr-review`. Workers ask the queen to launch helpers; claim holders may launch reviews of their own bead.
+Inside a Hive cell, the hive-queen and hive-worker skills take precedence over conflicting orchestration personas, including mob-boss and mob-worker. Use `hive_spawn_worker` for tracked work and `hive_spawn_worker(role: "review")` for reviews (`hive_request_review` is its alias), rather than persona-directed `spawn_session`, `spawn_workflow`, `schedule_session` or `adversarial-pr-review`. Workers ask the queen to launch helpers; claim holders may launch reviews of their own bead. This precedence also applies to personas loaded through queen instructions or a brief; loading a persona does not require escalating these settled conflicts. References below to following global review and merge skills preserve their review requirements, not conflicting launch mechanisms.
 
-Follow Hive’s archive and handover rules: a closed PR alone does not authorize archiving a session. Settle its claims, reviews and remaining obligations first; archive a handover source only when the current launch requests it and the handover requirements are met. Archived workers cannot be resumed; reconcile their claim and launch a fresh worker through Hive.
+Follow Hive’s archive and handover rules: a closed PR alone does not authorize archiving a session. Archive an ordinary worker only after its bead is closed following verified delivery (including merge and required install), with no open claims, reviews or remaining obligations; archive a handover source only when the current launch requests it and the handover requirements are met. Archived workers cannot be resumed; reconcile their claim and launch a fresh worker through Hive.
 
 ## First contact
 
