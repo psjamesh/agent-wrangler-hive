@@ -12,7 +12,7 @@ Respect repository protections, required reviews and environment approvals. Neve
 
 ## Repository recipes
 
-The Hive builder-merge and auto-update recipe below requires rollout. Until its protections and worker instructions are in place, hand merge back to the queen. Until auto-update is enabled after restart verification, hand back with `install-wait` and keep the bead open until the queen verifies installation. Merge becomes the ordinary Hive boundary only after that rollout.
+Hive uses the builder-merge and core extension auto-update recipe below. Verify the prescribed protections before each merge; if they cannot be verified, hand back to the queen.
 
 | Repository | Merge authority and checks | Delivery boundary and owner |
 | --- | --- | --- |
@@ -26,7 +26,9 @@ Hive feature PRs do not bump the package version. Named releases follow [Hive re
 
 Enable core's existing extension auto-update only after a restart-survival check on a disposable instance. The installation must be unpinned, opted in, and have core's update service available in Notify or Auto mode. Capability additions and downgrade confirmation retain their consent gates. Until those prerequisites are met, record the install obligation with the queen rather than claiming auto-update is active.
 
-This path follows main's head, not an exact CI-selected SHA. It can serve updated client assets before the server restarts, and its quietness check does not drain interactive workers or in-flight writes. These are accepted limits of this delivery recipe. A successful install proves disk state; runtime verification must check the loaded SHA and active extension when acceptance requires it. Use a separate delivery-service design only if this path proves inadequate.
+Core installs Hive from main through extension auto-update after a merge. The new generation loads at the next core restart; client assets remain with the active generation until activation. Core restarts automatically once nothing is working and waits for in-flight requests and writes before restarting. Busy sessions can delay activation. If activation remains pending well after installation, the queen may trigger a core restart; the same in-flight write wait applies. Workers never hand-install Hive, and the queen does not run per-PR install scripts.
+
+This path follows main's head, not an exact CI-selected SHA, and does not drain interactive workers. These are accepted limits of this delivery recipe. A successful install proves disk state; runtime verification must check the loaded SHA and active extension when acceptance requires it. Ordinary docs-only work can close at merge with installation delegated to configured core auto-update; explicit runtime acceptance stays open until verified. Record any pending activation and its queen owner when handing off that operational obligation. Use a separate delivery-service design only if this path proves inadequate.
 
 ## How workers receive the recipe
 
@@ -40,9 +42,9 @@ A worker's `hive_request_input` goes to the queen, who must forward a required h
 
 Record PR/head, review verdict, check results, merge approval or delegation and verified merge commit on the bead. Add installed/running revision or deployment evidence only where the recipe requires it. Install reports show the running short SHA and the PRs it includes, retaining the full SHA as evidence. Finish when that boundary and the bead's other acceptance are met; opening a PR or handing it back does not establish delivery.
 
-For Hive after the builder-merge rollout, refresh the PR head and required checks before `gh pr merge <url> --merge --match-head-commit <approved-head>`. Use a merge commit. Any changed head needs fresh exact-head Hive approval, including mechanical version bumps and clean rebases. The queen does not prepare Hive version bumps or perform routine Hive merges after rollout.
+For Hive, refresh the PR head and required checks before `gh pr merge <url> --merge --match-head-commit <approved-head>`. Use a merge commit. Any changed head needs fresh exact-head Hive approval, including mechanical version bumps and clean rebases. The queen does not prepare Hive version bumps or perform routine Hive merges.
 
-Record the confirmed Hive merge through `hive_update_bead.add_evidence` or `hive_finish_bead.evidence` with `kind: "merge"`, the PR `url` and `merged_head` (the actual full merged PR head SHA, not the merge commit). Include the merge commit and check verification in `detail`. The evidence guard refuses missing or mismatched heads against the latest approved review on the bead. The builder retains its claim and closes after verified installation or explicit delegation to configured core auto-update, with the remaining obligation recorded. Hive does not perform a GitHub merge itself; the evidence guard checks the supplied head, while the builder verifies GitHub's actual merge. Until rollout is complete, use the queen merge/install handoff above.
+Record the confirmed Hive merge through `hive_update_bead.add_evidence` or `hive_finish_bead.evidence` with `kind: "merge"`, the PR `url` and `merged_head` (the actual full merged PR head SHA, not the merge commit). Include the merge commit and check verification in `detail`. The evidence guard refuses missing or mismatched heads against the latest approved review on the bead. The builder retains its claim and closes after verified installation or explicit delegation to configured core auto-update, with the remaining obligation recorded. Hive does not perform a GitHub merge itself; the evidence guard checks the supplied head, while the builder verifies GitHub's actual merge.
 
 When another owner must merge or install, record `merge-wait` or `install-wait` evidence, the owner and next action, then release the claim as open for that delivery handoff. Use existing host notices or a supported structured wait to resume. Without reliable wake-up, hand back with the pending obligation visible; never poll in terminal loops. Reconcile uncertain create, merge or install outcomes before retrying. For long release waits, use an owned external verification bead with a structured resume condition.
 
