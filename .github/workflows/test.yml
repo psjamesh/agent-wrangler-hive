@@ -53,6 +53,9 @@ jobs:
           chrome-version: stable
           install-dependencies: true
 
+      - name: Allow Chrome sandbox user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - run: npm ci
 
       - run: npm run test:browser
