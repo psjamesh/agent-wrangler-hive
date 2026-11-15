@@ -14,11 +14,12 @@ const stamp = value => typeof value === 'number' && Number.isFinite(value) ? val
 
 export function queenResponseState(doc, cell) {
   const messages = doc.conversation?.[cell.id] || [];
-  const pending = [
-    ...messages.filter(awaitingQueen).map(m => stamp(m.at)),
-    ...Object.values(doc.requests || {}).filter(r => r.cellId === cell.id && r.audience === 'queen' && r.state === 'open').map(r => stamp(r.createdAt)),
-  ].filter(at => at > 0);
-  return { pendingSince: pending.length ? Math.min(...pending) : null };
+  const human = messages.filter(awaitingQueen);
+  const requests = Object.values(doc.requests || {}).filter(r => r.cellId === cell.id && r.audience === 'queen' && r.state === 'open');
+  const pending = [...human.map(m => stamp(m.at)), ...requests.map(r => stamp(r.createdAt))].filter(at => at > 0);
+  const failed = delivery => delivery?.state === 'failed' && (delivery.sessionId === cell.queenSessionId || delivery.attempts?.at(-1)?.sessionId === cell.queenSessionId);
+  const deliveryFailed = human.some(m => failed(m.delivery)) || requests.some(r => r.queenSessionId === cell.queenSessionId && r.queenNotification?.state === 'failed');
+  return { pendingSince: pending.length ? Math.min(...pending) : null, ...(deliveryFailed ? { deliveryFailed: true } : {}) };
 }
 
 const THREAD_WINDOW = 40;

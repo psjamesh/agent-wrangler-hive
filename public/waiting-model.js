@@ -1,4 +1,4 @@
-import { cellBeadIds, sessionLabel, queenNeedsAttention, queenNotResponding } from './model.js';
+import { cellBeadIds, sessionLabel, queenNeedsAttention, queenNotResponding, queenStopped, queenSuspended } from './model.js';
 import { needsHuman } from './requests.js';
 
 export function prState(pr, now = Date.now()) {
@@ -28,11 +28,12 @@ export function cellWaitingItems(ctx, cell) {
   }
   const sessions = ctx.graph?.sessions || [];
   for (const s of sessions) {
+    const stopped = s.sessionId === cell.queenSessionId && queenStopped(ctx.graph, cell);
     const unresponsive = s.sessionId === cell.queenSessionId && queenNotResponding(ctx.graph, cell);
     const queenAttention = s.sessionId === cell.queenSessionId && queenNeedsAttention(ctx.graph, cell);
-    if (s.archived || (s.status !== 'needs-you' && !queenAttention)) continue;
+    if ((s.archived && !stopped) || (s.status !== 'needs-you' && !queenAttention)) continue;
     const beadIds = sessionBeads(ctx, cell, s.sessionId, ids);
-    if (beadIds.length) items.push({ id: `agent:${s.sessionId}`, kind: 'agent', cellId: cell.id, beadIds, sessionId: s.sessionId, title: unresponsive ? 'Queen not responding' : queenAttention ? 'Queen needs attention' : `${sessionLabel(ctx.graph, s.sessionId)} needs input`, reason: unresponsive ? 'Pending input has had no queen activity. Open the queen session to check.' : s.waitingReason || 'Open the session to answer its input request.' });
+    if (beadIds.length) items.push({ id: `agent:${s.sessionId}`, kind: 'agent', cellId: cell.id, beadIds, sessionId: s.sessionId, title: stopped && queenSuspended(ctx.graph, cell) ? 'Queen stopped or suspended' : stopped ? 'Queen stopped' : unresponsive ? 'Queen not responding' : queenAttention ? 'Queen needs attention' : `${sessionLabel(ctx.graph, s.sessionId)} needs input`, reason: stopped && queenSuspended(ctx.graph, cell) ? 'The queen may be suspended with unanswered input. Resume its session card on the board.' : stopped ? 'The queen has stopped with unanswered input. Resume or restore its session card on the board, or arrange a queen handoff.' : unresponsive ? 'Pending input has had no queen activity. Open the queen session to check.' : s.waitingReason || 'Open the session to answer its input request.' });
   }
   for (const pr of cell.pullRequests || []) {
     if (!['ready', 'stuck'].includes(prState(pr))) continue;
@@ -42,5 +43,5 @@ export function cellWaitingItems(ctx, cell) {
 }
 
 export function waitingGraphKey(graph) {
-  return JSON.stringify([graph?.tasks?.assignments || {}, (graph?.sessions || []).map(s => [s.sessionId, s.status, s.archived, s.waitingReason, s.lastActivity, s.createdAt, s.relaunchedAt])]);
+  return JSON.stringify([graph?.tasks?.assignments || {}, (graph?.sessions || []).map(s => [s.sessionId, s.status, s.archived, s.waitingReason, s.dormant, s.exitOutput, s.lastActivity, s.createdAt, s.relaunchedAt])]);
 }

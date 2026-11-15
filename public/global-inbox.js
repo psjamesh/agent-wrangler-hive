@@ -2,7 +2,7 @@ import { compareTopics } from './topic-order.js';
 import { h, relativeTime, markdown, sessionReference } from './dom.js';
 import { hiveLink } from './deep-links.js';
 import { needsHuman, requestAuthor } from './requests.js';
-import { cellName, queenNeedsAttention, queenNotResponding } from './model.js';
+import { cellName, queenNeedsAttention, queenNotResponding, queenStopped, queenSuspended, sessionNode } from './model.js';
 import { filterRows, highlightParts, searchTerms, snippetFor } from './inbox-search.js';
 import { inboxMessages, inboxMessageCount, topicTitles, topicPriorities, messageAuthor } from './conversation.js';
 
@@ -17,13 +17,15 @@ export function needsRows(ctx, cells) {
   const rows = [];
   for (const cell of cells) {
     const unresponsive = queenNotResponding(graph, cell);
-    const title = unresponsive ? 'Queen not responding' : 'Queen needs attention';
-    const preview = unresponsive ? 'Pending input has had no queen activity. Open the queen session to check.' : 'The queen is waiting for input at its terminal.';
+    const stopped = queenStopped(graph, cell);
+    const suspended = queenSuspended(graph, cell);
+    const title = suspended ? 'Queen stopped or suspended' : stopped ? 'Queen stopped' : unresponsive ? 'Queen not responding' : 'Queen needs attention';
+    const preview = suspended ? 'The queen may be suspended with unanswered input. Resume its session card on the board.' : stopped ? (sessionNode(graph, cell.queenSessionId)?.archived ? 'The queen has stopped with unanswered input. Restore its archived card on the board or arrange a queen handoff.' : 'The queen has stopped with unanswered input. Resume its session card on the board or arrange a queen handoff.') : unresponsive ? 'Pending input has had no queen activity. Open the queen session to check.' : 'The queen is waiting for input at its terminal.';
     if (queenNeedsAttention(graph, cell)) rows.push({
       key: `queen:${cell.id}`, cellId: cell.id, hive: cellName(graph, cell), title, at: 0, hideTime: true,
       preview, texts: [title, preview], beadIds: [],
-      needsCount: 1, count: 0, sessionLinks: [{ sessionId: cell.queenSessionId, label: 'Open session' }],
-      link: `#session=${encodeURIComponent(cell.queenSessionId)}`,
+      needsCount: 1, count: 0, scanSessionReferences: false, sessionLinks: sessionNode(graph, cell.queenSessionId)?.archived ? [] : [{ sessionId: cell.queenSessionId, label: 'Open session' }],
+      link: stopped && !suspended ? hiveLink(cell.id) : `#session=${encodeURIComponent(cell.queenSessionId)}`,
     });
     for (const r of Object.values(cell.requests || {})) {
       if (!needsHuman(r)) continue;
@@ -173,7 +175,7 @@ function rowSessionLinks(ctx, row) {
   const references = new Map();
   const remember = link => { if (!references.has(link.sessionId)) references.set(link.sessionId, link); };
   for (const link of row.sessionLinks || []) remember(link);
-  markdown(ctx.api, (row.texts || []).join('\n'), {
+  if (row.scanSessionReferences !== false) markdown(ctx.api, (row.texts || []).join('\n'), {
     sessions: ctx.graph?.sessions || [],
     onSessionReference: ({ sessionId, label, bare }) => remember({ sessionId, label: bare ? ctx.graph?.sessions?.find(s => s.sessionId === sessionId)?.name || 'Open session' : label }),
   });
