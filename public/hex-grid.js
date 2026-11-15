@@ -469,8 +469,6 @@ export function renderHexMap({
       if (!autoButton) return;
       saveMapView(viewKey, view);
       pausedButton.hidden = !paused;
-      pausedButton.setAttribute('aria-pressed', String(enabled));
-      autoButton.setAttribute('aria-pressed', String(enabled));
       autoButton.setAttribute('aria-checked', String(enabled));
       autoButton.setAttribute('data-paused', String(paused));
       autoButton.title = paused ? 'Resume auto-fit (0)' : enabled ? 'Turn auto-fit off' : 'Turn auto-fit on (0)';
@@ -715,7 +713,7 @@ export function renderHexMap({
     if (evt.key === 'Escape' && !focusTip.hidden) { evt.preventDefault(); hideFocusTip(); }
     else if (evt.key === '+' || evt.key === '=') { evt.preventDefault(); zoomCentre(1.25); }
     else if (evt.key === '-' || evt.key === '_') { evt.preventDefault(); zoomCentre(0.8); }
-    else if (evt.key === '0') { evt.preventDefault(); if (autoButton.getAttribute('aria-pressed') === 'false') autoFit.toggle(); else autoFit.resume(); }
+    else if (evt.key === '0') { evt.preventDefault(); if (autoButton.getAttribute('aria-checked') === 'false') autoFit.toggle(); else autoFit.resume(); }
   });
 
   autoButton = h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-auto', onclick: () => autoFit.toggle() }, 'Auto-fit');

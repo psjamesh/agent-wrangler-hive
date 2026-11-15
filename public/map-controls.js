@@ -8,9 +8,12 @@ export function mapControls({ id, zoom, options, actions, paused }) {
     actions.flat(Infinity).some(Boolean) ? h('div', { class: 'hive-control-group', role: 'group', 'aria-label': 'Map actions' }, actions) : null);
   menu.hidden = true;
   for (const item of menu.querySelectorAll('button')) {
-    const pressed = item.getAttribute('aria-pressed');
+    const pressed = item.getAttribute('aria-pressed') ?? item.getAttribute('aria-checked');
     item.setAttribute('role', pressed === null ? 'menuitem' : 'menuitemcheckbox');
-    if (pressed !== null) item.setAttribute('aria-checked', pressed);
+    if (pressed !== null) {
+      item.setAttribute('aria-checked', pressed);
+      item.removeAttribute('aria-pressed');
+    }
   }
   const items = () => [...menu.querySelectorAll('button')].filter(item => item.getAttribute('disabled') === null);
   const outside = event => { if (!tools.contains(event.target)) close(); };
@@ -53,7 +56,7 @@ export function mapControls({ id, zoom, options, actions, paused }) {
   });
   menu.addEventListener('click', event => {
     if (event.target.closest('button')) close(true);
-  });
+  }, true);
   const tools = h('div', { class: 'hive-zoom', role: 'group', 'aria-label': 'Map view' }, paused, h('div', { class: 'hive-map-menu-launcher' }, search, trigger), menu);
   tools.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || menu.hidden) return;
