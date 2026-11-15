@@ -20,7 +20,7 @@ The Hive builder-merge and auto-update recipe below requires rollout. Until its 
 | Agent Wrangler core | One human approval per PR through `hive_request_input`, identifying PR/head, review and check evidence. The queen merges after approval and repository requirements pass; upstream maintainers merge where permissions require it. Follow core's contribution instructions, currently `AW_BROWSER_TESTS=0 npm test` for local agent runs; never use bare `node --test`. | The queen fast-forwards the configured checkout, restarts the configured instance and verifies the running revision. Merge approval includes this install/restart; no separate install approval is needed. Keep the bead open until this delivery is verified. |
 | Other repositories | Follow the repository's merge authority and prescribed checks; absent a delegated recipe, request one human approval per PR and respect maintainer authority. | Merge is the default boundary. Record the verified merge and operational handoff. Deployment verification is opt-in through the recipe or bead acceptance, with a named owner and bounded procedure. |
 
-Hive feature PRs do not bump the package version. Named releases follow [Hive releases](../releases.md). Keep the public push route and commit identity in repository instructions.
+Hive feature PRs do not bump the package version. Named releases follow [Hive releases](../releases.md). Keep Hive's public push route and commit identity in its repository instructions.
 
 ### Hive auto-update prerequisites and limits
 
@@ -30,7 +30,7 @@ This path follows main's head, not an exact CI-selected SHA. It can serve update
 
 ## How workers receive the recipe
 
-Keep durable repository instructions in `AGENTS.md` (with a `CLAUDE.md` import where needed). Workers read those instructions and linked contribution guidance before testing, committing or publishing. The workstream brief template can be just ‘Use the hive-worker skill’; bead-specific briefs identify the assigned work and any additions or exceptions to the repository recipe. A hive-wide worker profile cannot substitute for repository-specific instructions.
+Keep durable repository instructions in `AGENTS.md` (with a `CLAUDE.md` import where needed). Workers read those instructions and linked contribution guidance before testing, committing or publishing. The workstream brief template can be just ‘Use the hive-worker skill’. Resolve delivery facts first from repository instructions, then from the user’s own agent instructions (such as global `CLAUDE.md` or Codex `AGENTS.md`) for personal workflow facts such as a fork push route. If neither supplies a required delivery fact, ask the queen through `hive_request_input` before pushing; do not guess. Bead-specific briefs identify the assigned work and any additions or exceptions to the repository recipe. A hive-wide worker profile cannot substitute for repository-specific instructions.
 
 For an opted-in install/deploy step, name the target, command or workflow, commit/artifact mapping, success signal, maximum wait and handoff recipient. Resolve missing configuration once through the queen. Do not infer deployment from workflow names or treat PR checks, a main build, installation and application health as interchangeable.
 
