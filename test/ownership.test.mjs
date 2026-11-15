@@ -459,7 +459,7 @@ test('only the bound reviewer can give a verdict on work; generic finish cannot 
   await reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review' });
   const args = { bead_id: 'a', verdict: 'changes_requested', summary: 'Fix the race' };
   await assert.rejects(reviews.reviewVerdict(f.rt, f.host, f.actor(), args), /reviewer/);
-  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'skip review' }), /review/);
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'skip review' }), /review/);
   await reviews.reviewVerdict(f.rt, f.host, f.actor('worker-1'), args);
   await reviews.reviewVerdict(f.rt, f.host, f.actor('worker-1'), args);
   assert.equal(f.live.a.status, 'in_progress');
@@ -570,7 +570,7 @@ test('a new round is an open review until its verdict: finish is refused and a f
   assert.equal(record().round, 2);
   assert.equal(record().history.length, 1);
   assert.notEqual(record().state, 'changes_requested');
-  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'skip' }), /review/);
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'skip' }), /review/);
   await give('approved', 'c2');
   assert.equal(record().state, 'approved');
   assert.equal(record().round, 2);
@@ -812,7 +812,7 @@ test('a concurrent review request and generic finish cannot leave closed work wi
   f.rt.beads.close = async (id) => { f.live[id].status = 'closed'; };
   const results = await Promise.allSettled([
     reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review' }),
-    finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'finished' }),
+    finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'finished' }),
   ]);
   assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
   assert(!(f.live.a.status === 'closed' && Object.values(f.doc().reviews).some((r) => ['requested', 'in_review'].includes(r.state))));
@@ -1249,7 +1249,7 @@ test('external prerequisite blocks real work until the queen closes it', async (
   const hive = { ...f.rt.snapshots.graph, cells: { cell: {} } };
   const tile = beadTile({ hive, graph: { sessions: [] } }, hive.beads.a, { cellId: 'cell', layout: { groupHeads: [], parentHead: {}, halo: {} } }, new Map());
   assert.equal(tile.mark.kind, 'waiting');
-  await finishBead(f.rt, f.actor(), { bead_id: 'outside', outcome: 'done', summary: 'Approval received' });
+  await finishBead(f.rt, f.actor(), { bead_id: 'outside', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Approval received' });
   await f.rt.snapshots.refresh();
   assert.deepEqual(waitingOn(f.rt, 'a'), []);
   assert.ok(readyBeads(f.rt, f.actor(), {}).ready.some(b => b.bead_id === 'a'));
@@ -1931,7 +1931,7 @@ test('closing work prompts its workstream until summary or next action is refres
   for (const field of ['summary', 'next_action']) {
     const f = refreshFixture(t);
     await f.rt.snapshots.refresh();
-    const out = await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Released' });
+    const out = await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Released' });
     assert.equal(out.workstream_refresh.bead_id, 'stream');
     assert.match(out.workstream_refresh.action, /summary.*next_action/);
     let context = await buildContext(f.rt, f.host, f.actor());
@@ -1952,10 +1952,10 @@ test('failed closes do not prompt and failed refreshes do not clear the prompt',
   await f.rt.snapshots.refresh();
   const close = f.rt.beads.close;
   f.rt.beads.close = async () => { throw new Error('refused'); };
-  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Finished' }));
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Finished' }));
   assert.deepEqual((await buildContext(f.rt, f.host, f.actor())).attention.workstreams_needing_refresh, []);
   f.rt.beads.close = close;
-  await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Finished' });
+  await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Finished' });
   f.rt.beads.update = async () => { throw new Error('refused'); };
   await assert.rejects(updateBead(f.rt, f.actor(), { bead_id: 'stream', summary: 'Current' }));
   assert.equal((await buildContext(f.rt, f.host, f.actor())).attention.workstreams_needing_refresh.length, 1);
@@ -1964,10 +1964,10 @@ test('failed closes do not prompt and failed refreshes do not clear the prompt',
 test('a close during a workstream refresh remains pending', async t => {
   const f = refreshFixture(t);
   await f.rt.snapshots.refresh();
-  await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Finished' });
+  await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Finished' });
   const update = f.rt.beads.update;
   f.rt.beads.update = async (id, patch, ...args) => {
-    if (id === 'stream') await finishBead(f.rt, f.actor(), { bead_id: 'b', outcome: 'done', summary: 'Also finished' });
+    if (id === 'stream') await finishBead(f.rt, f.actor(), { bead_id: 'b', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Also finished' });
     return update(id, patch, ...args);
   };
   await updateBead(f.rt, f.actor(), { bead_id: 'stream', summary: 'New summary' });
@@ -1986,12 +1986,12 @@ test('closing nested work and then its workstream prompts the nearest open works
     applied();
   };
   await f.rt.snapshots.refresh();
-  const first = await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Finished' });
+  const first = await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Finished' });
   assert.equal(first.workstream_refresh.bead_id, 'inner');
   await f.rt.snapshots.refresh();
-  await finishBead(f.rt, f.actor(), { bead_id: 'b', outcome: 'done', summary: 'Finished' });
+  await finishBead(f.rt, f.actor(), { bead_id: 'b', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Finished' });
   await f.rt.snapshots.refresh();
-  const group = await finishBead(f.rt, f.actor(), { bead_id: 'inner', outcome: 'done', summary: 'Released group' });
+  const group = await finishBead(f.rt, f.actor(), { bead_id: 'inner', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Released group' });
   assert.equal(group.workstream_refresh.bead_id, 'stream');
   const out = await buildContext(f.rt, f.host, f.actor());
   assert.deepEqual(out.attention.workstreams_needing_refresh.map(b => b.bead_id), ['stream']);
@@ -2011,7 +2011,7 @@ test('a closed workstream still prompts when writing its outcome fails', async t
   f.live.outer = raw('outer', 'root', { metadata: { hive_kind: 'workstream' } });
   f.live.stream.dependencies[0].depends_on_id = 'outer';
   await f.rt.snapshots.refresh();
-  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'stream', outcome: 'done', summary: 'Released' }));
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'stream', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Released' }));
   const out = await buildContext(f.rt, f.host, f.actor());
   assert.deepEqual(out.attention.workstreams_needing_refresh.map(b => b.bead_id), ['outer']);
 });
@@ -2185,4 +2185,106 @@ test('merge subject provenance explicitly marks a matching merged head', async (
   f.rt.metadata.mutate(d => { d.requests = { hreq_pin: { id: 'hreq_pin', cellId: 'cell', beadId: 'a', kind: 'approval', answer: { author: 'human', at: 10, subjectPin: { kind: 'pr', url, revision: mergeHead } } } }; });
   await updateBead(f.rt, f.actor(), { bead_id: 'a', add_evidence: [{ kind: 'merge', label: 'Core PR merged', url, merged_head: mergeHead }] });
   assert.equal(f.live.a.metadata.hive_evidence.at(-1).human_answer.matches_merged_head, true);
+});
+
+for (const outcome of ['dropped', 'superseded', 'duplicate']) {
+  test(`completion evidence guard leaves ${outcome} unaffected`, async () => {
+    const f = mergeFixture();
+    await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome, summary: 'Stopped' });
+    assert.equal(f.live.a.status, 'closed');
+  });
+}
+
+test('done refuses missing evidence without changing the bead', async () => {
+  const f = mergeFixture();
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered' }), /no evidence/);
+  assert.equal(f.live.a.status, 'open');
+  assert.equal(f.live.a.metadata.hive_evidence, undefined);
+});
+
+const proofPr = 'https://github.com/example/project/pull/12';
+for (const state of ['OPEN', undefined, 'MERGED', 'CLOSED']) {
+  test(`done checks PR evidence against observed state ${state}`, async () => {
+    const f = mergeFixture();
+    f.doc().prLabels = { [proofPr]: { state } };
+    f.live.a.metadata.hive_evidence = [{ kind: 'pr', label: 'Implementation', url: proofPr }];
+    const finish = () => finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered' });
+    if (['MERGED', 'CLOSED'].includes(state)) await finish();
+    else {
+      await assert.rejects(finish(), /PR\(s\).*example\/project\/pull\/12/);
+      assert.equal(f.live.a.status, 'open');
+    }
+  });
+}
+
+test('done accepts submitted merge evidence for a stored PR and non-PR evidence', async () => {
+  for (const evidence of [
+    [{ kind: 'merge', label: 'Merged', url: proofPr }],
+    [{ kind: 'test', label: 'Verified outcome' }],
+  ]) {
+    const f = mergeFixture();
+    if (evidence[0].kind === 'merge') f.live.a.metadata.hive_evidence = [{ kind: 'pr', label: 'Implementation', url: `${proofPr}/files` }];
+    await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered', evidence });
+    assert.equal(f.live.a.status, 'closed');
+  }
+});
+
+for (const role of ['queen', 'coordinator', 'worker']) {
+  test(`completion evidence override is explicit, recorded and restricted: ${role}`, async () => {
+    const f = mergeFixture();
+    const actor = f.actor();
+    actor.role = role;
+    actor.cells[0].role = role;
+    if (role === 'coordinator') f.doc().bindings.cell = [{ sessionId: 'queen', beadId: 'a', role: 'coordinator', active: true }];
+    if (role === 'worker') {
+      f.doc().cells.cell.queenSessionId = 'another-queen';
+      f.doc().bindings.cell = [{ sessionId: 'queen', beadId: 'a', role: 'worker', active: true }];
+    }
+    const input = { bead_id: 'a', outcome: 'done', summary: 'Delivered', override_reason: 'Acceptance verified externally; PR is follow-up work.' };
+    if (role === 'worker') {
+      await assert.rejects(finishBead(f.rt, actor, input), /queen|coordinator/);
+      assert.equal(f.live.a.metadata.hive_evidence, undefined);
+    } else {
+      await finishBead(f.rt, actor, input);
+      const proof = f.live.a.metadata.hive_evidence.find(e => e.kind === 'completion-override');
+      assert.equal(proof.detail, input.override_reason);
+      assert.equal(proof.by, 'aw:queen');
+    }
+  });
+}
+
+test('completion guard checks every PR and accepts core terminal observations', async () => {
+  const f = mergeFixture();
+  const second = 'https://github.com/example/project/pull/13';
+  const evidence = [{ label: 'First PR', url: proofPr }, { label: 'Second PR', url: second }, { kind: 'merge', label: 'First merged', url: proofPr }];
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered', evidence }), /pull\/13/);
+  f.host.links = { prObservation: url => url === second ? { state: 'closed' } : null };
+  await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered', evidence });
+  assert.equal(f.live.a.status, 'closed');
+});
+
+test('coordinator override can retire an unresolved PR but blank reasons cannot', async () => {
+  const f = mergeFixture();
+  f.live.a.metadata.hive_evidence = [{ label: 'PR', url: proofPr }];
+  const input = { bead_id: 'a', outcome: 'done', summary: 'Delivered' };
+  await assert.rejects(finishBead(f.rt, f.actor(), { ...input, override_reason: '  ' }), /cannot be empty/);
+  await finishBead(f.rt, f.actor(), { ...input, override_reason: 'Verified acceptance separately; remaining PR is optional.' });
+  assert.equal(f.live.a.metadata.hive_evidence.at(-1).kind, 'completion-override');
+});
+
+test('group completion also checks evidence before its fenced writes', async () => {
+  const f = mergeFixture();
+  f.live.b.dependencies[0].depends_on_id = 'a';
+  f.live.b.status = 'closed';
+  f.rt.beads.finishFenced = async (id, patch, who, check) => {
+    check({ issues: Object.values(f.live), errors: [] });
+    f.live[id].status = 'closed';
+    f.live[id].metadata.hive_evidence = patch.evidence;
+  };
+  await f.rt.snapshots.refresh();
+  const input = { bead_id: 'a', outcome: 'done', summary: 'Delivered' };
+  await assert.rejects(finishBead(f.rt, f.actor(), input), /no evidence/);
+  assert.equal(f.live.a.status, 'open');
+  await finishBead(f.rt, f.actor(), { ...input, override_reason: 'All child acceptance verified.' });
+  assert.equal(f.live.a.metadata.hive_evidence.at(-1).detail, 'All child acceptance verified.');
 });

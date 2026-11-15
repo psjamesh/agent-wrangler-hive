@@ -1339,6 +1339,26 @@ function markWorkstreamRefresh(rt, cell, bead, token) {
   return null;
 }
 
+function completionEvidence(rt, id, evidence, outcome, overrideReason) {
+  if (outcome !== 'done' || overrideReason) return;
+  if (!evidence.length) throw new HiveError(`Cannot finish ${id} as done: no evidence. Add evidence with hive_update_bead or this call's evidence, or ask a queen/coordinator to supply override_reason.`, 'refused');
+  const prKey = value => {
+    try {
+      const url = new URL(value);
+      if (!['github.com', 'www.github.com'].includes(url.hostname.toLowerCase())) return null;
+      return /^\/([^/]+\/[^/]+\/pull\/[1-9]\d*)(?:\/|$)/i.exec(url.pathname)?.[1].toLowerCase() || null;
+    } catch { return null; }
+  };
+  const merged = new Set(evidence.filter(e => ['merge', 'merged'].includes(e.kind?.toLowerCase())).map(e => prKey(e.url)).filter(Boolean));
+  const unresolved = [...new Map(evidence.map(e => [prKey(e.url), e.url]).filter(([key]) => key && !merged.has(key))).values()].filter(url => {
+    let observed;
+    try { observed = rt.host?.links?.prObservation?.(url); } catch {}
+    const state = observed?.state || rt.metadata.read().prLabels?.[url]?.state;
+    return !['MERGED', 'CLOSED'].includes(String(state).toUpperCase());
+  });
+  if (unresolved.length) throw new HiveError(`Cannot finish ${id} as done: PR(s) have no merge evidence or observed merged/closed state: ${unresolved.join(', ')}. Record merge evidence, keep the PR linked for observation, or ask a queen/coordinator to supply override_reason.`, 'refused');
+}
+
 export async function finishBead(rt, actor, input) {
   ensureWritable(rt);
   const id = beadIdArg(input.bead_id, 'bead_id');
@@ -1351,9 +1371,14 @@ export async function finishBead(rt, actor, input) {
   const summary = text(input.summary, 'summary', LIMITS.long, { required: true });
   const add = withHumanAnswerPins(rt, cell.id, id, evidenceInput(input.evidence, actorFor(actor.sessionId)));
   requireApprovedMergeHead(rt, cell.id, id, add);
+  const overrideReason = text(input.override_reason, 'override_reason', LIMITS.short, { allowEmpty: false });
+  if (overrideReason !== undefined) {
+    requireCoordinator({ role }, 'override completion evidence');
+    add.push(...evidenceInput([{ kind: 'completion-override', label: 'Completion evidence override', detail: overrideReason }], actorFor(actor.sessionId)));
+  }
   const who = actorFor(actor.sessionId);
   if (id !== cell.rootBeadId && Object.values(rt.snapshots.graph.beads).some((b) => b.parentId === id)) {
-    const out = await finishGroup(rt, { cell, id, outcome, summary, add, who });
+    const out = await finishGroup(rt, { cell, id, outcome, summary, add, who, overrideReason, checkEvidence: true });
     return { op_id: out.opId, bead_id: id, outcome, closed: true, workstream_refresh: out.workstreamRefresh || undefined };
   }
   const openChildren = Object.values(rt.snapshots.graph.beads).filter((b) => b.parentId === id && OPEN_STATUSES.includes(b.status));
@@ -1378,6 +1403,7 @@ export async function finishBead(rt, actor, input) {
     }
     requireApprovedMergeHead(rt, cell.id, id, add);
     const normalized = normalizeIssue(fresh);
+    completionEvidence(rt, id, [...normalized.evidence, ...add], outcome, overrideReason);
     rt.metadata.mutate(d => consumePickup(d, normalized, { source: 'finish', operationId: opId }));
     const { evidence } = normalized;
     const next = [...evidence, ...add].slice(-LIMITS.evidence);
@@ -1455,7 +1481,7 @@ export function assessCompletion(rt, cell, id, { beads, edges, errors = [] }, wh
 
 // Finishes a workstream heading under the fence: the checks above are made
 // against a fresh read in the same Beads job as the writes.
-export function finishGroup(rt, { cell, id, outcome, summary, add = [], who }) {
+export function finishGroup(rt, { cell, id, outcome, summary, add = [], who, overrideReason, checkEvidence = false }) {
   return withLock(`bead:${id}`, () => journaled(rt, { kind: 'finish', cellId: cell.id, actor: who, summary: `Finish ${id} as ${outcome}`, beadIds: [id], intent: { beadId: id, outcome } }, async (opId, phase) => {
     const fresh = await rt.beads.show(id);
     if (!fresh) throw new HiveError(`Bead ${id} no longer exists.`);
@@ -1465,6 +1491,7 @@ export function finishGroup(rt, { cell, id, outcome, summary, add = [], who }) {
       await rt.beads.finishFenced(id, { summary, evidence: add.length ? evidence : null, outcome, reason: `${outcome}: ${summary.split('\n')[0].slice(0, 300)}` }, who, (read) => {
         const { problems } = assessCompletion(rt, cell, id, { ...buildGraph(read.issues), errors: read.errors }, who, opId);
         if (problems.length) throw new HiveError(`${id} was not finished. ${problems.join(' ')}`, 'refused');
+        if (checkEvidence) completionEvidence(rt, id, [...normalizeIssue(read.issues.find(b => b.id === id)).evidence, ...add], outcome, overrideReason);
       }, step => {
         phase.applied = true;
         if (step === 1) {

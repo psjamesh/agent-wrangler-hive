@@ -384,12 +384,13 @@ export const bindSessionTool = hiveTool({
 
 export const finishBeadTool = hiveTool({
   name: 'hive_finish_bead',
-  description: 'Close a bead with an explicit outcome (done, dropped, superseded, duplicate), a summary of what was achieved or why it stopped, and evidence. For outcome done, close only when the whole goal of the bead is done, not after one step of several; use dropped, superseded or duplicate to retire work that will not ship. Evidence records what happened; closing a bead does not claim a review took place unless your evidence says so. Refused while anything under it is still open; a heading with work under it is also refused while it waits on an open prerequisite, another session holds it, or a Hive write about any of it is unsettled.',
+  description: 'Close a bead with an explicit outcome (done, dropped, superseded, duplicate), a summary of what was achieved or why it stopped, and evidence. Done requires evidence and refuses PR evidence without merge evidence or an observed merged/closed state. Only a queen/coordinator may bypass that evidence guard with a recorded override_reason. For outcome done, close only when the whole goal of the bead is done, not after one step of several; use dropped, superseded or duplicate to retire work that will not ship. Evidence records what happened; closing a bead does not claim a review took place unless your evidence says so. Refused while anything under it is still open; a heading with work under it is also refused while it waits on an open prerequisite, another session holds it, or a Hive write about any of it is unsettled.',
   inputSchema: {
     bead_id: beadId,
     outcome: z.enum(OUTCOMES),
     summary: z.string().min(1).max(20000),
     evidence: z.array(evidenceSchema).max(20).optional(),
+    override_reason: z.string().trim().min(1).max(2000).optional().describe('Queen/coordinator only: explicit reason to bypass the done evidence guard; recorded on the bead.'),
   },
 }, ({ rt, actor, args }) => ops.finishBead(rt, actor, args));
 

@@ -431,7 +431,7 @@ test('finishing a bead settles its CI wait immediately and reopening cannot revi
     const f = fixture();
     f.rt.metadata.mutate(d => { d.ciWaits = { a: wait(state === 'resolved' ? { state, outcome: 'failure', resolvedAt: NOW, wake: { state: 'uncertain', at: NOW } } : {}) }; });
     f.rt.beads.close = async id => { f.live[id].status = 'closed'; };
-    await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered' });
+    await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Delivered' });
     const saved = f.doc().ciWaits.a;
     assert.equal(saved.state, 'resolved');
     assert.equal(saved.outcome, state === 'pending' ? 'cancelled' : 'failure');
@@ -464,7 +464,7 @@ test('a refused close keeps its CI wait active', async () => {
   await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
   const original = structuredClone(f.doc().ciWaits.a);
   f.rt.beads.close = async () => { throw new Error('Close refused'); };
-  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered' }), /closing.*refused/i);
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Delivered' }), /closing.*refused/i);
   assert.deepEqual(f.doc().ciWaits.a, original);
 });
 
@@ -480,7 +480,7 @@ test('group closure settles its wait even if recording the outcome fails', async
     f.live[id].status = 'closed'; written(1);
     throw Object.assign(new Error('Outcome write failed'), { step: 2 });
   };
-  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered' }), /closed.*outcome/);
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', evidence: [{ label: 'Acceptance verified' }], summary: 'Delivered' }), /closed.*outcome/);
   assert.equal(f.doc().ciWaits.a.outcome, 'cancelled');
   assert.equal(f.doc().ciWaits.a.settledReason, 'Bead closed');
 });
