@@ -106,3 +106,18 @@ export function requireBeadAccess(rt, actor, beadId) {
   if (!part) throw new AccessError(`Bead ${beadId} belongs to cell ${cell.id}, which you do not take part in.`);
   return { bead, cell, role: part.role };
 }
+
+export function requireNonHelper(rt, actor, what) {
+  if (isHelper(rt, actor.sessionId, actor.cell.id)) {
+    throw new AccessError(`Helper sessions cannot ${what}. Report back to the bead's holder.`);
+  }
+}
+
+export function isHelper(rt, sessionId, cellId) {
+  const cell = rt.metadata.cell(cellId);
+  const bindings = (rt.metadata.read().bindings[cellId] || []).filter(b => b.active && b.sessionId === sessionId);
+  if (cell?.queenSessionId === sessionId || bindings.some(b => b.role === 'coordinator')) return false;
+  const session = rt.host?.sessions?.get(sessionId);
+  if (session && !session.archived && session.status !== 'exited' && Object.values(rt.snapshots.graph.beads).some(b => b.status !== 'closed' && b.assignee === `aw:${sessionId}`)) return false;
+  return bindings.some(b => b.role === 'investigator' && (b.workerLaunchId || b.helper));
+}

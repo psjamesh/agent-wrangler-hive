@@ -6,11 +6,12 @@ import { availableSessionHref } from './session-links.js';
 import { assertPickupAuthorization, assertPickupClaimed, consumePickup, catalogHold, pickupReadUnavailable, retryUnsubmittedPickup } from './pickup.js';
 import { reservePickupStart } from './launch-budget.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
+import { liveClaimant } from './tracking.js';
 import { holdsBead } from './bead-sessions.js';
 import { assertCurrent } from './lifetime.js';
 import { newId } from './metadata-store.js';
 import { actorFor, descendantIds, GROUP_KINDS } from './bead-model.js';
-import { COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller } from './access.js';
+import { requireNonHelper, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller } from './access.js';
 import { HiveError, ensureWritable, text, withLock, withLocks, claimBead, bindIfMissing } from './ops.js';
 import { applyLaunchPolicy, launchRestriction } from './launch-policy.js';
 import { ADMISSION_LOCK, capacity, checkAdmission, exportedGraph, RESERVED_LAUNCH_STATES } from './admission.js';
@@ -42,6 +43,7 @@ function launchOptions(input) {
 export function coordinator(rt, host, actor, { attach = false, beadId = null } = {}) {
   assertCurrent(rt, host);
   const fresh = resolveCaller(rt, host, actor.sessionId, actor.cell.id);
+  requireNonHelper(rt, fresh, 'launch or reconcile sessions');
   if (attach && beadId && !COORDINATING_ROLES.has(fresh.role) && holdsBead(rt, host, fresh.sessionId, beadId)) {
     ensureWritable(rt);
     return fresh;
@@ -94,6 +96,11 @@ function heldOpenBead(rt, graph, sid, launch) {
   const held = [...inCell].filter((id) => id !== cell.rootBeadId && graph.beads[id]?.assignee === mine && graph.beads[id].status !== 'closed' && !GROUP_KINDS.has(graph.beads[id].kind)).sort();
   const bound = new Set((rt.metadata.read().bindings?.[launch.cellId] || []).filter((x) => x.active && x.sessionId === sid).map((x) => x.beadId));
   return held.find((id) => bound.has(id)) || held[0] || null;
+}
+
+function requireHelperHolder(host, graph, beadId) {
+  const owner = graph.beads[beadId]?.assignee;
+  if (!owner?.startsWith('aw:') || !liveClaimant(host, owner.slice(3))) throw new HiveError('A helper requires a live claim holder on its bead.', 'refused');
 }
 
 function requireLaunchScope(actor, graph, beadId) {
@@ -188,6 +195,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
           const access = requireBeadAccess(rt, requester, target);
           if (access.cell.id !== l.cellId) throw new HiveError('The worker bead moved to another cell.');
           requireLaunchScope(requester, graph, target);
+          if (initial && l.role === 'investigator') requireHelperHolder(host, graph, target);
           checkAdmission(rt, graph, target, { sessionId: sid, launchId, review: l.role !== 'worker', revalidateCapacity: restoring });
         } catch (err) {
           if (held) throw new HiveError(`${String(err.message).replace(/\.?$/, ".")} This worker holds an open claim on ${held}; the queen should release it or hand it over.`, err.code);
@@ -253,7 +261,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
 }
 
 export async function spawnWorker(rt, host, actor, input, { reviewId = null, role = reviewId ? 'reviewer' : 'worker', pickup = null, now = Date.now } = {}) {
-  if (role === 'investigator') throw new HiveError('A helper needs its own bead: create an investigation bead and launch it with hive_spawn_worker (role work). Helpers cannot share a builder\'s bead or slot.', 'refused');
+  if (!['worker', 'reviewer', 'investigator'].includes(role)) throw new HiveError('Unknown worker launch role.');
   const opts = launchOptions(input);
   const launchId = newId('worker');
   const as = { attach: role !== 'worker', beadId: input.bead_id };
@@ -285,6 +293,7 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     const { bead, cell } = requireBeadAccess(rt, actor, input.bead_id);
     if (cell.id !== actor.cell.id || bead.id === cell.rootBeadId) throw new HiveError('Launch a worker for a bead in this cell, below its goal.');
     requireLaunchScope(actor, graph, bead.id);
+    if (role === 'investigator') requireHelperHolder(host, graph, bead.id);
     reviewForLaunch(rt, { reviewId, beadId: bead.id, cellId: cell.id });
     checkAdmission(rt, graph, bead.id, { sessionId: null, review: attach });
     const automatic = pickup ? { ...pickup, source: 'automatic', profile: structuredClone(graph.beads[bead.id].pickup.profile), briefDigest: graph.beads[bead.id].pickup.briefDigest } : {};
@@ -317,9 +326,9 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
       if (current?.state !== 'reserved' || pickup && (d.pickupAttempts?.[current.armToken]?.launchId !== launchId || d.pickupAttempts[current.armToken].retryPending)) throw new HiveError('This launch was cancelled or changed before submission.', 'conflict');
       Object.assign(current, { submittedAt: now(), startupPhase: 'submitted' });
     });
-    const baseIntent = l.reviewId ? `You are the reviewer of Hive bead ${l.beadId} in cell ${l.cellId}; its builder keeps the claim. Your reviewer binding is made before your first action. Report to session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}` : `You own Hive bead ${l.beadId} in cell ${l.cellId}. Its claim and binding are made before your first action. Use hive_context and the hive-worker skill. Report to queen/coordinator session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}`;
+    const baseIntent = l.reviewId ? `You are the reviewer of Hive bead ${l.beadId} in cell ${l.cellId}; its builder keeps the claim. Your reviewer binding is made before your first action. Report to session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}` : l.role === 'investigator' ? `You are a helper on Hive bead ${l.beadId} in cell ${l.cellId}; its builder keeps the claim. Your helper binding is made before your first action. You cannot claim beads, launch sessions or give review verdicts. Report results to session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}` : `You own Hive bead ${l.beadId} in cell ${l.cellId}. Its claim and binding are made before your first action. Use hive_context and the hive-worker skill. Report to queen/coordinator session ${l.requestedBy} by Agent Wrangler mail.\n\n${opts.intent}`;
     const delegation = 'Delegate only through Hive (hive_spawn_worker where your role allows it, or ask the queen); do not use spawn_session, spawn_workflow or schedule_session; they leave the session untracked. ';
-    const intent = `${baseIntent}\n\nUse the hive-worker skill. Start with hive_context({ scope: "bead", bead_id: "${l.beadId}", cell_id: "${l.cellId}" }) for your bounded work context.\n\nHive task: ${l.taskId}. When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Worker/reviewer requests go to this hive's queen and remain out of human views until forwarded; human step-in is not supported. Recover with hive_list_my_requests and withdraw with hive_withdraw_request when answered elsewhere. ${delegation}Launch helpers into this same resolved task; ancestry alone does not enroll them. Missing native tools require a membership check or refreshed agent terminal.`;
+    const intent = `${baseIntent}\n\nUse the hive-worker skill. Start with hive_context({ scope: "bead", bead_id: "${l.beadId}", cell_id: "${l.cellId}" }) for your bounded work context.\n\nHive task: ${l.taskId}. When the human must act in a specific session, pass its full session_id and optional session_label to hive_request_input or hive_publish for a one-click board link. For decisions or actions use Hive's input tool hive_request_input; do not also call request_human_input. Worker/reviewer/helper requests go to this hive's queen and remain out of human views until forwarded; human step-in is not supported. Recover with hive_list_my_requests and withdraw with hive_withdraw_request when answered elsewhere. ${delegation}Launch helpers into this same resolved task; ancestry alone does not enroll them. Missing native tools require a membership check or refreshed agent terminal.`;
     dispatched = true;
     assertCurrent(rt, host);
     const result = await host.sessions.spawn(applyLaunchPolicy({ ...opts, intent, parentSession: actor.sessionId, taskId: l.taskId, ext: { hive: { workerLaunchId: launchId, beadId: l.beadId, ...(l.reviewId ? { reviewId: l.reviewId } : {}) } } }));
