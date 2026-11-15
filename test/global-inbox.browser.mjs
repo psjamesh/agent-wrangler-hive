@@ -7,8 +7,15 @@ const darkTheme = '--bg:#15171b;--surface:#202329;--surface-2:#292d35;--fg:#ecee
 
 const page = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/public/styles.css"><style>*{transition:none!important;box-sizing:border-box}body{margin:0}:root{--bg:#f4f5f7;--surface-2:#f4f5f7;--surface:#ffffff;--fg:#202631;--fg-muted:#555f70;--border:#c9ced8;--hive-tile:#f2e3b3}</style></head><body><div class="hive-root" id="root" style="width:100vw;height:100vh"></div><script type="module">
 import client from '/public/client.js';
-let view;
-client.register({ api: { send: () => {}, storage: { get: k => localStorage.getItem("hive:" + k), set: (k, v) => localStorage.setItem("hive:" + k, v), remove: k => localStorage.removeItem("hive:" + k) } }, register(kind, v) { view = v; } });
+let view, receive;
+const send = frame => {
+  if (frame.type !== 'hive-deep-link') return;
+  const cell = cells[frame.cellId];
+  const thread = cell?.threads.find(t => t.id === frame.threadId);
+  const messages = cell?.messages.filter(m => m.threadId === frame.threadId) || [];
+  queueMicrotask(() => receive({ op: frame.type, requestId: frame.requestId, ok: Boolean(thread), cellId: frame.cellId, thread, messages, messageId: frame.messageId, more: false }));
+};
+client.register({ onMessage(fn) { receive = fn; }, api: { send, storage: { get: k => localStorage.getItem("hive:" + k), set: (k, v) => localStorage.setItem("hive:" + k, v), remove: k => localStorage.removeItem("hive:" + k) } }, register(kind, v) { view = v; } });
 const base = { launches: [], bindings: [], beadLayout: {}, arrangeAspect: null, workstreamColours: {}, workstreamShades: {}, archived: {}, restoreNotices: [], regionAttachments: {}, detachedWorkstreams: [], threads: [], messages: [], threadsTruncated: false, threadsAfter: null, inbox: { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } }, requestCounts: {} };
 const req = (id, title, body, at, extra = {}) => ({ id, audience: 'human', state: 'open', title, body, createdAt: at, threadId: 't_' + id, messageId: 'm_' + id, requesterSessionId: 's1', sessionLink: { sessionId: 'archived', label: 'Archived worker' }, ...extra });
 const cells = {
