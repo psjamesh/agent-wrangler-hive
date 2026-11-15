@@ -2096,6 +2096,23 @@ for (const action of ['update', 'finish']) {
     await record(f, hiveMerge());
     assert.equal(f.live.a.metadata.hive_evidence[0].merged_head, mergeHead);
   });
+  for (const commit of [mergeHead.slice(0, 7), mergeHead.slice(0, 12).toUpperCase(), mergeHead.toUpperCase()]) {
+    test(`${action} accepts matching approved SHA ${commit}`, async () => {
+      const f = mergeFixture();
+      f.doc().reviews.approval.commit = commit;
+      await record(f, hiveMerge());
+      assert.equal(f.live.a.metadata.hive_evidence[0].merged_head, mergeHead);
+    });
+  }
+  for (const commit of ['aaaaaa', 'baaaaaa', 'a'.repeat(41), 'aaaaaag', '', null]) {
+    test(`${action} refuses invalid or mismatched approved SHA ${commit}`, async () => {
+      const f = mergeFixture();
+      f.doc().reviews.approval.commit = commit;
+      await assert.rejects(record(f, hiveMerge()), /merge.*(head|review)/i);
+      assert.equal(f.live.a.metadata.hive_evidence, undefined);
+      assert.notEqual(f.live.a.status, 'closed');
+    });
+  }
   for (const scenario of ['missing head', 'different head', 'no review', 'other bead', 'changes requested', 'newer review', 'missing URL']) {
     test(`${action} refuses Hive merge evidence with ${scenario} before writing`, async () => {
       const f = mergeFixture();
