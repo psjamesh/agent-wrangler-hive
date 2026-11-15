@@ -1628,28 +1628,24 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 .hive-pm-review-pending .hive-pm-glyph { stroke: var(--hive-pm-review-ink); }
 .hive-pm-pickup .hive-pm-line { stroke: var(--hive-pm-busy); }
 
-.hive-message.is-link-target {
-  outline: 2px solid var(--accent, #d5a93b);
-  outline-offset: -2px;
-  background: color-mix(in srgb, #d5a93b 18%, transparent);
-}
-
 .hive-conversation-ring { fill: none; stroke: none; pointer-events: none; }
 .hive-hex.is-conversation-related .hive-conversation-ring { stroke: #70c7d4; stroke-width: 2.5; stroke-dasharray: 5 4; }
 body.light .hive-hex.is-conversation-related .hive-conversation-ring { stroke: #186879; }
+.hive-message.is-link-target::before,
+.hive-message.is-unread::before,
 .hive-message.is-conversation-selected::before {
   content: "";
   position: absolute;
   left: -9px;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   width: 5px;
-  height: min(60%, 3.5em);
-  min-height: 1.4em;
-  transform: translateY(-50%);
   border-radius: 999px;
   background: #70c7d4;
   pointer-events: none;
 }
+body.light .hive-message.is-link-target::before,
+body.light .hive-message.is-unread::before,
 body.light .hive-message.is-conversation-selected::before { background: #186879; }
 .hive-conversation-relations { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; width: 100%; }
 .hive-related-chip { border-color: #70c7d4; }
