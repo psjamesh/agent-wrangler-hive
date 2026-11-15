@@ -170,6 +170,11 @@ async function reconcilePass(rt, host, now) {
     if (!isCurrent(rt, host)) return;
     const cell = rt.metadata.cell(initial.cellId);
     if (!cell || cell.snapshot) continue;
+    if (!rt.snapshots.graph.beads[initial.beadId]) {
+      rt.metadata.mutate(doc => { delete doc.ciWaits[initial.beadId]; });
+      rt.changed();
+      continue;
+    }
     if (rt.snapshots.graph.beads[initial.beadId]?.status === 'closed') {
       settleClosedBeadWait(rt, initial.beadId, now);
       continue;
@@ -218,7 +223,8 @@ export function ciWaitSuppresses(rt, host, bead, now = Date.now()) {
 export function ciWaitAttention(rt, cell, now = Date.now()) {
   const flags = [];
   for (const wait of Object.values(rt.metadata.read().ciWaits || {})) {
-    if (wait.cellId !== cell.id || wait.acknowledgedAt || rt.snapshots.graph.beads[wait.beadId]?.status === 'closed') continue;
+    const bead = rt.snapshots.graph.beads[wait.beadId];
+    if (wait.cellId !== cell.id || wait.acknowledgedAt || !bead || bead.status === 'closed') continue;
     const add = (kind, reason) => flags.push({ kind, wait_id: wait.id, bead_id: wait.beadId, session_id: wait.sessionId, since: wait.resolvedAt || wait.createdAt, reason });
     const problem = ownerProblem(rt, rt.host, wait);
     if (wait.state === 'pending') {

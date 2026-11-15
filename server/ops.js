@@ -1509,6 +1509,9 @@ export function forgetDeleted(d, cellId, ids, by) {
   }
   const layout = d.beadLayout[cellId];
   if (layout) for (const id of gone) delete layout[id];
+  for (const id of gone) {
+    if (d.ciWaits?.[id]?.cellId === cellId) delete d.ciWaits[id];
+  }
   for (const id of gone) delete d.archived[id];
   for (const [k, it] of Object.entries(d.restoring)) {
     if (it?.cellId === cellId && (it.ids || []).some((b) => gone.has(b))) delete d.restoring[k];
