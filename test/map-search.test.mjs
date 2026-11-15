@@ -711,3 +711,20 @@ test('Search opens inside both maps and Escape or clearing hides it while sharin
     assert.equal(f.ui.searchQuery(), '');
   }
 });
+
+
+test('overview has no footer hint and shares bottom-aligned map controls', t => {
+  const f = fixture(t);
+  f.ui.closeCell();
+  const overview = f.draw();
+  assert.equal(overview.querySelector('.hive-stage-hint'), null);
+  assert.doesNotMatch(overview.textContent, /Drag hives to arrange/);
+  const tools = overview.querySelector('.hive-zoom');
+  assert.ok(tools.querySelector('.hive-search-open'));
+  assert.ok(tools.querySelector('.hive-map-menu-launcher'));
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(css, /\.hive-overview\s+\.hive-zoom\s*\{/);
+  assert.match(css.match(/\.hive-zoom\s*\{([^}]+)\}/)?.[1] || '', /bottom:\s*10px/);
+  f.ctx.hive.cells = {};
+  assert.match(f.draw().querySelector('.hive-stage-empty').textContent, /No hives yet/);
+});
