@@ -1,3 +1,4 @@
+import { cellTitle, cellGoalForm } from './cell-settings.js';
 import { codexApprovalsForm } from './codex-approvals.js';
 import { handoverFields, handoverError } from './handover-fields.js';
 import { pickupDetails } from './pickup.js';
@@ -12,7 +13,7 @@ import { prSummary, pullRequestsSection } from './pr-view.js';
 import { h, syncChildren, markdown, safeHref, relativeTime } from './dom.js';
 import { hexPath, primaryMark, fitLines } from './hex-grid.js';
 import {
-  cellName, sessionLabel, statusDot, STATUS_TEXT, childrenMap, agentSummary, capturedAgentSummary, cellBeadIds, waitingOn, workCounts, countsSentence, closedLabel, isDone, displayStatus, recordedWait,
+  sessionLabel, statusDot, STATUS_TEXT, childrenMap, agentSummary, capturedAgentSummary, cellBeadIds, waitingOn, workCounts, countsSentence, closedLabel, isDone, displayStatus, recordedWait,
 } from './model.js';
 import { renderConversation } from './conversation.js';
 import { workstreamClasses } from './cell-layout.js';
@@ -217,7 +218,7 @@ export function legend(snapshot = false) {
 // stays in reach.
 function hasPanels(cell, root) {
   if (!cell.snapshot && Object.keys(cell.requests || {}).length) return true;
-  if (cell.snapshot) return Boolean(root && cell.enabled);
+  if (cell.snapshot) return Boolean(root || cell.snapshot.brief);
   return cell.enabled || isRetired(cell) ? Boolean(root) : Boolean(cell.inbox);
 }
 
@@ -240,7 +241,9 @@ function beadDetails(ctx, cell) {
       h('h3', {}, 'Hive goal'),
       root ? waitingSection(ctx, root) : null,
       root ? pullRequestsSection(ctx, root) : null,
-      root?.goal ? markdown(api, root.goal) : h('p', { class: 'hive-muted' }, cell.snapshot ? 'No goal was confirmed on the captured board.' : 'No goal written yet.'),
+      root?.goal ? markdown(api, root.goal) : cell.snapshot?.brief
+        ? [h('p', { class: 'hive-muted' }, 'Board brief, not a confirmed goal:'), markdown(api, cell.snapshot.brief)]
+        : h('p', { class: 'hive-muted' }, cell.snapshot ? 'No goal was confirmed on the captured board.' : 'No goal written yet.'),
       root?.acceptance ? [h('h4', {}, 'Done when'), markdown(api, root.acceptance)] : null,
       h('p', { class: 'hive-muted' }, 'Select a bead or a workstream to see its details here. Use the queen pill to manage the queen, and Settings for its instructions.'));
   }
@@ -478,7 +481,6 @@ function headProgress(counts) {
 
 function cellHeader(ctx, cell, root) {
   const { graph, ui, send, hive } = ctx;
-  const name = cellName(graph, cell);
   const counts = root && (cell.enabled || isRetired(cell)) ? workCounts(hive, childrenMap(hive.beads), root.id) : null;
   const waiting = cellWaitingItems(ctx, cell);
   return h('header', { class: 'hive-cellhead' },
@@ -486,7 +488,7 @@ function cellHeader(ctx, cell, root) {
       h('button', { type: 'button', class: 'hive-back', onclick: () => ui.closeCell(), 'aria-label': 'Show all hives', title: 'Show all hives' },
         h('span', { class: 'hive-back-icon', 'aria-hidden': 'true' }), 'All hives'),
       h('span', { class: 'hive-crumb-sep', 'aria-hidden': 'true' }, '/'),
-      h('h2', { class: 'hive-celltitle' }, h('button', { type: 'button', class: 'hive-title-btn', title: `${name}: goal and done when`, 'aria-haspopup': 'dialog', 'data-focus-key': `goal-open:${cell.id}`, onclick: event => openGoalPopover(ctx, cell, event.currentTarget) }, name)),
+      h('h2', { class: 'hive-celltitle' }, cellTitle(ctx, cell)),
       isRetired(cell) ? h('span', { class: 'hive-badge hive-badge-retired', title: cell.retired.summary }, `Retired · ${cell.retired.outcome}`) : (cell.enabled ? null : h('span', { class: 'hive-badge' }, 'Off')),
       capacityControl(ctx),
       h('div', { class: 'hive-cellstate' },
@@ -502,20 +504,6 @@ function cellHeader(ctx, cell, root) {
     noticesEl(ctx));
 }
 
-export function openGoalPopover(ctx, cell, anchor) {
-  openCellPopover(ctx, cell, anchor, 'Goal and done when', (next, current) => {
-    const root = next.hive.beads[current.rootBeadId];
-    const { api } = next;
-    const cell = current;
-    let goal;
-    if (root?.goal) goal = markdown(api, root.goal);
-    else if (cell.snapshot?.brief) goal = [h('p', { class: 'hive-muted' }, 'Board brief, not a confirmed goal:'), markdown(api, cell.snapshot.brief)];
-    else goal = h('p', { class: 'hive-muted' }, cell.snapshot ? 'No goal was confirmed on the captured board.' : 'No goal written yet.');
-    return [h('section', {}, h('h4', {}, 'Goal'), goal),
-      root?.acceptance ? h('section', {}, h('h4', {}, 'Done when'), markdown(api, root.acceptance)) : null];
-  });
-}
-
 export function openQueenPopover(ctx, cell, anchor) {
   openCellPopover(ctx, cell, anchor, 'Queen', (next, current) => current.snapshot ? snapshotQueen(next, current)
     : current.enabled ? queenBar({ ...next, ui: { ...next.ui, inspect: id => { disposeCellPopover(); next.ui.inspect(id); } } }, current)
@@ -527,6 +515,7 @@ export function hiveSettings(ctx, cell, leave = () => true) {
   const retire = () => { if (leave()) openRetire(ctx, cell); };
   const reopen = () => { if (leave()) openReopen(ctx, cell); };
   return [
+    cellGoalForm(ctx, cell),
     cell.snapshot || isRetired(cell) ? null : queenInstructions(ctx, cell),
     cell.snapshot || isRetired(cell) ? null : watchdogSettingsForm(ctx, cell),
     cell.snapshot || isRetired(cell) ? null : codexApprovalsForm(ctx, cell),
@@ -606,7 +595,7 @@ export function cellPanels(ctx, cell) {
     if (cached.readInteraction) for (const type of ['pointerdown', 'keydown', 'focusin', 'wheel', 'touchstart']) conversation.addEventListener(type, cached.readInteraction, true);
   }
   if (conversation && !conversation.hiveKeys) { conversation.addEventListener('keydown', onKeyDown); conversation.hiveKeys = true; }
-  const details = cell.enabled || isRetired(cell) ? beadDetails(ctx, cell) : h('section', { class: 'hive-panel hive-details', tabindex: '-1', 'data-focus-key': 'panel:details', 'aria-label': 'Details', 'data-pane': 'details' },
+  const details = cell.snapshot || cell.enabled || isRetired(cell) ? beadDetails(ctx, cell) : h('section', { class: 'hive-panel hive-details', tabindex: '-1', 'data-focus-key': 'panel:details', 'aria-label': 'Details', 'data-pane': 'details' },
     h('h3', {}, 'Details'), h('p', { class: 'hive-muted' }, 'This hive is off. Turn it on to see its work.'));
   const dock = hasPanels(cell, root) ? syncChildren(cached.dock, [conversation, details]) : null;
   return {

@@ -11,7 +11,7 @@ The manifest declares `engines.wranglerApi: ^1.80.0`. Hive uses the synchronous 
 | Capability | Used for |
 | --- | --- |
 | `tasks:read` | `host.tasks.get`, `forSession` and `adhocId`: cell titles, participation and adoption checks. |
-| `tasks:write` | `host.tasks.create`: the task behind a new cell. Hive never renames, reassigns or archives tasks. |
+| `tasks:write` | `host.tasks.create`: the task behind a new cell; `host.tasks.rename`: saving an inline hive title edit. Hive does not reassign or archive tasks. |
 | `sessions:read` | `host.sessions.get`, `list` and `forTask`: handover source selection, binding checks and the session list in `hive_context`. |
 | `mail:read` | `host.mail.list(sessionId)`: sender and timestamp metadata for holder activity, without message bodies or excerpts. |
 | `sessions:spawn` | `host.sessions.spawn`: launching a human-requested queen, or a queen/coordinator-requested tracked worker or reviewer. |

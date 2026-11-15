@@ -720,6 +720,7 @@ function humanCell(rt, cellId) {
 // that arrives later still waits. A readThrough from another topic, or no
 // longer kept, marks nothing.
 export const recordHumanInput = (rt, args) => messageWrite(rt, args.cellId, () => recordHumanMessage(rt, args));
+export const recordHumanSettingsInput = (rt, args) => messageWrite(rt, args.cellId, () => recordHumanMessage(rt, args, true));
 
 export function recordHumanReaction(rt, { cellId, messageId, reaction, rev }) {
   if (!['approve', 'decline'].includes(reaction)) return Promise.reject(new HiveError('Choose Yes or No.'));
@@ -733,8 +734,9 @@ export function recordHumanReaction(rt, { cellId, messageId, reaction, rev }) {
   });
 }
 
-async function recordHumanMessage(rt, { cellId, text: body, beadId, replyTo, threadId, newThread, ackRev = null, readThrough = null, images, reaction = null }) {
-  let cell = humanCell(rt, cellId);
+async function recordHumanMessage(rt, { cellId, text: body, beadId, replyTo, threadId, newThread, ackRev = null, readThrough = null, images, reaction = null }, allowDisabled = false) {
+  const getCell = allowDisabled ? readableCell : humanCell;
+  let cell = getCell(rt, cellId);
   const clean = text(body, 'text', MESSAGE_MAX, { required: true });
   const bead = beadRef(rt, cellId, beadId, null);
   const reply = replyRef(rt, cellId, replyTo);
@@ -754,7 +756,7 @@ async function recordHumanMessage(rt, { cellId, text: body, beadId, replyTo, thr
   let markedRead = 0;
   let reactionResult = null;
   try {
-    cell = humanCell(rt, cellId);
+    cell = getCell(rt, cellId);
     requireHumanTarget(rt.metadata.read(), cellId, topicId, reply);
     beadRef(rt, cellId, beadId, null); replyRef(rt, cellId, replyTo);
     if (fresh?.beadId) beadRef(rt, cellId, fresh.beadId, null);

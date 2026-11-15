@@ -91,7 +91,7 @@ export function settingsModal(ctx, cell = null, thisHive = () => null) {
   const local = cell && !cell.snapshot;
   const tab = local && form.tab !== 'all' ? 'hive' : 'all';
   const keys = ['global-capacity', 'global-bd', 'global-notifications',
-    ...(cell ? [`instructions:${cell.id}`, `watchdog:${cell.id}`, `codex-approvals:${cell.id}`, `review-policy:${cell.id}`] : [])];
+    ...(cell ? [`goal:${cell.id}`, `instructions:${cell.id}`, `watchdog:${cell.id}`, `codex-approvals:${cell.id}`, `review-policy:${cell.id}`] : [])];
   const saving = () => keys.some(key => ui.form(key)?.saving || ui.form(key)?.pending) || ctx.bees.saving?.();
   const close = (restore = true) => {
     if (saving()) return false;
@@ -99,6 +99,7 @@ export function settingsModal(ctx, cell = null, thisHive = () => null) {
     ui.setForm('global-capacity', null);
     ui.setForm('global-bd', null);
     ui.setForm('global-notifications', null);
+    if (cell) ui.setForm(`goal:${cell.id}`, null);
     if (restore) requestAnimationFrame(() => (document.querySelector(`[data-focus-key="${form.returnKey || 'open-settings'}"]`) || document.querySelector('[data-focus-key="open-settings"]'))?.focus());
     return true;
   };
