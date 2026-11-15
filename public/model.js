@@ -24,17 +24,13 @@ export function sessionsInTask(graph, taskId) {
   return (graph?.sessions || []).filter((s) => assignments[s.sessionId] === taskId && !s.archived);
 }
 
-const stamp = value => typeof value === 'number' && Number.isFinite(value) ? value : Date.parse(value) || 0;
-
 export function queenNotResponding(graph, cell, now = Date.now()) {
   if (!cell.enabled || cell.snapshot || cell.retired) return false;
   const queen = sessionNode(graph, cell.queenSessionId);
-  if (!queen || queen.archived || !cell.queenResponse?.pendingSince) return false;
+  if (!queen || queen.archived || queen.status !== 'idle' || !cell.queenResponse?.pendingSince) return false;
   const saved = cell.watchdogSettings?.queenResponseMinutes;
   const minutes = Number.isFinite(saved) && saved > 0 ? saved : 30;
-  const since = Math.max(cell.queenResponse.pendingSince, cell.queenResponse.lastActivity || 0,
-    stamp(queen.lastActivity), stamp(queen.createdAt), stamp(queen.relaunchedAt));
-  return now - since >= minutes * 60000;
+  return now - cell.queenResponse.pendingSince >= minutes * 60000;
 }
 
 export function queenNeedsAttention(graph, cell, now = Date.now()) {

@@ -32,7 +32,7 @@ test('private queen requests contribute only timing and stop contributing when s
   const { cell, doc, graph } = fixture();
   doc.requests.secret = { cellId: 'cell', audience: 'queen', state: 'open', createdAt: old, title: 'Private title', body: 'Private body' };
   cell.queenResponse = queenResponseState(doc, cell);
-  assert.deepEqual(cell.queenResponse, { pendingSince: old, lastActivity: 0 });
+  assert.deepEqual(cell.queenResponse, { pendingSince: old });
   assert.equal(queenNotResponding(graph, cell, now), true);
   for (const patch of [{ state: 'answered' }, { state: 'withdrawn' }, { state: 'open', audience: 'human' }]) {
     Object.assign(doc.requests.secret, patch);
@@ -41,23 +41,37 @@ test('private queen requests contribute only timing and stop contributing when s
   }
 });
 
-test('queen activity resets the timeout and the per-hive threshold is respected', () => {
+test('only idle queens time out, measured from oldest unanswered input despite wake activity', () => {
   const { cell, doc, graph } = fixture();
   doc.conversation.cell.push({ author: 'human', at: old, response: { required: true } });
+  doc.requests.newer = { cellId: 'cell', audience: 'queen', state: 'open', createdAt: now - 60000 };
+  doc.workerActivity = { queen: now };
+  doc.operations.wake = { actor: 'aw:queen', state: 'applied', updatedAt: new Date(now).toISOString() };
+  graph.sessions[0].lastActivity = now;
+  graph.sessions[0].relaunchedAt = now;
   cell.queenResponse = queenResponseState(doc, cell);
   cell.watchdogSettings = { queenResponseMinutes: 40 };
   assert.equal(queenNotResponding(graph, cell, now), false);
-  cell.watchdogSettings.queenResponseMinutes = 1;
-  for (const source of ['session', 'message', 'operation']) {
-    const recent = now - 30000;
-    graph.sessions[0].lastActivity = source === 'session' ? recent : old;
-    doc.conversation.cell = doc.conversation.cell.filter(m => m.author === 'human');
-    doc.operations = {};
-    if (source === 'message') doc.conversation.cell.push({ sessionId: 'queen', at: recent });
-    if (source === 'operation') doc.operations.op = { actor: 'aw:queen', state: 'applied', updatedAt: new Date(recent).toISOString() };
-    cell.queenResponse = queenResponseState(doc, cell);
-    assert.equal(queenNotResponding(graph, cell, now), false, source);
-    assert.equal(queenNotResponding(graph, cell, now + 60000), true, source);
+  cell.watchdogSettings.queenResponseMinutes = 30;
+  assert.equal(queenNotResponding(graph, cell, now), true);
+  for (const status of ['working', 'needs-input', 'needs-you', 'exited', undefined]) {
+    graph.sessions[0].status = status;
+    assert.equal(queenNotResponding(graph, cell, now), false, status);
+  }
+});
+
+test('terminal attention wording takes priority over overdue unanswered input', t => {
+  t.mock.method(Date, 'now', () => now);
+  const { cell, doc, graph } = fixture();
+  doc.conversation.cell.push({ author: 'human', at: old, response: { required: true } });
+  cell.queenResponse = queenResponseState(doc, cell);
+  const ctx = { graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
+  for (const status of ['needs-input', 'needs-you']) {
+    Object.assign(graph.sessions[0], { status, waitingReason: 'Approve the command' });
+    assert.equal(needsRows(ctx, [cell])[0].title, 'Queen needs attention');
+    assert.equal(needsRows(ctx, [cell])[0].preview, 'The queen is waiting for input at its terminal.');
+    assert.equal(cellWaitingItems(ctx, cell)[0].title, 'Queen needs attention');
+    assert.equal(cellWaitingItems(ctx, cell)[0].reason, 'Approve the command');
   }
 });
 
@@ -75,7 +89,8 @@ test('Needs you row, session link and waiting marker agree without leaking priva
   assert.equal(rows[0].link, '#session=queen');
   assert.equal(JSON.stringify(rows).includes('Private title'), false);
   assert.equal(cellWaitingItems(ctx, cell)[0].title, 'Queen not responding');
-  graph.sessions[0].lastActivity = now;
+  doc.requests.secret.state = 'answered';
+  cell.queenResponse = queenResponseState(doc, cell);
   assert.deepEqual(needsRows(ctx, [cell]), []);
   assert.deepEqual(cellWaitingItems(ctx, cell), []);
   graph.sessions[0].lastActivity = old;

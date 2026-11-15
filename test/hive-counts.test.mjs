@@ -8,7 +8,7 @@ import client, { createUi } from '../public/client.js';
 import { projectForGraph } from '../server/projection.js';
 
 class Element {
-  constructor(tag) { this.tagName = tag; this.children = []; this.attributes = {}; this.events = {}; this.dataset = {}; this.style = {}; this.value = ''; this.clientWidth = 1000; this.clientHeight = 700; }
+  constructor(tag) { this.tagName = tag; this.children = []; this.attributes = {}; this.events = {}; this.dataset = {}; this.style = { setProperty(k, v) { this[k] = v; }, removeProperty(k) { delete this[k]; } }; this.value = ''; this.clientWidth = 1000; this.clientHeight = 700; }
   setAttribute(k, v) { this.attributes[k] = String(v); if (k.startsWith('data-')) this.dataset[k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = String(v); }
   getAttribute(k) { return this.attributes[k] ?? (k.startsWith('data-') ? this.dataset[k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] : undefined) ?? null; }
   removeAttribute(k) { delete this.attributes[k]; }
@@ -32,14 +32,16 @@ class Element {
   addEventListener(type, fn, capture = false) { (this.events[type] ||= []).push({ fn, capture: capture === true }); }
   removeEventListener(type, fn) { this.events[type] = (this.events[type] || []).filter(e => e.fn !== fn); }
   fire(type, props = {}) { const e = { type, target: this, key: '', preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...props }; const path = []; for (let el = this; el; el = el.parentNode) path.push(el); for (const capture of [true, false]) for (const el of capture ? [...path].reverse() : path) { for (const h of el.events[type] || []) if (h.capture === capture) h.fn(e); if (e.stopped) return e; } return e; }
+  checkVisibility() { return false; }
   getBoundingClientRect() { return { left: 0, top: 0, right: 1000, bottom: 700, width: 1000, height: 700 }; }
 }
 
 function fixture(t) {
   const saved = Object.fromEntries(['Node', 'document', 'requestAnimationFrame', 'cancelAnimationFrame', 'CSS'].map(k => [k, globalThis[k]]));
-  Object.assign(globalThis, { Node: Element, document: { createElement: t => new Element(t), createElementNS: (_, t) => new Element(t), createTextNode: t => Object.assign(new Element('#text'), { text: t }), body: new Element('body') }, requestAnimationFrame: () => 1, cancelAnimationFrame() {}, CSS: { escape: s => s } });
+  Object.assign(globalThis, { Node: Element, document: { createElement: t => new Element(t), createElementNS: (_, t) => new Element(t), createTextNode: t => Object.assign(new Element('#text'), { text: t }), body: new Element('body'), addEventListener() {}, removeEventListener() {} }, requestAnimationFrame: () => 1, cancelAnimationFrame() {}, CSS: { escape: s => s } });
   t.after(() => Object.assign(globalThis, saved));
-  client.register({ api: { storage: { get() {}, set() {}, remove() {} } }, register() {} });
+  let view;
+  client.register({ api: { settings: () => ({ beeLevel: 0, showBees: false }), storage: { get() {}, set() {}, remove() {} } }, register(kind, value) { if (kind === 'view') view = value; } });
   const cell = { id: 'cell_test', taskId: 'Test hive', enabled: true, rootBeadId: 'root', queenSessionId: 'queen', position: {q:0,r:0} };
   const beads = { root: { id:'root', title:'Test hive', kind:'goal', status:'in_progress' }, work: {id:'work', title:'Work', parentId:'root', status:'in_progress', assignee:'aw:worker'}, done: {id:'done', title:'Done', parentId:'root', status:'closed'}, other: {id:'other', title:'Other hive', status:'in_progress'} };
   const doc = { cells: { [cell.id]: cell }, conversation: {}, threads: {}, inbox: {}, bindings: {}, beadLayout: {}, arrangeAspect: {}, restoreNotices: {}, operations: {}, launches: {}, requests: {} };
@@ -52,7 +54,7 @@ function fixture(t) {
     top = renderHive({ui,hive,graph,api:{},notices:[],busy:()=>false,send(){},notice(){}}).top;
     return top.querySelector('[data-tile-id="cell_test"]');
   };
-  return {doc,cell,beads,draw,graph,ui,get hive(){return hive;},get top(){return top;}};
+  return {doc,cell,beads,draw,graph,ui,view,get hive(){return hive;},get top(){return top;}};
 }
 const counter = (tile, kind) => tile.querySelector(`[data-counter="${kind}"]`);
 
@@ -219,4 +221,47 @@ test('queen attention joins Needs you with a session link and clears on resume',
     }
     assert.match(tile.getAttribute('aria-label'), needs ? /waiting for input/ : new RegExp(status));
   }
+});
+
+
+test('client clock refreshes overdue queen attention without a new snapshot and disposes on unmount', t => {
+  const f = fixture(t);
+  const start = Date.parse('2026-01-01T12:00:00Z');
+  let clock = start + 29 * 60000;
+  t.mock.method(Date, 'now', () => clock);
+  let tick, interval, cleared;
+  t.mock.method(globalThis, 'setInterval', (fn, ms) => { tick = fn; interval = ms; return 42; });
+  t.mock.method(globalThis, 'clearInterval', id => { cleared = id; });
+  f.doc.conversation[f.cell.id] = [{ author: 'human', at: start, response: { required: true } }];
+  f.doc.requests.private = { cellId: f.cell.id, audience: 'queen', state: 'open', createdAt: start };
+  f.doc.requests.human = { cellId: f.cell.id, audience: 'human', state: 'open', title: 'Question' };
+  f.graph.sessions.push({ sessionId: 'queen', status: 'idle', lastActivity: clock });
+  f.draw();
+  f.graph.hive = f.hive;
+  const root = new Element('div');
+  f.view.mount(root);
+  try {
+    f.view.update(root, null, f.graph);
+    assert.equal(interval, 30000);
+    assert.doesNotMatch(root.textContent, /Queen queen: not responding/);
+    assert.equal(f.view.badge(f.graph), 1);
+    clock = start + 30 * 60000;
+    tick();
+    assert.match(root.textContent, /Queen queen: not responding/);
+    assert.equal(f.view.badge(f.graph), 2);
+    clock += 30000;
+    tick();
+    assert.match(root.textContent, /Queen queen: not responding/);
+    f.graph.sessions[0].status = 'needs-input';
+    f.view.update(root, null, f.graph);
+    assert.match(root.textContent, /Queen queen: waiting for input/);
+    assert.doesNotMatch(root.textContent, /Queen queen: not responding/);
+    assert.equal(f.view.badge(f.graph), 2);
+    f.graph.sessions[0].status = 'working';
+    f.view.update(root, null, f.graph);
+    assert.doesNotMatch(root.textContent, /Queen queen: waiting for input/);
+    assert.equal(f.view.badge(f.graph), 1);
+    assert.equal(f.view.badge({ ...f.graph, hive: { ...f.hive, metadataError: 'unavailable' } }), 0);
+  } finally { f.view.unmount(root); }
+  assert.equal(cleared, 42);
 });
