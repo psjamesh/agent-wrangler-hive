@@ -13,8 +13,9 @@ export const HIVE_META = {
   cell: 'hive_cell',
 };
 
-export const OPEN_STATUSES = ['open', 'in_progress', 'blocked', 'deferred'];
-export const SETTABLE_STATUSES = ['open', 'in_progress', 'blocked', 'deferred'];
+export const OPEN_STATUSES = ['open', 'in_progress', 'deferred'];
+export const SETTABLE_STATUSES = ['open', 'in_progress', 'deferred'];
+export const BLOCKED_STATUS_HELP = 'Status "blocked" is no longer stored. Link an open prerequisite with hive_link_beads (type "blocks", using a normal or external bead); waiting is derived from those links.';
 export const BLOCKING_EDGE_TYPES = new Set(['blocks', 'waits-for', 'conditional-blocks']);
 export const LINK_TYPES = ['blocks', 'related', 'tracks', 'discovered-from', 'validates', 'supersedes'];
 export const OUTCOMES = ['done', 'dropped', 'superseded', 'duplicate'];

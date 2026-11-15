@@ -18,9 +18,8 @@ export function waitsOnHuman(text) {
   });
 }
 
-export function humanWaitText(bead, { blocked, reviewOpen }) {
+export function humanWaitText(bead) {
   if (waitsOnHuman(bead.waitingFor)) return bead.waitingFor;
-  if (bead.status === 'blocked' && !bead.waitingFor && !blocked && !reviewOpen) return 'Blocked with no reason, open prerequisite or open review';
   return null;
 }
 

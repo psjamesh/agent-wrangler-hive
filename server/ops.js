@@ -5,13 +5,13 @@ import { REGION_LAYOUT_VERSION } from './region-migration.js';
 import crypto from 'node:crypto';
 import { assertCurrent } from './lifetime.js';
 import { openReview } from './review-state.js';
-import { humanWaitText, hasOpenRequest, hasBlockingPrerequisite, hasOpenReview, HUMAN_WAIT_WARNING } from './human-wait.js';
+import { humanWaitText, hasOpenRequest, HUMAN_WAIT_WARNING } from './human-wait.js';
 import { ADMISSION_LOCK, checkAdmission, exportedGraph, capacity, RESERVED_LAUNCH_STATES } from './admission.js';
 import { newId } from './metadata-store.js';
 import { assertAllowedReviewer } from './review-policy.js';
 import { BeadsError } from './beads.js';
 import {
-  actorFor, issueTypeForKind, GROUP_KINDS, isBeadId, isSessionId, SETTABLE_STATUSES, LINK_TYPES, OUTCOMES, OPEN_STATUSES, descendantIds, normalizeIssue, buildGraph,
+  BLOCKED_STATUS_HELP, actorFor, issueTypeForKind, GROUP_KINDS, isBeadId, isSessionId, SETTABLE_STATUSES, LINK_TYPES, OUTCOMES, OPEN_STATUSES, descendantIds, normalizeIssue, buildGraph,
 } from './bead-model.js';
 import { AccessError, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, requireQueen, cellOfBead, requireCompleteHierarchy } from './access.js';
 import { layoutBase, stackable } from '../public/layout-base.js';
@@ -594,14 +594,14 @@ export function finishIntent(op) {
 // cannot check it from the store (such as a claim or release recorded before
 // intent existed).
 export function checkTarget(op) {
-  const id = finishIntent(op)?.beadId || (op?.intent && ['claim', 'release'].includes(op.kind) ? op.intent.beadId : null) || deleteIntent(op)?.[0] || reopenIntent(op)?.[0];
+  const id = finishIntent(op)?.beadId || (op?.intent && ['claim', 'release', 'migrate-blocked'].includes(op.kind) ? op.intent.beadId : null) || deleteIntent(op)?.[0] || reopenIntent(op)?.[0];
   return id && isBeadId(id) ? id : null;
 }
 
 export function managedReleaseIntent(op) {
   const i = op?.kind === 'release' ? op.intent : null;
   return i && isBeadId(i.beadId) && typeof i.holder === 'string' && i.holder
-    && SETTABLE_STATUSES.includes(i.priorStatus) && SETTABLE_STATUSES.includes(i.status) ? i : null;
+    && [...SETTABLE_STATUSES, 'blocked'].includes(i.priorStatus) && [...SETTABLE_STATUSES, 'blocked'].includes(i.status) ? i : null;
 }
 
 export function reopenIntent(op) {
@@ -665,7 +665,8 @@ async function observe(rt, op) {
   const bead = normalizeIssue(raw);
   const observed = { beadId, status: bead.status, outcome: bead.outcome || null, assignee: bead.assignee || null, at };
   let settled = false;
-  if (finish) settled = bead.status === 'closed' && bead.outcome === finish.outcome;
+  if (op.kind === 'migrate-blocked') settled = bead.status === 'open';
+  else if (finish) settled = bead.status === 'closed' && bead.outcome === finish.outcome;
   else if (op.kind === 'claim') settled = typeof op.intent.assignee === 'string' && bead.assignee === op.intent.assignee;
   else if (op.kind === 'release') settled = managedReleaseIntent(op)
     ? !bead.assignee && bead.status === op.intent.status
@@ -692,6 +693,7 @@ export async function settleOne(rt, opId) {
       const rec = d.operations[opId];
       if (rec && needsSettling(rec)) {
         d.operations[opId] = stamp(rec, { state: 'applied', settledBy: 'hive:observed', previousState: rec.state, observed: seen.observed });
+        if (rec.kind === 'migrate-blocked' && d.cells[rec.cellId]) (d.cells[rec.cellId].blockedMigrations ||= {})[rec.intent.beadId] ||= { at: rec.createdAt };
         if (deleteIntent(rec)) forgetDeleted(d, rec.cellId, seen.observed.missing, 'hive:observed');
       }
     });
@@ -835,6 +837,7 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
     const kind = kindArg(b.kind) || 'work';
     if (kind === 'goal') throw new HiveError('A cell has exactly one goal bead, its root. Use kind "workstream" for nested goals.');
     const status = b.status === undefined ? undefined : text(b.status, `beads[${i}].status`, 20);
+    if (status === 'blocked') throw new HiveError(BLOCKED_STATUS_HELP, 'refused');
     if (status !== undefined && !SETTABLE_STATUSES.includes(status)) throw new HiveError(`beads[${i}].status must be one of ${SETTABLE_STATUSES.join(', ')}.`);
     if (status === 'in_progress' && !GROUP_KINDS.has(kind)) throw new HiveError('Create work as open, then claim it with hive_claim_bead before starting it.');
     return {
@@ -919,6 +922,7 @@ export async function updateBead(rt, actor, input) {
     patch.kind = kind;
   }
   if (input.status !== undefined) {
+    if (input.status === 'blocked') throw new HiveError(BLOCKED_STATUS_HELP, 'refused');
     if (!SETTABLE_STATUSES.includes(input.status)) throw new HiveError(`status must be one of ${SETTABLE_STATUSES.join(', ')}. Use hive_finish_bead to close work.`);
     if (bead.status === 'closed') throw new HiveError(`Bead ${id} is closed. Reopening is a human or queen decision; publish the reason if it should reopen.`);
     patch.status = input.status;
@@ -951,7 +955,7 @@ export async function updateBead(rt, actor, input) {
       } else delete resume.afterBead;
     }
     const cleared = !resume.reviewAt && !resume.afterBead;
-    if (!cleared && !waitStatus(finalStatus)) throw new HiveError('A resume condition only applies to a blocked or deferred bead; set status "blocked" or "deferred" too.');
+    if (!cleared && !waitStatus(finalStatus)) throw new HiveError('A resume condition only applies to a deferred bead; set status "deferred" too.');
     patch.resume = cleared ? '' : resume;
   } else if (patch.status !== undefined && bead.resume && !waitStatus(patch.status)) {
     patch.resume = '';
@@ -1026,10 +1030,10 @@ export async function updateBead(rt, actor, input) {
     });
   }).then((out) => {
     const result = { op_id: out.opId, bead_id: id, updated: Object.keys(patch) };
-    if (patch.waitingFor !== undefined || patch.status === 'blocked') {
+    if (patch.waitingFor !== undefined) {
       const doc = rt.metadata.read();
       const merged = applied || { ...bead, ...patch };
-      const waits = humanWaitText(merged, { blocked: hasBlockingPrerequisite(rt.snapshots.graph, id), reviewOpen: hasOpenReview(doc, cell.id, id) });
+      const waits = humanWaitText(merged);
       if (waits && !hasOpenRequest(doc, cell.id, id)) result.warning = HUMAN_WAIT_WARNING;
     }
     return result;
@@ -1104,6 +1108,7 @@ export async function releaseBead(rt, actor, { bead_id, reason, force, status })
   const { cell, role } = requireBeadAccess(rt, actor, id);
   const who = actorFor(actor.sessionId);
   const cleanReason = text(reason, 'reason', LIMITS.short) || '';
+  if (status === 'blocked') throw new HiveError(BLOCKED_STATUS_HELP, 'refused');
   if (status !== undefined && !SETTABLE_STATUSES.includes(status)) throw new HiveError(`status must be one of ${SETTABLE_STATUSES.join(', ')}.`);
   return withLock(`bead:${id}`, async () => {
     const fresh = await rt.beads.show(id);

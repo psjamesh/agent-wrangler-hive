@@ -290,7 +290,7 @@ const closedOutcomes = ['done', 'dropped', 'superseded', 'duplicate', null];
 
 test('closed work of every outcome is hidden and yields, open work is not', () => {
   for (const outcome of closedOutcomes) assert.equal(stackable({ status: 'closed', outcome }), true, String(outcome));
-  for (const status of ['open', 'in_progress', 'blocked']) assert.equal(stackable({ status, outcome: null }), false, status);
+  for (const status of ['open', 'in_progress', 'deferred']) assert.equal(stackable({ status, outcome: null }), false, status);
 });
 
 test('a closed bead of any outcome shares its saved hex and is drawn beside it', () => {

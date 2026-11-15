@@ -107,13 +107,13 @@ test('untracked ignores live claimants, goals, blocking prerequisites, open revi
   const f = fixture(t);
   f.bead('live', { status: 'in_progress', ownerSessionId: 'worker' });
   f.bead('group', { status: 'in_progress', kind: 'workstream' });
-  f.bead('pre', { status: 'open' }); f.bead('blocked', { status: 'in_progress' });
-  f.edges.push({ dependent: 'blocked', prerequisite: 'pre', type: 'blocks', blocking: true });
+  f.bead('pre', { status: 'open' }); f.bead('deferred', { status: 'in_progress' });
+  f.edges.push({ dependent: 'deferred', prerequisite: 'pre', type: 'blocks', blocking: true });
   f.bead('reviewed', { status: 'in_progress' });
   f.rt.metadata.mutate(d => { d.reviews.r = { id: 'r', state: 'in_review', cellId: 'cell', workBeadId: 'reviewed', createdAt: f.now() }; });
   f.bead('done', { status: 'closed' });
   f.advance(DAY); f.sessions.worker.lastActivity = f.now();
-  assert.deepEqual(kinds(f), ['stuck_review']);
+  assert.deepEqual(kinds(f), ['stale_wait', 'stuck_review']);
 });
 
 test('an exited claimant raises stalled_worker only, not a second untracked flag', t => {
@@ -182,7 +182,7 @@ test('finished-but-open ignores hedged, negated and unrelated wording and never-
   ];
   quiet.forEach((summary, i) => f.bead(`q${i}`, { status: 'in_progress', ownerSessionId: 'gone', summary }));
   f.bead('backlog', { status: 'open', summary: 'Work is complete.' });
-  f.bead('waiting', { status: 'blocked', resume: { reviewAt: '2099-01-01' }, ownerSessionId: 'gone', summary: 'Work is complete.' });
+  f.bead('waiting', { status: 'deferred', resume: { reviewAt: '2099-01-01' }, ownerSessionId: 'gone', summary: 'Work is complete.' });
   f.advance(DAY);
   assert.deepEqual(f.flags().filter(x => x.kind === 'finished_open'), []);
 });
@@ -198,7 +198,7 @@ test('an unclaimed bead flags only on an explicit request to the queen; a depart
 
 test('a bead waiting on the human flags after the grace period and names the waiting text', t => {
   const f = fixture(t);
-  f.bead('ask', { status: 'blocked', resume: { reviewAt: '2099-01-01' }, waitingFor: 'Human: pick the approach' });
+  f.bead('ask', { status: 'deferred', resume: { reviewAt: '2099-01-01' }, waitingFor: 'Human: pick the approach' });
   f.advance(10 * MIN - 1); assert.deepEqual(f.flags(), []);
   f.advance(1);
   const [flag] = f.flags();
@@ -219,22 +219,22 @@ test('the grace period is a per-hive setting', t => {
   assert.throws(() => setWatchdogSettings(f.rt, { cellId: 'cell', settings: { humanWaitMinutes: 0 } }));
 });
 
-test('a blocked bead with no reason, prerequisite or review counts as waiting on the human', t => {
+test('a status alone does not imply waiting on the human', t => {
   const f = fixture(t);
-  f.bead('bare', { status: 'blocked', resume: { reviewAt: '2099-01-01' } });
-  f.bead('reasoned', { status: 'blocked', resume: { reviewAt: '2099-01-01' }, waitingFor: 'Waiting for CI' });
+  f.bead('bare', { status: 'deferred', resume: { reviewAt: '2099-01-01' } });
+  f.bead('reasoned', { status: 'deferred', resume: { reviewAt: '2099-01-01' }, waitingFor: 'Waiting for CI' });
   f.bead('pre', { status: 'open' });
-  f.bead('dependent', { status: 'blocked', resume: { reviewAt: '2099-01-01' } });
+  f.bead('dependent', { status: 'deferred', resume: { reviewAt: '2099-01-01' } });
   f.edges.push({ dependent: 'dependent', prerequisite: 'pre', blocking: true });
-  f.bead('reviewed', { status: 'blocked', resume: { reviewAt: '2099-01-01' } });
+  f.bead('reviewed', { status: 'deferred', resume: { reviewAt: '2099-01-01' } });
   f.rt.metadata.mutate(d => { d.reviews.r = { id: 'r', cellId: 'cell', workBeadId: 'reviewed', state: 'requested', createdAt: f.now() }; });
   f.advance(10 * MIN);
-  assert.deepEqual(f.flags().filter(x => x.kind === 'human_wait_unasked').map(x => x.bead_id), ['bare']);
+  assert.deepEqual(f.flags().filter(x => x.kind === 'human_wait_unasked').map(x => x.bead_id), []);
 });
 
 test('an open request for the bead suppresses the flag and an answered one does not', t => {
   const f = fixture(t);
-  f.bead('ask', { status: 'blocked', resume: { reviewAt: '2099-01-01' }, waitingFor: 'Human: decide' });
+  f.bead('ask', { status: 'deferred', resume: { reviewAt: '2099-01-01' }, waitingFor: 'Human: decide' });
   f.advance(10 * MIN); assert.equal(f.flags().length, 1);
   f.rt.metadata.mutate(d => { d.requests = { q: { id: 'q', cellId: 'cell', beadId: 'ask', state: 'open' } }; });
   assert.deepEqual(f.flags(), []);
@@ -246,7 +246,7 @@ test('an open request for the bead suppresses the flag and an answered one does 
 
 test('the flag wakes the queen once, naming the bead and waiting text, and not again while unchanged', async t => {
   const f = fixture(t);
-  f.bead('ask', { status: 'blocked', resume: { reviewAt: '2099-01-01' }, waitingFor: 'Human: decide' });
+  f.bead('ask', { status: 'deferred', resume: { reviewAt: '2099-01-01' }, waitingFor: 'Human: decide' });
   f.advance(10 * MIN);
   await f.watchdog.run(); assert.equal(f.sent.length, 1);
   assert.match(f.sent[0].text, /human_wait_unasked/); assert.match(f.sent[0].text, /Bead ask/); assert.match(f.sent[0].text, /Human: decide/);
@@ -263,13 +263,13 @@ test('only explicit human-wait clauses count; human-readable and negated mention
 
 test('human-readable waiting text does not flag', t => {
   const f = fixture(t);
-  f.bead('ci', { status: 'blocked', resume: { reviewAt: '2099-01-01' }, waitingFor: 'Waiting for CI to emit human-readable diagnostics' });
+  f.bead('ci', { status: 'deferred', resume: { reviewAt: '2099-01-01' }, waitingFor: 'Waiting for CI to emit human-readable diagnostics' });
   f.advance(10 * MIN); assert.deepEqual(f.flags(), []);
 });
 
 test('open requests are indexed once per collection, not rescanned per bead', t => {
   const f = fixture(t);
-  for (let i = 0; i < 20; i++) f.bead(`b${i}`, { status: 'blocked', resume: { reviewAt: '2099-01-01' } });
+  for (let i = 0; i < 20; i++) f.bead(`b${i}`, { waitingFor: 'Human: decide', status: 'deferred', resume: { reviewAt: '2099-01-01' } });
   const requests = {};
   let reads = 0;
   for (let i = 0; i < 20; i++) Object.defineProperty(requests, `r${i}`, { enumerable: true, get() { reads++; return { id: `r${i}`, cellId: 'cell', beadId: `x${i}`, state: 'open' }; } });

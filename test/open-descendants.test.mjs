@@ -9,7 +9,7 @@ const beads = Object.fromEntries([
   bead('ws', 'root', 'in_progress'),
   bead('a', 'ws', 'open'),
   bead('b', 'ws', 'closed'),
-  bead('c', 'b', 'blocked'),
+  bead('c', 'b', 'deferred'),
   bead('done', 'root', 'closed'),
   bead('d', 'done', 'closed'),
   bead('leaf', 'root', 'open'),

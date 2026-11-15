@@ -23,7 +23,7 @@ test('approved open and in-progress beads remain visible without a live owner', 
 test('approval does not replace closed, blocked or deferred status marks', () => {
   for (const [status, outcome, expected] of [
     ['closed', 'done', 'done'], ['closed', 'dropped', 'closed'], ['closed', undefined, 'closed'],
-    ['blocked', undefined, 'waiting'], ['deferred', undefined, 'deferred'],
+    ['deferred', undefined, 'deferred'],
   ]) assert.equal(primaryKind({ status, outcome, reviewState: 'approved' }, [], []), expected);
 });
 

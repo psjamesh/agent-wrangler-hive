@@ -5,7 +5,7 @@ const fields = [
   ['idleMinutes', 'Idle holder without a terminal report (minutes)', 30],
   ['reviewMinutes', 'Review without verdict (minutes)', 60],
   ['messageMinutes', 'Unanswered message (minutes)', 30],
-  ['waitHours', 'Untouched blocked or waiting work (hours)', 24],
+  ['waitHours', 'Untouched waiting work (hours)', 24],
   ['deferredDays', 'Deferred without a resume condition (days)', 7],
   ['untrackedMinutes', 'Untracked or finished-but-open work (minutes)', 30],
   ['waitGraceMinutes', 'Grace after a wait\'s named time (minutes)', 30],
