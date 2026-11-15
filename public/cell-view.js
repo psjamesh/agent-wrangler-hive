@@ -304,6 +304,7 @@ function beadDetails(ctx, cell) {
     full.goal ? [h('h4', {}, 'Goal'), markdown(api, full.goal)] : null,
     full.acceptance ? [h('h4', {}, 'Done when'), markdown(api, full.acceptance)] : null,
     full.summary ? [h('h4', {}, 'Current understanding'), markdown(api, full.summary)] : null,
+    detail.bead?.history ? beadHistorySection(ctx, detail.bead.history) : null,
     full.evidence.length ? [h('h4', {}, 'Evidence'), h('ul', { class: 'hive-evidence' }, full.evidence.map((e) => {
       const href = safeHref(e.url);
       return h('li', {},
@@ -313,6 +314,18 @@ function beadDetails(ctx, cell) {
         e.detail ? markdown(api, e.detail) : null);
     }))] : null,
     full.nativeMetadataKeys?.length ? h('p', { class: 'hive-muted' }, `Other metadata: ${full.nativeMetadataKeys.join(', ')}`) : null);
+}
+
+function beadHistorySection(ctx, entries) {
+  return h('section', { class: 'hive-history', 'aria-label': 'History' },
+    h('h4', {}, 'History'),
+    h('p', { class: 'hive-muted' }, 'Recorded events only; older records may be incomplete.'),
+    entries.length ? h('ol', { class: 'hive-history-list' }, entries.map(e => h('li', {},
+      e.at ? h('time', { datetime: e.at, title: e.at, class: 'hive-muted' }, new Date(e.at).toLocaleString()) : h('span', { class: 'hive-muted' }, 'Time not recorded'),
+      ' · ', e.by ? (e.by.startsWith('aw:') || e.by === 'hive' ? e.by : sessionLabel(ctx.graph, e.by)) : 'Who not recorded',
+      h('strong', {}, e.outcome),
+      h('span', { class: 'hive-history-reason', title: e.reason || '' }, e.reason || 'No stop reason recorded.'))))
+      : h('p', { class: 'hive-muted' }, 'No attempt history recorded.'));
 }
 
 // Exact counts for a workstream, over every item nested beneath it.

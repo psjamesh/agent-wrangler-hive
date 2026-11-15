@@ -33,7 +33,7 @@ test('detail loads once, shows the record, and refetches when the bead changes',
   assert.deepEqual(f.ui.beadDetail(b), { bead: { id: 'a', goal: 'G' }, loading: false, error: null });
   await f.flush();
   assert.equal(f.sent.length, 1);
-  for (const change of [{ updatedAt: 't2' }, { status: 'closed' }, { reviewState: 'requested' }]) {
+  for (const change of [{ updatedAt: 't2' }, { status: 'closed' }, { reviewState: 'requested' }, { historyVersion: 'new-launch' }]) {
     Object.assign(b, change);
     const shown = f.ui.beadDetail(b);
     assert.equal(shown.loading, true);
@@ -41,7 +41,7 @@ test('detail loads once, shows the record, and refetches when the bead changes',
     await f.flush();
     f.reply(f.sent.at(-1), { bead: { id: 'a', goal: `G ${f.sent.length}` } });
   }
-  assert.equal(f.sent.length, 4);
+  assert.equal(f.sent.length, 5);
 });
 
 test('a failed load keeps the old copy, is not retried until Retry or a change, and reads as a read', async t => {

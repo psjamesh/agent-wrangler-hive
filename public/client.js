@@ -212,7 +212,7 @@ export function createUi() {
     // The full record of a bead, which the board graph leaves out. A stale
     // copy stays on show while the current one loads.
     beadDetail(bead) {
-      const stamp = `${bead.updatedAt}|${bead.status}|${bead.reviewState || ''}`;
+      const stamp = `${bead.updatedAt}|${bead.status}|${bead.reviewState || ''}|${bead.historyVersion || ''}`;
       const cur = mem.detail.get(bead.id);
       if (!cur || (cur.stamp !== stamp && !cur.loading)) {
         const entry = { ...cur, stamp, loading: true, error: null };

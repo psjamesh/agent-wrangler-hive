@@ -67,3 +67,17 @@ test('closed reviews send no summary in the slim bead; open reviews do; detail c
   f.doc.reviews.r = { ...f.doc.reviews.r, state: 'in_review' };
   assert.equal(f.project().beads.a.review.summary, long);
 });
+
+test('history is detail-only and its cache token follows metadata changes for this bead', () => {
+  const f = fixture();
+  f.doc.workerLaunches = { l: { id: 'l', beadId: 'a', state: 'claimed', sessionId: 's1', createdAt: 1000 } };
+  const initial = f.project().beads.a;
+  assert.equal('history' in initial, false);
+  assert.equal(beadDetail(f.runtime, { beadId: 'a' }).bead.history[0].outcome, 'Worker launch: claimed');
+  f.doc.workerLaunches.l.error = 'Stopped during restart';
+  f.doc.workerLaunches.l.state = 'uncertain';
+  const changed = f.project().beads.a;
+  assert.notEqual(changed.historyVersion, initial.historyVersion);
+  f.doc.workerLaunches.other = { id: 'other', beadId: 'other', state: 'refused' };
+  assert.equal(f.project().beads.a.historyVersion, changed.historyVersion);
+});

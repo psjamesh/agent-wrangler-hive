@@ -3,6 +3,7 @@ import { capacity, capacitySlots } from './admission.js';
 import { needsHuman } from './requests.js';
 import { waitingProjection } from './waiting.js';
 import { slimBead } from './bead-detail.js';
+import { indexBeadHistory } from './bead-history.js';
 import { layoutCell } from '../public/cell-layout.js';
 import { stackable } from '../public/layout-base.js';
 import { descendantIds } from './bead-model.js';
@@ -151,7 +152,8 @@ export function projectForGraph({ runtime, snapshot }) {
     else outside += 1;
   }
   const visibleBeads = {};
-  for (const id of included) visibleBeads[id] = { ...slimBead(runtime, snapshot.graph, id, { root: roots.has(id) }), occupiesCapacity: occupied.has(id) };
+  const historyIndex = indexBeadHistory(doc);
+  for (const id of included) visibleBeads[id] = { ...slimBead(runtime, snapshot.graph, id, { root: roots.has(id), historyRecords: historyIndex.get(id) || {} }), occupiesCapacity: occupied.has(id) };
   const visibleEdges = edges.filter((e) => included.has(e.dependent) || included.has(e.prerequisite));
   // Only cell creation is the human's to settle (it can leave a task with no
   // cell). Every other unfinished write is settled by Hive or the cell's

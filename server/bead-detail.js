@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { beadHistory } from './bead-history.js';
 import { pickupState, pickupCell } from './pickup.js';
 import { reviewFields } from './review-state.js';
 import { isUntracked } from './tracking.js';
@@ -28,13 +30,14 @@ export function fullBead(runtime, graph, id) {
 // The fields the map, lists, badges and the waiting views read for every bead.
 // Long text stays out; a cell's root bead keeps its goal and acceptance, which
 // the overview tile and the hive goal panel show without a selection.
-export function slimBead(runtime, graph, id, { root = false } = {}) {
+export function slimBead(runtime, graph, id, { root = false, historyRecords = runtime.metadata.read() } = {}) {
   const full = fullBead(runtime, graph, id);
   const out = {};
   for (const key of SLIM_FIELDS) out[key] = full[key];
   for (const key of ['reviewState', 'reviewWorking']) if (key in full) out[key] = full[key];
   if (full.review) out.review = slimReview(full.review);
   out.untracked = full.untracked;
+  out.historyVersion = createHash('sha256').update(JSON.stringify(beadHistory(historyRecords, full))).digest('hex').slice(0, 16);
   if (full.pickup.armed || full.pickup.armToken) {
     const { profile, ...pickup } = full.pickup;
     out.pickup = pickup;
@@ -65,7 +68,8 @@ export function beadDetail(rt, { beadId }) {
     err.code = 'unknown-bead';
     throw err;
   }
-  return { bead: fullBead(rt, graph, beadId) };
+  const bead = fullBead(rt, graph, beadId);
+  return { bead: { ...bead, history: beadHistory(rt.metadata.read(), bead) } };
 }
 
 export function searchBeads(rt, { cellId, query }) {

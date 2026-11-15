@@ -291,9 +291,9 @@ test('details panel loads the long text on demand, with loading and error states
   assert.match(text(failed), /Could not load the full details: No reply/);
   failed.find(el => el.attributes['data-focus-key'] === 'detail-retry:a').fire('click');
   assert.equal(retried, 'a');
-  const loaded = draw({ bead: { goal: 'Ship the thing', acceptance: 'It ships', summary: 'Nearly', nextAction: 'Wait for review', evidence: [{ label: 'PR 5', kind: 'pr' }], nativeMetadataKeys: ['x'] }, loading: false, error: null });
+  const loaded = draw({ bead: { goal: 'Ship the thing', acceptance: 'It ships', summary: 'Nearly', nextAction: 'Wait for review', evidence: [{ label: 'PR 5', kind: 'pr' }], nativeMetadataKeys: ['x'], history: [{ at: '2026-01-01T00:00:00.000Z', by: null, outcome: 'Worker launch: refused', reason: 'No capacity' }] }, loading: false, error: null });
   const shown = text(loaded);
-  for (const part of ['Ship the thing', 'It ships', 'Nearly', 'Wait for review', 'PR 5', 'Other metadata: x']) assert.ok(shown.includes(part), part);
+  for (const part of ['Ship the thing', 'It ships', 'Nearly', 'Wait for review', 'PR 5', 'Other metadata: x', 'History', 'Worker launch: refused', 'No capacity', 'Who not recorded']) assert.ok(shown.includes(part), part);
   assert.doesNotMatch(shown, /Loading details/);
 });
 
