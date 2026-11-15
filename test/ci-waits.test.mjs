@@ -304,3 +304,75 @@ test('a merged snapshot with ambiguous or missing check evidence requires reconc
     assert.equal(evaluateCiWait(wait({ target: 'check', checkName: 'test' }), snapshot({ state: 'merged', statusCheckRollup }), NOW).outcome, 'reconciliation-required');
   }
 });
+
+for (const source of ['session-link', 'bead-evidence']) {
+  test(`registers a just-opened PR from ${source} before discovery`, async () => {
+    const f = fixture();
+    f.rt.metadata.mutate(d => { delete d.prLabels; });
+    if (source === 'session-link') f.host.links.get = sid => sid === 'queen' ? [{ type: 'pr', url: URL }] : [];
+    else {
+      f.live.a.metadata.hive_evidence = [{ kind: 'pr', label: 'New PR', url: URL }];
+      f.rt.snapshots.graph = f.graph();
+    }
+    f.observe(null);
+    const registered = await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+    assert.equal(registered.state, 'pending');
+    assert.equal(registered.nodeId, null);
+    const enrolled = f.doc().prLabels[URL];
+    assert.equal(enrolled.source, source);
+    assert.ok(enrolled.associations.some(a => a.cellId === 'cell' && a.beadId === 'a'));
+    assert.equal(enrolled.firstSeenAt, NOW);
+    f.observe(snapshot());
+    await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+    assert.equal(f.doc().ciWaits.a.outcome, 'success');
+    assert.equal(f.doc().ciWaits.a.nodeId, 'PR_7');
+    assert.equal(f.delivered.length, 1);
+  });
+}
+
+test('new enrollment refuses unrelated links, evidence and malformed PR URLs', () => {
+  for (const url of [URL, URL + '/files', URL.replace('github.com', 'other.example')]) {
+    const f = fixture();
+    f.rt.metadata.mutate(d => { delete d.prLabels; });
+    f.host.links.get = () => [{ type: 'pr', url: URL + '0' }, { type: 'jira', url }];
+    f.live.b.metadata.hive_evidence = [{ kind: 'pr', label: 'Other bead PR', url }];
+    f.rt.snapshots.graph = f.graph();
+    assert.throws(() => reportCiWait(f.rt, f.host, f.actor(), { ...args(), url }, NOW));
+    assert.equal(f.doc().ciWaits, undefined);
+    assert.equal(f.doc().prLabels, undefined);
+  }
+});
+
+test('invalid waits do not enroll PRs and coordinator links cannot substitute for claimant links', () => {
+  const f = fixture();
+  f.rt.metadata.mutate(d => { delete d.prLabels; });
+  f.host.links.get = () => [{ type: 'pr', url: URL }];
+  assert.throws(() => reportCiWait(f.rt, f.host, f.actor(), { ...args(), deadline: 'bad' }, NOW));
+  assert.equal(f.doc().prLabels, undefined);
+  f.live.a.assignee = 'aw:worker'; f.rt.snapshots.graph = f.graph();
+  f.host.links.get = sid => sid === 'queen' ? [{ type: 'pr', url: URL }] : [];
+  assert.throws(() => reportCiWait(f.rt, f.host, f.actor(), args(), NOW), /associated/);
+  assert.equal(f.doc().prLabels, undefined);
+});
+
+test('immediate enrollment preserves known node identity and other bead associations', async () => {
+  const f = fixture();
+  f.rt.metadata.mutate(d => { d.prLabels[URL] = { url: URL, nodeId: 'PR_original', firstSeenAt: NOW - 1000, associations: [{ cellId: 'cell', beadId: 'b' }] }; });
+  f.host.links.get = () => [{ type: 'pr', url: URL }];
+  const registered = await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  assert.equal(registered.outcome, 'superseded');
+  assert.equal(registered.nodeId, 'PR_original');
+  assert.equal(f.doc().prLabels[URL].associations.length, 2);
+  assert.equal(f.doc().prLabels[URL].firstSeenAt, NOW - 1000);
+});
+
+test('a claimant worker can enroll its own linked PR without exposing other session links', async () => {
+  const f = fixture();
+  f.rt.metadata.mutate(d => { delete d.prLabels; });
+  f.live.a.assignee = 'aw:worker'; f.rt.snapshots.graph = f.graph();
+  f.board.set('worker', { sessionId: 'worker', taskId: 'task', status: 'working' });
+  f.host.links.get = sid => { assert.equal(sid, 'worker'); return [{ type: 'pr', url: URL }]; };
+  const registered = await reportCiWait(f.rt, f.host, f.actor('worker', 'worker'), args(), NOW);
+  assert.equal(registered.sessionId, 'worker');
+  assert.equal(registered.state, 'pending');
+});
