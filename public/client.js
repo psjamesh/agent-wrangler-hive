@@ -765,6 +765,7 @@ export function captureFocus(root) {
   const a = document.activeElement;
   if (!a || !root.contains(a)) return null;
   return {
+    element: a,
     tileId: a.dataset?.tileId || null,
     focusKey: a.dataset?.focusKey || null,
     focusFallback: a.dataset?.focusFallback || null,
@@ -779,6 +780,7 @@ export function restoreFocus(root, f) {
   const next = state.focusNext;
   state.focusNext = null;
   if (!f) return;
+  if (f.element && f.element === document.activeElement && root.contains(f.element) && !f.element.disabled && !f.element.closest?.('.hive-map-menu')?.hidden) return;
   let el = null;
   if (f.focusKey) el = root.querySelector(`[data-focus-key="${CSS.escape(f.focusKey)}"]`);
   else if (f.tileId) el = root.querySelector(`[data-tile-id="${CSS.escape(f.tileId)}"]`);

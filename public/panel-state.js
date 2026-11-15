@@ -29,7 +29,7 @@ function endpoint(panel, node, offset) {
     if (!el.parentNode) return null;
     path.unshift([...el.parentNode.childNodes].indexOf(el));
   }
-  return { path, text: node.textContent, type: node.nodeType, offset };
+  return { node, path, text: node.textContent, type: node.nodeType, offset };
 }
 
 export function capturePanelState(root, memory) {
@@ -53,6 +53,7 @@ export function restorePanelState(root, memory, range) {
     const saved = memory.get(panel.dataset.scrollKey);
     for (const [key, el] of disclosures(panel)) if (saved?.has(key)) el.open = saved.get(key);
     if (range?.key !== panel.dataset.scrollKey) continue;
+    if (panel.contains(range.anchor.node) && panel.contains(range.focus.node)) continue;
     const resolve = point => {
       let node = panel;
       for (const index of point.path) node = node?.childNodes[index];

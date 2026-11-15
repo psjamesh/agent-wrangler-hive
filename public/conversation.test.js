@@ -2413,3 +2413,30 @@ for (const pane of ['details', 'conversation']) test(`${pane} restores text sele
   restorePanelState(root, memory, range);
   assert.equal(selection.anchorNode, shifted.children[1], 'a different bead or topic must not inherit selection');
 });
+
+for (const kind of ['focus', 'selection']) test(`retained ${kind} stays on its message when identical controls arrive above it`, t => {
+  fixture(t);
+  const original = { getSelection: globalThis.getSelection, CSS: globalThis.CSS };
+  t.after(() => Object.assign(globalThis, original));
+  globalThis.CSS = { escape: x => x };
+  const root = new Element('div'), panel = new Element('section');
+  Object.assign(panel.dataset, { pane: 'conversation', scrollKey: 'retained' });
+  root.append(panel);
+  const row = () => { const el = new Element('button'); el.textContent = 'Reply'; return el; };
+  panel.append(row(), row());
+  const retained = panel.children[1];
+  retained.focus();
+  const selection = { isCollapsed: false, anchorNode: retained, focusNode: retained, anchorOffset: 0, focusOffset: 1,
+    setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset) { Object.assign(this, { anchorNode, anchorOffset, focusNode, focusOffset }); } };
+  globalThis.getSelection = () => selection;
+  const memory = new Map();
+  const range = capturePanelState(root, memory), focus = captureFocus(root);
+  panel.removeChild(panel.firstChild);
+  panel.insertBefore(row(), retained);
+  panel.insertBefore(row(), retained);
+  restorePanelState(root, memory, range);
+  root.querySelector = selector => descendants(root).find(el => selector === `[data-focus-key="${el.dataset.focusKey}"]`) || null;
+  restoreFocus(root, focus);
+  if (kind === 'focus') assert.equal(document.activeElement, retained);
+  else assert.equal(selection.anchorNode, retained);
+});
