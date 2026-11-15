@@ -76,13 +76,41 @@ test('last-turn flags clear on later progress or worker mail and tolerate older 
   f.sessions.worker.lastTurn = { outcome: 'aborted', at: f.now() };
   assert.equal(f.flags()[0]?.kind, 'aborted_turn');
   f.advance(1);
-  f.sessions.worker.lastActivity = f.now(); assert.deepEqual(f.flags(), []);
-  f.sessions.worker.lastActivity--;
+  f.sessions.worker.lastActivity = f.now(); assert.equal(f.flags()[0]?.kind, 'aborted_turn');
   f.beads.work.updatedAt = f.now(); assert.deepEqual(f.flags(), []);
   f.beads.work.updatedAt--;
   f.host.mail = { list: id => id === 'queen' ? [{ from: 'worker', at: f.now() }] : [] };
   assert.deepEqual(f.flags(), []);
 });
+
+for (const outcome of ['aborted', 'error']) {
+  test(`${outcome} detection ignores trailing host activity and its persisted watermark`, async t => {
+    const f = fixture(t);
+    const at = f.now();
+    f.advance(outcome === 'aborted' ? 1 : 5 * MIN);
+    Object.assign(f.sessions.worker, { status: 'idle', lastTurn: { outcome, at }, lastActivity: f.now(), createdAt: f.now(), relaunchedAt: f.now() });
+    const kind = outcome === 'aborted' ? 'aborted_turn' : 'errored_turn';
+    assert.equal(f.flags()[0]?.kind, kind);
+    await f.watchdog.run();
+    assert.ok(f.rt.metadata.read().workerActivity.worker > at);
+    assert.equal(f.flags()[0]?.kind, kind);
+    await createWatchdog({ runtime: f.rt, host: f.host, now: f.now }).run();
+    assert.equal(f.sent.length, 1);
+  });
+}
+
+for (const source of ['mail', 'op', 'evidence', 'bead']) {
+  test(`later ${source} observed by Hive suppresses an interrupted turn`, t => {
+    const f = fixture(t);
+    Object.assign(f.sessions.worker, { status: 'idle', lastTurn: { outcome: 'aborted', at: f.now() } });
+    f.advance(1);
+    if (source === 'mail') f.host.mail = { list: id => id === 'queen' ? [{ from: 'worker', at: f.now() }] : [] };
+    if (source === 'op') f.rt.metadata.mutate(d => { d.operations.update = { actor: 'aw:worker', state: 'applied', beadIds: ['work'], updatedAt: f.now() }; });
+    if (source === 'evidence') f.beads.work.evidence = [{ by: 'aw:worker', at: f.now(), label: 'Progress' }];
+    if (source === 'bead') f.beads.work.updatedAt = f.now();
+    assert.deepEqual(f.flags(), []);
+  });
+}
 
 test('last-turn flags respect waits, requests, reviews, background shells and archived sessions', t => {
   const f = fixture(t);
