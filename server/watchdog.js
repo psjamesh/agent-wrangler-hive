@@ -133,7 +133,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       `Migrated blocked beads to open: ${ids.map(id => `${id} (${beads[id]?.title || id})`).join(', ')}. Links and waiting annotations were preserved. Waiting now comes from open blocks prerequisites.`, { migrated_bead_ids: ids });
   }
   for (const bead of open) {
-    const pickupProblem = defaultPickupProblem(rt, host, cell, bead, rt.snapshots.graph, index.asked.get(cell.id) || new Set());
+    const pickupProblem = defaultPickupProblem(rt, host, cell, bead, rt.snapshots.graph, index.asked.get(cell.id) || new Set(), now);
     if (pickupProblem) add('pickup_unavailable', bead.id, pickupProblem, now, `Free work capacity cannot start scoped work: ${pickupProblem}`, { bead_id: bead.id });
     if (bead.pickup?.armed) {
       const state = pickupState(rt, host, cell, bead, rt.snapshots.graph, { now });

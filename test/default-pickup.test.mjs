@@ -87,6 +87,7 @@ test('default profile saves only installed resolved models and rejects invalid f
   await assert.rejects(pickup.setWorkerProfile(f.rt, f.host, { cellId: 'cell', beadId: 'ws', profile: { ...f.profile, cwd: 'relative' } }), /absolute/i);
   await pickup.setWorkerProfile(f.rt, f.host, { cellId: 'cell', beadId: 'ws', profile: null });
   assert.equal(f.live.ws.metadata.hive_pickup.workerProfile, null);
+  assert.equal(f.live.ws.metadata.hive_pickup.auto, false);
 });
 
 test('holds preserve explicit authorization receipts and do not create watchdog noise', async () => {
@@ -107,6 +108,8 @@ test('manual claim then release does not authorize a default replacement worker'
   await claimBead(f.rt, f.actor(), { bead_id: 'a' });
   f.live.a.assignee = null; f.live.a.status = 'open'; f.bump('a');
   await run(f); assert.equal(f.spawned.length, 0);
+  await pickup.setPickup(f.rt, f.host, f.actor(), { bead_id: 'a', hold: false });
+  assert.match(pickup.pickupState(f.rt, f.host, f.doc().cells.cell, f.graph().beads.a, f.graph()).reason, /replacement/);
 });
 
 test('default work begins after its last prerequisite closes and capacity becomes free', async () => {
@@ -187,4 +190,65 @@ test('new Hive-created beads carry their default-pickup eligibility marker', asy
   f.rt.beads.createMany = async ({ nodes }) => { created = nodes; return { ids: { n0: 'new' } }; };
   await createBeads(f.rt, f.actor(), { beads: [{ title: 'New bounded work' }] });
   assert.equal(created[0].pickup.automatic, true);
+});
+
+test('a bead created held cannot start while its brief and prerequisites are assembled', async () => {
+  const { createBeads } = await import('../server/ops.js');
+  const f = pickupFixture(); defaults(f); f.live.a.status = 'closed'; f.live.b.status = 'closed';
+  f.rt.beads.createMany = async ({ nodes }) => {
+    const n = nodes[0];
+    f.live.new = { id: 'new', title: n.title, description: n.goal, acceptance_criteria: n.acceptance, status: 'open', updated_at: 'new-v1',
+      metadata: { hive_kind: n.kind, hive_pickup: n.pickup }, dependencies: [{ issue_id: 'new', depends_on_id: n.parentId, type: 'parent-child' }] };
+    return { ids: { n0: 'new' } };
+  };
+  await f.rt.snapshots.refresh();
+  await createBeads(f.rt, f.actor(), { beads: [{ title: 'Assemble before launch', goal: 'Build it', acceptance: 'Verify it', parent: 'ws', hold: true }] });
+  await run(f); assert.equal(f.spawned.length, 0);
+  assert.equal(f.live.new.metadata.hive_pickup.held, true);
+  await pickup.setPickup(f.rt, f.host, f.actor(), { bead_id: 'new', hold: false });
+  f.advance(Date.now() + 120001 - f.now());
+  await run(f); assert.equal(f.spawned.length, 1);
+});
+
+test('explicit readiness can launch PR fixes but default-created marks recheck delivery exclusions', async () => {
+  const f = pickupFixture(); f.live.b.status = 'closed';
+  f.doc().prLabels = { pr: { state: 'OPEN', beadIds: ['a'] } };
+  f.doc().requests = { r: { cellId: 'cell', beadId: 'a', state: 'open' } };
+  await pickup.setPickup(f.rt, f.host, f.actor(), { bead_id: 'a', ready: true, profile: f.profile });
+  await run(f); assert.equal(f.spawned.length, 1);
+  const g = pickupFixture(); g.live.b.status = 'closed';
+  await pickup.setPickup(g.rt, g.host, g.actor(), { bead_id: 'a', ready: true, profile: g.profile });
+  g.live.a.metadata.hive_pickup.source = 'default';
+  g.doc().prLabels = { pr: { state: 'OPEN', beadIds: ['a'] } };
+  await run(g); assert.equal(g.spawned.length, 0);
+});
+
+test('new bead grace period leaves time to assemble prerequisites across calls', async () => {
+  const f = pickupFixture(); defaults(f); f.live.b.status = 'closed';
+  f.live.a.metadata.hive_pickup = { automatic: true, notBefore: f.now() + 120000 };
+  await run(f); assert.equal(f.spawned.length, 0);
+  f.advance(119999); await run(f); assert.equal(f.spawned.length, 0);
+  f.advance(1); await run(f); assert.equal(f.spawned.length, 1);
+});
+
+test('worker-created follow-up beads default to held and cannot request unheld creation', async () => {
+  const { createBeads } = await import('../server/ops.js');
+  const f = pickupFixture(); let created;
+  f.rt.beads.createMany = async ({ nodes }) => { created = nodes; return { ids: { n0: 'new' } }; };
+  await createBeads(f.rt, f.actor('worker', 'worker'), { beads: [{ title: 'Follow-up' }] });
+  assert.equal(created[0].pickup.held, true);
+  await assert.rejects(createBeads(f.rt, f.actor('worker', 'worker'), { beads: [{ title: 'Bypass readiness', hold: false }] }), /queen|human/i);
+});
+
+test('nearest workstream auto setting can opt legacy work out of a parent auto setting', async () => {
+  const f = pickupFixture(); defaults(f); f.live.b.status = 'closed';
+  f.live.nested = { ...structuredClone(f.live.ws), id: 'nested', metadata: { hive_kind: 'workstream', hive_pickup: { auto: false } }, dependencies: [{ issue_id: 'nested', depends_on_id: 'ws', type: 'parent-child' }] };
+  f.live.a.dependencies[0].depends_on_id = 'nested';
+  await run(f); assert.equal(f.spawned.length, 0);
+});
+
+test('an open review directly excludes default work without relying on launch or binding history', async () => {
+  const f = pickupFixture(); defaults(f); f.live.b.status = 'closed';
+  f.doc().reviews.r = { workBeadId: 'a', state: 'in_review' };
+  await run(f); assert.equal(f.spawned.length, 0);
 });

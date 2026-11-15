@@ -1,7 +1,7 @@
 import { h } from './dom.js';
 import { agentProfileFields } from './agent-profile.js';
 
-export function workerProfileForm({ api, ui, send }, cell, workstream) {
+export function workerProfileForm({ api, ui, send, hive }, cell, workstream) {
   const key = `worker-profile:${cell.id}:${workstream.id}`;
   let draft = ui.form(key);
   if (!draft) {
@@ -16,15 +16,15 @@ export function workerProfileForm({ api, ui, send }, cell, workstream) {
     const profile = clear ? null : { agent: current.agent, model: current.model, effort: current.effort, cwd: current.cwd,
       ...(current.intent ? { intent: current.intent } : {}), ...(current.worktreeAuto ? { worktree: current.worktree || { auto: true } } : {}) };
     ui.patchForm(key, { saving: true, error: '', saved: false });
-    send({ type: 'hive-worker-profile', cellId: cell.id, beadId: workstream.id, profile, auto: current.auto, briefTemplate: current.briefTemplate }, { onReply: reply => {
+    send({ type: 'hive-worker-profile', cellId: cell.id, beadId: workstream.id, profile, auto: clear ? false : current.auto, briefTemplate: current.briefTemplate }, { onReply: reply => {
       ui.patchForm(key, { saving: false, saved: Boolean(reply.ok), error: reply.ok ? '' : reply.error || 'Worker profile could not be saved.',
-        ...(reply.ok && clear ? { agent: '', model: '', effort: '', cwd: '', intent: '', worktree: undefined, worktreeAuto: true } : {}) });
+        ...(reply.ok && clear ? { agent: '', model: '', effort: '', cwd: '', intent: '', worktree: undefined, worktreeAuto: true, auto: false } : {}) });
     } });
   };
   return h('form', { class: 'hive-form', 'aria-label': 'Workstream worker profile', onsubmit: e => { e.preventDefault(); save(false); } },
     h('h4', {}, `Default worker · ${workstream.title || workstream.id}`),
     h('p', { class: 'hive-muted' }, 'New scoped work inherits its nearest workstream profile. Existing unmarked work stays held unless this workstream is switched to auto. Explicit readiness marks keep their own profiles. Starts are limited to one per hive and two overall per minute.'),
-    ...agentProfileFields({ agents: api?.agents?.() || [], value: draft, disabled: draft.saving, prefix: key, change }),
+    ...agentProfileFields({ agents: hive?.agents || api?.agents?.() || [], value: draft, disabled: draft.saving, prefix: key, change }),
     h('label', { class: 'hive-field' }, 'Working folder', h('input', { value: draft.cwd, required: true, maxlength: 2000, disabled: draft.saving,
       'data-focus-key': `${key}:cwd`, placeholder: '/path/to/repository', oninput: e => change({ cwd: e.target.value }) })),
     h('label', {}, h('input', { type: 'checkbox', checked: draft.worktreeAuto, disabled: draft.saving, onchange: e => change({ worktreeAuto: e.target.checked }) }), 'Create an isolated worktree'),

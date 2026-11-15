@@ -834,6 +834,8 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
     if (!/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(ref)) throw new HiveError(`beads[${i}].ref must be a short name (letters, digits, - or _).`);
     if (refs.has(ref)) throw new HiveError(`Duplicate ref ${ref}.`);
     refs.set(ref, i);
+    if (b.hold !== undefined && typeof b.hold !== 'boolean') throw new HiveError(`beads[${i}].hold must be true or false.`);
+    if (b.hold === false && !['queen', 'human'].includes(actor.role)) throw new HiveError('Only the queen or human can create unheld work.', 'access');
     const kind = kindArg(b.kind) || 'work';
     if (kind === 'goal') throw new HiveError('A cell has exactly one goal bead, its root. Use kind "workstream" for nested goals.');
     const status = b.status === undefined ? undefined : text(b.status, `beads[${i}].status`, 20);
@@ -842,7 +844,7 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
     if (status === 'in_progress' && !GROUP_KINDS.has(kind)) throw new HiveError('Create work as open, then claim it with hive_claim_bead before starting it.');
     return {
       key: ref,
-      pickup: { automatic: true },
+      pickup: { automatic: true, held: b.hold === true || !['queen', 'human'].includes(actor.role), notBefore: Date.now() + 120000 },
       title: text(b.title, `beads[${i}].title`, LIMITS.title, { required: true }),
       kind,
       issueType: issueTypeForKind(kind),

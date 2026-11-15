@@ -293,7 +293,7 @@ export const readyTool = hiveTool({
 
 export const createBeadsTool = hiveTool({
   name: 'hive_create_beads',
-  description: 'Create one or more beads (work items, workstreams, investigations, decisions...) in your cell in one atomic step, with optional links. Give new beads a ref so later entries in the same call can use it as parent or link end. Beads without a parent go under the cell goal. Links say what depends on what; they are not created by position in the view.',
+  description: 'Create one or more beads (work items, workstreams, investigations, decisions...) in your cell in one atomic step, with optional links. Give new beads a ref so later entries in the same call can use it as parent or link end. New scoped work waits at least two minutes and until a later pickup pass before default launch: include prerequisites and children in this same batch, or set hold: true until setup is complete. Worker-created follow-ups are held for queen review. Beads without a parent go under the cell goal. Links say what depends on what; they are not created by position in the view.',
   inputSchema: {
     beads: z.array(strictObject({
       ref: z.string().max(40).optional().describe('Temporary name for this call, e.g. "api".'),
@@ -304,6 +304,7 @@ export const createBeadsTool = hiveTool({
       acceptance: z.string().max(20000).optional().describe('How anyone can tell it is achieved.'),
       summary: z.string().max(20000).optional().describe('Current understanding (Markdown).'),
       next_action: z.string().max(2000).optional(),
+      hold: z.boolean().optional().describe('Create held while assembling its brief, children or prerequisites; the queen can unhold it when ready.'),
       status: z.enum(SETTABLE_STATUSES, { error: BLOCKED_STATUS_HELP }).optional(),
     })).min(1).max(50),
     links: z.array(strictObject({

@@ -2,7 +2,7 @@ import { h } from './dom.js';
 
 const labels = { ready: 'Ready for pickup', queued: 'Ready for pickup · waiting', starting: 'Starting worker', attention: 'Pickup needs attention', consumed: 'Readiness consumed', unmarked: 'Automatic pickup' };
 
-export function pickupDetails({ api, ui, send }, cell, bead) {
+export function pickupDetails({ api, ui, send, hive }, cell, bead) {
   const mark = bead.pickup || {};
   const key = `pickup:${bead.id}:${mark.armToken || 'new'}`;
   const hold = () => {
@@ -12,7 +12,7 @@ export function pickupDetails({ api, ui, send }, cell, bead) {
       onReply: reply => ui.patchForm(key, { saving: false, error: reply.ok ? '' : reply.error || 'Hold could not be saved.' }),
     });
   };
-  const agents = api?.agents?.() || [];
+  const agents = hive?.agents || api?.agents?.() || [];
   let draft = ui.form(key);
   const editable = cell.enabled && !cell.snapshot && !cell.retired && bead.status !== 'closed' && !['goal', 'workstream', 'external', 'decision'].includes(bead.kind);
   if (!draft && editable) {

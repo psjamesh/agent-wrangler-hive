@@ -12,7 +12,7 @@ test('default worker selects installed agents, resets dependent choices and save
   const forms = new Map(), sent = [];
   const agents = [{ id: 'claude', available: true, models: [{ value: 'sonnet', efforts: ['medium'] }] },
     { id: 'codex', available: false, models: [] }, { id: 'other', available: true, models: [{ value: 'basic', efforts: [] }] }];
-  const ctx = { api: { agents: () => agents }, ui: { form: key => forms.get(key), patchForm: (key, patch) => forms.set(key, { ...forms.get(key), ...patch }) }, send: (msg, options) => sent.push({ msg, options }) };
+  const ctx = { hive: { agents }, ui: { form: key => forms.get(key), patchForm: (key, patch) => forms.set(key, { ...forms.get(key), ...patch }) }, send: (msg, options) => sent.push({ msg, options }) };
   const cell = { id: 'one' };
   const workstream = { id: 'ws', kind: 'workstream', title: 'Repository' };
   let tree = draw(ctx, cell, workstream);
@@ -33,6 +33,7 @@ test('default worker selects installed agents, resets dependent choices and save
   tree = draw(ctx, cell, workstream); assert.equal(select('effort').attrs.value, '');
   walk(tree).find(el => el.tag === 'button' && el.children.includes('Clear default worker')).attrs.onclick();
   assert.equal(sent[1].msg.profile, null);
+  assert.equal(sent[1].msg.auto, false);
 });
 
 test('settings select a workstream in this hive and save its visible brief template', () => {
