@@ -53,13 +53,12 @@ test('pickup uses an outline play glyph and the Key explains pickup and external
       assert.match(explanation, /prerequisite cross is grey; amber marks untracked work/);
       assert.match(explanation, /green outlined triangle/);
       assert.match(explanation, /chain-link glyph/);
+      assert.doesNotMatch(explanation, /cross beside a chain-link/);
     }
     assert.match(words, /external: outside this hive \(teammate PR, release, vendor\)/);
     assert.ok(walk(key).some(n => n.tag === 'external'));
-    assert.match(words, /waiting on something outside this hive/);
-    const combined = walk(key).find(n => n.children.includes('waiting on something outside this hive'));
-    assert.ok(walk(combined).some(n => n.tag === 'waiting'));
-    assert.ok(walk(combined).some(n => n.tag === 'external'));
+    assert.doesNotMatch(words, /waiting on something outside this hive/);
+    assert.ok(!walk(key).some(n => n.attrs.viewBox === '-8 -8 36 16'));
   }
 });
 
