@@ -32,7 +32,7 @@ test('a new workstream with no valid attachment still receives free geometry', (
 });
 
 const projectionSource = fs.readFileSync(new URL('../server/projection.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replaceAll('export function', 'function');
-const dependencies = Object.assign({}, ...await Promise.all(['../server/admission.js', '../server/review-state.js', '../server/bead-detail.js', '../server/tracking.js', '../public/cell-layout.js', '../public/layout-base.js', '../server/bead-model.js', '../server/beads.js', '../public/archive-layout.js', '../server/conversation.js', '../server/requests.js', '../server/waiting.js', '../public/legacy-cell-layout.js'].map(p => import(p))));
+const dependencies = Object.assign({}, ...await Promise.all(['../server/bead-history.js', '../server/admission.js', '../server/review-state.js', '../server/bead-detail.js', '../server/tracking.js', '../public/cell-layout.js', '../public/layout-base.js', '../server/bead-model.js', '../server/beads.js', '../public/archive-layout.js', '../server/conversation.js', '../server/requests.js', '../server/waiting.js', '../public/legacy-cell-layout.js'].map(p => import(p))));
 
 test('a per-cell layout error yields fallback geometry and does not break the board', () => {
   const project = vm.runInNewContext(`${projectionSource}\nprojectForGraph`, { ...dependencies, layoutCell: args => {

@@ -50,3 +50,26 @@ test('an unsettled verdict is shown as a review in progress, not an approval', (
   assert.equal(history[0].outcome, 'Review round 1: in review');
   assert.equal(history[0].at, new Date(1000).toISOString());
 });
+
+test('automatic unbinds show the persisted recovery actor and stop reason', () => {
+  const history = beadHistory({ bindings: { c: [{ id: 'b', beadId: 'a', sessionId: 'worker', at: 1000, active: false, unboundAt: 2000, unboundBy: 'aw:hive-recovery', unboundBecause: 'Session archived', note: 'Original brief' }] } }, bead);
+  assert.equal(history.at(-1).by, 'aw:hive-recovery');
+  assert.equal(history.at(-1).reason, 'Session archived');
+});
+
+test('a later review round in progress uses its recorded update time', () => {
+  const history = beadHistory({ reviews: { r: { id: 'r', workBeadId: 'a', state: 'in_review', round: 2, createdAt: 1000, startedAt: 2000, updatedAt: 5000, history: [{ round: 1, verdict: { value: 'changes_requested', at: 3000 } }] } } }, bead);
+  assert.equal(history[1].at, new Date(5000).toISOString());
+});
+
+test('recorded closes survive reopening without duplicating the current close', () => {
+  const doc = { operations: {
+    f1: { id: 'f1', kind: 'finish', beadIds: ['a'], state: 'applied', actor: 'aw:w', updatedAt: 1000, intent: { outcome: 'done' } },
+    r: { id: 'r', kind: 'reopen', beadIds: ['a'], state: 'applied', actor: 'aw:human', updatedAt: 2000 },
+    f2: { id: 'f2', kind: 'finish', beadIds: ['a'], state: 'applied', actor: 'aw:w2', updatedAt: 3000, intent: { outcome: 'done' } },
+  } };
+  assert.deepEqual(beadHistory(doc, { ...bead, status: 'open' }).map(e => e.outcome), ['Closed: done', 'Reopened', 'Closed: done']);
+  const closed = beadHistory(doc, { ...bead, status: 'closed', closedAt: 2900, outcome: 'done', closeReason: 'Delivered' });
+  assert.equal(closed.filter(e => e.outcome === 'Closed: done').length, 2);
+  assert.equal(closed.at(-1).reason, 'Delivered');
+});
