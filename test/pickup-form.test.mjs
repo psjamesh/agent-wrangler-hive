@@ -83,3 +83,13 @@ test('status styles use theme colours for quiet waits, blue review and green pic
   assert.match(css, /\.hive-pm-untracked \.hive-pm-line \{ stroke: var\(--warn-fg/);
   assert.doesNotMatch(css, /\.hive-pm-(?:waiting|review-pending|pickup)[^{]*\{[^}]*var\(--warn-fg/);
 });
+
+for (const kind of ['external', 'recorded-wait']) test(`${kind} is a bare glyph with a heavier theme foreground stroke`, () => {
+  const source = fs.readFileSync(new URL('../public/hex-grid.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replaceAll('export ', '');
+  const mark = vm.runInNewContext(source + `\nprimaryMark('${kind}', 'Mark', 10, 20, 0.8)`, { h });
+  assert.ok(!walk(mark).some(n => n.attrs.class === 'hive-pm-bg'));
+  assert.equal(mark.attrs.transform, 'translate(10.0 20.0) scale(0.80)');
+  assert.ok(walk(mark).some(n => n.attrs.class === 'hive-pm-line'));
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.hive-pm-external \.hive-pm-line,\s*\.hive-pm-recorded-wait \.hive-pm-line \{ stroke: var\(--fg\); stroke-width: 2; \}/);
+});
