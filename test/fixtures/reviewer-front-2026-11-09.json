@@ -1,0 +1,328 @@
+{
+  "agents": [
+    {
+      "id": "claude",
+      "available": true,
+      "efforts": [
+        {
+          "value": "low"
+        },
+        {
+          "value": "medium"
+        },
+        {
+          "value": "high"
+        },
+        {
+          "value": "xhigh"
+        },
+        {
+          "value": "max"
+        }
+      ],
+      "models": [
+        {
+          "value": "opus",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        {
+          "value": "sonnet",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        {
+          "value": "fable",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        {
+          "value": "haiku",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "available": true,
+      "efforts": [
+        {
+          "value": "low"
+        },
+        {
+          "value": "medium"
+        },
+        {
+          "value": "high"
+        },
+        {
+          "value": "xhigh"
+        },
+        {
+          "value": "max"
+        }
+      ],
+      "models": [
+        {
+          "value": "gpt-6-astra",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        {
+          "value": "gpt-6.1-sol",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        {
+          "value": "gpt-6.1-terra",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        {
+          "value": "gpt-6-luna",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        }
+      ]
+    }
+  ],
+  "read": "2026-11-09",
+  "credit": "Scores: Terminal-Bench 4.0 (tbench.ai, Apache-2.0), with effort results published by Anthropic and OpenAI. Prices: Anthropic and OpenAI list prices from the LiteLLM catalog (MIT), read 2026-11-09.",
+  "units": {
+    "quality": "Terminal-Bench 4.0 points",
+    "usd": "list-price dollars per task",
+    "minutes": "wall-clock minutes per task"
+  },
+  "front": [
+    {
+      "agent": "codex",
+      "model": "gpt-6-luna",
+      "effort": "low",
+      "quality": 8,
+      "usd": 0.1,
+      "minutes": 23.2,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "quality": 12,
+      "usd": 0.13,
+      "minutes": 26.5,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6-luna",
+      "effort": "high",
+      "quality": 13,
+      "usd": 0.15,
+      "minutes": 29.4,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6-luna",
+      "effort": "xhigh",
+      "quality": 15,
+      "usd": 0.16,
+      "minutes": 30.2,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6-luna",
+      "effort": "max",
+      "quality": 16,
+      "usd": 0.22,
+      "minutes": 38.1,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6.1-terra",
+      "effort": "low",
+      "quality": 25,
+      "usd": 0.46,
+      "minutes": 32.2,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6.1-terra",
+      "effort": "medium",
+      "quality": 36,
+      "usd": 0.57,
+      "minutes": 36.8,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6.1-terra",
+      "effort": "high",
+      "quality": 41,
+      "usd": 0.67,
+      "minutes": 40.9,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6.1-terra",
+      "effort": "xhigh",
+      "quality": 45,
+      "usd": 0.69,
+      "minutes": 41.9,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "low",
+      "quality": 51,
+      "usd": 0.92,
+      "minutes": 32.2,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "quality": 55,
+      "usd": 1.14,
+      "minutes": 36.8,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "high",
+      "quality": 56,
+      "usd": 1.34,
+      "minutes": 40.9,
+      "onCurve": true
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "quality": 57,
+      "usd": 1.39,
+      "minutes": 41.9,
+      "onCurve": true
+    },
+    {
+      "agent": "claude",
+      "model": "opus",
+      "effort": "low",
+      "quality": 39,
+      "usd": 1.58,
+      "minutes": 26.8,
+      "onCurve": false
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "max",
+      "quality": 58,
+      "usd": 1.92,
+      "minutes": 52.9,
+      "onCurve": true
+    },
+    {
+      "agent": "claude",
+      "model": "fable",
+      "effort": "low",
+      "quality": 40,
+      "usd": 2.63,
+      "minutes": 26.8,
+      "onCurve": false
+    },
+    {
+      "agent": "claude",
+      "model": "opus",
+      "effort": "medium",
+      "quality": 58,
+      "usd": 3.6,
+      "minutes": 35.6,
+      "onCurve": false
+    },
+    {
+      "agent": "claude",
+      "model": "opus",
+      "effort": "high",
+      "quality": 64,
+      "usd": 4.76,
+      "minutes": 40.6,
+      "onCurve": true
+    },
+    {
+      "agent": "claude",
+      "model": "fable",
+      "effort": "medium",
+      "quality": 60,
+      "usd": 5.97,
+      "minutes": 35.6,
+      "onCurve": false
+    },
+    {
+      "agent": "claude",
+      "model": "fable",
+      "effort": "high",
+      "quality": 67,
+      "usd": 7.9,
+      "minutes": 40.6,
+      "onCurve": true
+    },
+    {
+      "agent": "claude",
+      "model": "fable",
+      "effort": "xhigh",
+      "quality": 69,
+      "usd": 14.96,
+      "minutes": 59.1,
+      "onCurve": true
+    }
+  ]
+}

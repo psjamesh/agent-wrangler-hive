@@ -1,3 +1,4 @@
+import { frontPick, reviewerSlot, qualityFloor, FRONT_LIMITATION, TIER_FALLBACK_WARNING } from '../public/reviewer-front.js';
 import { readAgentCatalog } from './agent-catalog.js';
 import { assertCurrent } from './lifetime.js';
 import { HiveError } from './ops.js';
@@ -15,7 +16,10 @@ function config(value, fallback) {
 }
 
 export function reviewPolicy(cell) {
-  return { primary: config(cell?.reviewPolicy?.primary, REVIEW_POLICY_DEFAULTS.primary), secondary: config(cell?.reviewPolicy?.secondary, REVIEW_POLICY_DEFAULTS.secondary) };
+  return Object.fromEntries(Object.entries(REVIEW_POLICY_DEFAULTS).map(([slot, fallback]) => {
+    const value = cell?.reviewPolicy?.[slot];
+    return [slot, { ...config(value, fallback), ...(!value || value.mode === 'automatic' ? { mode: 'automatic', tier: value?.tier || 'balanced', minQuality: 55, ...Object.fromEntries(['minQuality', 'maxUsd'].filter(k => value?.[k] !== undefined).map(k => [k, value[k]])) } : {}) }];
+  }));
 }
 
 export function assertAllowedModel(config, label = 'worker') {
@@ -35,12 +39,14 @@ export async function setReviewPolicy(rt, { cellId, policy }, host = rt.host) {
   }
   const updates = {};
   for (const [slot, value] of Object.entries(policy)) {
-    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((k) => ![...FIELDS, 'mode'].includes(k)) || (value.mode !== undefined && value.mode !== 'pinned')
+    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((k) => ![...FIELDS, 'mode', 'tier', 'minQuality', 'maxUsd'].includes(k)) || (value.mode !== undefined && !['pinned', 'automatic'].includes(value.mode))
       || FIELDS.some((f) => typeof value[f] !== 'string' || (f !== 'effort' && !value[f].trim()) || value[f].length > 120)) {
       throw new HiveError(`The ${slot} reviewer needs an agent, model and effort.`);
     }
+    if (value.tier !== undefined && !['balanced', 'strongest', 'cheapest'].includes(value.tier)) throw new HiveError('Unknown reviewer tier.');
+    if ((value.minQuality !== undefined && (!Number.isFinite(value.minQuality) || value.minQuality < 0 || value.minQuality > 100)) || (value.maxUsd !== undefined && (!Number.isFinite(value.maxUsd) || value.maxUsd <= 0))) throw new HiveError('Reviewer quality must be 0–100 and cost cap must be positive.');
     assertAllowedReviewer(value, slot);
-    updates[slot] = config(value, REVIEW_POLICY_DEFAULTS[slot]);
+    updates[slot] = { ...config(value, REVIEW_POLICY_DEFAULTS[slot]), ...(value.mode === 'automatic' ? { mode: 'automatic', tier: value.tier || 'balanced', minQuality: value.minQuality ?? 55, ...(value.maxUsd !== undefined ? { maxUsd: value.maxUsd } : {}) } : {}) };
   }
   const agents = await readAgentCatalog(host);
   assertCurrent(rt, host);
@@ -48,6 +54,7 @@ export async function setReviewPolicy(rt, { cellId, policy }, host = rt.host) {
   if (!current || current.snapshot) throw new HiveError('This hive is no longer writable.', 'refused');
   const next = { ...reviewPolicy(current), ...updates };
   for (const [slot, value] of Object.entries(next)) {
+    if (value.mode === 'automatic') continue;
     const agent = agents.find(a => a.id === value.agent);
     if (!agent) throw new HiveError(`The ${slot} reviewer agent is not installed.`, 'refused');
     if (agent.available !== true) throw new HiveError(`The ${slot} reviewer agent is unavailable: ${agent.reason || 'CLI not installed or unavailable'}.`, 'refused');
@@ -61,12 +68,18 @@ export async function setReviewPolicy(rt, { cellId, policy }, host = rt.host) {
   return { cellId, policy: next };
 }
 
-export function chooseReviewer(cell, builderAgent, agents) {
+export function chooseReviewer(cell, builderAgent, agents, frontResult) {
   const policy = reviewPolicy(cell);
-  const differing = builderAgent && [policy.primary, policy.secondary].find(c => c.agent !== builderAgent);
-  const pinned = differing || policy.primary;
-  const chosen = { config: pinned, sameProvider: Boolean(builderAgent && pinned.agent === builderAgent), ...(!builderAgent ? { unknownBuilder: true } : {}) };
-  if (!agents || installedReviewer(agents, pinned)) return chosen;
+  const pinned = policy[reviewerSlot(policy, builderAgent)];
+  const pinnedConfig = config(pinned, REVIEW_POLICY_DEFAULTS.primary);
+  let selection;
+  if (pinned.mode === 'automatic') {
+    const pick = builderAgent && frontPick(frontResult?.front, pinned, builderAgent, agents);
+    if (pick) return { config: config(pick, pinnedConfig), sameProvider: false, ...(!builderAgent ? { unknownBuilder: true } : {}), selection: { mode: 'automatic', scope: 'global-front', limitation: FRONT_LIMITATION, reason: `${pinned.tier === 'strongest' ? 'Highest-quality' : 'Cheapest'} installed model on the host front meeting the tier and differing from the builder.`, tier: { name: pinned.tier, minQuality: qualityFloor(pinned), maxUsd: pinned.maxUsd }, pick, read: frontResult.read } };
+    selection = { mode: 'automatic', scope: 'global-front', limitation: FRONT_LIMITATION, warning: TIER_FALLBACK_WARNING, tier: { name: pinned.tier, minQuality: qualityFloor(pinned), maxUsd: pinned.maxUsd }, reason: !builderAgent ? 'Builder provider unknown; using configured policy.' : frontResult?.error || 'No eligible different-provider row meets this tier on the global host front. Settings dominated by the builder provider or Terra may be absent. Using configured fallback; tier is not guaranteed.' };
+  }
+  const chosen = { ...(selection ? { selection } : {}), config: pinnedConfig, sameProvider: Boolean(builderAgent && pinned.agent === builderAgent), ...(!builderAgent ? { unknownBuilder: true } : {}) };
+  if (!agents || installedReviewer(agents, pinnedConfig)) return chosen;
   const candidates = agents.filter(a => a.available === true).flatMap(agent => {
     const models = [...(agent.models || [])].sort((a, b) => Number(Boolean(b.default)) - Number(Boolean(a.default)));
     return models.map(model => {
@@ -76,7 +89,7 @@ export function chooseReviewer(cell, builderAgent, agents) {
   });
   const fallback = candidates.find(c => c.agent !== builderAgent) || candidates[0];
   if (!fallback) throw new HiveError('No installed reviewer model is available for Automatic fallback.', 'refused');
-  return { ...chosen, config: fallback, sameProvider: Boolean(builderAgent && fallback.agent === builderAgent), fallback: { reason: 'Pinned reviewer no longer available; using Automatic host defaults.', pinned } };
+  return { ...chosen, config: fallback, sameProvider: Boolean(builderAgent && fallback.agent === builderAgent), fallback: { reason: 'Pinned reviewer no longer available; using Automatic host defaults.', pinned: pinnedConfig } };
 }
 
 export function installedReviewer(agents, value) {

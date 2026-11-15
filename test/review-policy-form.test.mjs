@@ -1,3 +1,4 @@
+import { frontPick, reviewerSlot, FRONT_LIMITATION, TIER_FALLBACK_WARNING } from '../public/reviewer-front.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -13,12 +14,12 @@ const agents = [
 ];
 function fixture(policy) {
   const source = fs.readFileSync(new URL('../public/review-policy.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace(/export /g, '');
-  const draw = vm.runInNewContext(source + '\nreviewPolicyForm', { h });
+  const draw = vm.runInNewContext(source + '\nreviewPolicyForm', { h, frontPick, reviewerSlot, FRONT_LIMITATION, TIER_FALLBACK_WARNING });
   const forms = new Map(), sent = [];
   const ctx = { hive: { agents }, ui: { form: key => forms.get(key), setForm: (key, value) => forms.set(key, value), patchForm: (key, value) => forms.set(key, { ...forms.get(key), ...value }) }, send: (msg, options) => sent.push({ msg, options }) };
   const cell = { id: 'one', reviewPolicy: policy || { primary: { agent: 'claude', model: 'opus', effort: 'high' }, secondary: { agent: 'codex', model: 'sol', effort: 'low' } } };
   const render = () => draw(ctx, cell);
-  const selects = () => walk(render()).filter(el => el.tag === 'select');
+  const selects = () => walk(render()).filter(el => el.tag === 'select' && el.attrs.id);
   const change = (index, value) => selects()[index].attrs.onchange({ target: { value } });
   const draft = () => forms.get('review-policy:one');
   return { render, selects, change, draft, sent, ctx };
@@ -65,4 +66,29 @@ test('a model removed from a refreshed catalogue flags the existing draft and ex
   assert.equal(f.selects()[1].attrs['aria-invalid'], 'true');
   assert.equal(f.draft().primary.model, 'opus');
   assert.ok(walk(f.render()).some(el => el.children.some(c => typeof c === 'string' && /using Automatic host defaults/.test(c))));
+});
+
+test('automatic slots preview the front per builder and persist tier controls', () => {
+  const f = fixture({ primary: { mode: 'automatic', tier: 'cheapest', agent: 'claude', model: 'opus', effort: 'high', minQuality: 70, maxUsd: 2 }, secondary: { agent: 'codex', model: 'sol', effort: 'low' } });
+  f.ctx.hive.reviewerFront = { front: [{ agent: 'claude', model: 'opus', effort: 'high', quality: 80, usd: 1 }] };
+  assert.ok(walk(f.render()).some(el => el.children.some(c => typeof c === 'string' && /Builder Codex: claude \/ opus/.test(c))));
+  f.render().attrs.onsubmit({ preventDefault() {} });
+  assert.equal(f.sent[0].msg.policy.primary.mode, 'automatic');
+  assert.equal(f.sent[0].msg.policy.primary.maxUsd, 2);
+  const input = walk(f.render()).find(el => el.tag === 'input');
+  input.attrs.oninput({ target: { value: '90' } });
+  assert.ok(walk(f.render()).some(el => el.children.some(c => typeof c === 'string' && /Builder Codex: No eligible/.test(c))));
+});
+
+test('Automatic preview shows only applicable builders and visible tier and fallback warnings', () => {
+  const f = fixture({ primary: { mode: 'automatic', agent: 'claude', model: 'opus', effort: 'high' }, secondary: { mode: 'automatic', agent: 'codex', model: 'sol', effort: 'low' } });
+  f.ctx.hive.agents = agents.filter(a => ['claude', 'codex'].includes(a.id));
+  f.ctx.hive.reviewerFront = { front: [] };
+  const nodes = walk(f.render());
+  const previews = nodes.filter(el => el.attrs?.role === 'status' && el.children.some(c => typeof c === 'string' && c.startsWith('Builder ')));
+  assert.equal(previews.length, 2);
+  assert.ok(previews.every(el => el.attrs.class === 'hive-error' && el.children.some(c => /tier is not guaranteed/.test(c))));
+  assert.ok(nodes.some(el => el.children.includes(FRONT_LIMITATION)));
+  const options = nodes.filter(el => el.tag === 'option').map(el => el.attrs.value);
+  for (const tier of ['balanced', 'strongest', 'cheapest']) assert.ok(options.includes(tier));
 });
