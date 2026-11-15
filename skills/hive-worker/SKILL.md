@@ -64,3 +64,7 @@ If the queen bound you as `coordinator` for a workstream, you may also delegate 
 ## Automatically picked-up work
 
 A readiness mark authorizes one worker launch through Hive's ordinary claim-before-action path. Read the assigned bead context and follow its bounded brief. Ask the current queen to change readiness or reconcile a failed/uncertain pickup; workers do not arm or rearm work. Finishing, releasing or reopening a bead never authorizes a replacement worker automatically.
+
+## Hive repository versions
+
+Feature PRs must never bump Hive’s package version. Keep `package.json` and both root version fields in `package-lock.json` unchanged. Only a named release PR labelled `release` changes them, using `npm run release -- <version>`. See [the release guide](../../docs/releases.md).
