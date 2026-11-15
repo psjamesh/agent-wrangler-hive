@@ -21,3 +21,9 @@ At 20 open PRs in five repositories, Hive adds approximately **1,260 GraphQL poi
 The extension consumes core through its public host API only. `host.links.get(sessionId)` exposes stored session links and derived check status/head metadata. It does not provide Hive's full state observation (raw check rollup, draft flag, merge state, title and review fields), or retain the final observation after core removes a merged/closed link. A missing link cannot prove a merge.
 
 Replacing Hive's active-state reads requires a URL-keyed host observation API with freshness/error information, full PR state fields including stable node identity/creation time and retained terminal observations. Derived notifications alone cannot preserve Hive's existing readiness behavior. The queen tracks that API addition separately; this implementation keeps the independent state reads until that contract exists.
+
+## Hive repository merge evidence
+
+The builder merges `psjamesh/agent-wrangler-hive` PRs after the latest Hive review approves the exact head and the required `test` check is green. Use `gh pr merge <url> --merge --match-head-commit <approved-head>` without admin bypass. The queen does not merge or bump versions for Hive. The builder retains its claim until installation is verified or explicitly delegated to configured core auto-update, then closes its bead.
+
+Both `hive_update_bead.add_evidence` and `hive_finish_bead.evidence` accept `kind: "merge"`, the PR `url`, and `merged_head`: the full actual merged PR head SHA, not the merge commit. Hive rejects missing or mismatched heads unless the latest recorded review on that bead is approved for that exact commit. Record the merge commit and check verification in `detail`. This is a check on submitted evidence, not a GitHub merge operation or independent remote verification; the builder must observe GitHub's actual merged head before submitting it. Other repositories retain their assigned delivery contracts.

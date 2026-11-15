@@ -55,7 +55,7 @@ Each explicit readiness mark carries its own launch profile; eligible unmarked s
 
 ## Dependency waits
 
-Closing a prerequisite means its result has been delivered. For PR-backed work the queen merges, keep the bead open through merge and any required install. The builder reports the reviewed PR and verification, records `waiting_for` as "Awaiting queen merge/install of PR …", adds `merge-wait` or `install-wait` evidence for the handoff, then releases its claim with status `open` for the queen to claim and finish after delivery. This preserves the delivery wait without leaving unclaimed `in_progress` work. Opening a PR or passing review must not release dependent work.
+Closing a prerequisite means its result has been delivered. For Hive-repository PRs, the builder keeps its claim through exact-head approved review, green required `test` check, and its own merge commit using `gh pr merge --merge --match-head-commit <approved-head>` without admin bypass. It records merge evidence and closes after install verification or explicit delegation to configured core auto-update. The queen does not merge Hive PRs or bump their versions. Other repositories follow their assigned delivery contract: an explicit queen handoff records `merge-wait` or `install-wait`, remaining steps and `waiting_for`, then releases the claim with status `open`. Opening a PR or passing review must not release dependent work.
 
 Scope prerequisites with `hive_link_beads` (`type: "blocks"`). Work waits until every blocking prerequisite closes, including normal and external beads. An open decision or investigation prerequisite labels the map **Waiting on design**. Link-derived waiting needs no hand-set status.
 

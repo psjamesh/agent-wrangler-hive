@@ -269,7 +269,8 @@ const evidenceSchema = strictObject({
   label: z.string().min(1).max(200).describe('Short label, e.g. "PR #12 merged" or "Failing test output". Labels beginning with "Review " are reserved for managed verdict receipts.'),
   url: z.string().max(2000).optional().describe('http(s) link, if any.'),
   detail: z.string().max(2000).optional().describe('Optional Markdown detail.'),
-  kind: z.string().max(40).optional().describe('e.g. note, test, review, merge, pr, decision.'),
+  kind: z.string().max(40).optional().describe('e.g. note, test, review, merge, pr, decision. Merge evidence requires the PR URL; Hive merges require merged_head matching the latest approved review.'),
+  merged_head: z.string().regex(/^[a-fA-F0-9]{40}$/).optional().describe('Full merged PR head SHA (not the merge commit). Required for Hive merge evidence; must equal the latest approved review commit.'),
 });
 
 export const contextTool = hiveTool({

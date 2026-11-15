@@ -811,8 +811,26 @@ export function evidenceInput(list, by) {
     if (url && !/^https?:\/\//i.test(url)) throw new HiveError(`evidence[${i}].url must be an http(s) URL.`);
     const detail = text(e.detail, `evidence[${i}].detail`, LIMITS.short) || '';
     const kind = text(e.kind, `evidence[${i}].kind`, 40) || 'note';
-    return { label, url: url || null, detail, kind, by, at: new Date().toISOString() };
+    const mergedHead = text(e.merged_head, `evidence[${i}].merged_head`, 40);
+    if (mergedHead !== undefined && !/^[a-f0-9]{40}$/i.test(mergedHead)) throw new HiveError('merged_head must be a full 40-character commit SHA.');
+    return { label, url: url || null, detail, kind, by, at: new Date().toISOString(), ...(mergedHead ? { merged_head: mergedHead.toLowerCase() } : {}) };
   });
+}
+
+function requireApprovedMergeHead(rt, cellId, beadId, evidence) {
+  for (const entry of evidence) {
+    if (!['merge', 'merged'].includes(entry.kind)) continue;
+    if (!entry.url) throw new HiveError('Merge evidence requires the PR URL.');
+    const url = new URL(entry.url);
+    if (url.hostname.toLowerCase() !== 'github.com' || !/^\/psjamesh\/agent-wrangler-hive\/pull\/\d+\/?$/i.test(url.pathname)) continue;
+    const latest = Object.values(rt.metadata.read().reviews || {})
+      .filter(r => r.cellId === cellId && r.workBeadId === beadId)
+      .sort((a, b) => (a.updatedAt || a.createdAt || 0) - (b.updatedAt || b.createdAt || 0)).at(-1);
+    if (!entry.merged_head || latest?.state !== 'approved' || latest.verdict?.value !== 'approved'
+      || latest.commit?.toLowerCase() !== entry.merged_head) {
+      throw new HiveError('Hive merge evidence requires merged_head to equal the latest approved review commit. Obtain approval for that exact head first.', 'refused');
+    }
+  }
 }
 
 function kindArg(value) {
@@ -964,6 +982,7 @@ export async function updateBead(rt, actor, input) {
     patch.resume = '';
   }
   const add = evidenceInput(input.add_evidence, actor.sessionId ? actorFor(actor.sessionId) : 'aw:human');
+  requireApprovedMergeHead(rt, cell.id, id, add);
   const removeLabels = Array.isArray(input.remove_evidence_labels) ? input.remove_evidence_labels.slice(0, 50).map(String) : [];
   for (const k of Object.keys(patch)) if (patch[k] === undefined) delete patch[k];
   if (!Object.keys(patch).length && !add.length && !removeLabels.length) throw new HiveError('Nothing to update.');
@@ -985,6 +1004,7 @@ export async function updateBead(rt, actor, input) {
       if (add.length || removeLabels.length) {
         const fresh = await rt.beads.show(id);
         if (!fresh) throw new HiveError(`Bead ${id} no longer exists.`);
+        requireApprovedMergeHead(rt, cell.id, id, add);
         const { evidence } = normalizeIssue(fresh);
         const kept = evidence.filter((e) => !removeLabels.includes(e.label));
         const next = [...kept, ...add];
@@ -1315,6 +1335,7 @@ export async function finishBead(rt, actor, input) {
   if (!OUTCOMES.includes(outcome)) throw new HiveError(`outcome must be one of ${OUTCOMES.join(', ')}.`);
   const summary = text(input.summary, 'summary', LIMITS.long, { required: true });
   const add = evidenceInput(input.evidence, actorFor(actor.sessionId));
+  requireApprovedMergeHead(rt, cell.id, id, add);
   const who = actorFor(actor.sessionId);
   if (id !== cell.rootBeadId && Object.values(rt.snapshots.graph.beads).some((b) => b.parentId === id)) {
     const out = await finishGroup(rt, { cell, id, outcome, summary, add, who });
@@ -1340,6 +1361,7 @@ export async function finishBead(rt, actor, input) {
     if (fresh.assignee && fresh.assignee !== who) {
       throw new HiveError(`Bead ${id} is claimed by ${fresh.assignee}, so only that session can finish it. Nothing was changed. Ask the holder to finish it with hive_finish_bead; if it cannot, a queen or coordinator can check with it and then release the claim with hive_release_bead (force: true and a reason) before finishing.`, 'conflict');
     }
+    requireApprovedMergeHead(rt, cell.id, id, add);
     const normalized = normalizeIssue(fresh);
     rt.metadata.mutate(d => consumePickup(d, normalized, { source: 'finish', operationId: opId }));
     const { evidence } = normalized;
