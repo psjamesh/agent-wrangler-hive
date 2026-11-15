@@ -501,3 +501,25 @@ test('closed-bead reconciliation respects snapshot and missing cells', async () 
     else assert.deepEqual(f.doc().ciWaits.a, original);
   }
 });
+
+for (const source of ['delete cleanup', 'legacy deletion']) {
+  test(`${source} drops pending and finished CI waits without attention or worker wakes`, async () => {
+    const { forgetDeleted } = await import('../server/ops.js');
+    for (const state of ['pending', 'resolved']) {
+      const f = fixture();
+      f.rt.metadata.mutate(d => { d.ciWaits = { a: wait(state === 'resolved' ? { state, outcome: 'failure', resolvedAt: NOW, wake: { state: 'uncertain', at: NOW } } : {}) }; });
+      if (source === 'delete cleanup') {
+        f.rt.metadata.mutate(d => {
+          Object.assign(d, { beadLayout: {}, archived: {}, restoring: {} });
+          forgetDeleted(d, 'cell', ['a'], 'queen');
+        });
+        assert.equal(f.doc().ciWaits.a, undefined);
+      }
+      delete f.live.a; f.rt.snapshots.graph = f.graph();
+      assert.deepEqual(ciWaitAttention(f.rt, f.doc().cells.cell, NOW + 700000), []);
+      await reconcileCiWaits(f.rt, f.host, NOW + 700000);
+      assert.equal(f.doc().ciWaits.a, undefined);
+      assert.equal(f.delivered.length, 0);
+    }
+  });
+}
