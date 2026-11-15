@@ -32,6 +32,7 @@ try {
     name.endsWith('.browser.mjs') || /(?:\.browser|-browser)\.test\.mjs$/.test(name));
   const tests = files.filter(name => name !== 'global-inbox.browser.mjs').sort();
   const output = resolve(process.env.HIVE_SCREENSHOT_DIR || join(tmpdir(), 'hive-browser-artifacts'));
+  const failures = [];
   for (const file of tests) {
     const shots = join(output, file);
     await mkdir(shots, { recursive: true });
@@ -41,11 +42,16 @@ try {
       env: { ...process.env, HIVE_TEST_CDP: String(port), HIVE_AUTO_FIT_BROWSER: '1', HIVE_SCREENSHOT_DIR: shots, HIVE_SHOT_DIR: shots },
       timeout: 150000,
     });
-    await new Promise((resolve, reject) => {
-      test.once('error', reject);
-      test.once('exit', (code, signal) => code === 0 ? resolve() : reject(Error(`${file} failed (${signal || code})`)));
-    });
+    try {
+      await new Promise((resolve, reject) => {
+        test.once('error', reject);
+        test.once('exit', (code, signal) => code === 0 ? resolve() : reject(Error(`${file} failed (${signal || code})`)));
+      });
+    } catch (error) {
+      failures.push(error);
+    }
   }
+  if (failures.length) throw new AggregateError(failures, 'Browser fixtures failed');
 } finally {
   if (child.exitCode === null && child.signalCode === null && !launchError) child.kill();
   await exited;

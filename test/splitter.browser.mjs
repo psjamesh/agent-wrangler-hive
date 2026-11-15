@@ -19,7 +19,7 @@ const rect = s => root.querySelector(s).getBoundingClientRect();
 const line = () => { const c = getComputedStyle(divider, '::before'); return { width: c.width, background: c.backgroundColor }; };
 window.t = {
   snapshot: () => ({
-    gap: root.querySelector('.hive-stage') ? rect('.hive-tabs').left - rect('.hive-stage').right : null,
+    gap: root.querySelector('.hive-stage') ? rect(root.querySelector('.hive-tabs') ? '.hive-tabs' : '.hive-dock').left - rect('.hive-stage').right : null,
     dividerWidth: rect('.hive-divider').width,
     hit: getComputedStyle(divider, '::after').width,
     panelWidth: (root.querySelector('.hive-tabs') ?? root.querySelector('.hive-dock')).getBoundingClientRect().width,
@@ -33,13 +33,13 @@ window.t = {
   }),
   overview: () => {
     root.dataset.view = 'overview';
-    root.innerHTML = '<div class="hive-overview"><button id="inbox-item" style="display:block;width:100%;height:100%">inbox item</button></div><div class="hive-dock">rail</div><div class="hive-divider" role="separator" tabindex="0"></div>';
+    root.innerHTML = '<div class="hive-overview"><div class="hive-overview-head">head</div><div class="hive-stage"><button id="inbox-item" style="display:block;width:100%;height:100%">inbox item</button></div></div><div class="hive-dock">rail</div><div class="hive-divider" role="separator" tabindex="0"></div>';
     divider = root.querySelector('.hive-divider');
     installPanelSplit(root, divider, { getItem: k => store.get(k), setItem: (k, v) => store.set(k, v) });
     const box = e => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; };
     const after = divider.getBoundingClientRect();
     return {
-      gap: rect('.hive-dock').left - rect('.hive-overview').right,
+      gap: rect('.hive-dock').left - rect('.hive-stage').right,
       position: getComputedStyle(divider).position,
       before: getComputedStyle(divider, '::before').width,
       after: getComputedStyle(divider, '::after').width,
