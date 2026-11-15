@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 test('search ranks fields before substring position, without case sensitivity', async () => {
   const { rankBeads } = await import('../public/map-search.js');
@@ -549,6 +550,45 @@ for (const overview of [false, true]) {
     assert.equal(menu.hidden, true);
     assert.equal(document.activeElement, trigger);
     canvas.hiveDisposeView();
+  });
+}
+
+for (const overview of [false, true]) {
+  test(`resume reserves its layout space through pause, drag and rebuild in ${overview ? 'overview' : 'hive'}`, t => {
+    const f = fixture(t);
+    if (overview) { f.ui.closeCell(); f.draw(); }
+    const canvas = f.canvas();
+    canvas.fire('keydown', { key: '0' });
+    const tools = canvas.querySelector('.hive-zoom');
+    const slot = tools.querySelector('.hive-map-resume-slot');
+    assert.ok(slot, 'resume has a persistent layout slot');
+    const resume = slot.querySelector('button');
+    const launcher = tools.querySelector('.hive-map-menu-launcher');
+    const structure = [...tools.children];
+    assert.equal(resume.hidden, true);
+    const svg = canvas.querySelector('svg');
+    svg.fire('pointerdown', { button: 0, clientX: 10, clientY: 10 });
+    svg.fire('pointermove', { clientX: 30, clientY: 30 });
+    assert.equal(resume.hidden, false);
+    assert.deepEqual(tools.children, structure);
+    svg.fire('pointerup', { clientX: 30, clientY: 30 });
+    resume.fire('click');
+    assert.equal(resume.hidden, true);
+    const tile = canvas.querySelector(`[data-tile-id="${overview ? 'cell' : 'title'}"]`);
+    tile.fire('pointerdown', { button: 0, clientX: 10, clientY: 10 });
+    tile.fire('pointermove', { clientX: 30, clientY: 30 });
+    assert.ok(canvas.querySelector('.hive-zoom') === tools, 'drag does not rebuild controls');
+    assert.equal(resume.hidden, true, 'tile drag does not pause auto-fit');
+    assert.ok(tools.querySelector('.hive-map-menu-launcher') === launcher);
+    tile.fire('pointercancel');
+    f.beads.title.status = 'in_progress';
+    f.draw();
+    assert.ok(f.canvas().querySelector('.hive-map-resume-slot'));
+    assert.equal(f.canvas().querySelector('.hive-map-resume-slot').querySelector('button').hidden, true);
+    const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+    const hiddenResume = css.match(/\.hive-map-resume-slot > \.hive-zoom-btn\[hidden\]\s*\{([^}]+)\}/)?.[1];
+    assert.match(hiddenResume || '', /display:\s*inline-flex/, 'hidden resume retains its natural width and height');
+    assert.match(hiddenResume || '', /visibility:\s*hidden/, 'inactive resume is invisible and cannot receive focus');
   });
 }
 

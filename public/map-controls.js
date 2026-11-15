@@ -57,7 +57,7 @@ export function mapControls({ id, zoom, options, actions, paused }) {
   menu.addEventListener('click', event => {
     if (event.target.closest('button')) close(true);
   }, true);
-  const tools = h('div', { class: 'hive-zoom', role: 'group', 'aria-label': 'Map view' }, paused, h('div', { class: 'hive-map-menu-launcher' }, search, trigger), menu);
+  const tools = h('div', { class: 'hive-zoom', role: 'group', 'aria-label': 'Map view' }, h('div', { class: 'hive-map-resume-slot' }, paused), h('div', { class: 'hive-map-menu-launcher' }, search, trigger), menu);
   tools.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || menu.hidden) return;
     event.preventDefault(); event.stopPropagation(); close(true);

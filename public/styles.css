@@ -575,6 +575,10 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 .hive-map-menu-launcher { display: flex; align-items: center; gap: 4px; }
 .hive-zoom-btn[hidden],
 .hive-map-menu[hidden] { display: none; }
+.hive-map-resume-slot > .hive-zoom-btn[hidden] {
+  display: inline-flex;
+  visibility: hidden;
+}
 .hive-wsmenu.hive-map-menu {
   right: 0;
   bottom: calc(100% + 8px);
