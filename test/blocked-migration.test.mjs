@@ -107,3 +107,66 @@ test('migration digest names every bead beyond the ordinary ten-item limit', asy
   assert.equal(f.delivered.length, 1);
   for (let i = 0; i < 15; i++) assert.ok(f.delivered[0].message.includes(`old${i} (Old ${i})`));
 });
+
+test('migrated link annotations clear with their prerequisites, preserving later ownership and status', async () => {
+  const f = pickupFixture();
+  f.live.a.status = 'blocked'; f.live.a.metadata.hive_waiting_for = 'Waiting on b to land';
+  f.live.a.dependencies.push({ issue_id: 'a', depends_on_id: 'b', type: 'blocks' });
+  await f.rt.snapshots.refresh();
+  const wd = createWatchdog({ runtime: f.rt, host: f.host, now: f.now });
+  await wd.run();
+  assert.equal(f.graph().beads.a.waitingFor, 'Waiting on b to land');
+  f.live.a.status = 'in_progress'; f.live.a.assignee = 'aw:queen'; f.bump('a');
+  f.live.b.status = 'closed'; await f.rt.snapshots.refresh(); await wd.run();
+  assert.equal(f.graph().beads.a.waitingFor, '');
+  assert.equal(f.live.a.status, 'in_progress'); assert.equal(f.live.a.assignee, 'aw:queen');
+  assert.equal(f.delivered.length, 2);
+  f.live.a.metadata.hive_waiting_for = 'Waiting on b to land'; f.bump('a');
+  await f.rt.snapshots.refresh(); await wd.run();
+  assert.equal(f.graph().beads.a.waitingFor, 'Waiting on b to land');
+});
+
+test('migration never clears independent, edited or explicitly resumed annotations', async () => {
+  for (const scenario of ['no links', 'edited', 'explicit resume', 'different links']) {
+    const f = pickupFixture(); f.live.a.status = 'blocked';
+    f.live.a.metadata.hive_waiting_for = 'Original wait';
+    if (scenario !== 'no links') f.live.a.dependencies.push({ issue_id: 'a', depends_on_id: 'b', type: 'blocks' });
+    if (scenario === 'explicit resume') f.live.a.metadata.hive_resume = { reviewAt: '2099-01-01' };
+    await f.rt.snapshots.refresh();
+    const wd = createWatchdog({ runtime: f.rt, host: f.host, now: f.now });
+    await wd.run();
+    if (scenario === 'edited') { f.live.a.metadata.hive_waiting_for = 'Independent new wait'; f.bump('a'); }
+    if (scenario === 'different links') { f.live.a.dependencies.push({ issue_id: 'a', depends_on_id: 'root', type: 'blocks' }); f.live.root.status = 'closed'; }
+    f.live.b.status = 'closed'; await f.rt.snapshots.refresh(); await wd.run();
+    assert.equal(f.graph().beads.a.waitingFor, scenario === 'edited' ? 'Independent new wait' : 'Original wait', scenario);
+  }
+});
+
+for (const status of ['open', 'in_progress', 'deferred', 'closed']) test(`uncertain migration settles after work advances to ${status}`, async () => {
+  const f = pickupFixture(); f.live.a.status = status;
+  f.doc().operations.op = { id: 'op', kind: 'migrate-blocked', state: 'uncertain', cellId: 'cell', intent: { beadId: 'a' }, createdAt: f.now() };
+  assert.equal((await settleOne(f.rt, 'op')).settled, true);
+  assert.ok(f.doc().cells.cell.blockedMigrations.a);
+});
+
+test('recovered migration retains the link annotation cleanup condition', async () => {
+  const f = pickupFixture();
+  f.live.a.status = 'blocked'; f.live.a.metadata.hive_waiting_for = 'Waiting on b';
+  f.live.a.dependencies.push({ issue_id: 'a', depends_on_id: 'b', type: 'blocks' });
+  await f.rt.snapshots.refresh();
+  const mutate = f.rt.metadata.mutate;
+  f.rt.metadata.mutate = fn => mutate(d => {
+    fn(d);
+    if (Object.values(d.operations).some(op => op.kind === 'migrate-blocked' && op.state === 'applied')) throw new Error('Bookkeeping interrupted');
+  });
+  await resolveLinkWaits(f.rt, f.host, f.now());
+  f.rt.metadata.mutate = mutate;
+  assert.equal(f.live.a.status, 'open');
+  assert.equal(f.doc().cells.cell.blockedMigrations, undefined);
+  const op = Object.values(f.doc().operations).find(op => op.kind === 'migrate-blocked');
+  op.updatedAt = 0;
+  assert.equal((await settleOne(f.rt, op.id)).settled, true);
+  f.live.b.status = 'closed'; await f.rt.snapshots.refresh();
+  await resolveLinkWaits(f.rt, f.host, f.now());
+  assert.equal(f.graph().beads.a.waitingFor, '');
+});

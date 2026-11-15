@@ -665,7 +665,7 @@ async function observe(rt, op) {
   const bead = normalizeIssue(raw);
   const observed = { beadId, status: bead.status, outcome: bead.outcome || null, assignee: bead.assignee || null, at };
   let settled = false;
-  if (op.kind === 'migrate-blocked') settled = bead.status === 'open';
+  if (op.kind === 'migrate-blocked') settled = bead.status !== 'blocked';
   else if (finish) settled = bead.status === 'closed' && bead.outcome === finish.outcome;
   else if (op.kind === 'claim') settled = typeof op.intent.assignee === 'string' && bead.assignee === op.intent.assignee;
   else if (op.kind === 'release') settled = managedReleaseIntent(op)
@@ -693,7 +693,7 @@ export async function settleOne(rt, opId) {
       const rec = d.operations[opId];
       if (rec && needsSettling(rec)) {
         d.operations[opId] = stamp(rec, { state: 'applied', settledBy: 'hive:observed', previousState: rec.state, observed: seen.observed });
-        if (rec.kind === 'migrate-blocked' && d.cells[rec.cellId]) (d.cells[rec.cellId].blockedMigrations ||= {})[rec.intent.beadId] ||= { at: rec.createdAt };
+        if (rec.kind === 'migrate-blocked' && d.cells[rec.cellId]) (d.cells[rec.cellId].blockedMigrations ||= {})[rec.intent.beadId] ||= { at: rec.createdAt, ...rec.intent.migration };
         if (deleteIntent(rec)) forgetDeleted(d, rec.cellId, seen.observed.missing, 'hive:observed');
       }
     });
