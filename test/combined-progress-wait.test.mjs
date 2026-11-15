@@ -91,3 +91,20 @@ test('closed and higher-priority work retain their mark alongside a stale record
     assert.deepEqual(kinds(f.render()), [expected]);
   }
 });
+
+for (const kind of ['decision', 'investigation']) {
+  test(`open ${kind} prerequisite labels the map waiting on design without changing status`, () => {
+    const f = fixture({ status: 'open', ownerSessionId: null, waitingFor: '' });
+    f.hive.beads.design = { id: 'design', title: 'Resolve interface design', kind, status: 'open' };
+    f.hive.edges.push({ dependent: 'a', prerequisite: 'design', blocking: true });
+    const tile = f.render();
+    assert.equal(tile.badge, 'Waiting on design');
+    assert.match(tile.title, /waiting on design/i);
+    assert.match(tile.ariaLabel, /waiting on design/i);
+    assert.equal(f.bead.status, 'open');
+    f.hive.beads.design.status = 'closed';
+    assert.notEqual(f.render().badge, 'Waiting on design');
+    f.hive.beads.design.status = 'open'; f.hive.edges[0].blocking = false;
+    assert.notEqual(f.render().badge, 'Waiting on design');
+  });
+}

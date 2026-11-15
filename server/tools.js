@@ -315,7 +315,7 @@ export const createBeadsTool = hiveTool({
 
 export const updateBeadTool = hiveTool({
   name: 'hive_update_bead',
-  description: 'Update a bead in your cell: title, kind, goal, acceptance, summary (replace it, do not append a log), next action, waiting reason, status (open, in_progress, blocked, deferred) or parent, and add or remove evidence. Omitted fields are unchanged; an empty string clears a text field. Use hive_finish_bead to close work.',
+  description: 'Update a bead in your cell: title, kind, goal, acceptance, summary (replace it, do not append a log), next action, waiting reason, status (open, in_progress, blocked, deferred) or parent, and add or remove evidence. Omitted fields are unchanged; an empty string clears a text field. Blocked/deferred requires an open blocks prerequisite or resume_after_bead/resume_review_at. Use hive_finish_bead to close work.',
   inputSchema: {
     bead_id: beadId,
     title: z.string().max(200).optional().describe('Short, self-contained action or outcome in plain words. Clarify, never change scope.'),
@@ -326,8 +326,8 @@ export const updateBeadTool = hiveTool({
     next_action: z.string().max(2000).optional(),
     waiting_for: z.string().max(2000).optional().describe('What it is waiting on and why. Waiting is normal, not failure.'),
     status: z.enum(SETTABLE_STATUSES).optional(),
-    resume_review_at: z.string().max(40).optional().describe('With status "deferred": a review date (e.g. 2026-12-01) after which Hive raises the bead to the queen. Empty string clears it. Without any resume condition, the hive\'s default deferred review age applies.'),
-    resume_after_bead: z.string().max(80).optional().describe('With status "deferred": a prerequisite bead id; Hive raises this bead to the queen when it closes. Empty string clears it.'),
+    resume_review_at: z.string().max(40).optional().describe('With status "blocked" or "deferred": a review date (e.g. 2026-12-01) after which Hive raises the bead to the queen. Empty string clears it. Blocked/deferred requires a structured condition.'),
+    resume_after_bead: z.string().max(80).optional().describe('With status "blocked" or "deferred": a prerequisite bead id; Hive raises this bead to the queen when it closes. Empty string clears it.'),
     parent_id: z.string().max(80).optional().describe('New parent bead id; empty string moves it under the cell goal.'),
     expected_updated_at: z.string().max(80).optional().describe('Optional guard: the bead\'s updated_at as hive_context showed it. The update is refused if the bead has changed since. Omit to overwrite as before.'),
     add_evidence: z.array(evidenceSchema).max(20).optional(),
@@ -395,7 +395,7 @@ const sessionLinkArgs = {
 
 export const publishTool = hiveTool({
   name: 'hive_publish',
-  description: 'Returns a relative hash link to the posted message. Pass session_id (and optionally session_label) when the human should act in a specific board session. Publish a deliberate message to the human in your cell\'s Hive conversation: an answer, decision, trade-off, concern, question, meaningful milestone or result, a significant change of approach, scope or timing, or a material blocker. It is shown as coming from your session. Answer a [Hive] message from the human here, with reply_to set to its id, or list the human messages this answers in answers: text in your terminal is not shown in Hive. Every human message waits for a visible answer from the queen; only such an answer settles it, and it also acknowledges receipt. The human marks queen messages read, reacts to them or replies; that arrives as state in hive_context, not as messages. Inform the human even when they need not act. Leave routine bookkeeping, unchanged status and worker chatter on the beads, and do not post timed status updates. Messages are grouped into topics: a reply joins its message\'s topic, thread_id posts into a topic, and otherwise a new topic starts, named thread_title or the message\'s first line.',
+  description: 'Returns a relative hash link to the posted message. Pass session_id (and optionally session_label) when the human should act in a specific board session. Publish a deliberate message to the human in your cell\'s Hive conversation: an informational answer, trade-off, concern, meaningful milestone or result, a significant change of approach, scope or timing, or a material blocker. It is shown as coming from your session. When answering a [Hive] message needs the human to decide or act, use hive_request_input with reply_to, put context in its body and do not also publish the question. Keep follow-up decisions in the existing request’s thread_id. When nothing is being asked, answer here with reply_to set to its id, or list the human messages this answers in answers: text in your terminal is not shown in Hive. Every human message waits for a visible answer from the queen; only such an answer settles it, and it also acknowledges receipt. The human marks queen messages read, reacts to them or replies; that arrives as state in hive_context, not as messages. Inform the human even when they need not act. Leave routine bookkeeping, unchanged status and worker chatter on the beads, and do not post timed status updates. Messages are grouped into topics: a reply joins its message\'s topic, thread_id posts into a topic, and otherwise a new topic starts, named thread_title or the message\'s first line.',
   inputSchema: {
     ...sessionLinkArgs,
     text: z.string().min(1).max(20000).describe('Markdown. Self-contained: enough context to respond without opening a terminal.'),
@@ -420,7 +420,7 @@ export const updateThreadTool = hiveTool({
 
 export const acknowledgeInputTool = hiveTool({
   name: 'hive_acknowledge_input',
-  description: 'Queen only. Confirm receipt: you have taken on board human messages listed under unacknowledged_input in hive_context, so Hive stops retrying them. It does not send anything and does not answer them; each still waits under awaiting_response until you answer it with hive_publish.',
+  description: 'Queen only. Confirm receipt: you have taken on board human messages listed under unacknowledged_input in hive_context, so Hive stops retrying them. It does not send anything and does not answer them; each still waits under awaiting_response until you answer it with hive_publish, or hive_request_input with reply_to.',
   inputSchema: { message_ids: z.array(z.string().min(1).max(80)).min(1).max(100) },
 }, ({ rt, actor, args }) => acknowledgeInput(rt, actor, args));
 

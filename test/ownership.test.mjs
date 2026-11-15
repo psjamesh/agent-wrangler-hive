@@ -869,7 +869,7 @@ test('review admission cannot deadlock a same-bead status update or later cross-
   };
   const request = reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review' });
   await reachedSnapshot;
-  const status = updateBead(f.rt, f.actor(), { bead_id: 'a', status: 'blocked' });
+  const status = updateBead(f.rt, f.actor(), { bead_id: 'a', status: 'blocked', resume_review_at: '2099-01-01' });
   await new Promise(setImmediate);
   const otherCell = claimBead(f.rt, f.actor('queen2', 'other'), { bead_id: 'c' });
   release();
@@ -894,7 +894,7 @@ test('worker relaunch releases admission before taking the bead lock needed by a
   f.rt.snapshots.refresh = async () => { if (pause) { pause = false; entered(); await snapshotGate; } return refresh(); };
   const resume = workers.workerLaunchContext({ sid: 'worker-1', task: { id: 'task' }, reason: 'resume', host: f.host });
   await reachedSnapshot;
-  const status = updateBead(f.rt, f.actor(), { bead_id: 'a', status: 'blocked' });
+  const status = updateBead(f.rt, f.actor(), { bead_id: 'a', status: 'blocked', resume_review_at: '2099-01-01' });
   await new Promise(setImmediate);
   const otherCell = claimBead(f.rt, f.actor('queen2', 'other'), { bead_id: 'c' });
   release();
@@ -918,7 +918,7 @@ test('archive cleanup takes admission only after releasing the bead lock, allowi
   f.rt.beads.release = async (...args) => { entered(); await releaseGate; return nativeRelease(...args); };
   const cleanup = archival.releaseArchivedClaims(f.rt, f.host, 'builder');
   await reachedRelease;
-  const status = updateBead(f.rt, f.actor(), { bead_id: 'a', status: 'blocked' });
+  const status = updateBead(f.rt, f.actor(), { bead_id: 'a', status: 'blocked', resume_review_at: '2099-01-01' });
   await new Promise(setImmediate);
   const otherCell = claimBead(f.rt, f.actor('queen2', 'other'), { bead_id: 'c' });
   release();
@@ -1186,7 +1186,7 @@ for (const caller of ['queen', 'coordinator']) {
         f.live.a.status = assignee ? 'in_progress' : 'open';
         await f.rt.snapshots.refresh();
         const bindings = structuredClone(f.doc().bindings);
-        await updateBead(f.rt, resolveCaller(f.rt, f.host, caller), { bead_id: 'a', status, waiting_for: 'External prerequisite' });
+        await updateBead(f.rt, resolveCaller(f.rt, f.host, caller), { bead_id: 'a', status, resume_review_at: '2099-01-01', waiting_for: 'External prerequisite' });
         assert.equal(f.live.a.status, status);
         assert.equal(f.live.a.assignee, assignee);
         assert.deepEqual(f.doc().bindings, bindings);
@@ -1384,11 +1384,10 @@ test('deferring takes a review date or prerequisite, validates them and clears t
   assert.deepEqual(patches.at(-1).resume, { afterBead: 'b' });
   await updateBead(f.rt, f.actor(), { bead_id: 'a', status: 'open' });
   assert.equal(patches.at(-1).resume, '');
-  f.live.a.status = 'in_progress'; await f.rt.snapshots.refresh();
-  await updateBead(f.rt, f.actor(), { bead_id: 'a', status: 'deferred' });
-  assert.equal(patches.at(-1).resume, '');
+  f.live.a.status = 'in_progress'; delete f.live.a.metadata.hive_resume; await f.rt.snapshots.refresh();
+  await assert.rejects(updateBead(f.rt, f.actor(), { bead_id: 'a', status: 'deferred' }), /structured/);
   const { normalizeIssue } = await import('../server/bead-model.js');
-  assert.deepEqual(normalizeIssue(f.live.a).resume, { reviewAt: '2026-12-01T00:00:00.000Z', afterBead: 'b' });
+  assert.equal(normalizeIssue(f.live.a).resume, null);
   assert.equal(normalizeIssue(f.live.b).resume, null);
 });
 
@@ -1725,7 +1724,7 @@ test('state derives from attached sessions: in review, working, idle; and a re-r
 test('hive_update_bead warns when it blocks on the human with no open request, and not otherwise', async () => {
   const f = statusFixture();
   const actor = f.actor();
-  const humanWait = await updateBead(f.rt, actor, { bead_id: 'a', status: 'blocked', waiting_for: 'Human: choose' });
+  const humanWait = await updateBead(f.rt, actor, { bead_id: 'a', status: 'blocked', resume_review_at: '2099-01-01', waiting_for: 'Human: choose' });
   assert.match(humanWait.warning, /hive_request_input/);
   await f.rt.snapshots.refresh();
   const bare = await updateBead(f.rt, actor, { bead_id: 'a', waiting_for: '' });
@@ -1743,7 +1742,7 @@ test('hive_update_bead warns from the applied state when updates race', async ()
   const f = statusFixture();
   const actor = f.actor();
   const [first, second] = await Promise.all([
-    updateBead(f.rt, actor, { bead_id: 'a', status: 'blocked', waiting_for: 'Human: choose' }),
+    updateBead(f.rt, actor, { bead_id: 'a', status: 'blocked', resume_review_at: '2099-01-01', waiting_for: 'Human: choose' }),
     updateBead(f.rt, actor, { bead_id: 'a', waiting_for: '' }),
   ]);
   assert.equal(f.live.a.status, 'blocked');
