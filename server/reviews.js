@@ -2,9 +2,9 @@ import { readReviewerFront } from './reviewer-front.js';
 import { readAgentCatalog } from './agent-catalog.js';
 import { newId } from './metadata-store.js';
 import { actorFor, normalizeIssue, descendantIds } from './bead-model.js';
-import { COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller } from './access.js';
+import { COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller, waitForHierarchy } from './access.js';
 import { assertAllowedReviewer, chooseReviewer } from './review-policy.js';
-import { HiveError, ensureWritable, text, withLock, withLocks, journaled, isRunning } from './ops.js';
+import { HiveError, waitForWritable, text, withLock, withLocks, journaled, isRunning } from './ops.js';
 import { ADMISSION_LOCK, checkAdmission, exportedGraph, RESERVED_LAUNCH_STATES } from './admission.js';
 import { OPEN_REVIEW_STATES, openReview } from './review-state.js';
 import { coordinator, spawnWorker } from './workers.js';
@@ -131,9 +131,8 @@ export async function requestReview(rt, host, actor, input) {
     const previous = openReview(rt, input.bead_id);
     if (previous) await reconcileReview(rt, host, previous);
     await withLocks([ADMISSION_LOCK, `bead:${input.bead_id}`], async () => {
-      ensureWritable(rt);
-      await rt.snapshots.refresh();
-      if (rt.snapshots.current.error) throw new HiveError('Cannot confirm current review work.');
+      await waitForWritable(rt);
+      await waitForHierarchy(rt, { refresh: true });
       actor = coordinator(rt, host, actor, asAttach);
       const byHolder = !COORDINATING_ROLES.has(actor.role);
       const { bead, cell } = requireBeadAccess(rt, actor, input.bead_id);
@@ -168,7 +167,9 @@ export async function requestReview(rt, host, actor, input) {
       try { agents = await readAgentCatalog(host); }
       catch (error) { catalogUnavailable = error.message; }
       const front = await readReviewerFront(host, { agents, builderAgent: builderAgentOf(host, bead) });
-      ensureWritable(rt);
+      await waitForWritable(rt);
+      actor = coordinator(rt, host, actor, asAttach);
+      requireBeadAccess(rt, actor, input.bead_id);
       policy = resolveReviewPolicy(cell, builderAgentOf(host, bead), input, byHolder, agents, front);
       if (catalogUnavailable) policy.catalogUnavailable = catalogUnavailable;
       const prior = openReview(rt, bead.id);
@@ -181,7 +182,9 @@ export async function requestReview(rt, host, actor, input) {
       checkAdmission(rt, await rt.beads.loadSnapshot({ all: true }), bead.id, { sessionId: null, review: true });
       const fresh = await rt.beads.show(bead.id);
       if (!fresh || fresh.status === 'closed') throw new HiveError('Reviewed work is missing or closed.', 'conflict');
+      await waitForWritable(rt);
       actor = coordinator(rt, host, actor, asAttach);
+      requireBeadAccess(rt, actor, input.bead_id);
       await journaled(rt, { kind: 'review-request', cellId: cell.id, actor: actorFor(actor.sessionId), summary: `Request review of ${bead.id}`, beadIds: [bead.id] }, async () => {
         rt.metadata.mutate((d) => {
           if (Object.values(d.reviews).some((r) => r.workBeadId === bead.id && r.id !== reviewId && OPEN_REVIEW_STATES.has(r.state))) throw new HiveError('This bead already has an open review; wait for its verdict or cancel it.', 'conflict');
@@ -204,13 +207,19 @@ export async function requestReview(rt, host, actor, input) {
     await notifyQueen(rt, host, cellOf, actor, `[Hive] Review session ${launch.session_id} started on ${input.bead_id} (${policy.agent}/${policy.model}/${policy.effort}${policy.sameProvider ? ', same provider as the builder' : ''}${policy.overrideReason ? `, policy overridden: ${policy.overrideReason}` : ''}${policy.selection?.warning ? `, WARNING: ${policy.selection.warning}` : ''}${policy.fallback ? `, ${policy.fallback.reason}` : ''}${policy.catalogUnavailable ? `, catalogue unavailable: ${policy.catalogUnavailable}; using configured policy without availability fallback` : ''}), requested by ${actor.sessionId}. No action needed.`);
     return { ...launch, review_id: reviewId, policy };
   } catch (err) {
+    const review = rt.metadata.read().reviews[reviewId];
+    const launch = review?.launchId && rt.metadata.read().workerLaunches[review.launchId];
+    if (err.hierarchyBusy && (!launch || launch.state === 'refused' && !launch.claimStarted)) {
+      rt.metadata.mutate(d => { Object.assign(d.reviews[reviewId], { state: 'cancelled', summary: err.message, completedAt: Date.now() }); });
+      throw err;
+    }
     if (rt.metadata.read().reviews[reviewId]?.state === 'cancelled') throw new HiveError(`Review ${reviewId} was cancelled before its reviewer launch completed: ${err.message}`, 'refused');
     throw new HiveError(`Review ${reviewId} remains a wait on ${input.bead_id}, but its reviewer launch did not finish: ${err.message}. Reconcile the launch before requesting a replacement.`, err.code || 'uncertain');
   }
 }
 
 export async function reviewVerdict(rt, host, actor, input) {
-  ensureWritable(rt);
+  await waitForWritable(rt);
   if (!['approved', 'changes_requested'].includes(input.verdict)) throw new HiveError('verdict must be approved or changes_requested.');
   const summary = text(input.summary, 'summary', 20000, { required: true });
   const commit = input.commit === undefined ? undefined : text(input.commit, 'commit', 80, { required: true });
@@ -249,9 +258,8 @@ export async function reviewVerdict(rt, host, actor, input) {
     });
     if (reopen) {
       await withLocks([ADMISSION_LOCK, `bead:${id}`], async () => {
-        ensureWritable(rt);
-        await rt.snapshots.refresh();
-        if (rt.snapshots.current.error) throw new HiveError('Cannot confirm current review work.');
+        await waitForWritable(rt);
+        await waitForHierarchy(rt, { refresh: true });
         checkAdmission(rt, await rt.beads.loadSnapshot({ all: true }), id, { sessionId: null, review: true });
         const fresh = await rt.beads.show(id);
         if (!fresh || fresh.status === 'closed') throw new HiveError('Reviewed work is missing or closed.', 'conflict');
@@ -267,7 +275,7 @@ export async function reviewVerdict(rt, host, actor, input) {
 }
 
 export async function cancelReview(rt, host, actor, input) {
-  ensureWritable(rt);
+  await waitForWritable(rt);
   const reason = text(input.reason, 'reason', 2000, { required: true });
   return withLock(`review:${input.bead_id}`, async () => {
     actor = resolveCaller(rt, host, actor.sessionId, actor.cell.id);

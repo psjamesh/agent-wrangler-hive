@@ -665,7 +665,7 @@ for (const problem of ['hierarchy', 'profile']) {
     await run(f); await run(f);
     assert.equal(f.spawned.length, 1);
     assert.equal(f.actions.length, 0);
-    assert.equal(Object.values(f.doc().workerLaunches)[0].state, 'uncertain');
+    assert.equal(Object.values(f.doc().workerLaunches)[0].state, problem === 'hierarchy' ? 'refused' : 'uncertain');
     assert.equal(f.delivered.length, 1);
   });
 }

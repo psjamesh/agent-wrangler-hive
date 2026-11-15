@@ -4,7 +4,7 @@ import path from 'node:path';
 import { actorFor, descendantIds, GROUP_KINDS, normalizeIssue, openDescendants } from './bead-model.js';
 import { requireBeadAccess, requireQueen, resolveCaller } from './access.js';
 import { ADMISSION_LOCK, capacity, exportedGraph, RESERVED_LAUNCH_STATES } from './admission.js';
-import { HiveError, ensureWritable, journaled, text, withLocks } from './ops.js';
+import { HiveError, waitForWritable, journaled, text, withLocks } from './ops.js';
 import { assertCurrent, isCurrent } from './lifetime.js';
 import { newId } from './metadata-store.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
@@ -221,7 +221,7 @@ export function defaultPickupProblem(rt, host, cell, bead, graph = rt.snapshots.
 }
 
 export async function setWorkerProfile(rt, host, { cellId, beadId, profile, briefTemplate = '', auto = false }) {
-  ensureWritable(rt);
+  await waitForWritable(rt);
   const cell = rt.metadata.cell(cellId);
   if (!cell || cell.snapshot || cell.retired) throw new HiveError('Choose an editable hive.');
   if (typeof auto !== 'boolean') throw new HiveError('auto must be true or false.');
@@ -328,7 +328,7 @@ export function assertPickupClaimed(rt, host, launch, graph, sid) {
 }
 
 export async function setPickup(rt, host, actor, input, { automatic = false, now = Date.now } = {}) {
-  ensureWritable(rt);
+  await waitForWritable(rt);
   const human = actor.sessionId === null;
   if (!human) requireQueen(resolveCaller(rt, host, actor.sessionId, actor.cell.id), 'mark work ready for pickup');
   const { cell } = requireBeadAccess(rt, actor, input.bead_id);
@@ -339,7 +339,7 @@ export async function setPickup(rt, host, actor, input, { automatic = false, now
   assertCurrent(rt, host);
   if (automatic && candidateProfile.resolvedModel && candidateProfile.resolvedModel !== profile.resolvedModel) throw new HiveError('Default worker model resolution changed; save the profile again.', 'refused');
   return withLocks([ADMISSION_LOCK, `bead:${input.bead_id}`], async () => {
-    ensureWritable(rt);
+    await waitForWritable(rt);
     if (!human) requireQueen(resolveCaller(rt, host, actor.sessionId, cell.id), 'mark work ready for pickup');
     const graph = await rt.beads.loadSnapshot({ all: true });
     assertCurrent(rt, host);
@@ -385,7 +385,7 @@ async function setPickupHold(rt, host, actor, input) {
   if (typeof input.hold !== 'boolean' || input.ready !== undefined || input.profile !== undefined) throw new HiveError('Supply hold as true or false on its own.');
   const { cell } = requireBeadAccess(rt, actor, input.bead_id);
   return withLocks([ADMISSION_LOCK, `bead:${input.bead_id}`], async () => {
-    ensureWritable(rt);
+    await waitForWritable(rt);
     const graph = await rt.beads.loadSnapshot({ all: true });
     assertCurrent(rt, host);
     const bead = graph.beads[input.bead_id];

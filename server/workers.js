@@ -10,8 +10,8 @@ import { holdsBead } from './bead-sessions.js';
 import { assertCurrent } from './lifetime.js';
 import { newId } from './metadata-store.js';
 import { actorFor, descendantIds, GROUP_KINDS } from './bead-model.js';
-import { COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller } from './access.js';
-import { HiveError, ensureWritable, text, withLock, withLocks, claimBead, bindIfMissing } from './ops.js';
+import { COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller, waitForHierarchy } from './access.js';
+import { HiveError, ensureWritable, waitForWritable, text, withLock, withLocks, claimBead, bindIfMissing } from './ops.js';
 import { applyLaunchPolicy, launchRestriction } from './launch-policy.js';
 import { ADMISSION_LOCK, capacity, checkAdmission, exportedGraph, RESERVED_LAUNCH_STATES } from './admission.js';
 
@@ -111,6 +111,7 @@ function recordLaunchFailure(rt, launchId, error, dispatched = true) {
     }
     if (!dispatched && launch.source === 'automatic' && d.pickupRates?.starts) d.pickupRates.starts = d.pickupRates.starts.filter(s => s.launchId !== launchId);
     launch.error = String(error.message).slice(0, 1000);
+    if (error.hierarchyBusy) launch.refusalReason = 'hierarchy-busy';
     launch.updatedAt = Date.now();
     return launch.state;
   });
@@ -173,12 +174,9 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
       let launch;
       await withLock(ADMISSION_LOCK, async () => {
         const context = { sid, task, ext, initial, restoring };
-        let current = gateAuthority(rt, host, launchId, context);
-        await rt.snapshots.refresh();
-        if (rt.snapshots.current.error) throw new HiveError('Current worker ownership could not be read.');
-        current = gateAuthority(rt, host, launchId, context, current.launch);
-        const graph = await rt.beads.loadSnapshot({ all: true });
-        current = gateAuthority(rt, host, launchId, context, current.launch);
+        const expected = rt.metadata.read().workerLaunches[launchId];
+        const graph = await waitForHierarchy(rt, { refresh: true, read: () => rt.beads.loadSnapshot({ all: true }) });
+        const current = gateAuthority(rt, host, launchId, context, expected);
         const { launch: l, requester } = current;
         if (initial && l.source === 'automatic') assertPickupAuthorization(rt, host, l, graph);
         held = initial || l.role !== 'worker' ? null : heldOpenBead(rt, graph, sid, l);
@@ -239,6 +237,10 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
       rt.changed();
     } catch (err) {
       if (restoreReserved) rt.workerRestores.delete(sid);
+      if (err.hierarchyBusy && !reserved && ['dispatch', 'spawn'].includes(reason)) {
+        recordLaunchFailure(rt, launchId, err, false);
+        rt.changed();
+      }
       if (reserved) {
         try { recordLaunchFailure(rt, launchId, err); }
         catch (recordError) { rt.log(`hive: could not record refused relaunch: ${recordError.message}`); }
@@ -258,6 +260,8 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
   const launchId = newId('worker');
   const as = { attach: role !== 'worker', beadId: input.bead_id };
   const attach = role !== 'worker';
+  try { await waitForWritable(rt); }
+  catch (err) { if (pickup && (err.hierarchyBusy || rt.snapshots.current?.error)) throw pickupReadUnavailable(err.message); throw err; }
   actor = coordinator(rt, host, actor, as);
   assertAllowedModel(opts);
   let catalog;
@@ -276,11 +280,9 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     if (model.resolved !== input.resolvedModel) throw new HiveError('Worker model resolution changed; reconcile and rearm.', 'refused');
   }
   await withLocks([ADMISSION_LOCK, `bead:${input.bead_id}`], async () => {
-    if (attach) await rt.snapshots.refresh();
-    actor = coordinator(rt, host, actor, as);
-    await rt.snapshots.refresh();
-    if (rt.snapshots.current.error || pickup && rt.snapshots.hierarchyCurrent === false) throw pickup ? pickupReadUnavailable('Cannot confirm current bead ownership or capacity.') : new HiveError('Cannot confirm current bead ownership or capacity.', 'refused');
-    const graph = await rt.beads.loadSnapshot({ all: true });
+    let graph;
+    try { graph = await waitForHierarchy(rt, { refresh: true, read: () => rt.beads.loadSnapshot({ all: true }) }); }
+    catch (err) { if (pickup && (err.hierarchyBusy || rt.snapshots.current?.error)) throw pickupReadUnavailable(err.message); throw err; }
     actor = coordinator(rt, host, actor, as);
     const { bead, cell } = requireBeadAccess(rt, actor, input.bead_id);
     if (cell.id !== actor.cell.id || bead.id === cell.rootBeadId) throw new HiveError('Launch a worker for a bead in this cell, below its goal.');
@@ -303,6 +305,7 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
   inFlight.add(launchId);
   let dispatched = false;
   try {
+    await waitForWritable(rt);
     const l = rt.metadata.read().workerLaunches[launchId];
     actor = coordinator(rt, host, actor, as);
     if (l.state !== 'reserved') throw new HiveError('This launch was cancelled or changed before dispatch.', 'conflict');
@@ -346,7 +349,7 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
     catch (recordError) { rt.log(`hive: could not record worker launch failure: ${recordError.message}`); }
     rt.changed();
     if (retryScheduled) throw Object.assign(new HiveError(err.message, 'busy'), { pickupRetryScheduled: true });
-    if (RETIRED_LAUNCH_STATES.has(state)) throw new HiveError(`Worker launch ${launchId} is ${state}: ${err.message}`, 'refused');
+    if (RETIRED_LAUNCH_STATES.has(state)) throw Object.assign(new HiveError(`Worker launch ${launchId} is ${state}: ${err.message}`, 'refused'), { hierarchyBusy: rt.metadata.read().workerLaunches[launchId]?.refusalReason === 'hierarchy-busy' });
     if (!dispatched) throw new HiveError(`Worker launch ${launchId} did not dispatch: ${err.message}`, err.code || 'refused');
     throw new HiveError(`Worker launch ${launchId} is uncertain: ${err.message}. Do not spawn again; reconcile this launch first.`, 'uncertain');
   } finally { inFlight.delete(launchId); }
