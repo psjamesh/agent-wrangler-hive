@@ -101,7 +101,7 @@ function flightFrames(w, hgt, scale = 1, acrobatics = false) {
   };
   const steps = loop ? 160 : 48;
   const bob = (4 + Math.random() * 4) * scale;
-  const frames = [];
+  const frames = [], poses = [];
   let lastAngle = 0;
   for (let i = 0; i <= steps; i += 1) {
     const t = i / steps;
@@ -119,9 +119,35 @@ function flightFrames(w, hgt, scale = 1, acrobatics = false) {
     lastAngle = angle;
     const y = p.y + (loop ? 0 : Math.sin(t * Math.PI * 7) * bob);
     const flip = fromLeft ? 1 : -1;
+    poses.push({ x: Number(p.x.toFixed(1)), y: Number(y.toFixed(1)), angle: Number((angle * (loop ? 1 : 0.6)).toFixed(1)), flip });
     frames.push({ transform: `translate(${p.x.toFixed(1)}px, ${y.toFixed(1)}px) rotate(${(angle * (loop ? 1 : 0.6)).toFixed(1)}deg) scaleX(${flip})` });
   }
-  return frames;
+  return { frames, poses };
+}
+
+function trailFrames(poses, duration, scale) {
+  const lifetime = 2000, interval = 125, count = 16;
+  const total = duration + lifetime;
+  const trails = Array.from({ length: count }, () => []);
+  for (let time = 0, sample = 0; time <= duration; time += interval, sample++) {
+    const index = time / duration * (poses.length - 1);
+    const a = poses[Math.floor(index)], b = poses[Math.min(Math.floor(index) + 1, poses.length - 1)];
+    const mix = index % 1;
+    const angle = (a.angle + (b.angle - a.angle) * mix) * Math.PI / 180;
+    const tailX = -14 * scale * a.flip, tailY = 2 * scale;
+    const x = a.x + (b.x - a.x) * mix + tailX * Math.cos(angle) - tailY * Math.sin(angle);
+    const y = a.y + (b.y - a.y) * mix + tailX * Math.sin(angle) + tailY * Math.cos(angle);
+    const transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+    const frames = trails[sample % count];
+    if (!frames.length) frames.push({ offset: 0, transform, opacity: 0 });
+    frames.push(
+      { offset: time / total, transform, opacity: 0 },
+      { offset: time / total, transform, opacity: 0.5 },
+      { offset: (time + lifetime) / total, transform, opacity: 0 },
+    );
+  }
+  for (const frames of trails) frames.push({ ...frames.at(-1), offset: 1 });
+  return trails;
 }
 
 export function createBees({ level, behaviour = () => 0 }) {
@@ -186,15 +212,15 @@ export function createBees({ level, behaviour = () => 0 }) {
     if (layer.parentNode !== root) root.append(layer);
     const scale = beeScaleOf(`${salt}:${serial++}`);
     const el = beeEl(scale);
-    const frames = flightFrames(box.width, box.height, scale, behaviour() >= 2);
+    const { frames, poses } = flightFrames(box.width, box.height, scale, behaviour() >= 2);
     const duration = rand(FLIGHT_MS);
     const elements = [], animations = [];
     if (behaviour() >= 1) {
-      for (let i = 1; i <= 16; i++) {
-        const dot = h('span', { class: 'hive-bee-trail', style: { opacity: String(0.5 * (1 - i / 17)) } });
+      for (const dotFrames of trailFrames(poses, duration, scale)) {
+        const dot = h('span', { class: 'hive-bee-trail' });
         layer.append(dot);
         elements.push(dot);
-        animations.push(dot.animate(frames, { duration, delay: i * 125, easing: 'linear', fill: 'both' }));
+        animations.push(dot.animate(dotFrames, { duration: duration + 2000, easing: 'linear', fill: 'both' }));
       }
     }
     layer.append(el);
