@@ -1127,7 +1127,7 @@ test('document changes retain human answer and notify the queen once per observe
   assert.equal(changed.state, 'answered');
   assert.equal(changed.answer.text, 'Approved');
   assert.equal(f.sent[0].id, queen);
-  assert.match(f.sent[0].text, /Approval was for revision-7, now revision-8/);
+  assert.match(f.sent[0].text, /Human answer was for revision-7, now revision-8/);
   await report('revision-8');
   assert.equal(f.sent.length, 1);
   assert.equal(requests.requestContext(f.rt, { cell: f.rt.metadata.cell('cell'), role: 'queen', sessionId: queen }).recent_input_requests[0].subjectObservation.revision, 'revision-8');
@@ -1149,7 +1149,8 @@ test('only the requester or current queen can report a document revision', async
 test('shared PR observations report changed heads, ignore stale/errors and recover at startup', async t => {
   const f = fixture(t), r = await f.create(queen, { kind: 'approval', subject_pin: prPin });
   await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Approved', receipt: 'pr-answer' });
-  let observed = { url: prPin.url, headSha: 'b'.repeat(40), fetchedAt: Date.now(), state: 'open' };
+  const firstAt = Date.now() - 1000;
+  let observed = { url: prPin.url, headSha: 'b'.repeat(40), fetchedAt: firstAt, state: 'open' };
   f.host.links = { prObservation: () => observed };
   const listeners = new Map();
   f.host.events = { on(name, fn) { listeners.set(name, fn); return () => listeners.delete(name); } };
@@ -1164,7 +1165,7 @@ test('shared PR observations report changed heads, ignore stale/errors and recov
   observed = { ...observed, headSha: 'c'.repeat(40), fetchedAt: Date.now() - 600000 };
   await listeners.get('pr:observation')();
   assert.equal(current().subjectObservation.revision, 'b'.repeat(40));
-  observed = { ...observed, fetchedAt: Date.now(), lastError: 'offline' };
+  observed = { ...observed, fetchedAt: firstAt + 1, lastError: 'offline' };
   await listeners.get('pr:observation')();
   assert.equal(current().subjectObservation.revision, 'b'.repeat(40));
   observed = { ...observed, lastError: null };
@@ -1279,4 +1280,46 @@ test('forwarding during a subject notification retains its delivery receipt', as
   release();
   const changed = await report;
   assert.equal(changed.subjectNotification.state, 'delivered');
+});
+
+test('pruning during a subject notice cannot turn committed requests or answers into failures', async t => {
+  const f = fixture(t), logs = [];
+  f.rt.log = message => logs.push(message);
+  const pinned = await f.create(queen, { kind: 'approval', subject_pin: docPin });
+  await requests.humanAnswer(f.rt, f.host, { request_id: pinned.id, ...rev(pinned), text: 'Approved', receipt: 'old-answer' });
+  const pending = await f.create(queen);
+  let release;
+  f.host.deliver = async (_id, body) => {
+    if (body.startsWith('[Hive approval subject changed:')) await new Promise(resolve => { release = resolve; });
+    return { mode: 'live' };
+  };
+  const report = requests.observeRequestSubject(f.rt, f.host, queen, { request_id: pinned.id, revision: 'revision-8' });
+  const created = f.create(queen, { title: 'Unrelated question' });
+  const answered = requests.humanAnswer(f.rt, f.host, { request_id: pending.id, ...rev(pending), text: 'Saved answer', receipt: 'concurrent-answer' });
+  f.rt.metadata.mutate(d => { delete d.requests[pinned.id]; });
+  release();
+  const results = await Promise.allSettled([report, created, answered]);
+  assert.deepEqual(results.map(r => r.status), ['fulfilled', 'fulfilled', 'fulfilled']);
+  assert.equal(results[1].value.title, 'Unrelated question');
+  assert.equal(results[2].value.answer.text, 'Saved answer');
+  assert.equal(f.rt.metadata.read().requests[pending.id].answer.text, 'Saved answer');
+  assert.equal(logs.length, 0);
+});
+
+test('a failed shared subject pass is logged without rejecting an already committed answer', async t => {
+  const f = fixture(t), logs = [];
+  f.rt.log = message => logs.push(message);
+  const pinned = await f.create(queen, { kind: 'approval', subject_pin: docPin });
+  await requests.observeRequestSubject(f.rt, f.host, queen, { request_id: pinned.id, revision: 'revision-8' });
+  const pending = await f.create(queen);
+  const getSession = f.host.sessions.get;
+  f.host.deliver = async () => {
+    f.host.sessions.get = id => { if (id === queen) throw new Error('Queen lookup unavailable'); return getSession(id); };
+    return { mode: 'live' };
+  };
+  const answered = await requests.humanAnswer(f.rt, f.host, { request_id: pending.id, ...rev(pending), text: 'Saved answer', receipt: 'lookup-failed' });
+  assert.equal(answered.state, 'answered');
+  assert.equal(answered.answer.text, 'Saved answer');
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /could not establish session availability/);
 });

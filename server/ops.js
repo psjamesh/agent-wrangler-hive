@@ -843,7 +843,7 @@ function withHumanAnswerPins(rt, cellId, beadId, evidence) {
       .filter(r => r.cellId === cellId && (!r.beadId || r.beadId === beadId) && r.kind === 'approval'
         && r.answer?.author === 'human' && r.answer.subjectPin?.kind === 'pr' && r.answer.subjectPin.url === entry.url)
       .sort((a, b) => a.answer.at - b.answer.at).at(-1);
-    if (request) entry.human_answer = { request_id: request.id, at: request.answer.at, subject_pin: structuredClone(request.answer.subjectPin) };
+    if (request) entry.human_answer = { request_id: request.id, at: request.answer.at, subject_pin: structuredClone(request.answer.subjectPin), matches_merged_head: entry.merged_head ? request.answer.subjectPin.revision.toLowerCase() === entry.merged_head.toLowerCase() : null };
   }
   return evidence;
 }

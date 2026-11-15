@@ -2170,7 +2170,7 @@ for (const action of ['update', 'finish']) test(`${action} merge evidence refere
   else await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered', evidence });
   const saved = f.live.a.metadata.hive_evidence.at(-1);
   assert.equal(saved.merged_head, 'b'.repeat(40));
-  assert.deepEqual(saved.human_answer, { request_id: 'hreq_pin', at: 10, subject_pin: { kind: 'pr', url, revision: mergeHead } });
+  assert.deepEqual(saved.human_answer, { request_id: 'hreq_pin', at: 10, subject_pin: { kind: 'pr', url, revision: mergeHead }, matches_merged_head: false });
 });
 
 for (const extra of [{ cellId: 'other' }, { beadId: 'b' }, { answer: { author: 'queen' } }]) test(`merge subject provenance excludes unrelated or queen answers ${JSON.stringify(extra)}`, async () => {
@@ -2178,4 +2178,11 @@ for (const extra of [{ cellId: 'other' }, { beadId: 'b' }, { answer: { author: '
   f.rt.metadata.mutate(d => { d.requests = { hreq_pin: { id: 'hreq_pin', cellId: 'cell', beadId: 'a', kind: 'approval', answer: { author: 'human', at: 10, subjectPin: { kind: 'pr', url, revision: mergeHead } }, ...extra } }; });
   await updateBead(f.rt, f.actor(), { bead_id: 'a', add_evidence: [{ kind: 'merge', label: 'Core PR merged', url, merged_head: mergeHead }] });
   assert.equal(f.live.a.metadata.hive_evidence.at(-1).human_answer, undefined);
+});
+
+test('merge subject provenance explicitly marks a matching merged head', async () => {
+  const f = mergeFixture(), url = 'https://github.com/example/agent-wrangler/pull/123';
+  f.rt.metadata.mutate(d => { d.requests = { hreq_pin: { id: 'hreq_pin', cellId: 'cell', beadId: 'a', kind: 'approval', answer: { author: 'human', at: 10, subjectPin: { kind: 'pr', url, revision: mergeHead } } } }; });
+  await updateBead(f.rt, f.actor(), { bead_id: 'a', add_evidence: [{ kind: 'merge', label: 'Core PR merged', url, merged_head: mergeHead }] });
+  assert.equal(f.live.a.metadata.hive_evidence.at(-1).human_answer.matches_merged_head, true);
 });

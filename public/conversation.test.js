@@ -2312,7 +2312,7 @@ test('approval cards show the pinned revision and changed version without adding
   assert.equal(card.querySelector('a').attributes.href, subjectPin.url);
   assert.equal(card.querySelector('button').attributes.disabled, undefined);
   card = draw({ ...r, state: 'answered', answer: { author: 'human', text: 'Approved', subjectPin }, delivery: { state: 'delivered' } });
-  assert.match(card.textContent, /Approval was for revision-7, now revision-8/);
+  assert.match(card.textContent, /Human answer was for revision-7, now revision-8/);
   assert.match(card.textContent, /Approved/);
   card = draw({ ...r, subjectObservation: { revision: 'revision-7' } });
   assert.match(card.textContent, /revision-7/);

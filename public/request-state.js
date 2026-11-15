@@ -7,7 +7,7 @@ export function needsHuman(r) {
 export function requestSubjectText(r) {
   const pin = r.answer?.subjectPin || r.subjectPin;
   if (!pin) return '';
-  const prefix = r.answer ? r.answer.author === 'human' ? 'Approval was for' : 'Queen answer was for' : 'Requested version';
+  const prefix = r.answer ? r.answer.author === 'human' ? 'Human answer was for' : 'Queen answer was for' : 'Requested version';
   const current = r.subjectObservation?.revision;
   return `${prefix} ${pin.revision}${current && current !== pin.revision ? `, now ${current}` : ''}`;
 }

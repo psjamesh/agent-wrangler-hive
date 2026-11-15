@@ -254,7 +254,7 @@ export async function createRequest(rt, host, id, args) {
   ready(rt);
   if (r.audience === 'queen') await notifyQueen(rt, host, rid);
   await reconcileRequestSubjects(rt, host);
-  return present(get(rt, rid));
+  return present(rt.metadata.read().requests?.[rid] || r);
 }
 async function send(rt, host, id, field, target, body) {
   if (!deliveries.has(runtimeKey(rt))) deliveries.set(runtimeKey(rt), new Set());
@@ -271,6 +271,7 @@ async function sendOnce(rt, host, id, field, target, body) {
   const attemptId = newId('attempt');
   update(rt, id, x => { x[field] = { ...x[field], state: 'pending', attempts: [...(x[field]?.attempts || []), { id: attemptId, at: Date.now(), sessionId: target }].slice(-10) }; });
   const outcome = await safeDeliver(host, target, body, rt);
+  if (field === 'subjectNotification' && !rt.metadata.read().requests?.[id]) return r;
   ready(rt);
   if ((field !== 'subjectNotification' && get(rt, id).routeRevision !== routeRevision) || get(rt, id)[field]?.attempts?.at(-1)?.id !== attemptId) return get(rt, id);
   return update(rt, id, x => { x[field] = { ...x[field], ...outcome }; });
@@ -310,9 +311,9 @@ async function answer(rt, host, r, args, author, sessionId = null) {
     if (x.subjectPin) x.answer.subjectPin = structuredClone(x.subjectPin);
     x.delivery = { state: 'pending', attempts: [] };
   });
-  await deliverAnswer(rt, host, saved);
+  const delivered = await deliverAnswer(rt, host, saved);
   await reconcileRequestSubjects(rt, host);
-  return get(rt, r.id);
+  return rt.metadata.read().requests?.[r.id] || delivered;
 }
 async function deliverAnswer(rt, host, r) {
   const target = session(host, r.requesterSessionId);
@@ -414,37 +415,45 @@ export async function observeRequestSubject(rt, host, id, args) {
   if (r.subjectPin?.kind !== 'document') fail('Explicit revision reports require a document subject pin. PR heads come from core observations.');
   const revision = bounded(args.revision, 'revision', 200, true);
   if (r.subjectObservation?.revision !== revision) observeSubject(rt, r, revision, Math.max(Date.now(), (r.subjectObservation?.at || 0) + 1));
+  const saved = rt.metadata.read().requests?.[r.id] || r;
   await reconcileRequestSubjects(rt, host);
-  return present(get(rt, r.id));
+  return present(rt.metadata.read().requests?.[r.id] || saved);
 }
 
 async function subjectPass(rt, host) {
   if (!isCurrent(rt, host) || rt.metadata.error) return;
   for (const initial of values(rt)) {
     if (!isCurrent(rt, host)) return;
-    const cell = rt.metadata.cell(initial.cellId);
-    if (!initial.subjectPin || !cell?.enabled || cell.snapshot || initial.state === 'resolved') continue;
-    let r = get(rt, initial.id);
-    if (r.subjectPin.kind === 'pr') {
-      let observed;
-      try { observed = host.links?.prObservation?.(r.subjectPin.url); } catch {}
-      const at = typeof observed?.fetchedAt === 'number' ? observed.fetchedAt : Date.parse(observed?.fetchedAt) || 0;
-      if (observed?.url === r.subjectPin.url && !observed.lastError && at > 0 && Date.now() - at <= 180000 && at <= Date.now()
-        && /^[a-f0-9]{40}$/i.test(observed.headSha || '')) {
-        observeSubject(rt, r, observed.headSha.toLowerCase(), at);
-        r = get(rt, r.id);
+    try {
+      let r = rt.metadata.read().requests?.[initial.id];
+      if (!r) continue;
+      const cell = rt.metadata.cell(r.cellId);
+      if (!r.subjectPin || !cell?.enabled || cell.snapshot || r.state === 'resolved') continue;
+      if (r.subjectPin.kind === 'pr') {
+        let observed;
+        try { observed = host.links?.prObservation?.(r.subjectPin.url); } catch {}
+        const at = typeof observed?.fetchedAt === 'number' ? observed.fetchedAt : Date.parse(observed?.fetchedAt) || 0;
+        if (observed?.url === r.subjectPin.url && !observed.lastError && at > 0 && Date.now() - at <= 180000 && at <= Date.now()
+          && /^[a-f0-9]{40}$/i.test(observed.headSha || '')) {
+          observeSubject(rt, r, observed.headSha.toLowerCase(), at);
+          r = get(rt, r.id);
+        }
       }
+      const pin = r.answer?.subjectPin || r.subjectPin;
+      if (!r.subjectObservation || r.subjectObservation.revision === pin.revision) continue;
+      const target = queenRoute(host, cell);
+      if (!target) continue;
+      const episode = r.subjectObservation.revision;
+      if (r.subjectNotification?.episode !== episode || r.subjectNotification?.sessionId !== target) r = update(rt, r.id, x => {
+        x.subjectNotification = { episode, sessionId: target, state: 'pending', attempts: [] };
+      });
+      if (r.subjectNotification.state !== 'pending' || r.subjectNotification.attempts.length) continue;
+      await send(rt, host, r.id, 'subjectNotification', target, `[Hive approval subject changed: ${r.id}] ${r.title}\n${requestSubjectText(r)}\nSubject: ${pin.url || pin.path}\n${link(r)}\nThe answer and its pinned subject are retained. This notice adds no approval gate. Read hive_context to reconcile the change.`);
+    } catch (err) {
+      if (!isCurrent(rt, host)) return;
+      if (!rt.metadata.read().requests?.[initial.id]) continue;
+      throw err;
     }
-    const pin = r.answer?.subjectPin || r.subjectPin;
-    if (!r.subjectObservation || r.subjectObservation.revision === pin.revision) continue;
-    const target = queenRoute(host, cell);
-    if (!target) continue;
-    const episode = r.subjectObservation.revision;
-    if (r.subjectNotification?.episode !== episode || r.subjectNotification?.sessionId !== target) r = update(rt, r.id, x => {
-      x.subjectNotification = { episode, sessionId: target, state: 'pending', attempts: [] };
-    });
-    if (r.subjectNotification.state !== 'pending' || r.subjectNotification.attempts.length) continue;
-    await send(rt, host, r.id, 'subjectNotification', target, `[Hive approval subject changed: ${r.id}] ${r.title}\n${requestSubjectText(r)}\nSubject: ${pin.url || pin.path}\n${link(r)}\nThe answer and its pinned subject are retained. This notice adds no approval gate. Read hive_context to reconcile the change.`);
   }
 }
 
@@ -458,13 +467,13 @@ export function reconcileRequestSubjects(rt, host = rt.host) {
       entry.again = false;
       await subjectPass(rt, host);
     }
-  })().finally(() => subjectPasses.delete(key));
+  })().catch(err => rt.log?.(`hive: approval subject reconciliation failed: ${err.message}`)).finally(() => subjectPasses.delete(key));
   subjectPasses.set(key, entry);
   return entry.promise;
 }
 
 export function startRequestSubjects(rt, host) {
-  const reconcile = () => reconcileRequestSubjects(rt, host).catch(err => rt.log?.(`hive: approval subject reconciliation failed: ${err.message}`));
+  const reconcile = () => reconcileRequestSubjects(rt, host);
   const stop = host.events?.on('pr:observation', reconcile);
   void reconcile();
   return () => stop?.();
