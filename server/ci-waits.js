@@ -168,12 +168,13 @@ async function reconcilePass(rt, host, now) {
   if (!isCurrent(rt, host) || rt.metadata.error || rt.snapshots.hierarchyCurrent === false || rt.snapshots.current?.error || !rt.snapshots.current?.loadedAt || rt.beads?.status?.state !== 'ready') return;
   for (const initial of Object.values(rt.metadata.read().ciWaits || {})) {
     if (!isCurrent(rt, host)) return;
+    const cell = rt.metadata.cell(initial.cellId);
+    if (!cell || cell.snapshot) continue;
     if (rt.snapshots.graph.beads[initial.beadId]?.status === 'closed') {
       settleClosedBeadWait(rt, initial.beadId, now);
       continue;
     }
-    const cell = rt.metadata.cell(initial.cellId);
-    if (!cell?.enabled || cell.snapshot || initial.acknowledgedAt) continue;
+    if (!cell.enabled || initial.acknowledgedAt) continue;
     let wait = waitFor(rt, initial.beadId);
     const problem = ownerProblem(rt, host, wait);
     if (wait.state === 'pending') {

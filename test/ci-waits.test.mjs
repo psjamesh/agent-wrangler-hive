@@ -468,3 +468,20 @@ test('group closure settles its wait even if recording the outcome fails', async
   assert.equal(f.doc().ciWaits.a.outcome, 'cancelled');
   assert.equal(f.doc().ciWaits.a.settledReason, 'Bead closed');
 });
+
+test('closed-bead reconciliation respects snapshot and missing cells', async () => {
+  for (const kind of ['snapshot', 'missing', 'disabled']) {
+    const f = fixture();
+    f.rt.metadata.mutate(d => {
+      d.ciWaits = { a: wait() };
+      if (kind === 'missing') delete d.cells.cell;
+      else if (kind === 'snapshot') d.cells.cell.snapshot = { capturedAt: NOW };
+      else d.cells.cell.enabled = false;
+    });
+    f.live.a.status = 'closed'; f.rt.snapshots.graph = f.graph();
+    const original = structuredClone(f.doc().ciWaits.a);
+    await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+    if (kind === 'disabled') assert.equal(f.doc().ciWaits.a.settledReason, 'Bead closed');
+    else assert.deepEqual(f.doc().ciWaits.a, original);
+  }
+});
