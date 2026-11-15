@@ -644,12 +644,14 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   position: absolute;
   left: 12px;
   right: 12px;
-  bottom: 62px;
+  bottom: 12px;
   margin: 0;
   font-size: 12px;
   color: var(--fg-muted, var(--fg));
   pointer-events: none;
 }
+
+.is-hives .hive-zoom { bottom: 48px; }
 
 /* The key stays inside the map, bottom left, and opens upwards within it. */
 .hive-key {
@@ -1412,7 +1414,6 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   .hive-overview { padding: 12px 14px; flex: 0 0 auto; }
   .hive-overview .hive-stage { flex: 0 0 auto; height: 62vh; min-height: 300px; }
   .hive-overhead .hive-head-actions { margin-left: 0; }
-  .hive-stage-hint { right: 12px; bottom: 100px; }
   .hive-inspector-slot { padding: 0 14px 12px; }
 }
 
