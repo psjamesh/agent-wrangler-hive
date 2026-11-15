@@ -621,7 +621,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
     const message = byId.get(row.id || rows.find(r => r.threadId === row.threadId)?.id);
     list.append(inboxRow(context, row, {
       id: row.id || row.key, showContext: false, query: searching ? query : '',
-      ...(t ? { open: () => openTopic(ui, ctx, cell, t, cell.threads.some(x => x.id === t.id), epoch) } : {}),
+      ...(t && !row.key.startsWith('request:') ? { open: () => openTopic(ui, ctx, cell, t, cell.threads.some(x => x.id === t.id), epoch) } : {}),
       action: kind === 'queen' && message && !cell.snapshot ? withdrawButton(message, cell, ctx, 'hive-withdraw', 'Withdraw', 'inbox', ui) : null,
     }));
   }

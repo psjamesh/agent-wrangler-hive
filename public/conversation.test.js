@@ -1507,7 +1507,9 @@ test('merged Inbox opens the canonical request topic and preserves its answer dr
   const f = nativeFixture(t);
   const filter = descendants(f.draw().head).find(el => el.tagName === 'button' && el.textContent.startsWith('Inbox'));
   assert.ok(filter); filter.fire('click');
-  f.draw().list.querySelector('.hive-topic-btn').fire('click');
+  const target = parseHiveLink(f.draw().list.querySelector('.hive-topic-btn').attributes.href);
+  assert.equal(target.messageId, 'native-message');
+  f.ui.openDeepLink({ ...target, thread: f.cell.threads[0], messages: f.cell.messages, more: false, anchorN: 2 }, f.hive.metaEpoch);
   let out = f.draw();
   assert.match(out.list.textContent, /Keep compatibility/);
   const text = out.list.querySelector('textarea');
@@ -2173,4 +2175,42 @@ test('filtered history keeps its bridge when no message after the gap matches', 
   bridge.fire('click');
   assert.equal(f.sent.at(-1).type, 'hive-thread-history');
   assert.equal(f.sent.at(-1).before, 'm1');
+});
+
+test('per-cell request cards link to their exact message instead of opening the topic at its default position', t => {
+  const f = fixture(t);
+  const thread = { id: thr, title: 'Decision', beads: [], retained: 1, count: 1 };
+  const r = { id: 'request-open', cellId: f.cell.id, threadId: thr, messageId: 'request-message', audience: 'human', state: 'open', title: 'Choose', body: 'Choose one', createdAt: 1 };
+  f.cell.threads = [thread];
+  f.cell.requests = { [r.id]: r };
+  f.cell.inbox = { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } };
+  f.ui.setInboxView(f.cell.id, 'human');
+  const row = f.draw().list.querySelector('.hive-topic-btn');
+  assert.deepEqual(parseHiveLink(row.attributes.href), { cellId: f.cell.id, threadId: thr, messageId: r.messageId });
+});
+
+test('resolved message links win over repeated scroll restoration after late layout', t => {
+  const f = fixture(t);
+  const thread = { id: thr, title: 'Decision', beads: [], retained: 10, count: 10 };
+  const messages = range(1, 10);
+  f.cell.threads = [thread];
+  f.cell.messages = messages;
+  f.ui.openDeepLink({ cellId: f.cell.id, thread, messageId: 'q9', messages, more: false, anchorN: 11 }, f.hive.metaEpoch);
+  const out = f.draw();
+  const view = laidOut(t, out);
+  let space = '', shift = 0;
+  out.list.style.getPropertyValue = () => space;
+  out.list.style.setProperty = (_k, value) => { space = value; };
+  Object.defineProperty(out.list, 'scrollHeight', { get: () => out.list.children.length * 100 + (parseFloat(space) || 0) });
+  out.list.children.forEach((item, i) => {
+    item.getBoundingClientRect = () => ({ top: i * 100 + shift - view.top(), bottom: (i + 1) * 100 + shift - view.top(), width: 300 });
+  });
+  const root = { clientWidth: 800, querySelectorAll: selector => selector === '.hive-message' ? out.list.children.filter(item => item.dataset?.id) : [out.list] };
+  restoreScroll(root);
+  assert.equal(view.atTop('q9'), true);
+  shift = 150;
+  out.list.hiveRebuilt = true;
+  restoreScroll(root);
+  assert.equal(view.atTop('q9'), true);
+  assert.equal(f.ui.linkedMessage(f.cell.id, thr).pending, false);
 });

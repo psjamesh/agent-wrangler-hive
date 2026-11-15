@@ -7,7 +7,7 @@ import { readScrollState, saveScrollState, conversationEpoch } from './view-stat
 import { createReadTracker, afterFrame } from './auto-read.js';
 import { waitingGraphKey } from './waiting-model.js';
 import { refreshWaitingMenu, disposeWaitingMenu } from './waiting-view.js';
-import { installHiveLinks, revealMessage, syncHiveSelection, hiveLink } from './deep-links.js';
+import { installHiveLinks, revealMessage, cancelMessageReveal, syncHiveSelection, hiveLink, openHiveLink } from './deep-links.js';
 import { createToaster, announceRestoreNotices } from './toasts.js';
 import { disposeConfirm } from './confirm-dialog.js';
 import { refreshCellPopover, disposeCellPopover } from './cell-popover.js';
@@ -95,6 +95,7 @@ const joinRuns = (a, b) => {
 };
 
 function cancelDeepLink() {
+  cancelMessageReveal(state.root);
   state.linkRequest = null;
   state.linkMessage = null;
   state.startAt.clear();
@@ -165,6 +166,7 @@ export function createUi() {
       const cellId = frame.cellId || null;
       closeInspector();
       state.pendingCell = null;
+      cancelMessageReveal(state.root);
       state.linkMessage = null;
       save('cell', cellId);
       if (cellId) {
@@ -847,6 +849,10 @@ function putBack(el, retained = false) {
 // scrolls, and stops following the newest message until the reader scrolls
 // back to the bottom.
 function showFrom(el, item) {
+  if (item.querySelector?.('.hive-request')) {
+    const [, cellId, threadId] = el.dataset.scrollKey.split(':');
+    state.linkMessage = { cellId, threadId, messageId: item.dataset.id, pending: true };
+  }
   state.follow.set(el.dataset.scrollKey, false);
   state.reveal.delete(el.dataset.scrollKey);
   el.scrollTop += item.getBoundingClientRect().top - el.getBoundingClientRect().top;
@@ -999,15 +1005,9 @@ export function resolveLink(hive) {
 
 function revealLinkMessage(root) {
   const link = state.linkMessage;
-  if (!link?.pending) return;
+  if (!link || link.released) return;
   state.follow.set(`messages:${link.cellId}:${link.threadId}`, false);
-  if (!revealMessage(root, link.messageId)) return;
-  link.pending = false;
-  setTimeout(() => {
-    if (state.linkMessage !== link) return;
-    state.linkMessage = null;
-    forceRender();
-  }, 2500);
+  if (revealMessage(root, link.messageId, () => { link.pending = false; link.released = true; })) link.pending = false;
 }
 
 export function restoreScroll(root) {
@@ -1331,7 +1331,7 @@ export default {
   register(registrar) {
     state.api = registrar.api;
     state.watchdogNotifications = createWatchdogNotifications(state.api, { read: () => load('watchdogEpisodes', []), write: v => save('watchdogEpisodes', v) });
-    state.requestNotifications = createRequestNotifications(state.api, { read: () => load('requestEpisodes', []), write: v => save('requestEpisodes', v), answer: (r, optionId) => answerRequestOption(r, optionId, { ui: state.ui, ctx: { send, notice, onError: () => { globalThis.location.hash = hiveLink(r.cellId, r.threadId, r.messageId); } } }) });
+    state.requestNotifications = createRequestNotifications(state.api, { read: () => load('requestEpisodes', []), write: v => save('requestEpisodes', v), answer: (r, optionId) => answerRequestOption(r, optionId, { ui: state.ui, ctx: { send, notice, onError: () => { openHiveLink(globalThis.window, hiveLink(r.cellId, r.threadId, r.messageId)); } } }) });
     state.ui = createUi();
     const saved = readScrollState(globalThis.window?.location?.hash);
     if (saved) { state.scrollMemo = saved.scroll; state.follow = saved.follow; }
@@ -1341,12 +1341,14 @@ export default {
     globalThis.window?.addEventListener('pagehide', state.pageHide);
     let restore = Boolean(saved?.restore);
     if (globalThis.window?.history) state.linkBridge = installHiveLinks(window, target => {
+      cancelMessageReveal(state.root);
       state.linkRequest = { target, sent: false, restore };
       restore = false;
       state.linkMessage = null;
       state.lastSig = '';
       rerender();
     }, () => {
+      cancelMessageReveal(state.root);
       restore = false;
       state.linkRequest = null;
       state.linkMessage = null;

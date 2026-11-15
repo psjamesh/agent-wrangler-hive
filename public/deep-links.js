@@ -22,6 +22,11 @@ export function parseHiveLink(hash) {
 
 const bridges = new WeakMap();
 
+export function openHiveLink(win, hash) {
+  if (win.location.hash === hash && bridges.has(win)) bridges.get(win).reopen();
+  else win.location.hash = hash;
+}
+
 export function installHiveLinks(win, onTarget, onNavigate = () => {}) {
   let pending = null, repair = null, selection = null;
   let replacing = false;
@@ -131,8 +136,16 @@ export function installHiveLinks(win, onTarget, onNavigate = () => {}) {
     else if (selection) showView();
     else if (parseHiveLink(current)) start(current);
   };
+  const reopen = event => {
+    if (event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const hash = event.target?.closest?.('a[href]')?.getAttribute('href');
+    if (hash !== win.location.hash || !parseHiveLink(hash)) return;
+    event.preventDefault();
+    bridge.reopen();
+  };
   const bridge = {
     cancel,
+    reopen() { invalidate(false); capture(); },
     select(hash) { selection = hash; if (!repair) write(hash); },
     isCurrent: () => Boolean(pending?.dispatched && win.location.hash === HIVE_VIEW),
     restore(hash = pending?.hash) {
@@ -143,24 +156,94 @@ export function installHiveLinks(win, onTarget, onNavigate = () => {}) {
       clearRepair();
       clearTimeout(unblockTimer);
       navigations.length = 0;
+      win.removeEventListener('click', reopen, true);
       win.removeEventListener('hashchange', capture, true);
       win.removeEventListener('popstate', remember, true);
       if (bridges.get(win) === bridge) bridges.delete(win);
     },
   };
   bridges.set(win, bridge);
+  win.addEventListener('click', reopen, true);
   win.addEventListener('popstate', remember, true);
   win.addEventListener('hashchange', capture, true);
   capture();
   return bridge;
 }
 
-export function revealMessage(root, messageId) {
+const reveals = new WeakMap();
+
+export function cancelMessageReveal(root) {
+  reveals.get(root)?.dispose();
+}
+
+export function revealMessage(root, messageId, onCancel = () => {}) {
   if (!root || root.clientWidth <= 0) return false;
-  const item = [...root.querySelectorAll('.hive-message')].find(el => el.dataset.id === messageId);
-  if (!item || item.getBoundingClientRect().width <= 0) return false;
-  item.scrollIntoView({ block: 'start', behavior: 'instant' });
-  return true;
+  let reveal = reveals.get(root);
+  if (reveal?.messageId !== messageId) {
+    reveal?.dispose();
+    const padding = new Map();
+    const observed = new Set();
+    let disposed = false;
+    const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(() => reveal.align()) : null;
+    const observe = el => {
+      if (!resize || observed.has(el)) return;
+      observed.add(el);
+      resize.observe(el);
+    };
+    const release = event => {
+      if (event.type === 'keydown' && !['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) return;
+      reveal.dispose(true);
+      onCancel();
+    };
+    const events = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+    reveal = {
+      messageId,
+      align() {
+        if (disposed || root.clientWidth <= 0) return false;
+        const item = [...root.querySelectorAll('.hive-message')].find(el => el.dataset.id === messageId);
+        if (!item || item.getBoundingClientRect().width <= 0) return false;
+        const panes = [];
+        for (let el = item.parentElement; el; el = el.parentElement) {
+          if (el.dataset?.scrollKey) panes.push(el);
+          if (el === root) break;
+        }
+        const list = panes[0];
+        if (list?.style?.setProperty) {
+          if (!padding.has(list)) padding.set(list, list.style.getPropertyValue('--hive-reveal-space'));
+          const space = `${Math.max(...panes.map(el => el.clientHeight || 0))}px`;
+          if (list.style.getPropertyValue('--hive-reveal-space') !== space) list.style.setProperty('--hive-reveal-space', space);
+        }
+        if (!panes.length) item.scrollIntoView({ block: 'start', behavior: 'instant' });
+        for (const pane of panes) {
+          pane.scrollTop += item.getBoundingClientRect().top - pane.getBoundingClientRect().top - (pane.clientTop || 0);
+          pane.hiveSetTop = pane.scrollTop;
+          observe(pane);
+        }
+        if (list) for (const child of list.children) observe(child);
+        return true;
+      },
+      dispose(keepSpace = false) {
+        if (!disposed) {
+          disposed = true;
+          resize?.disconnect();
+          mutation?.disconnect();
+          for (const type of events) root.removeEventListener?.(type, release, true);
+          root.removeEventListener?.('load', realign, true);
+        }
+        if (keepSpace) return;
+        for (const [el, value] of padding) el.style.setProperty('--hive-reveal-space', value);
+        reveals.delete(root);
+      },
+    };
+    const realign = () => reveal.align();
+    const mutation = typeof MutationObserver === 'function' ? new MutationObserver(realign) : null;
+    mutation?.observe(root, { childList: true, subtree: true, characterData: true });
+    for (const type of events) root.addEventListener?.(type, release, { capture: true, passive: true });
+    root.addEventListener?.('load', realign, true);
+    root.ownerDocument?.fonts?.ready?.then(realign);
+    reveals.set(root, reveal);
+  }
+  return reveal.align();
 }
 
 export function syncHiveSelection(win, { cellId, threadId, beadId, pane }) {

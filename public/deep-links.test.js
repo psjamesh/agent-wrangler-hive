@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HIVE_VIEW, hiveLink, parseHiveLink, installHiveLinks, revealMessage, syncHiveSelection } from './deep-links.js';
+import { HIVE_VIEW, hiveLink, parseHiveLink, installHiveLinks, openHiveLink, revealMessage, syncHiveSelection } from './deep-links.js';
 
 test('topic and message links round trip through the registered Hive overview', () => {
   assert.equal(hiveLink('cell_one', 'thr_two', 'msg_three'), `${HIVE_VIEW}&cell=cell_one&topic=thr_two&message=msg_three`);
@@ -314,5 +314,36 @@ test('a user popstate to the overview during repair invalidates the repairing ta
   bridge.restore();
   assert.deepEqual(targets, []);
   assert.equal(win.location.hash, HIVE_VIEW);
+  bridge.dispose();
+});
+
+test('opening the current message link again reveals it again without relying on hashchange', () => {
+  const href = hiveLink('cell_one', 'thr_two', 'msg_three');
+  const win = browser(href), targets = [];
+  let click;
+  const listen = win.addEventListener;
+  win.addEventListener = (type, fn, capture) => { if (type === 'click') click = fn; listen(type, fn, capture); };
+  const bridge = installHiveLinks(win, value => targets.push(value));
+  bridge.restore();
+  let prevented = false;
+  click?.({ button: 0, target: { closest: () => ({ getAttribute: () => href }) }, preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(targets.length, 2);
+  assert.equal(targets[1].messageId, 'msg_three');
+  bridge.dispose();
+});
+
+
+test('notification navigation reopens the same request and navigates to a different request', () => {
+  const href = hiveLink('cell_one', 'thr_two', 'msg_three');
+  const win = browser(href), targets = [];
+  const bridge = installHiveLinks(win, value => targets.push(value));
+  bridge.restore();
+  openHiveLink(win, href);
+  assert.equal(targets.length, 2);
+  bridge.restore();
+  const next = hiveLink('cell_one', 'thr_two', 'msg_four');
+  openHiveLink(win, next);
+  assert.equal(win.location.hash, next);
   bridge.dispose();
 });
