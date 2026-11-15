@@ -13,7 +13,7 @@ const bar = () => h('span', { class: 'hive-progress-inline' });
 const progress = load('headProgress', { countsSentence: () => 'Full progress tooltip', progressBar: bar });
 const queen = load('queenPill', { statusDot, STATUS_TEXT, sessionLabel: () => 'Coordinator', launchState: () => null, relativeTime: () => 'earlier' });
 
-test('header orders identity, needs, progress, capacity, queen and settings', () => {
+test('header orders identity, capacity, progress, needs, queen and settings', () => {
   const header = load('cellHeader', {
     childrenMap, workCounts, cellWaitingItems: () => [{ id: 'wait' }], cellTitle: () => 'Title',
     queenPill: () => h('button', {}, 'Queen'), headProgress: progress,
@@ -22,7 +22,7 @@ test('header orders identity, needs, progress, capacity, queen and settings', ()
   });
   const cell = { id: 'c', enabled: true };
   const ctx = { hive: { beads: { done: { id: 'done', parentId: 'root', status: 'closed' } }, edges: [] }, ui: {}, graph: {} };
-  assert.match(text(header(ctx, cell, { id: 'root' })), /All hives\/TitleNeeds you 11\/1 closed5\/8 slotsQueenSettings/);
+  assert.match(text(header(ctx, cell, { id: 'root' })), /All hives\/Title5\/8 slots1\/1 closed1 need youQueenSettings/);
   assert.equal(all(header(ctx, cell, { id: 'root' })).filter(n => n.attrs?.class === 'hive-progress-inline').length, 1);
 });
 
@@ -83,7 +83,7 @@ test('closed workstream menu entry preserves its drawer action and tooltip', () 
 
 test('header uses wrapping groups and matching shorter bars at narrow widths', () => {
   const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
-  assert.match(css, /\.hive-cellhead-top \{ flex-wrap: wrap; min-width: 0; }/);
+  assert.match(css, /\.hive-cellhead-top \{ flex-wrap: wrap; min-width: 0; font-size: 12\.5px; }/);
   assert.match(css, /\.hive-cellstate \{[^}]*flex-wrap: wrap;/);
   assert.match(css, /\.hive-cellhead \.hive-progress-inline,\s*\.hive-capacity-count \.hive-progress-inline \{ width: 56px; flex: 0 0 56px;/);
 });
@@ -92,4 +92,16 @@ test('header uses wrapping groups and matching shorter bars at narrow widths', (
 test('off and captured hives preserve their queen labels', () => {
   assert.equal(text(queen({ graph: {}, hive: {} }, { id: 'c', enabled: false }, () => {})), 'Queen');
   assert.equal(text(queen({ graph: {}, hive: {} }, { id: 'c', snapshot: { capturedAt: 'capture' } }, () => {})), 'Captured snapshot, earlier: read only');
+});
+
+test('header text shares one size while pills retain theme colours and geometry', () => {
+  const css = fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+  const declarations = selector => rules.filter(([, selectors]) => selectors.split(',').some(s => s.trim() === selector)).map(([, , body]) => body).join('\n');
+  for (const selector of ['.hive-celltitle', ...['hive-counts', 'hive-queen-pill', 'hive-pill-btn', 'hive-setup-pill', 'hive-badge', 'hive-capacity-note'].map(name => `.hive-cellhead-top .${name}`)]) {
+    assert.match(declarations(selector), /font-size: inherit;/, selector);
+  }
+  assert.match(declarations('.hive-queen-pill'), /border-radius: 999px;/);
+  assert.match(declarations('.hive-queen-pill'), /background: var\(--hive-wax\);/);
+  assert.match(declarations('.hive-dot-inline.hive-dot-needs'), /background: var\(--red\);/);
 });
