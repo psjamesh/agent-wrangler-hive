@@ -12,7 +12,7 @@ test('the cell-wide wait action includes unbound waits and remains available in 
   const header = vm.runInNewContext(`(${source.match(/function cellHeader\([\s\S]*?\n}\n/)[0]})`, {
     h, cellMetrics, openWaitingMenu: (...args) => { opened = args; }, cellTitle: () => h('button', { class: 'hive-title-btn', title: `Rename hive: ${name}` }, name), queenPill: () => null, headProgress: () => null,
     hasPanels: () => false, closedButton: () => null,
-    capacityControl: () => null, settingsModal: () => null, settingsButton: () => null, isRetired: () => false, retireKey: (id) => `retire:${id}`, openReopen() {},
+    aboutHive: () => null, capacityControl: () => null, settingsModal: () => null, settingsButton: () => null, isRetired: () => false, retireKey: (id) => `retire:${id}`, openReopen() {},
     attentionEl: () => null, restoreNotices: () => null, noticesEl: () => null,
   });
   const cell = { id: 'c', enabled: true, rootBeadId: 'root', taskId: 't', bindings: [], waits: [{ id: 'message:fyi', kind: 'message', beadIds: ['root'] }], inbox: { human: { count: 1 } }, requests: { native: { id: 'native', cellId: 'c', audience: 'human', state: 'open', title: 'Hive-wide decision' } } };

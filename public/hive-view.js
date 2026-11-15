@@ -1,4 +1,5 @@
 import { cellMetrics } from './cell-metrics.js';
+import { aboutHive } from './promo-dialog.js';
 import { renderRelatedBeads } from './conversation.js';
 import { confirmHive } from './confirm-dialog.js';
 import { settingsModal, settingsButton } from './settings-view.js';
@@ -741,7 +742,7 @@ export function renderHive(ctx) {
         h('div', { class: 'hive-head-actions' },
           h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openCellDialog(ui, 'new', 'open-new'), 'data-focus-key': 'open-new', 'aria-haspopup': 'dialog' }, 'New hive'),
           h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => openCellDialog(ui, 'adopt', 'open-adopt'), 'data-focus-key': 'open-adopt', 'aria-haspopup': 'dialog' }, 'Add existing task'),
-          settingsButton(ctx)),
+          aboutHive(ctx), settingsButton(ctx)),
         settingsModal(ctx)),
       noticesEl(ctx),
       attentionEl(ctx)),

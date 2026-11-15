@@ -55,7 +55,7 @@ test('createUi exposes the same public methods', () => {
   'olderTopics',
   'openAtWaiting',
   'openCell',
-  'openDeepLink',
+  'openDeepLink', 'openPromo',
   'openThread',
   'openThreadFor',
   'openedTopic',

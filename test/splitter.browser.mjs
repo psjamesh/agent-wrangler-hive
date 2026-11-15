@@ -13,6 +13,7 @@ import { installPanelSplit } from '/public/panel-split.js';
 const root = document.getElementById('root');
 root.innerHTML = '<div class="hive-cellhead" style="grid-area:head">head</div><div class="hive-stage" style="grid-area:map">map</div><div class="hive-tabs" style="grid-area:tabs">tabs</div><div class="hive-dock" style="grid-area:rail">rail</div><div class="hive-divider" role="separator" tabindex="0"></div>';
 const store = new Map();
+store.set('promoState', JSON.stringify({ schema: 1, dismissedContentVersion: 1, dismissedHiveVersion: null, dismissedAt: '2026-01-01' }));
 let divider = root.querySelector('.hive-divider');
 installPanelSplit(root, divider, { getItem: k => store.get(k), setItem: (k, v) => store.set(k, v) });
 const rect = s => root.querySelector(s).getBoundingClientRect();

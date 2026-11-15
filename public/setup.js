@@ -1,3 +1,4 @@
+import { aboutHive } from './promo-dialog.js';
 import { settingsModal, settingsButton } from './settings-view.js';
 import { h } from './dom.js';
 import { noticesEl } from './widgets.js';
@@ -38,7 +39,7 @@ export function renderSetup(ctx) {
     }, busy('hive-setup-init') ? 'Creating…' : 'Create Hive store'));
   }
   return h('section', { class: 'hive-setup', 'aria-labelledby': 'hive-setup-title' },
-    h('div', { class: 'hive-overhead' }, h('h2', { id: 'hive-setup-title' }, 'Set up Hive'), settingsButton(ctx), settingsModal(ctx)),
+    h('div', { class: 'hive-overhead' }, h('h2', { id: 'hive-setup-title' }, 'Set up Hive'), aboutHive(ctx), settingsButton(ctx), settingsModal(ctx)),
     hive.metadataError ? h('p', { class: 'hive-error', role: 'alert' }, hive.metadataError) : null,
     h('dl', { class: 'hive-setup-facts' }, rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])),
     b.state === 'uninitialized'

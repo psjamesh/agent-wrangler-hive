@@ -1,6 +1,7 @@
 import { capturePanelState, restorePanelState } from './panel-state.js';
 import { cellMetrics } from './cell-metrics.js';
 import { overviewCells } from './model.js';
+import { createPromo } from './promo-dialog.js';
 import { createWatchdogNotifications } from './watchdog-notifications.js';
 import { createDrafts, DRAFT_PREFIX, DRAFT_TEXT_MAX } from './ui-drafts.js';
 import { capacityLimit } from './capacity-control.js';
@@ -34,6 +35,10 @@ const FOLLOW_SLACK_PX = 40;
 
 const state = {
   api: null,
+  promo: null,
+  promoEntry: false,
+  promoDeepLink: false,
+  promoFrame: null,
   requestNotifications: null,
   watchdogNotifications: null,
   bees: null,
@@ -145,6 +150,7 @@ export function createUi() {
     if (at >= 0) mem.drafts.delete(e.key.slice(at + DRAFT_PREFIX.length));
   });
   return {
+    openPromo(opener) { state.promo?.open(opener); },
     rememberConversation,
     acknowledgedConversation(cellId) {
       const messages = [...mem.acknowledgementMessages].filter(([key]) => key.startsWith(`${cellId}:`) && mem.acks.has(key)).map(([, m]) => m);
@@ -1154,11 +1160,26 @@ export function rerender() {
     }
   }
   const dialog = root.querySelector('.hive-dialog');
-  if (dialog && !dialog.contains(document.activeElement)) dialog.querySelector('[data-autofocus]')?.focus();
+  if (dialog && !state.promo?.isOpen() && !dialog.contains(document.activeElement)) dialog.querySelector('[data-autofocus]')?.focus();
   const zoom = state.zoom;
   state.zoom = null;
   if (zoom) playZoom(root, zoom);
   state.bees?.keep();
+  offerPromo();
+}
+
+function offerPromo() {
+  if (!state.promoEntry || !state.hiveShown || !state.promo || state.promoFrame !== null) return;
+  state.promoFrame = requestAnimationFrame(() => {
+    state.promoFrame = null;
+    if (!state.root || !state.promoEntry) return;
+    state.promoEntry = false;
+    const focused = document.activeElement;
+    const blocked = state.promoDeepLink || Boolean(state.linkRequest || state.linkMessage) || state.dragging
+      || Boolean(document.querySelector('[role="dialog"], dialog[open]'))
+      || Boolean(focused?.matches?.('input, textarea, select, [contenteditable="true"]'));
+    state.promo.offer({ blocked });
+  });
 }
 
 // Number of bees is one preference for every hive, kept in Hive's own AW
@@ -1297,6 +1318,15 @@ const overview = {
     state.api = api || state.api;
     state.root = el;
     el.classList.add('hive-root');
+    state.promoEntry = true;
+    state.promoDeepLink = Boolean(state.linkRequest || /[&](bead|message|topic|request)=/.test(globalThis.window?.location?.hash || ''));
+    if (!state.promo) state.promo = createPromo({
+      root: () => state.root,
+      storage: state.api?.storage,
+      buildVersion: () => state.graph?.hive?.buildVersion,
+      notice: message => notice(message, { severity: 'info' }),
+      pause: on => { state.promoPaused = on; state.bees?.sync(); state.bees?.keep(); },
+    });
     document.addEventListener('visibilitychange', onVisible);
     globalThis.window?.addEventListener('focus', onVisible);
     state.lastSig = '';
@@ -1324,6 +1354,10 @@ const overview = {
   },
   unmount(el) {
     if (state.root === el) {
+      state.promoEntry = false;
+      if (state.promoFrame !== null) cancelAnimationFrame(state.promoFrame);
+      state.promoFrame = null;
+      state.promo?.dispose();
       clearInterval(state.responseClock);
       cancelDeepLink();
       document.removeEventListener('visibilitychange', onVisible);
@@ -1370,6 +1404,7 @@ export default {
     globalThis.window?.addEventListener('pagehide', state.pageHide);
     let restore = Boolean(saved?.restore);
     if (globalThis.window?.history) state.linkBridge = installHiveLinks(window, target => {
+      state.promoDeepLink = true;
       cancelMessageReveal(state.root);
       state.linkRequest = { target, sent: false, restore };
       restore = false;
@@ -1384,7 +1419,7 @@ export default {
       state.startAt.clear();
       if (state.root && !state.hiveShown) forceRender();
     });
-    state.bees = createBees({ level: beeLevel });
+    state.bees = createBees({ level: () => state.promoPaused ? 0 : beeLevel() });
     registrar.api?.settings?.onChange?.(() => {
       state.bees?.sync();
       rerender();

@@ -13,6 +13,7 @@ const page = `<!doctype html><html><head><link rel="stylesheet" href="/public/st
 import client, { createUi } from '/public/client.js';
 import { renderConversation } from '/public/conversation.js';
 const values = new Map();
+values.set('promoState', JSON.stringify({ schema: 1, dismissedContentVersion: 1, dismissedHiveVersion: null, dismissedAt: '2026-01-01' }));
 client.register({ api: { storage: { get: k => values.get(k), set: (k, v) => values.set(k, v), remove: k => values.delete(k) } }, register() {} });
 const ui = createUi();
 const hive = { metaEpoch: 'e', beads: {} };

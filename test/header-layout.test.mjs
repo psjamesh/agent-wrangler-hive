@@ -18,12 +18,13 @@ test('header orders identity, capacity, progress, needs, queen and settings', ()
   const header = load('cellHeader', {
     cellMetrics, cellTitle: () => 'Title',
     queenPill: () => h('button', {}, 'Queen'), headProgress: progress,
+    aboutHive: () => h('button', {}, 'About Hive'),
     capacityControl: () => h('button', {}, '5/8 slots'), settingsButton: () => h('button', {}, 'Settings'),
     settingsModal: () => null, attentionEl: () => null, noticesEl: () => null, isRetired: () => false,
   });
   const cell = { id: 'c', enabled: true, rootBeadId: 'root', requests: { r: { id: 'r', audience: 'human', state: 'open' } } };
   const ctx = { hive: { beads: { root: { id: 'root' }, done: { id: 'done', parentId: 'root', status: 'closed' } }, edges: [] }, ui: {}, graph: {} };
-  assert.match(text(header(ctx, cell, { id: 'root' })), /All hives\/Title5\/8 slots1\/1 closed1 need youQueenSettings/);
+  assert.match(text(header(ctx, cell, { id: 'root' })), /All hives\/Title5\/8 slots1\/1 closed1 need youQueenAbout HiveSettings/);
   assert.equal(all(header(ctx, cell, { id: 'root' })).filter(n => n.attrs?.class === 'hive-progress-inline').length, 1);
 });
 

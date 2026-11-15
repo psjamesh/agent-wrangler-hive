@@ -7,6 +7,7 @@ const page = `<!doctype html><html><head><link rel="stylesheet" href="/public/st
 import client, { createUi } from '/public/client.js';
 import { renderHive } from '/public/hive-view.js';
 const store = new Map();
+store.set('promoState', JSON.stringify({ schema: 1, dismissedContentVersion: 1, dismissedHiveVersion: null, dismissedAt: '2026-01-01' }));
 client.register({ api: { storage: { get: k => store.get(k), set: (k, v) => store.set(k, v), remove: k => store.delete(k) } }, register() {} });
 const base = { launches: [], bindings: [], beadLayout: {}, arrangeAspect: null, workstreamColours: {}, workstreamShades: {}, archived: {}, restoreNotices: [], regionAttachments: {}, detachedWorkstreams: [], threads: [], messages: [], threadsTruncated: false, threadsAfter: null, inbox: { human: { ids: [], count: 0, more: false, after: null }, queen: { ids: [], count: 0, more: false, after: null } }, requests: {}, requestCounts: {} };
 const cells = {

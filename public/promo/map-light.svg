@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300">
+<rect x="0" y="0" width="800" height="300" rx="14" fill="#f7f4eb" stroke="#8b897e"/>
+<text x="22" y="29" fill="#704a05" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700" text-anchor="start">HIVE</text>
+<text x="78" y="29" fill="#202a25" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" text-anchor="start">/  Launch a field guide</text>
+<rect x="657" y="12" width="124" height="28" rx="14" fill="#f7f4eb" stroke="#8b897e"/>
+<text x="719.0" y="31" fill="#4a554d" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" text-anchor="middle">Demo hive</text>
+<path d="M0 44 L800 44" stroke="#8b897e" stroke-width="1" fill="none"/>
+<path d="M190 136 L316 199" stroke="#704a05" stroke-width="2" fill="none"/>
+<path d="M190 245 L316 199" stroke="#704a05" stroke-width="2" fill="none"/>
+<polygon points="215.0,120.0 187.5,167.6 132.5,167.6 105.0,120.0 132.5,72.4 187.5,72.4" fill="#fffdf8" stroke="#8b897e" stroke-width="2"/>
+<text x="160" y="117" fill="#202a25" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" text-anchor="middle">Chapters</text>
+<text x="160" y="137" fill="#4a554d" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="400" text-anchor="middle">Working</text>
+<polygon points="215.0,250.0 187.5,297.6 132.5,297.6 105.0,250.0 132.5,202.4 187.5,202.4" fill="#fffdf8" stroke="#704a05" stroke-width="2"/>
+<text x="160" y="247" fill="#202a25" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" text-anchor="middle">Search</text>
+<text x="160" y="267" fill="#704a05" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="400" text-anchor="middle">Selected</text>
+<polygon points="417.0,194.0 389.5,241.6 334.5,241.6 307.0,194.0 334.5,146.4 389.5,146.4" fill="#fffdf8" stroke="#8b897e" stroke-width="2"/>
+<text x="362" y="191" fill="#202a25" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" text-anchor="middle">Publish</text>
+<text x="362" y="211" fill="#4a554d" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="400" text-anchor="middle">Waiting</text>
+<path d="M493 44 L493 300" stroke="#8b897e" stroke-width="1" fill="none"/>
+<text x="518" y="80" fill="#704a05" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" text-anchor="start">DETAILS</text>
+<text x="518" y="113" fill="#202a25" font-family="system-ui, -apple-system, sans-serif" font-size="23" font-weight="600" text-anchor="start">Build search</text>
+<rect x="518" y="131" width="110" height="28" rx="14" fill="#f7f4eb" stroke="#8b897e"/>
+<text x="573.0" y="150" fill="#4a554d" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" text-anchor="middle">In progress</text>
+<text x="518" y="189" fill="#4a554d" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="400" text-anchor="start">Owner   Search builder</text>
+<text x="518" y="217" fill="#202a25" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" text-anchor="start">Done when</text>
+<text x="518" y="240" fill="#4a554d" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="400" text-anchor="start">Readers can find a chapter.</text>
+<text x="518" y="276" fill="#4a554d" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="400" text-anchor="start">Summary  ·  Evidence  ·  Sessions</text>
+</svg>

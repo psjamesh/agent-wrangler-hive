@@ -9,6 +9,7 @@ import { retireDrawer } from '/public/retire-view.js';
 import { workstreamDrawer, completeKey } from '/public/workstream-view.js';
 import { queenInstructions } from '/public/cell-view.js';
 const store = new Map();
+store.set('promoState', JSON.stringify({ schema: 1, dismissedContentVersion: 1, dismissedHiveVersion: null, dismissedAt: '2026-01-01' }));
 client.register({ api: { storage: { get: k => store.get(k), set: (k, v) => store.set(k, v), remove: k => store.delete(k) } }, register() {} });
 const ui = createUi();
 const sent = [], replies = [], notices = [];

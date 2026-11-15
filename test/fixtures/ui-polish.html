@@ -1,6 +1,7 @@
 <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/public/styles.css"><style>*{box-sizing:border-box}body{margin:0}:root{--bg:#f4f5f7;--surface:#fff;--surface-2:#e9ecf0;--fg:#202631;--fg-muted:#555f70;--border:#b7bfcc;--border-muted:#c9ced8;--green:#22864a;--red:#c33;--font:system-ui,sans-serif}body.dark{--bg:#181b20;--surface:#22262d;--surface-2:#2c323b;--fg:#e4e7ec;--fg-muted:#a0aaba;--border:#525e70;--border-muted:#414b5b;--green:#63bc80;--red:#ef7777}*,*::before,*::after{transition:none!important;animation:none!important}</style></head><body><div class="hive-root" id="root" style="width:100vw;height:100vh"></div><script type="module">
 import client from '/public/client.js';
 const store = new Map();
+store.set('promoState', JSON.stringify({ schema: 1, dismissedContentVersion: 1, dismissedHiveVersion: null, dismissedAt: '2026-01-01' }));
 const params = new URLSearchParams(location.search);
 document.body.className = params.get('theme') || 'light';
 if (params.get('view') === 'cell') store.set('cell', JSON.stringify('alpha'));

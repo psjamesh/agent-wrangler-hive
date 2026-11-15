@@ -1,12 +1,12 @@
 # Introducing Hive
 
-**Status: proposal for human approval.** This document and the static mockups describe a future feature; they do not enable a promo or change onboarding. Merging this document records the proposal, not approval to implement it.
+**Status: approved introduction design.** The implementation uses six pages in the order Welcome, Map, People, Inbox, Needs you and Delivery. Drawn examples illustrate a fictional hive; real running-UI captures are a separate package. A disposable dev-server demo requires human approval before merge.
 
 Hive needs a short, beautiful introduction that answers three questions: what am I looking at, who keeps it current, and when does it need me? A new viewer should leave able to open a hive, select a bead and answer a request. An existing viewer should hear about meaningful additions without repeating the introduction after every release.
 
 ## Proposed direction and alternatives
 
-Use a broad, flat-topped hexagon as the desktop tour's silhouette, with six numbered, labelled stops clockwise around its edges. Keep the reading area rectangular inside it: a headline, a short paragraph and one generous image. Honey-coloured edges, quiet background cells and a clear selected stop connect it to Hive's map. The hexagon stays still while its page changes. The screen behind it is dimmed; decorative bees pause while it is open.
+Use a regular, flat-topped hexagon as the desktop tour's silhouette, with six numbered, labelled stops clockwise around its edges. Keep the reading area rectangular inside it: a headline, a short paragraph and one generous image. Honey-coloured edges, quiet background cells and a clear selected stop connect it to Hive's map. The hexagon stays still while its page changes. The screen behind it is dimmed; decorative bees pause while it is open.
 
 Three approaches were considered:
 
@@ -24,16 +24,16 @@ The proposal favours a calm presentation over an animation demo. Real screenshot
 
 These SVG files can be opened in an image viewer or viewed directly on GitHub. No server, scripts, browser launch, external fonts or network assets are needed. They are design drawings, **not screenshots of a running instance**. Their UI scenes are schematic placeholders for the captures specified below.
 
-| Page | Mockup |
+| Concept drawing | Mockup |
 | --- | --- |
 | 1 · Welcome | [Dark](promo/01-welcome-dark.svg), [light](promo/01-welcome-light.svg) |
 | 2 · Map | [Dark](promo/02-map-dark.svg) |
 | 3 · People | [Dark](promo/03-people-dark.svg) |
-| 4 · Needs you | [Dark](promo/04-needs-you-dark.svg), [narrow](promo/04-needs-you-narrow.svg) |
-| 5 · Delivery | [Dark](promo/05-delivery-dark.svg) |
-| 6 · Start | [Dark](promo/06-start-dark.svg) |
+| Needs you | [Dark](promo/04-needs-you-dark.svg), [narrow](promo/04-needs-you-narrow.svg) |
+| Delivery | [Dark](promo/05-delivery-dark.svg) |
+| Intro artwork | [Inbox](../../public/promo/inbox.svg) |
 
-The light and narrow drawings demonstrate the visual system; production captures cover **all six pages in both themes**. The copy below is authoritative if a compact drawing abbreviates it.
+The static mockups are concept drawings. The running intro follows the page order and regular geometry specified below; the drawings are not renderings of the final implementation. Production captures cover **all six pages in both themes**. The copy below is authoritative.
 
 ## Six pages
 
@@ -55,31 +55,31 @@ Show the field-guide map with “Build search” selected and Details open. “P
 
 > The queen maintains the plan and brings decisions to you. Workers take bounded beads; reviewers examine their results. The record stays with the hive when a session changes.
 
-Show a queen header and selected bead's attached worker and reviewer sessions. Caption: “The owner and attached sessions tell you who is doing what.” A session being idle is not evidence that its bead is finished. No claims about provider choice, fixed costs or guaranteed parallelism belong in the promo. Next: **See what needs you**.
+Show a queen header and selected bead's attached worker and reviewer sessions. Caption: “The owner and attached sessions tell you who is doing what.” A session being idle is not evidence that its bead is finished. No claims about provider choice, fixed costs or guaranteed parallelism belong in the promo. Next: **Visit the inbox**.
 
-### 4 · Needs you — Step in where it matters
+### 4 · Inbox — Keep the conversation with the work
+
+> The inbox brings Hive conversations together. Open a topic to read the context, follow a linked bead and reply to the queen. Unread messages and requests waiting on you are different things.
+
+Show a demo inbox with a field-guide topic, a linked Build search bead and a conversation reply. Caption: “Read and reply in context. Use Answer request when a decision needs your answer.” Next: **See what needs you**.
+
+### 5 · Needs you — Step in where it matters
 
 > A person mark points to work waiting on you. Open the request, read the choices and send your answer. The queen handles worker questions first and forwards the ones that need you.
 
 Show “Choose the cover” with a person mark and its forwarded request open. The fictional question is “Which cover should the guide use?” with “Illustrated” and “Typographic” choices. Caption: “Answer request settles the question; a conversation reply alone does not.” Mention in supporting text: “If there is no available queen, requests can come directly to you.” Unread messages and requests are different; do not use an unread dot as a decision badge. This introduces Hive's own waiting surfaces without implying dependency on a separate Needs You extension. Next: **Follow delivery**.
 
-### 5 · Delivery — Follow the result, with evidence
+### 6 · Delivery — Follow the result, with evidence
 
 > A bead keeps its review, checks and delivery evidence together. Open the linked pull request or result to inspect it. Work closes when its agreed delivery boundary is met.
 
-Show a selected completed “Build search” bead with review, test and merge evidence, plus “Install delegated” as a separately labelled obligation. Caption: “Reviewed, merged and running are different facts.” This is an example of one repository's delivery agreement, not a universal Hive merge or deployment policy. Do not imply a green check deploys work, or that Hive universally requires or grants merge authority. Next: **Start small**.
+Show a selected completed “Build search” bead with review, test and merge evidence, plus “Install delegated” as a separately labelled obligation. Caption: “Reviewed, merged and running are different facts.” This is an example of one repository's delivery agreement, not a universal Hive merge or deployment policy. Do not imply a green check deploys work, or that Hive universally requires or grants merge authority. Final action: **Close intro**.
 
-### 6 · Start — Start with one clear outcome
-
-> Try a small task. Give the queen a goal and what “done” means, then ask it to map the work. You can adjust the plan together.
-
-Show the existing New hive form, without a fake submission or a preselected model. Supporting checklist: “Open Hive · Complete setup if prompted · Choose New hive or Add existing task · Describe the outcome”. Show the read-only example prompt: “Help me plan a small field guide. Start by clarifying the goal and what done means.” Caption: “The queen launches only when you submit the normal creation form.”
-
-Final action: **Open Hive setup** when setup is incomplete; **New hive…** when ready. Close the promo and navigate to setup or open the existing creation form; neither route initializes a store, creates a task, archives a session or launches an agent. Keep **Close intro** as a quiet alternative. Existing-task adoption remains available through the normal creation UI. Replay is always available from **About Hive** in the overview and cell headers and in Hive Settings.
+The final action is **Close intro**. Closing returns to the current Hive view without creating a task, initializing a store or launching an agent. Replay is available from **About Hive** in the overview, setup and cell headers, and in Hive Settings.
 
 ## Shape, navigation and narrow screens
 
-Desktop target: viewport at least 1200 CSS px wide and 820 high at the viewer's current zoom. Centre a maximum 1120 × 740 CSS px hexagonal silhouette within the viewport, including navigation hit areas. Six stops run clockwise: Welcome at the top, Map upper right, People lower right, Needs you at the bottom, Delivery lower left, Start upper left. Number and label every stop; the active one has an outline, filled marker and “current” accessible state. Completed visits may have a small tick, never a colour-only distinction. Labels and focus rings sit inside the dialog's rectangular hit boundary and outside the decorative clipping path.
+Desktop target: viewport at least 1200 CSS px wide and 820 high at the viewer's current zoom. Centre a regular hexagon, at most 1080 CSS px wide, within the viewport. Its height is width × √3 / 2: every edge is half its width, with six 120° internal angles. Six stops run clockwise: Welcome at the top, Map upper right, People lower right, Inbox at the bottom, Needs you lower left, Delivery upper left. Number and label every stop; the active one has an outline, filled marker and “current” accessible state. Completed visits may have a small tick, never a colour-only distinction. Labels and focus rings sit inside the dialog's rectangular hit boundary and outside the decorative clipping path.
 
 The inner page has a maximum width around 720 px. Reserve a consistent image frame and footer row; text is allowed to grow. Back and Next are in a stable footer in ordinary left-to-right order. Page 1 hides Back without moving Next. Close is always reachable at the top right of the dialog's rectangular boundary. Clicking the backdrop does nothing, avoiding accidental dismissal. No swipe, rotation or hover is required. Selecting any stop jumps directly to it; Next and Back follow numeric order, independent of visual position. This is an ordered page navigator, not six product settings.
 
@@ -171,7 +171,7 @@ Capture at 1440 × 1000 CSS px, device scale 2, in light and dark. Crop to the r
 | `people` | Cell header + bead sessions | Queen, owning worker, reviewer |
 | `needs-you` | Choose the cover, forwarded request open | Person mark, choices, Answer request |
 | `delivery` | Build search Details + evidence | Review, checks, merge and a separate installation obligation |
-| `start` | New hive form, unsubmitted | Name, Goal, Done when; normal launch boundary |
+| `inbox` | Inbox with a field-guide topic open | Context, linked bead and reply |
 
 Deliver `public/promo/<stem>-light.webp` and `-dark.webp` with fallback PNG if conversion is unavailable; choose the active theme without a flash of the opposite theme. Alt text/captions ship as ordinary page data. Avoid real repository URLs or machine paths even inside fixture screenshots. Use generic repository labels such as `example/guide` and clearly synthetic IDs. A fixture-only PR link never triggers an external lookup.
 
@@ -181,28 +181,10 @@ Keep a source manifest next to the fixture: scenario revision, core/Hive/Beads f
 
 Refresh affected shots when visible labels, marks, layout, forms or theme tokens change. A PR touching those surfaces must either refresh the affected assets or state why the existing images remain accurate. CI can validate the shot manifest, dimensions, asset pairs and fixture scene assertions; image comparisons are advisory because fonts and rendering vary. A maintainer chooses when visual drift merits new images. Updating images alone does not make the promo reappear. Budget the six theme pairs to roughly 1.5 MB total, load only the current page eagerly, and retain a captioned fallback if an image fails.
 
-## Integration and build split
+## Integration and verification
 
-Implement within Hive's existing client lifecycle and host capabilities. No new provider permissions, dependency on another extension or account system is proposed. A small content/policy module owns the manifest and pure eligibility logic; a separate dialog module owns focus and presentation. Integrate through [public/client.js](../../public/client.js), header rendering, Settings and setup navigation, using [server/manifest.js](../../server/manifest.js) only to expose the active build version. Keep the dialog outside graph-driven page replacement so graph changes cannot destroy it. Close/dispose on Hive unmount without persisting dismissal.
+The introduction uses the existing client lifecycle and host storage. `public/promo-content.js` defines the pages and edition manifest. `public/promo-policy.js` owns eligibility, guarded storage and regular hexagon geometry. `public/promo-dialog.js` owns the native modal and focus. `server/manifest.js` exposes the executing extension build version in the Hive projection. The modal remains outside graph-driven page replacement and unmount disposes it without recording dismissal.
 
-These are proposed bounded implementation beads, **not created or ready to launch**. Human design approval is the prerequisite for all of them.
+Node tests cover editions, denied storage, competing tabs, downgrade replay, equal edge lengths, page navigation, focus restoration, dismissal, enlargement and view-entry guards. CI-only browser coverage exercises the six pages in both themes, regular rendered geometry, responsive layouts, reduced motion and Escape. Existing browser fixtures explicitly remember a dismissed intro when testing other features. Screen-reader review supplements automated checks.
 
-| Work package | Deliverable and acceptance | Depends on |
-| --- | --- | --- |
-| A0 · Prove real-instance capture seams | CI proof that pinned core can run with temporary state and inert session/GitHub/delivery adapters; identify any separate core prerequisite and its acceptance before A is ready | Approved design |
-| A · Demo fixture and isolated capture | Deterministic disposable AW/Beads server, deny-real-effects adapters, opt-in CI job, twelve scene captures and provenance; Claude helper inspects them | A0 and any delivered core prerequisite |
-| B · Promo content and display policy | Six pages, curated epoch manifest, active build version, validated per-viewer record, all display/dismiss/replay rules | Approved design; runs parallel with A0 and A |
-| C · Hexagonal dialog and narrow fallback | Desktop/narrow layouts, all six destinations, themed assets, captions, image failure fallback, keyboard/focus/reduced-motion behavior | A and B |
-| D · Entry points and acceptance | About Hive, Settings replay, safe initial offer, setup/create routing; CI screenshots and accessibility checks; user-facing docs | C |
-
-Builders may choose module names, exact breakpoints after content-fit checks, crop boundaries and WebP tooling within these contracts. Any change to automatic-show policy, storage scope, final action side effects, page count or the hexagon direction comes back for a product decision.
-
-Implementation verification includes pure policy cases for every display-table row, skip-release changes and downgrade replay; storage failures, corrupt/future schema and competing tabs; DOM focus and dismissal routes; graph refresh/unmount without dismissal; initial deep-link routing; setup/final actions without writes or launches. CI-only browser coverage verifies both themes, six pages, keyboard-only use, Escape/focus restoration, reduced motion, narrow widths and high zoom, forced colours, readable crops and image failures. Manual screen-reader review supplements automated checks. This docs-only PR runs the repository's required local test entrypoint and checks SVG syntax and linked assets; it does not run browser tests locally.
-
-## Open questions for the human
-
-1. **Approve the broad hexagonal silhouette?** Recommended: keep it for spacious screens and use the rectangular sheet whenever content would feel cramped. The simpler alternative keeps only a small hexagonal navigator in a rectangular dialog.
-2. **Should meaningful new content open automatically on the next ordinary Hive visit, including a one-time full tour for existing users who have no record?** Recommended: yes, starting at the first changed page, with all close routes remembering the edition. A quieter alternative shows an “Updated intro” badge and waits for a click. Routine releases stay quiet either way.
-3. **Is browser-profile scope right for dismissal?** Recommended: use local per-board storage now. Cross-device identity would need a separate host capability and product design.
-
-The queen should present these choices with the mockups. An approval to publish or merge this proposal does not answer these product questions or arm the implementation packages.
+The bounded implementation accepts drawn page art. The real-instance screenshot package follows the capture contract above and does not change the content edition solely for refreshed imagery. The development demo uses a separate core process, temporary data and a fictional seeded hive; it never uses the live board or launches demo agents.

@@ -1,4 +1,5 @@
 import { cellMetrics } from './cell-metrics.js';
+import { aboutHive } from './promo-dialog.js';
 import { workerProfileForm } from './worker-profile.js';
 import { workstreamProfileSettings } from './worker-profile.js';
 import { cellTitle, cellGoalForm } from './cell-settings.js';
@@ -517,7 +518,7 @@ function cellHeader(ctx, cell, root) {
         queenPill(ctx, cell, event => openQueenPopover(ctx, cell, event.currentTarget))),
       h('div', { class: 'hive-head-actions' },
         isRetired(cell) ? h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openReopen(ctx, cell), 'data-focus-key': `reopen-open:${cell.id}` }, 'Reopen hive…') : (cell.enabled || cell.snapshot ? null : h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => send({ type: 'hive-cell-enable', cellId: cell.id }) }, 'Turn on')),
-        settingsButton(ctx, cell))),
+        aboutHive(ctx), settingsButton(ctx, cell))),
     settingsModal(ctx, cell, (leave, section) => hiveSettings(ctx, cell, leave, section)),
     attentionEl(ctx, { cellId: cell.id }),
     noticesEl(ctx));

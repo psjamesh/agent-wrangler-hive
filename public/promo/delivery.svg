@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300">
+<rect x="0" y="0" width="800" height="300" rx="14" fill="#152025" stroke="#728780"/>
+<text x="22" y="29" fill="#f4c979" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700" text-anchor="start">HIVE</text>
+<text x="78" y="29" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" text-anchor="start">/  Launch a field guide</text>
+<rect x="657" y="12" width="124" height="28" rx="14" fill="#152025" stroke="#728780"/>
+<text x="719.0" y="31" fill="#c0cec7" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" text-anchor="middle">Demo hive</text>
+<path d="M0 44 L800 44" stroke="#728780" stroke-width="1" fill="none"/>
+<text x="27" y="82" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="600" text-anchor="start">Build search</text>
+<rect x="664" y="60" width="108" height="28" rx="14" fill="#152025" stroke="#728780"/>
+<text x="718.0" y="79" fill="#c0cec7" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" text-anchor="middle">Closed</text>
+<path d="M25 147 L775 147" stroke="#728780" stroke-width="1" fill="none"/>
+<circle cx="40" cy="124" r="12" fill="#152025" stroke="#8dd4bb"/>
+<text x="40" y="128" fill="#8dd4bb" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="700" text-anchor="middle">✓</text>
+<text x="66" y="129" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" text-anchor="start">Adversarial review</text>
+<text x="351" y="129" fill="#c0cec7" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="400" text-anchor="start">Approved for this revision</text>
+<path d="M25 191 L775 191" stroke="#728780" stroke-width="1" fill="none"/>
+<circle cx="40" cy="168" r="12" fill="#152025" stroke="#8dd4bb"/>
+<text x="40" y="172" fill="#8dd4bb" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="700" text-anchor="middle">✓</text>
+<text x="66" y="173" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" text-anchor="start">Required checks</text>
+<text x="351" y="173" fill="#c0cec7" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="400" text-anchor="start">Passed on the reviewed head</text>
+<path d="M25 235 L775 235" stroke="#728780" stroke-width="1" fill="none"/>
+<circle cx="40" cy="212" r="12" fill="#152025" stroke="#8dd4bb"/>
+<text x="40" y="216" fill="#8dd4bb" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="700" text-anchor="middle">✓</text>
+<text x="66" y="217" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" text-anchor="start">Pull request</text>
+<text x="351" y="217" fill="#c0cec7" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="400" text-anchor="start">Merged · example/guide</text>
+<path d="M25 279 L775 279" stroke="#728780" stroke-width="1" fill="none"/>
+<circle cx="40" cy="256" r="12" fill="#152025" stroke="#f4c979"/>
+<text x="40" y="260" fill="#f4c979" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="700" text-anchor="middle">→</text>
+<text x="66" y="261" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" text-anchor="start">Installation</text>
+<text x="351" y="261" fill="#c0cec7" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="400" text-anchor="start">Delegated · verification pending</text>
+</svg>

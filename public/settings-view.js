@@ -1,3 +1,4 @@
+import { aboutHive } from './promo-dialog.js';
 import { h } from './dom.js';
 import { capacityEditor, openHiveSettings, restoreSettingsFocus } from './capacity-control.js';
 
@@ -175,5 +176,5 @@ export function settingsModal(ctx, cell = null, thisHive = () => null) {
             onclick: () => ui.setForm('global-bd', { ...ui.form('global-bd'), value: '', saved: false, error: null }) }, 'Reset to defaults'),
           h('p', { class: 'hive-muted' }, 'Reset clears the draft path. Save path to apply it.'))
           : [capacityEditor(ctx), notificationSetting(ctx), ctx.bees.slider('all'),
-            h('p', { class: 'hive-muted' }, 'Bees are decoration and mean nothing about the work. Reduced-motion settings stop them.')]))));
+            h('p', { class: 'hive-muted' }, 'Bees are decoration and mean nothing about the work. Reduced-motion settings stop them.'), aboutHive(ctx, { leave: () => close(false) })]))));
 }
