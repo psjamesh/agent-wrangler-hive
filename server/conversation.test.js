@@ -568,3 +568,63 @@ test('failed and uncertain reaction delivery remain durable and are not retried 
     assert.equal(f.list()[0].ack.state.reaction, 'decline');
   }
 });
+
+test('completion suggestions are anchored human input, deduplicated concurrently until answered', async t => {
+  const { suggestWorkstreamCompletion } = await import('./workstreams.js');
+  const f = await fixture(t);
+  f.cell.rootBeadId = 'root';
+  f.rt.snapshots.hierarchyCurrent = true;
+  f.rt.snapshots.graph.beads = {
+    root: { id: 'root', kind: 'goal' },
+    stream: { id: 'stream', parentId: 'root', kind: 'workstream', status: 'open', title: 'Example work' },
+    child: { id: 'child', parentId: 'stream', status: 'open' },
+  };
+  const before = structuredClone(f.rt.snapshots.graph);
+  const args = { cellId: f.cell.id, headId: 'stream' };
+  const [first, repeat] = await Promise.all([suggestWorkstreamCompletion(f.rt, args), suggestWorkstreamCompletion(f.rt, args)]);
+  assert.equal(first.created, true);
+  assert.equal(repeat.created, false);
+  assert.equal(first.id, repeat.id);
+  assert.equal(f.list().length, 1);
+  const message = f.list()[0];
+  assert.equal(message.author, 'human');
+  assert.equal(message.text, 'Is Example work ready to close?');
+  assert.equal(message.beadId, 'stream');
+  assert.equal(f.rt.metadata.read().threads[f.cell.id][message.threadId].beadId, 'stream');
+  assert.equal(message.delivery.sessionId, f.cell.queenSessionId);
+  assert.equal(message.response.required, true);
+  assert.deepEqual(f.rt.snapshots.graph, before);
+  f.rt.metadata = new MetadataStore({ file: f.rt.metadata.file });
+  f.rt.snapshots.graph.beads.stream.title = 'Renamed work';
+  assert.equal((await suggestWorkstreamCompletion(f.rt, args)).id, first.id);
+  await publish(f.rt, f.actor, { text: 'Its child is still open.', reply_to: first.id });
+  const next = await suggestWorkstreamCompletion(f.rt, args);
+  assert.equal(next.created, true);
+  assert.notEqual(next.id, first.id);
+  await assert.rejects(suggestWorkstreamCompletion(f.rt, { ...args, headId: 'root' }), /not a workstream/);
+  f.rt.snapshots.graph.beads.stream.status = 'closed';
+  await assert.rejects(suggestWorkstreamCompletion(f.rt, args), /already closed/);
+  f.rt.snapshots.graph.beads.stream.status = 'open';
+  f.rt.metadata.mutate(d => { d.cells[f.cell.id].enabled = false; });
+  await assert.rejects(suggestWorkstreamCompletion(f.rt, args), /off/);
+});
+
+
+test('completion suggestion handler delivers once and retains uncertain delivery without duplicate mail', async t => {
+  const f = await fixture(t);
+  f.cell.rootBeadId = 'root';
+  f.rt.snapshots.hierarchyCurrent = true;
+  f.rt.snapshots.graph.beads = { root: { id: 'root', kind: 'goal' }, stream: { id: 'stream', parentId: 'root', kind: 'workstream', status: 'open', title: 'Example work' } };
+  const deliveries = [];
+  const host = { tasks: { get: () => ({ name: 'Fixture task' }) }, deliver: async (...args) => { deliveries.push(args); throw new Error('Offline'); } };
+  const first = await humanAction(f, 'hive-ws-suggest-completion', { headId: 'stream' }, host);
+  assert.equal(first.ok, true);
+  assert.equal(first.delivery.state, 'uncertain');
+  const repeat = await humanAction(f, 'hive-ws-suggest-completion', { headId: 'stream' }, host);
+  assert.equal(repeat.messageId, first.messageId);
+  assert.equal(repeat.created, false);
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0][0], f.cell.queenSessionId);
+  assert.match(deliveries[0][1], /Is Example work ready to close/);
+  assert.equal(f.list().length, 1);
+});

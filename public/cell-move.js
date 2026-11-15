@@ -189,88 +189,10 @@ export function planMove({ layout, kids, rootId, saved = {}, aspect, id, target,
   return { ok: true, moves: preview.moves, positions: pinned.batch, stack: pinned.stack };
 }
 
-const NO_ROOM = 'There\'s no room to arrange this workstream here. Move it to open space, or Arrange the whole hive.';
-
 // Twice the pixel x of a hex, in whole numbers, and its squared pixel
 // distance from another in units of the hex size.
 const xx = (p) => 2 * p.q + p.r;
 const dist2 = (a, b) => 0.75 * (xx(a) - xx(b)) ** 2 + 2.25 * (a.r - b.r) ** 2;
-
-export function planGroupArrange({ layout: full, kids, rootId, saved = {}, aspect, headId, isDone, hidden = new Set(), yieldIds = new Set() }) {
-  const layout = visible(full, hidden);
-  const home = layout.positions[headId];
-  if (!home || !layout.groupHeads.includes(headId)) return fail('That workstream is not on the map.');
-  const members = membersOf(layout, kids, headId);
-  const onMap = new Set(layout.order);
-  const rank = new Map(layout.order.map((o, i) => [o, i]));
-  const units = (kids.get(headId) || [])
-    .filter((c) => members.has(c.id))
-    .map((c) => {
-      const ids = [...membersOf(layout, kids, c.id)].sort((a, b) => rank.get(a) - rank.get(b));
-      return { ids, anchor: onMap.has(c.id) ? c.id : ids[0], left: Boolean(isDone(c.id)) };
-    })
-    .filter((u) => u.ids.length)
-    .sort((a, b) => rank.get(a.anchor) - rank.get(b.anchor));
-  if (!units.length) return { ok: true, same: true, moves: {} };
-  const blocked = new Set(layout.order.filter((o) => !members.has(o)).map((o) => key(layout.positions[o])));
-  blocked.add(key(home));
-  const claimed = new Set();
-  const moves = {};
-  const sides = { left: new Map([[key(home), home]]), right: new Map([[key(home), home]]) };
-  const onSide = (p, left) => (left ? xx(p) < xx(home) : xx(p) >= xx(home)) && key(p) !== key(home);
-  const free = (p) => !blocked.has(key(p)) && !claimed.has(key(p));
-  const take = (id, p, side) => { moves[id] = p; claimed.add(key(p)); side.set(key(p), p); };
-  const order = [...units.filter((u) => u.ids.length > 1), ...units.filter((u) => u.ids.length === 1)];
-  for (const unit of order) {
-    const side = unit.left ? sides.left : sides.right;
-    const from = layout.positions[unit.anchor];
-    const shape = unit.ids.map((o) => ({ id: o, q: layout.positions[o].q - from.q, r: layout.positions[o].r - from.r }));
-    const cx = shape.reduce((n, s) => n + s.q, 0) / shape.length;
-    const cr = shape.reduce((n, s) => n + s.r, 0) / shape.length;
-    const inShape = new Set(shape.map(key));
-    const edge = shape.filter((s) => [0, 1, 2, 3, 4, 5].some((d) => !inShape.has(key(neighbour(s, d)))));
-    const reach = new Map();
-    for (const p of side.values()) {
-      for (let d = 0; d < 6; d += 1) {
-        const n = neighbour(p, d);
-        if (free(n) && onSide(n, unit.left)) reach.set(key(n), n);
-      }
-    }
-    const tries = new Map();
-    for (const n of reach.values()) {
-      for (const s of edge) {
-        const at = { q: n.q - s.q, r: n.r - s.r };
-        tries.set(key(at), at);
-      }
-    }
-    const centre = (at) => dist2({ q: at.q + cx, r: at.r + cr }, home);
-    const ranked = [...tries.values()].sort((a, b) => centre(a) - centre(b) || a.r - b.r || a.q - b.q);
-    let placed = false;
-    const fits = (at) => {
-      for (const s of shape) {
-        const p = { q: at.q + s.q, r: at.r + s.r };
-        if (!free(p) || !onSide(p, unit.left)) return false;
-      }
-      return true;
-    };
-    for (const at of ranked) {
-      if (!fits(at)) continue;
-      for (const s of shape) take(s.id, { q: at.q + s.q, r: at.r + s.r }, side);
-      placed = true;
-      break;
-    }
-    if (!placed) return fail(NO_ROOM, moves);
-  }
-  const ids = [...members];
-  if (!Object.values(moves).every(valid)) return fail(NO_ROOM, moves);
-  if (ids.every((o) => key(moves[o] || layout.positions[o]) === key(layout.positions[o]))) return { ok: true, same: true, moves: {} };
-  if (pieces(ids.map((o) => moves[o] || layout.positions[o])) > pieces(ids.map((o) => layout.positions[o]))) return fail(NO_ROOM, moves);
-  if (splits(layout, kids, headId, moves)) return fail(SPLIT, moves);
-  if (!preservesAttachments(full, kids, { ...full.positions, ...moves }, hidden)) return fail(DETACH, moves);
-  const pinned = pinBatch({ layout: full, kids, rootId, saved, aspect, moves, yieldIds, hidden });
-  if (!pinned) return fail('Hive could not keep the other beads where they are, so nothing was arranged. Arrange repacks the whole hive.', moves);
-  return { ok: true, moves, positions: pinned.batch, stack: pinned.stack };
-}
 
 export const NO_REVEAL = 'This workstream is walled in by other work, so there\'s no free hex beside it to show its closed work. Move some of that work away, or Arrange the whole hive.';
 export const REVEAL_RETRY = 'Hive could not keep the other work where it is while showing this workstream\'s closed work, so nothing was moved. Try again.';

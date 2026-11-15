@@ -4,7 +4,7 @@ import test from 'node:test';
 import { layoutCell, groupOutlines } from '../public/cell-layout.js';
 import { hiddenWork } from '../public/region-visibility.js';
 import { activeKids, planArchive, planReturn } from '../public/archive-layout.js';
-import { previewMove, planMove, planReveal, membersOf, pieces, planGroupArrange } from '../public/cell-move.js';
+import { previewMove, planMove, planReveal, membersOf, pieces } from '../public/cell-move.js';
 
 const p = (q, r = 0) => ({ q, r });
 const beads = Object.fromEntries([
@@ -74,13 +74,6 @@ test('reveal moves only the selected region and leaves child and ancestor region
   const out = planReveal({ ...f, layout, headId: 'child', hidden: new Set(), back: hidden, yieldIds: hidden });
   assert.equal(out.ok, true, out.reason);
   for (const id of ['parent', 'a', 'deep', 'c']) assert.equal(out.moves?.[id], undefined);
-});
-
-test('arrange of a parent region does not move child regions', () => {
-  const f = fixture({ ...saved, a: p(-1) });
-  const out = planGroupArrange({ ...f, headId: 'parent', isDone: () => false });
-  assert.equal(out.ok, true, out.reason);
-  for (const id of ['child', 'b', 'deep', 'c']) assert.equal(out.moves?.[id], undefined);
 });
 
 test('archive/return preserve all peer regions as one rigid subtree constellation', () => {

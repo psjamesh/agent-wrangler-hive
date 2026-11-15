@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { layoutCell } from '../public/cell-layout.js';
-import { previewMove, planGroupArrange, planReveal, planMove, pieces } from '../public/cell-move.js';
+import { previewMove, planReveal, planMove, pieces } from '../public/cell-move.js';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { performance } from 'node:perf_hooks';
@@ -45,13 +45,6 @@ test('gaps between separate workstreams are fine', () => {
   const kids = tree([['a', 'root', 'workstream'], ['x', 'a'], ['b', 'root', 'workstream'], ['y', 'b']]);
   const layout = lay(kids, { a: p(0, 0), x: p(1, 0), b: p(2, 0), y: p(3, 0) });
   assert.equal(previewMove({ layout, kids, id: 'b', target: p(10, 0) }).ok, true);
-});
-
-test('arrange works for a workstream beyond the old map edge', () => {
-  const kids = tree([['a', 'root', 'workstream'], ['x', 'a'], ['y', 'a']]);
-  const layout = lay(kids, { a: p(900, 0), x: p(901, 0), y: p(902, 0) });
-  const out = planGroupArrange({ layout, kids, rootId: 'root', saved: { a: p(900, 0), x: p(901, 0), y: p(902, 0) }, headId: 'a', isDone: () => false });
-  assert.equal(out.ok, true);
 });
 
 test('revealing a workstream beyond the old map edge places its returning work', () => {
