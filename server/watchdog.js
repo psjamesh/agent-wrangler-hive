@@ -1,6 +1,6 @@
 import { ciWaitAttention, ciWaitSuppresses, reconcileCiWaits } from './ci-waits.js';
 import { explicitResume, linksResolved, resolveLinkWaits, structuredWait, waitStatus, STRUCTURED_WAIT_HELP } from './link-waits.js';
-import { pickupState, defaultPickupProblem, idleReadyProblem } from './pickup.js';
+import { pickupState, defaultPickupProblem, idleReadyProblem, idleReadyAvailable } from './pickup.js';
 import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
 import { awaitingQueen } from './conversation.js';
@@ -136,8 +136,9 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     add('blocked_status_migrated', cell.id, migrations.map(([id, migration]) => [id, migration.at]), Math.min(...migrations.map(([, migration]) => migration.at)),
       `Migrated blocked beads to open: ${ids.map(id => `${id} (${beads[id]?.title || id})`).join(', ')}. Links and waiting annotations were preserved. Waiting now comes from open blocks prerequisites.`, { migrated_bead_ids: ids });
   }
+  const idleAvailable = open.some(bead => idleReadyCandidate(bead, cell)) && idleReadyAvailable(rt, host, cell);
   for (const bead of open) {
-    const idleProblem = idleReadyProblem(rt, host, cell, bead, rt.snapshots.graph, now);
+    const idleProblem = idleReadyProblem(rt, host, cell, bead, rt.snapshots.graph, now, idleAvailable);
     const idleAnchor = cell.idleReadyAnchors?.[bead.id];
     if (idleProblem && idleAnchor && now - idleAnchor.at >= settings.idleReadyMinutes * 60000) {
       add('idle_ready_work', bead.id, idleAnchor.at, idleAnchor.at,
@@ -292,14 +293,21 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
   return flags;
 }
 
+function idleReadyCandidate(bead, cell) {
+  return bead.id !== cell.rootBeadId && bead.status === 'open' && !bead.assignee
+    && !GROUP_KINDS.has(bead.kind) && !['decision', 'external', 'idea'].includes(bead.kind);
+}
+
 function syncIdleReadyAnchors(rt, host, now) {
   const graph = rt.snapshots.graph;
   const edits = [];
   for (const cell of rt.metadata.cells()) {
     const next = {};
     const ids = cell.enabled && !cell.snapshot && cell.rootBeadId && graph.beads[cell.rootBeadId] ? descendantIds(graph.beads, cell.rootBeadId) : new Set();
-    for (const id of ids) {
-      if (!idleReadyProblem(rt, host, cell, graph.beads[id], graph, now)) continue;
+    const candidates = [...ids].filter(id => idleReadyCandidate(graph.beads[id], cell));
+    const available = candidates.length > 0 && idleReadyAvailable(rt, host, cell, graph);
+    for (const id of candidates) {
+      if (!available || !idleReadyProblem(rt, host, cell, graph.beads[id], graph, now, available)) continue;
       next[id] = cell.idleReadyAnchors?.[id] || { at: now };
     }
     if (JSON.stringify(next) !== JSON.stringify(cell.idleReadyAnchors || {})) edits.push([cell.id, next]);

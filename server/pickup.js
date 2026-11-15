@@ -181,19 +181,28 @@ export function defaultPickupCandidate(rt, cell, bead, graph = rt.snapshots.grap
   return !structuralPickupReasons(rt, graph, bead).length && !defaultOnlyReasons(rt, cell, bead, requested, now).length;
 }
 
-export function idleReadyProblem(rt, host, cell, bead, graph = rt.snapshots.graph, now = Date.now()) {
-  if (!cell || !bead || bead.id === cell.rootBeadId || pickupCell(rt, graph, bead.id)?.id !== cell.id) return null;
-  if (['investigation', 'decision', 'external', 'idea'].includes(bead.kind)) return null;
-  if (structuralPickupReasons(rt, graph, bead).length || defaultOnlyReasons(rt, cell, bead, null, now).length || replacementPickupReason(rt, bead)) return null;
+export function idleReadyAvailable(rt, host, cell, graph = rt.snapshots.graph) {
   const usage = capacity(rt, graph);
-  if (usage.limit && !usage.available) return null;
-  if (cellReasons(rt, host, cell).length) return null;
+  return (!usage.limit || Boolean(usage.available)) && !cellReasons(rt, host, cell).length;
+}
+
+export function idleReadyProblem(rt, host, cell, bead, graph = rt.snapshots.graph, now = Date.now(), available = null) {
+  if (!cell || !bead || bead.status !== 'open' || bead.assignee || bead.id === cell.rootBeadId || pickupCell(rt, graph, bead.id)?.id !== cell.id) return null;
+  if (['decision', 'external', 'idea'].includes(bead.kind)) return null;
+  if (structuralPickupReasons(rt, graph, bead).length || defaultOnlyReasons(rt, cell, bead, null, now).length) return null;
+  if (!(available ?? idleReadyAvailable(rt, host, cell, graph))) return null;
   const mark = bead.pickup || {};
-  if (mark.armed && !mark.held) return null;
-  const { profile, auto } = inheritedWorkerProfile(graph, bead);
+  if (mark.armed) {
+    const state = pickupState(rt, host, cell, bead, graph, { now });
+    if (state.state === 'queued' && state.reconciliation_reasons.length) return null;
+    if (!mark.held && !['consumed', 'attention'].includes(state.state)) return null;
+  }
+  const inherited = inheritedWorkerProfile(graph, bead);
+  const profile = mark.profile || inherited.profile;
   const reasons = [];
+  if ((!mark.armed && replacementPickupReason(rt, bead)) || pickupConsumed(rt.metadata.read(), bead)) reasons.push('Work needs explicit rearm after a previous claim, binding or worker launch');
   if (mark.held) reasons.push('Automatic pickup is held');
-  else if (mark.armed === false || (!mark.automatic && !auto)) reasons.push('Work is unmarked for pickup');
+  else if (bead.kind === 'investigation' || mark.armed === false || (!mark.automatic && !inherited.auto)) reasons.push('Work is unmarked and needs explicit pickup');
   if (!profile) reasons.push('No worker profile is configured on this workstream or its ancestors');
   return reasons.length ? reasons.join('; ') : null;
 }
