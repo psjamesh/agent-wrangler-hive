@@ -485,7 +485,7 @@ function cellHeader(ctx, cell, root) {
       h('button', { type: 'button', class: 'hive-back', onclick: () => ui.closeCell(), 'aria-label': 'Show all hives', title: 'Show all hives' },
         h('span', { class: 'hive-back-icon', 'aria-hidden': 'true' }), 'All hives'),
       h('span', { class: 'hive-crumb-sep', 'aria-hidden': 'true' }, '/'),
-      h('h2', { class: 'hive-celltitle' }, h('button', { type: 'button', class: 'hive-title-btn', title: 'Goal and done when', 'aria-haspopup': 'dialog', 'data-focus-key': `goal-open:${cell.id}`, onclick: event => openGoalPopover(ctx, cell, event.currentTarget) }, name)),
+      h('h2', { class: 'hive-celltitle' }, h('button', { type: 'button', class: 'hive-title-btn', title: `${name}: goal and done when`, 'aria-haspopup': 'dialog', 'data-focus-key': `goal-open:${cell.id}`, onclick: event => openGoalPopover(ctx, cell, event.currentTarget) }, name)),
       isRetired(cell) ? h('span', { class: 'hive-badge hive-badge-retired', title: cell.retired.summary }, `Retired · ${cell.retired.outcome}`) : (cell.enabled ? null : h('span', { class: 'hive-badge' }, 'Off')),
       capacityControl(ctx),
       h('div', { class: 'hive-cellstate' },
