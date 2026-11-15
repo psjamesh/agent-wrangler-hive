@@ -10,10 +10,25 @@ temporarily refuse a worker update or reviewer launch in another.
 [`requireCompleteHierarchy`](../../server/access.js) refuses when
 `current.error` is truthy **or** `hierarchyCurrent === false`.
 [`ensureWritable`](../../server/ops.js) calls it before mutations, including
-ordinary summary/evidence updates. [`requestReview`](../../server/reviews.js)
-also calls `ensureWritable` before its explicit refresh, then checks bead
-access again after that refresh. An attempted launch therefore need not reach
-the refresh that its caller expects to repair a stale snapshot.
+ordinary summary/evidence updates, without first refreshing. Review admission
+also has this early guard, but the reported reviewer-launch failure is later:
+
+- [`requestReview`](../../server/reviews.js) passes its early guard, refresh
+  and bead-access check, records an open review, then calls `spawnWorker`.
+- [`spawnWorker`](../../server/workers.js) awaits another refresh and an
+  all-issues export, then calls `requireBeadAccess`, which checks hierarchy
+  currency again. For manual launches its earlier snapshot check tests only
+  `current.error`. A stale hierarchy therefore reaches the access refusal,
+  wrapped by `requestReview` as “reviewer launch did not finish”.
+- [`workerLaunchContext`](../../server/workers.js) also awaits a refresh and
+  all-issues export before checking bead access at startup. This is a matching
+  path for the reported “refused at startup” case; automatic pickup also has
+  separate hierarchy checks.
+
+The wrapper distinguishes a later launch refusal from an early review
+admission refusal. The review remains an open wait, and its launch must be
+reconciled before requesting a replacement. This bookkeeping cost makes
+absorbing short transient windows inside admission particularly useful.
 
 ## What makes a successful snapshot stale
 
@@ -41,6 +56,16 @@ without another hierarchy change. An ordinary refresh does not invalidate a
 previously current snapshot. There is no busy-worker/load threshold gating
 refreshes and no missing settlement callback in this traced path.
 
+However, **awaiting a refresh does not await hierarchy settlement**. If an
+export completes while a hierarchy write is still outstanding, and no
+settlement has yet requested `again`, the refresh promise resolves with
+`hierarchyCurrent === false`. For example, a hierarchy write can be queued
+behind the export but already counted as writing. Settlement later triggers
+another refresh, after the launch has already refused. A new hierarchy write
+can also start during the later all-issues export before bead access is
+checked. Thus even a successful awaited refresh cannot guarantee that the
+subsequent guard passes.
+
 ## Evidence and duration
 
 Investigation on 15 November 2026 used main `0ff1e888` and compared these files
@@ -55,9 +80,11 @@ establish which operation caused either incident.
 
 An isolated replay using the actual cache with a controlled adapter produced:
 current initially; stale with `error: null` when a hierarchy write starts;
-still stale after an overlapping export publishes, with one follow-up pending;
-current after that follow-up completes. Starting an ordinary refresh then
-leaves currency true. No live writes or restart were needed.
+an awaited export resolves while the write remains outstanding, still stale;
+settlement requests another export, which restores currency. A second replay
+settled the write during an export: that export published stale, with one
+follow-up pending, and the follow-up restored currency. Starting an ordinary
+refresh leaves currency true. No live writes or restart were needed.
 
 Three consecutive live bead-context calls, each awaiting a refresh, took
 1,791, 2,389 and 1,380 ms end to end. These include transport and tool overhead;
@@ -81,14 +108,19 @@ Keep the fail-closed hierarchy guard. Treat the observed stale-generation
 window as expected protection with misleading feedback, rather than remove
 it or infer corruption from a healthy error field. As immediate guidance,
 after this explicit pre-write refusal, allow a short backoff and call context
-before retrying. Do not replay an uncertain write or launch on that basis.
+before retrying. For a failed reviewer launch, inspect the retained review
+and reconcile its launch first. Do not replay an uncertain write or launch.
 
 A follow-up implementation should distinguish `hierarchy-writing`,
 `refresh-needed` and actual export errors; expose outstanding writes,
 generation/read age and refresh duration. For safe pre-mutation admission,
-await a coalesced refresh and retry the guard with a bounded backoff (for
-example 250 ms, 500 ms and 1 second, with an overall deadline), then return a
-specific transient-busy message if still stale. Revalidate access after the
-await, and never retry an operation after side effects or an uncertain result.
+wait for hierarchy settlement (`writing === false`, notified through
+`onHierarchySettled`) and a successful post-settlement export, then recheck
+the guard. Bound the wait and handle another write racing the export; a
+coalesced refresh alone is insufficient. Alternatively retry this pre-effect
+sequence with bounded backoff (for example 250 ms, 500 ms and 1 second, with
+an overall deadline), then return a specific transient-busy message if still
+stale. Revalidate access after each await, and never retry an operation after
+side effects or an uncertain result.
 This would absorb short normal windows without hiding sustained queue delay
 or weakening ownership checks. This note makes no runtime change.
