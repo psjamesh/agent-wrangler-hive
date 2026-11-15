@@ -217,13 +217,12 @@ const REL_Y = 0.8;
 const REL_HALF = 7.5;
 export const MARK_R = 7.5;
 export const MARK_STROKE = 1.2;
-// The robot, person and review use Lucide's `bot`, `user` and `search-check`
+// The robot, person and review use Lucide's `bot`, `user` and `search`
 // glyphs (ISC licence; see the README).
 // They are drawn at their own 24-unit proportions, scaled uniformly so
 // the whole stroke stays inside the disc with room to spare.
 const LUCIDE_SCALE = 0.48;
-const SEARCH_CHECK = [
-  ['path', { d: 'm8 11 2 2 4-4' }],
+const SEARCH = [
   ['circle', { cx: '11', cy: '11', r: '8' }],
   ['path', { d: 'm21 21-4.3-4.3' }],
 ];
@@ -233,8 +232,8 @@ const LUCIDE = {
     ['path', { d: 'm12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22 22 0 0 1-4 2Z' }],
     ['path', { d: 'M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5' }],
   ],
-  'review-working': SEARCH_CHECK,
-  'review-pending': SEARCH_CHECK,
+  'review-working': SEARCH,
+  'review-pending': SEARCH,
   busy: [
     ['path', { d: 'M12 8V4H8' }],
     ['rect', { width: '16', height: '12', x: '4', y: '8', rx: '2' }],
@@ -249,7 +248,11 @@ const LUCIDE = {
   ],
 };
 const PRIMARY_SHAPES = {
-  external: [['path', { d: 'M-3,3 L3,-3 M-1,-3 H3 V1', class: 'hive-pm-line' }]],
+  external: [
+    ['path', { d: 'M-1.4,-2.8 L0,-4.2 A3,3 0 0,1 4.2,0 L2.8,1.4', class: 'hive-pm-line' }],
+    ['path', { d: 'M1.4,2.8 L0,4.2 A3,3 0 0,1 -4.2,0 L-2.8,-1.4', class: 'hive-pm-line' }],
+    ['path', { d: 'M-1.8,1.8 L1.8,-1.8', class: 'hive-pm-line' }],
+  ],
   'in-progress': [['path', { d: 'M0,-4 A4,4 0 1,1 -4,0', class: 'hive-pm-line' }]],
   'recorded-wait': [['path', { d: 'M-3.2,-4 L3.2,-4 L3.2,-2.5 L-3.2,2.5 L-3.2,4 L3.2,4 L3.2,2.5 L-3.2,-2.5 Z', class: 'hive-pm-line' }]],
   pickup: [['path', { d: 'M-3,-4 L4,0 L-3,4 Z', class: 'hive-pm-line' }]],

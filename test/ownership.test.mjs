@@ -792,7 +792,7 @@ test('review marks have rendered glyphs and both states appear in the map Key', 
     const glyph = mark.children.find(n => n.attributes.class === 'hive-pm-glyph');
     assert.equal(glyph.attributes.transform, 'scale(0.48) translate(-12 -12)');
     assert.deepEqual(glyph.children.map(n => n.attributes), [
-      { d: 'm8 11 2 2 4-4' }, { cx: '11', cy: '11', r: '8' }, { d: 'm21 21-4.3-4.3' },
+      { cx: '11', cy: '11', r: '8' }, { d: 'm21 21-4.3-4.3' },
     ]);
     assert(!mark.children.some(n => n.attributes.class === 'hive-pm-line'));
   }
@@ -1328,7 +1328,7 @@ for (const state of ['pending', 'uncertain', 'partial']) test(`${state} claim re
   await claimBead(f.rt, f.actor(), { bead_id: 'b' });
 });
 
-test('external tile has a labelled hexagonal arrow, dashed rim and normal status priority', () => {
+test('external tile has a labelled hexagonal chain link, dashed rim and normal status priority', () => {
   const external = { id: 'outside', title: 'Vendor approval', kind: 'external', status: 'open' };
   assert.equal(primaryKind(external, [], []), 'external');
   assert.equal(markWords('external', external), 'External prerequisite');
