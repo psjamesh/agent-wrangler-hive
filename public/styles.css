@@ -1051,6 +1051,7 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   overflow: auto;
 }
 
+.hive-messages[data-hive-revealing] { overflow-anchor: none; }
 .hive-messages::after { content: ''; display: block; height: var(--hive-reveal-space, 0px); }
 
 .hive-message { position: relative; padding: 8px 0; border-bottom: 1px solid var(--border-muted, var(--border)); }

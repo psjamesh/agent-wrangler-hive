@@ -18,7 +18,7 @@ function layout(t) {
     dataset: { scrollKey: 'messages:c:t' }, style: { space: '', getPropertyValue() { return this.space; }, setProperty(_key, value) { this.space = value; } }, clientHeight: 500, clientWidth: 400,
     children: [], parentElement: null,
     getBoundingClientRect: () => ({ top: 100, width: 400 }),
-    get scrollHeight() { return offset + 100 + (parseFloat(this.style.space) || 0); },
+    get scrollHeight() { return Math.max(this.clientHeight, offset + 100 + (parseFloat(this.style.space) || 0)); },
     get scrollTop() { return top; },
     set scrollTop(n) { top = Math.max(0, Math.min(n, this.scrollHeight - this.clientHeight)); },
   };
@@ -33,7 +33,7 @@ function layout(t) {
     addEventListener(type, fn) { (events[type] ||= new Set()).add(fn); },
     removeEventListener(type, fn) { events[type]?.delete(fn); },
   };
-  return { root, list, item, shift(n) { offset += n; }, resize() { for (const o of observers) if (!o.disconnected) o.fn([]); }, fire(type) { for (const fn of events[type] || []) fn({ type }); } };
+  return { root, list, item, shift(n) { offset += n; }, resize() { for (const o of observers) if (!o.disconnected) o.fn([]); }, fire(type, props = {}) { for (const fn of events[type] || []) fn({ type, ...props }); } };
 }
 
 test('a short final request has enough trailing space to align at the pane top', t => {
@@ -109,3 +109,24 @@ for (const path of ['waiting menu', 'request section', 'global inbox', 'notifica
     assert.equal(f.item.getBoundingClientRect().top, 100);
   });
 }
+
+test('untracked scrolling releases alignment for focus, find and assistive technology', t => {
+  const f = layout(t);
+  let cancelled = false;
+  revealMessage(f.root, 'request', () => { cancelled = true; });
+  f.list.scrollTop = 15;
+  f.fire('scroll', { target: f.list });
+  assert.equal(cancelled, true);
+  f.shift(200);
+  f.resize();
+  assert.equal(f.list.scrollTop, 15);
+  assert.equal(f.list.style.space, '');
+});
+
+
+test('a topic shorter than its viewport still reserves only the space below the target', t => {
+  const f = layout(t);
+  f.shift(-700);
+  revealMessage(f.root, 'request');
+  assert.equal(f.list.style.space, '400px');
+});

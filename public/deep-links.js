@@ -195,6 +195,12 @@ export function revealMessage(root, messageId, onCancel = () => {}) {
       reveal.dispose(true);
       onCancel();
     };
+    const onScroll = event => {
+      const pane = event.target;
+      if (!pane?.dataset?.scrollKey || Math.abs(pane.scrollTop - (pane.hiveSetTop ?? -2)) <= 1) return;
+      reveal.dispose();
+      onCancel();
+    };
     const events = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
     reveal = {
       messageId,
@@ -210,7 +216,10 @@ export function revealMessage(root, messageId, onCancel = () => {}) {
         const list = panes[0];
         if (list?.style?.setProperty) {
           if (!padding.has(list)) padding.set(list, list.style.getPropertyValue('--hive-reveal-space'));
-          const space = `${Math.max(...panes.map(el => el.clientHeight || 0))}px`;
+          const last = list.children[list.children.length - 1].getBoundingClientRect();
+          const contentBelow = (last.bottom ?? last.top + last.height) - item.getBoundingClientRect().top;
+          const space = `${Math.max(0, Math.max(...panes.map(el => el.clientHeight || 0)) - contentBelow)}px`;
+          list.dataset.hiveRevealing = '';
           if (list.style.getPropertyValue('--hive-reveal-space') !== space) list.style.setProperty('--hive-reveal-space', space);
         }
         if (!panes.length) item.scrollIntoView({ block: 'start', behavior: 'instant' });
@@ -230,7 +239,9 @@ export function revealMessage(root, messageId, onCancel = () => {}) {
           for (const type of events) root.removeEventListener?.(type, release, true);
           root.removeEventListener?.('load', realign, true);
         }
+        for (const el of padding.keys()) delete el.dataset.hiveRevealing;
         if (keepSpace) return;
+        root.removeEventListener?.('scroll', onScroll, true);
         for (const [el, value] of padding) el.style.setProperty('--hive-reveal-space', value);
         reveals.delete(root);
       },
@@ -240,6 +251,7 @@ export function revealMessage(root, messageId, onCancel = () => {}) {
     mutation?.observe(root, { childList: true, subtree: true, characterData: true });
     for (const type of events) root.addEventListener?.(type, release, { capture: true, passive: true });
     root.addEventListener?.('load', realign, true);
+    root.addEventListener?.('scroll', onScroll, true);
     root.ownerDocument?.fonts?.ready?.then(realign);
     reveals.set(root, reveal);
   }

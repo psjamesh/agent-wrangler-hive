@@ -291,6 +291,8 @@ export function createUi() {
     // Opening or sending also scrolls the panel around the list, if it
     // scrolls, until the newest message shows.
     followMessages(cellId) {
+      cancelMessageReveal(state.root);
+      state.linkMessage = null;
       const key = `messages:${cellId}`;
       state.startAt.delete(key);
       state.follow.set(key, true);
@@ -849,9 +851,9 @@ function putBack(el, retained = false) {
 // scrolls, and stops following the newest message until the reader scrolls
 // back to the bottom.
 function showFrom(el, item) {
-  if (item.querySelector?.('.hive-request')) {
+  if (item.dataset?.id) {
     const [, cellId, threadId] = el.dataset.scrollKey.split(':');
-    state.linkMessage = { cellId, threadId, messageId: item.dataset.id, pending: true };
+    state.linkMessage = { cellId, threadId, messageId: item.dataset.id, pending: false };
   }
   state.follow.set(el.dataset.scrollKey, false);
   state.reveal.delete(el.dataset.scrollKey);
@@ -869,6 +871,7 @@ function atBottom(el) {
 
 function stick(el) {
   if (!el.isConnected || el.clientWidth <= 0 || state.follow.get(el.dataset.scrollKey) === false || state.startAt.has(el.dataset.scrollKey)) return;
+  el.style?.setProperty?.('--hive-reveal-space', '');
   el.scrollTop = el.scrollHeight;
   el.hiveSetTop = el.scrollTop;
   if (state.reveal.has(el.dataset.scrollKey) && revealEnd(el)) state.reveal.delete(el.dataset.scrollKey);
@@ -1007,7 +1010,16 @@ function revealLinkMessage(root) {
   const link = state.linkMessage;
   if (!link || link.released) return;
   state.follow.set(`messages:${link.cellId}:${link.threadId}`, false);
-  if (revealMessage(root, link.messageId, () => { link.pending = false; link.released = true; })) link.pending = false;
+  if (!revealMessage(root, link.messageId, () => { link.pending = false; link.released = true; })) return;
+  link.pending = false;
+  if (!link.highlightTimer) {
+    link.highlightTimer = setTimeout(() => {
+      if (state.linkMessage !== link) return;
+      link.highlight = false;
+      forceRender();
+    }, 2500);
+    link.highlightTimer.unref?.();
+  }
 }
 
 export function restoreScroll(root) {
