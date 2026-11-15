@@ -424,3 +424,80 @@ for (const source of ['bead-evidence', 'label-search']) {
     assert.deepEqual(labelled, [URL]);
   });
 }
+
+test('finishing a bead settles its CI wait immediately and reopening cannot revive it', async () => {
+  const { finishBead } = await import('../server/ops.js');
+  for (const state of ['pending', 'resolved']) {
+    const f = fixture();
+    f.rt.metadata.mutate(d => { d.ciWaits = { a: wait(state === 'resolved' ? { state, outcome: 'failure', resolvedAt: NOW, wake: { state: 'uncertain', at: NOW } } : {}) }; });
+    f.rt.beads.close = async id => { f.live[id].status = 'closed'; };
+    await finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered' });
+    const saved = f.doc().ciWaits.a;
+    assert.equal(saved.state, 'resolved');
+    assert.equal(saved.outcome, state === 'pending' ? 'cancelled' : 'failure');
+    assert.ok(saved.acknowledgedAt);
+    assert.equal(saved.settledReason, 'Bead closed');
+    f.live.a.status = 'open'; f.rt.snapshots.graph = f.graph();
+    await reconcileCiWaits(f.rt, f.host, NOW + 700000);
+    assert.deepEqual(ciWaitAttention(f.rt, f.doc().cells.cell, NOW + 700000), []);
+    assert.equal(f.delivered.length, 0);
+  }
+});
+
+test('legacy closed beads never raise CI attention and reconciliation durably settles their waits', async () => {
+  for (const state of ['pending', 'resolved']) {
+    const f = fixture();
+    f.rt.metadata.mutate(d => { d.ciWaits = { a: wait(state === 'resolved' ? { state, outcome: 'success', resolvedAt: NOW } : {}) }; });
+    f.live.a.status = 'closed'; f.rt.snapshots.graph = f.graph();
+    f.board.get('queen').archived = true;
+    assert.deepEqual(ciWaitAttention(f.rt, f.doc().cells.cell, NOW + 700000), []);
+    await reconcileCiWaits(f.rt, f.host, NOW + 700000);
+    assert.equal(f.doc().ciWaits.a.settledReason, 'Bead closed');
+    assert.ok(f.doc().ciWaits.a.acknowledgedAt);
+    assert.equal(f.delivered.length, 0);
+  }
+});
+
+test('a refused close keeps its CI wait active', async () => {
+  const { finishBead } = await import('../server/ops.js');
+  const f = fixture();
+  await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  const original = structuredClone(f.doc().ciWaits.a);
+  f.rt.beads.close = async () => { throw new Error('Close refused'); };
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered' }), /closing.*refused/i);
+  assert.deepEqual(f.doc().ciWaits.a, original);
+});
+
+test('group closure settles its wait even if recording the outcome fails', async () => {
+  const { finishBead } = await import('../server/ops.js');
+  const f = fixture();
+  f.live.b.dependencies = [{ issue_id: 'b', depends_on_id: 'a', type: 'parent-child' }];
+  f.live.b.status = 'closed'; f.rt.snapshots.graph = f.graph();
+  await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  f.rt.beads.finishFenced = async (id, fields, who, check, written) => {
+    check({ issues: Object.values(f.live), errors: [] });
+    written(0);
+    f.live[id].status = 'closed'; written(1);
+    throw Object.assign(new Error('Outcome write failed'), { step: 2 });
+  };
+  await assert.rejects(finishBead(f.rt, f.actor(), { bead_id: 'a', outcome: 'done', summary: 'Delivered' }), /closed.*outcome/);
+  assert.equal(f.doc().ciWaits.a.outcome, 'cancelled');
+  assert.equal(f.doc().ciWaits.a.settledReason, 'Bead closed');
+});
+
+test('closed-bead reconciliation respects snapshot and missing cells', async () => {
+  for (const kind of ['snapshot', 'missing', 'disabled']) {
+    const f = fixture();
+    f.rt.metadata.mutate(d => {
+      d.ciWaits = { a: wait() };
+      if (kind === 'missing') delete d.cells.cell;
+      else if (kind === 'snapshot') d.cells.cell.snapshot = { capturedAt: NOW };
+      else d.cells.cell.enabled = false;
+    });
+    f.live.a.status = 'closed'; f.rt.snapshots.graph = f.graph();
+    const original = structuredClone(f.doc().ciWaits.a);
+    await reconcileCiWaits(f.rt, f.host, NOW + 1000);
+    if (kind === 'disabled') assert.equal(f.doc().ciWaits.a.settledReason, 'Bead closed');
+    else assert.deepEqual(f.doc().ciWaits.a, original);
+  }
+});
