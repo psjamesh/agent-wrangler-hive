@@ -1,6 +1,7 @@
 import { createAutoFit, sameTransform } from './auto-fit.js';
 import { readMapView, saveMapView } from './view-state.js';
 import { h } from './dom.js';
+import { mapControls } from './map-controls.js';
 import { fromPixel, toPixel, neighbour, DIRECTIONS, key } from './hex-layout.js';
 import { MAX_COORD } from './hex-search.js';
 
@@ -461,15 +462,18 @@ export function renderHexMap({
   };
   const fit = (animate = false) => moveTo(viewFor(bounds), animate);
   let autoButton;
+  let pausedButton;
   const autoFit = createAutoFit({
     storage, view, fit,
     changed: ({ enabled, paused }) => {
       if (!autoButton) return;
       saveMapView(viewKey, view);
-      autoButton.textContent = paused ? 'Auto-fit paused' : 'Auto-fit';
+      pausedButton.hidden = !paused;
+      pausedButton.setAttribute('aria-pressed', String(enabled));
       autoButton.setAttribute('aria-pressed', String(enabled));
+      autoButton.setAttribute('aria-checked', String(enabled));
       autoButton.setAttribute('data-paused', String(paused));
-      autoButton.title = paused ? 'Auto-fit paused by pan or zoom; resume auto-fit (0)' : enabled ? 'Turn auto-fit off' : 'Turn auto-fit on (0)';
+      autoButton.title = paused ? 'Resume auto-fit (0)' : enabled ? 'Turn auto-fit off' : 'Turn auto-fit on (0)';
     },
   });
   const suspend = () => { cancelAnimationFrame(tween); autoFit.suspend(); };
@@ -715,14 +719,19 @@ export function renderHexMap({
   });
 
   autoButton = h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-auto', onclick: () => autoFit.toggle() }, 'Auto-fit');
+  pausedButton = h('button', {
+    type: 'button', class: 'hive-zoom-btn hive-zoom-auto', 'data-paused': 'true',
+    title: 'Auto-fit paused by pan or zoom; resume auto-fit (0)', onclick: () => autoFit.resume(),
+  }, 'Auto-fit paused');
   autoFit.refresh();
-  const viewOptions = h('div', { class: 'hive-control-group', role: 'group', 'aria-label': 'View options' }, autoButton, viewControls);
-  const tools = h('div', { class: 'hive-zoom', role: 'group', 'aria-label': 'Map view' },
-    h('div', { class: 'hive-control-group', role: 'group', 'aria-label': 'Zoom' },
+  const controls = mapControls({
+    id: `hive-map-controls-${++uid}`, paused: pausedButton,
+    zoom: [
       h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-icon', 'aria-label': 'Zoom out', title: 'Zoom out (−)', onclick: () => zoomCentre(0.8) }, '−'),
-      h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-icon', 'aria-label': 'Zoom in', title: 'Zoom in (+)', onclick: () => zoomCentre(1.25) }, '+')),
-    viewOptions,
-    actions.flat(Infinity).some(Boolean) ? h('div', { class: 'hive-control-group', role: 'group', 'aria-label': 'Map actions' }, actions) : null);
+      h('button', { type: 'button', class: 'hive-zoom-btn hive-zoom-icon', 'aria-label': 'Zoom in', title: 'Zoom in (+)', onclick: () => zoomCentre(1.25) }, '+')],
+    options: [autoButton, viewControls], actions,
+  });
+  const { tools } = controls;
   el.append(tools);
 
   let observer = null;
@@ -740,6 +749,7 @@ export function renderHexMap({
   el.hiveDisposeView = () => {
     observer?.disconnect();
     autoFit.dispose();
+    controls.dispose();
     cancelAnimationFrame(tween);
     cancelAnimationFrame(ghostFrame);
   };
@@ -763,7 +773,7 @@ export function renderHexMap({
   };
   el.hiveTileRect = (tileId) => el.querySelector(`[data-tile-id="${CSS.escape(tileId)}"]`)?.getBoundingClientRect() || null;
   apply();
-  return { el, highlightReference, viewControls: viewOptions };
+  return { el, highlightReference, searchControls: controls.search };
 }
 
 function wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, zoomAt, suspend }) {

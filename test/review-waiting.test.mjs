@@ -49,6 +49,8 @@ for (const terminal of ['approved', 'changes_requested', 'cancelled']) test(`pro
 class Element {
   constructor(tag, text = '') { this.tag = tag; this.text = text; this.children = []; this.attributes = {}; this.dataset = {}; this.style = {}; this.events = {}; }
   setAttribute(k, v) { this.attributes[k] = v; }
+  getAttribute(k) { return this.attributes[k] ?? null; }
+  querySelectorAll(tag) { return walk(this).slice(1).filter(el => el.tag === tag); }
   removeAttribute(k) { delete this.attributes[k]; }
   append(...nodes) { this.children.push(...nodes); }
   addEventListener(k, fn) { (this.events[k] ||= []).push(fn); }
