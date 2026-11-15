@@ -10,7 +10,7 @@ import { HiveError, refuseSnapshot } from './ops.js';
 import { liveClaimant, sleepingReason } from './tracking.js';
 import { GROUP_KINDS, descendantIds } from './bead-model.js';
 import { humanWaitText } from './human-wait.js';
-import { workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
+import { observedWorkerActivityIndex, workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
 
 export const WATCHDOG_DEFAULTS = Object.freeze({ workerMinutes: 30, idleMinutes: 30, reviewMinutes: 60, messageMinutes: 30, waitHours: 24, deferredDays: 7, untrackedMinutes: 30, waitGraceMinutes: 30, humanWaitMinutes: 10, pickupHeldMinutes: 5 });
 const DAY_MS = 86400000;
@@ -96,7 +96,8 @@ function watchdogIndex(rt, host = rt.host) {
     const prerequisite = rt.snapshots.graph.beads[edge.prerequisite];
     if (edge.blocking && prerequisite && prerequisite.status !== 'closed') blockers.set(edge.dependent, true);
   }
-  return { children, reviews, requesters, blockers, asked, activity: workerActivityIndex(rt, host) };
+  const observedActivity = observedWorkerActivityIndex(rt, host);
+  return { children, reviews, requesters, blockers, asked, observedActivity, activity: workerActivityIndex(rt, host, observedActivity) };
 }
 
 export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchdogIndex(rt, host)) {
@@ -125,6 +126,12 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     since = cell.watchdogFlags?.[id]?.since ?? since;
     flags.push({ id, kind, ...fields, ...(fields?.session_id ? { session_link: availableSessionHref(host, fields.session_id) } : {}), reason, since, age_ms: Math.max(0, now - since) });
   };
+  const migrations = Object.entries(cell.blockedMigrations || {}).filter(([, migration]) => !migration.notice).sort(([a], [b]) => a.localeCompare(b));
+  if (migrations.length) {
+    const ids = migrations.map(([id]) => id);
+    add('blocked_status_migrated', cell.id, migrations.map(([id, migration]) => [id, migration.at]), Math.min(...migrations.map(([, migration]) => migration.at)),
+      `Migrated blocked beads to open: ${ids.map(id => `${id} (${beads[id]?.title || id})`).join(', ')}. Links and waiting annotations were preserved. Waiting now comes from open blocks prerequisites.`, { migrated_bead_ids: ids });
+  }
   for (const bead of open) {
     if (bead.pickup?.armed) {
       const state = pickupState(rt, host, cell, bead, rt.snapshots.graph, { now });
@@ -144,10 +151,10 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       add('prerequisites_resolved', bead.id, resolution.id, resolution.at, 'All blocking prerequisites have closed; work is ready to continue.', { bead_id: bead.id, session_id: bead.ownerSessionId || null, resolution_id: resolution.id });
     }
 
-    if ((bead.status === 'blocked' || bead.waitingFor) && updated && now - updated >= settings.waitHours * 3600000) {
-      add('stale_wait', bead.id, [updated, bead.status, bead.waitingFor || ''], updated, 'Blocked or waiting work has not been touched.', { bead_id: bead.id, session_id: bead.ownerSessionId || null });
+    if ((index.blockers.get(bead.id) || bead.waitingFor) && updated && now - updated >= settings.waitHours * 3600000) {
+      add('stale_wait', bead.id, [updated, bead.status, bead.waitingFor || ''], updated, 'Waiting work has not been touched.', { bead_id: bead.id, session_id: bead.ownerSessionId || null });
     }
-    if ((waitStatus(bead.status) && explicitResume(bead)) || bead.status === 'deferred') {
+    if (explicitResume(bead) || bead.status === 'deferred') {
       const resume = bead.resume || {};
       const reviewAt = stamp(resume.reviewAt);
       const prerequisite = resume.afterBead ? beads[resume.afterBead] : null;
@@ -172,7 +179,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     const reviewOpen = history.some(r => OPEN_REVIEW_STATES.has(r.state));
     if (!claimed && !GROUP_KINDS.has(bead.kind) && updated) {
       const exitedClaim = session && ['exited', 'error', 'errored'].includes(session.status) && !session.archived;
-      const finished = !['blocked', 'deferred'].includes(bead.status) && !bead.waitingFor && !index.blockers.get(bead.id)
+      const finished = bead.status !== 'deferred' && !bead.waitingFor && !index.blockers.get(bead.id)
         && recordsCompletion(bead, sid ? [...QUEEN_ASKED, ...WORK_DONE] : QUEEN_ASKED);
       if (finished && !reviewOpen && now - updated >= settings.untrackedMinutes * 60000) {
         add('finished_open', bead.id, [updated, bead.status], updated, 'No worker holds this bead and its record says the work is finished or asks the queen to close it.', { bead_id: bead.id, session_id: sid || null });
@@ -181,18 +188,29 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
         add('untracked_work', bead.id, [updated, sid || ''], updated, 'In-progress work has no live claimant.', { bead_id: bead.id, session_id: sid || null });
       }
     }
-    const humanWait = humanWaitText(bead, { blocked: index.blockers.get(bead.id), reviewOpen });
+    const humanWait = humanWaitText(bead);
     if (humanWait && updated && now - updated >= settings.humanWaitMinutes * 60000 && !index.asked.get(cell.id)?.has(bead.id)) {
       add('human_wait_unasked', bead.id, [updated, bead.status, humanWait], updated, `Bead waits on the human but no hive_request_input is open for it: ${humanWait}`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
     }
     if (!session) continue;
     const activity = workerLastActivity(session, bead, index.activity);
+    const handedOff = reviewOpen || index.requesters.get(cell.id)?.has(sid)
+      || recordsCompletion(bead, [...QUEEN_ASKED, ...WORK_DONE]);
+    const turn = session.lastTurn;
+    if (bead.status === 'in_progress' && !session.archived && !session.hasBackgroundShell && !handedOff
+      && !bead.waitingFor && !index.blockers.get(bead.id) && ['aborted', 'error'].includes(turn?.outcome)
+      && Number.isFinite(turn.at) && turn.at > 0 && turn.at <= now
+      && Math.max(updated, index.observedActivity.get(sid) || 0) <= turn.at) {
+      const reason = turn.outcome === 'aborted' ? 'Claimed worker’s last turn was aborted.'
+        : `Claimed worker’s last turn ended with an error${turn.errorKind ? ` (${turn.errorKind})` : ''}.`;
+      add(turn.outcome === 'aborted' ? 'aborted_turn' : 'errored_turn', bead.id, [sid, turn.at, turn.errorKind || ''], turn.at,
+        reason, { bead_id: bead.id, session_id: sid });
+      continue;
+    }
     if (['exited', 'error', 'errored'].includes(session.status)) {
       add('stalled_worker', bead.id, [sid, session.status], activity || now, `Claimed worker ${session.status}.`, { bead_id: bead.id, session_id: sid });
       continue;
     }
-    const handedOff = reviewOpen || index.requesters.get(cell.id)?.has(sid)
-      || recordsCompletion(bead, [...QUEEN_ASKED, ...WORK_DONE]);
     if (bead.status === 'in_progress' && !session.archived && !handedOff && !bead.waitingFor && !index.blockers.get(bead.id)
       && ['api-error', 'api-error-blocking'].includes(session.waitingReason) && session.status !== 'working') {
       add('stalled_worker', bead.id, [sid, 'api-error'], activity || now, 'Claimed worker ended its turn with an API error.', { bead_id: bead.id, session_id: sid });
@@ -201,13 +219,13 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     const sleeping = sleepingReason(session);
     if (sleeping && !GROUP_KINDS.has(bead.kind) && !reviewOpen && !(session.hasBackgroundShell)) {
       const since = activity;
-      const waiting = bead.status === 'blocked' || bead.status === 'deferred' || bead.waitingFor || index.blockers.get(bead.id) || index.requesters.get(cell.id)?.has(sid);
+      const waiting = bead.status === 'deferred' || bead.waitingFor || index.blockers.get(bead.id) || index.requesters.get(cell.id)?.has(sid);
       if (!waiting && since && now - since >= settings.workerMinutes * 60000) {
         add('dormant_claim', bead.id, [sid, sleeping], since, `Claim is held by a ${sleeping} session with no recorded wait, request or review.`, { bead_id: bead.id, session_id: sid });
       }
       continue;
     }
-    if (session.status !== 'idle' || session.hasBackgroundShell || session.archived || ['blocked', 'deferred'].includes(bead.status) || bead.waitingFor || index.blockers.get(bead.id)) continue;
+    if (session.status !== 'idle' || session.hasBackgroundShell || session.archived || bead.status === 'deferred' || bead.waitingFor || index.blockers.get(bead.id)) continue;
     if (handedOff) continue;
     const latest = history.toSorted((a, b) => stamp(b.createdAt) - stamp(a.createdAt)).at(0);
     const since = Math.max(activity, latest?.state === 'approved' ? stamp(latest.completedAt || latest.verdict?.at || latest.updatedAt) : 0);
@@ -314,9 +332,10 @@ const DELIVERY_TIMEOUT_MS = 15000;
 function digestText(items, archive = []) {
   const counts = new Map();
   for (const { flag } of items) counts.set(flag.kind, (counts.get(flag.kind) || 0) + 1);
+  const shown = [...items.filter(({ flag }) => flag.kind === 'blocked_status_migrated'), ...items.filter(({ flag }) => flag.kind !== 'blocked_status_migrated').slice(0, 10)];
   return [
     `[Hive] Watchdog attention: ${items.length} newly flagged item(s). ${[...counts].map(([kind, count]) => `${kind}: ${count}`).join(', ')}.`,
-    ...items.slice(0, 10).map(({ cellId, flag }) => `- Cell ${cellId}: ${flag.reason} ${flag.bead_id ? `Bead ${flag.bead_id}. ` : ''}${flag.session_id ? `Session ${flag.session_id}${flag.session_link ? ` [Open session](${flag.session_link})` : ''}. ` : ''}${flag.message_id ? `Message ${flag.message_id}. ` : ''}Age ${Math.floor(flag.age_ms / 60000)} minutes.`),
+    ...shown.map(({ cellId, flag }) => `- Cell ${cellId}: ${flag.reason} ${flag.bead_id ? `Bead ${flag.bead_id}. ` : ''}${flag.session_id ? `Session ${flag.session_id}${flag.session_link ? ` [Open session](${flag.session_link})` : ''}. ` : ''}${flag.message_id ? `Message ${flag.message_id}. ` : ''}Age ${Math.floor(flag.age_ms / 60000)} minutes.`),
     ...(archive.length ? [`Idle sessions whose last bead is closed; consider archiving: ${archive.slice(0, 10).map(a => `${a.session_id} (${a.last_bead_id})`).join(', ')}${archive.length > 10 ? ` and ${archive.length - 10} more` : ''}.`] : []),
     'Read hive_context attention.watchdog for the full list. Investigate and update the work or answer the message. Do not infer completion or restart a worker automatically.',
   ].join('\n');
@@ -392,6 +411,7 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
         }
         for (const { cellId, key, flag } of items) {
           d.cells[cellId].watchdogFlags[flag.id].noticed[key] = { state: 'sending', at };
+          if (flag.kind === 'blocked_status_migrated') for (const id of flag.migrated_bead_ids) d.cells[cellId].blockedMigrations[id].notice = { state: 'sending', at };
           const event = d.cells[cellId].linkWaits?.[flag.bead_id]?.resolution;
           if (flag.kind === 'prerequisites_resolved' && event?.id === flag.resolution_id) event.notice = { state: 'sending', at };
         }
@@ -402,6 +422,10 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
       if (!active()) return;
       rt.metadata.mutate(d => {
         for (const { cellId, key, flag } of items) {
+          if (flag.kind === 'blocked_status_migrated') {
+            for (const id of flag.migrated_bead_ids) Object.assign(d.cells[cellId].blockedMigrations[id].notice, result);
+            delete d.cells[cellId].watchdogFlags[flag.id];
+          }
           const receipt = d.cells[cellId]?.watchdogFlags?.[flag.id]?.noticed?.[key];
           if (receipt?.at === at) Object.assign(receipt, result);
           const event = d.cells[cellId]?.linkWaits?.[flag.bead_id]?.resolution;

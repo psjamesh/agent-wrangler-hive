@@ -38,7 +38,7 @@ test('a dormant claimant with no wait, request or review flags at the worker thr
   assert.equal(flag.session_link, '#session=worker');
   assert.equal(flag.kind, 'dormant_claim'); assert.equal(flag.bead_id, 'work'); assert.equal(flag.session_id, 'worker');
   assert.match(flag.reason, /no recorded wait/);
-  for (const wait of [{ waitingFor: 'Final check later' }, { status: 'blocked' }]) {
+  for (const wait of [{ waitingFor: 'Final check later' }, { status: 'deferred' }]) {
     Object.assign(f.beads.work, wait); assert.deepEqual(kinds(f).filter(k => k === 'dormant_claim'), []);
     f.beads.work.waitingFor = ''; f.beads.work.status = 'in_progress';
   }
@@ -47,7 +47,7 @@ test('a dormant claimant with no wait, request or review flags at the worker thr
 
 test('a clock-time wait keeps its first-seen anchor when the bead is touched again', async t => {
   const f = fixture(t);
-  f.bead('work', { status: 'blocked', waitingFor: 'Final check 16:11Z' });
+  f.bead('work', { status: 'deferred', waitingFor: 'Final check 16:11Z' });
   await f.watchdog.run();
   f.advance(8 * 60 * MIN);
   f.beads.work.updatedAt = new Date(f.now()).toISOString();
@@ -97,7 +97,7 @@ test('waitDeadline parses only clear timestamps', () => {
 
 test('overdue_wait flags once the named time is past the grace and clears when the wait changes', t => {
   const f = fixture(t);
-  f.bead('work', { status: 'blocked', waitingFor: 'Final check 16:11Z' });
+  f.bead('work', { status: 'deferred', waitingFor: 'Final check 16:11Z' });
   f.advance(6 * 60 * MIN + 11 * MIN + 29 * MIN); assert.deepEqual(kinds(f).filter(k => k === 'overdue_wait'), []);
   f.advance(MIN);
   const flag = f.flags().find(x => x.kind === 'overdue_wait');
@@ -113,7 +113,7 @@ test('a first-install backlog is one digest with at most ten items and no repeat
   for (let i = 0; i < 25; i++) {
     f.bead(`w${i}`, { ownerSessionId: `s${i}` });
     f.sessions[`s${i}`] = { status: 'idle', dormant: true, lastActivity: T0 };
-    f.bead(`v${i}`, { status: 'blocked', resume: { reviewAt: '2099-01-01' }, waitingFor: 'check 10:05Z' });
+    f.bead(`v${i}`, { status: 'deferred', resume: { reviewAt: '2099-01-01' }, waitingFor: 'check 10:05Z' });
   }
   f.advance(2 * 60 * MIN);
   assert.equal(f.flags().length, 50);
@@ -143,7 +143,7 @@ test('digests suggest archiving idle sessions whose last bead is closed, once, a
   f.advance(MIN);
   assert.deepEqual(archiveSuggestions(f.rt, f.host, cell(), f.now()).map(s => s.session_id), ['finished']);
   await f.watchdog.run(); assert.equal(f.sent.length, 0);
-  f.bead('stuck', { status: 'blocked', updatedAt: new Date(T0 - 48 * 60 * MIN).toISOString(), waitingFor: 'x' });
+  f.bead('stuck', { status: 'deferred', updatedAt: new Date(T0 - 48 * 60 * MIN).toISOString(), waitingFor: 'x' });
   await f.watchdog.run();
   assert.equal(f.sent.length, 1); assert.match(f.sent[0].text, /consider archiving: finished \(done\)/);
   f.beads.stuck.updatedAt = new Date(T0 - 72 * 60 * MIN).toISOString(); f.beads.stuck.waitingFor = 'y';

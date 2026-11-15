@@ -31,7 +31,7 @@ for (const terminal of ['approved', 'changes_requested', 'cancelled']) test(`pro
   assert.doesNotMatch(tileFor(hive).title, /\bOpen\b/);
   for (const c of [model.cellCounts(hive, f.cell), model.workCounts(hive, model.childrenMap(hive.beads), 'ws')]) {
     assert.equal(c.in_review, 1);
-    assert.equal(c.open + c.in_progress + c.in_review + c.blocked + c.closed + c.not_active, c.total);
+    assert.equal(c.open + c.in_progress + c.in_review + c.closed + c.not_active, c.total);
     assert.equal(c.in_progress, 0);
     assert.match(model.countsSentence(c), /1 in review/);
   }
@@ -49,6 +49,8 @@ for (const terminal of ['approved', 'changes_requested', 'cancelled']) test(`pro
 class Element {
   constructor(tag, text = '') { this.tag = tag; this.text = text; this.children = []; this.attributes = {}; this.dataset = {}; this.style = {}; this.events = {}; }
   setAttribute(k, v) { this.attributes[k] = v; }
+  getAttribute(k) { return this.attributes[k] ?? null; }
+  querySelectorAll(tag) { return walk(this).slice(1).filter(el => el.tag === tag); }
   removeAttribute(k) { delete this.attributes[k]; }
   append(...nodes) { this.children.push(...nodes); }
   addEventListener(k, fn) { (this.events[k] ||= []).push(fn); }
@@ -92,7 +94,7 @@ test('review and recorded waiting coexist with an agent mark and use circular ba
   assert.match(key, /recorded wait/i);
 });
 
-for (const status of ['open', 'in_progress', 'blocked', 'deferred', 'closed']) test(`recorded wait survives ${status} and clears in details and tile`, t => {
+for (const status of ['open', 'in_progress', 'deferred', 'closed']) test(`recorded wait survives ${status} and clears in details and tile`, t => {
   dom(t);
   const f = fixture();
   f.beads.a.status = status;
@@ -103,7 +105,7 @@ for (const status of ['open', 'in_progress', 'blocked', 'deferred', 'closed']) t
     return { tile: tileFor(hive), details: details({ hive, graph: {}, ui: { selectedBeadId: () => 'a', beadDetail: () => ({ bead: null, loading: false, error: null }) } }, hive.cells.cell) };
   };
   let out = render();
-  assert.equal(out.tile.marks.some(m => m.kind === 'recorded-wait'), status !== 'blocked');
+  assert.equal(out.tile.marks.some(m => m.kind === 'recorded-wait'), true);
   assert.match(out.tile.title, /Waiting for: External approval/);
   assert.match(words(out.details), /Waiting for:.*External approval/);
   f.beads.a.waitingFor = '   ';
@@ -218,7 +220,7 @@ for (const block of ['status', 'prerequisite']) test(`keyboard focus shows a wai
   t.after(() => { globalThis.requestAnimationFrame = previousFrame; });
   const f = fixture();
   f.beads.a.waitingFor = 'Outside compatibility report';
-  if (block === 'status') f.beads.a.status = 'blocked';
+  if (block === 'status') { f.beads.pre = { id: 'pre', status: 'open', parentId: 'ws', kind: 'work' }; f.edges.push({ dependent: 'a', prerequisite: 'pre', blocking: true }); }
   else {
     f.beads.prereq = { id: 'prereq', parentId: 'ws', title: 'Approve interface', status: 'open', kind: 'work' };
     f.edges.push({ prerequisite: 'prereq', dependent: 'a', blocking: true });

@@ -56,11 +56,13 @@ test('prerequisite cross carries the waiting note without an hourglass', () => {
   assert.match(tile.mark.title, /Waiting on a prerequisite/);
 });
 
-test('blocked status puts the waiting note in the cross tooltip and aria-label', () => {
-  const f = fixture({ status: 'blocked' });
+test('a prerequisite puts the waiting note in the cross tooltip and aria-label', () => {
+  const f = fixture({ status: 'open' });
+  f.hive.beads.pre = { id: 'pre', status: 'open' };
+  f.hive.edges.push({ dependent: 'a', prerequisite: 'pre', blocking: true });
   const tile = f.render();
   assert.deepEqual(kinds(tile), ['waiting']);
-  assert.match(tile.marks[0].title, /Blocked.*Waiting for: External compatibility report/);
+  assert.match(tile.marks[0].title, /Waiting on a prerequisite.*Waiting for: External compatibility report/);
   assert.match(tile.ariaLabel, /Waiting for: External compatibility report/);
 });
 

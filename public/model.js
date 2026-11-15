@@ -118,7 +118,7 @@ export function recordedWait(bead) {
 }
 
 export function cellCounts(hive, cell) {
-  const counts = { open: 0, in_progress: 0, in_review: 0, not_active: 0, blocked: 0, waiting: 0, closed: 0, total: 0 };
+  const counts = { open: 0, in_progress: 0, in_review: 0, not_active: 0, waiting: 0, closed: 0, total: 0 };
   for (const id of cellBeadIds(hive, cell)) {
     if (id === cell.rootBeadId) continue;
     const b = hive.beads[id];
@@ -126,7 +126,6 @@ export function cellCounts(hive, cell) {
     if (b.status === 'closed') counts.closed += 1;
     else if (displayStatus(b) === 'in_review') counts.in_review += 1;
     else if (b.status === 'in_progress') counts[b.occupiesCapacity ? 'in_progress' : 'not_active'] += 1;
-    else if (b.status === 'blocked') counts.blocked += 1;
     else counts.open += 1;
     if (b.status !== 'closed' && waitingOn(hive, id).length) counts.waiting += 1;
   }
@@ -134,7 +133,7 @@ export function cellCounts(hive, cell) {
 }
 
 export function workCounts(hive, kids, beadId) {
-  const counts = { open: 0, in_progress: 0, in_review: 0, not_active: 0, blocked: 0, closed: 0, total: 0 };
+  const counts = { open: 0, in_progress: 0, in_review: 0, not_active: 0, waiting: 0, closed: 0, total: 0 };
   const seen = new Set([beadId]);
   const stack = [...(kids.get(beadId) || [])];
   while (stack.length) {
@@ -145,8 +144,8 @@ export function workCounts(hive, kids, beadId) {
     if (b.status === 'closed') counts.closed += 1;
     else if (displayStatus(b) === 'in_review') counts.in_review += 1;
     else if (b.status === 'in_progress') counts[b.occupiesCapacity ? 'in_progress' : 'not_active'] += 1;
-    else if (b.status === 'blocked') counts.blocked += 1;
     else counts.open += 1;
+    if (b.status !== 'closed' && waitingOn(hive, b.id).length) counts.waiting += 1;
     stack.push(...(kids.get(b.id) || []));
   }
   return counts;
@@ -158,7 +157,7 @@ export function countsSentence(c) {
   if (c.in_progress) parts.push(`${c.in_progress} in progress`);
   if (c.in_review) parts.push(`${c.in_review} in review`);
   if (c.not_active) parts.push(`${c.not_active} not active`);
-  if (c.blocked) parts.push(`${c.blocked} blocked`);
+  if (c.waiting) parts.push(`${c.waiting} waiting`);
   if (c.open) parts.push(`${c.open} open`);
   parts.push(`${c.closed} of ${c.total} closed`);
   return parts.join(', ');

@@ -47,6 +47,90 @@ test('each timed condition flags at its boundary and carries subject, reason and
   assert.deepEqual(f.flags(), []);
 });
 
+for (const outcome of ['aborted', 'error']) {
+  test(`a worker's ${outcome} turn flags immediately and receipts survive a watchdog restart`, async t => {
+    const f = fixture(t);
+    Object.assign(f.sessions.worker, { status: 'idle', managed: false, lastTurn: { outcome, at: f.now(), ...(outcome === 'error' ? { errorKind: 'provider_failure' } : {}) } });
+    const [flag] = f.flags();
+    assert.equal(flag?.kind, outcome === 'aborted' ? 'aborted_turn' : 'errored_turn');
+    assert.equal(flag.bead_id, 'work'); assert.equal(flag.session_id, 'worker');
+    assert.equal(flag.age_ms, 0); assert.match(flag.reason, new RegExp(outcome));
+    if (outcome === 'error') assert.match(flag.reason, /provider_failure/);
+    await f.watchdog.run();
+    assert.equal(f.sent.length, 1); assert.match(f.sent[0].text, new RegExp(flag.kind));
+    const restarted = createWatchdog({ runtime: f.rt, host: f.host, now: f.now });
+    f.advance(MIN); await restarted.run(); assert.equal(f.sent.length, 1);
+    f.sessions.worker.lastTurn = null; await restarted.run();
+    assert.deepEqual(f.rt.metadata.cell('cell').watchdogFlags, {});
+    f.sessions.worker.lastTurn = { outcome, at: f.now() };
+    await restarted.run(); assert.equal(f.sent.length, 2);
+  });
+}
+
+test('last-turn flags clear on later progress or worker mail and tolerate older hosts', t => {
+  const f = fixture(t); f.sessions.worker.status = 'idle';
+  assert.deepEqual(f.flags(), []);
+  for (const lastTurn of [null, { outcome: 'ok', at: f.now() }]) {
+    f.sessions.worker.lastTurn = lastTurn; assert.deepEqual(f.flags(), []);
+  }
+  f.sessions.worker.lastTurn = { outcome: 'aborted', at: f.now() };
+  assert.equal(f.flags()[0]?.kind, 'aborted_turn');
+  f.advance(1);
+  f.sessions.worker.lastActivity = f.now(); assert.equal(f.flags()[0]?.kind, 'aborted_turn');
+  f.beads.work.updatedAt = f.now(); assert.deepEqual(f.flags(), []);
+  f.beads.work.updatedAt--;
+  f.host.mail = { list: id => id === 'queen' ? [{ from: 'worker', at: f.now() }] : [] };
+  assert.deepEqual(f.flags(), []);
+});
+
+for (const outcome of ['aborted', 'error']) {
+  test(`${outcome} detection ignores trailing host activity and its persisted watermark`, async t => {
+    const f = fixture(t);
+    const at = f.now();
+    f.advance(outcome === 'aborted' ? 1 : 5 * MIN);
+    Object.assign(f.sessions.worker, { status: 'idle', lastTurn: { outcome, at }, lastActivity: f.now(), createdAt: f.now(), relaunchedAt: f.now() });
+    const kind = outcome === 'aborted' ? 'aborted_turn' : 'errored_turn';
+    assert.equal(f.flags()[0]?.kind, kind);
+    await f.watchdog.run();
+    assert.ok(f.rt.metadata.read().workerActivity.worker > at);
+    assert.equal(f.flags()[0]?.kind, kind);
+    await createWatchdog({ runtime: f.rt, host: f.host, now: f.now }).run();
+    assert.equal(f.sent.length, 1);
+  });
+}
+
+for (const source of ['mail', 'op', 'evidence', 'bead']) {
+  test(`later ${source} observed by Hive suppresses an interrupted turn`, t => {
+    const f = fixture(t);
+    Object.assign(f.sessions.worker, { status: 'idle', lastTurn: { outcome: 'aborted', at: f.now() } });
+    f.advance(1);
+    if (source === 'mail') f.host.mail = { list: id => id === 'queen' ? [{ from: 'worker', at: f.now() }] : [] };
+    if (source === 'op') f.rt.metadata.mutate(d => { d.operations.update = { actor: 'aw:worker', state: 'applied', beadIds: ['work'], updatedAt: f.now() }; });
+    if (source === 'evidence') f.beads.work.evidence = [{ by: 'aw:worker', at: f.now(), label: 'Progress' }];
+    if (source === 'bead') f.beads.work.updatedAt = f.now();
+    assert.deepEqual(f.flags(), []);
+  });
+}
+
+test('last-turn flags respect waits, requests, reviews, background shells and archived sessions', t => {
+  const f = fixture(t);
+  Object.assign(f.sessions.worker, { status: 'idle', lastTurn: { outcome: 'aborted', at: f.now() } });
+  for (const patch of [{ waitingFor: 'Awaiting merge' }, { status: 'blocked', resume: { reviewAt: '2099-01-01' } }, { status: 'deferred', resume: { reviewAt: '2099-01-01' } }, { status: 'closed' }, { summary: 'Implementation is done.' }]) {
+    const prior = { ...f.beads.work };
+    Object.assign(f.beads.work, patch); assert.deepEqual(f.flags(), []);
+    f.beads.work = prior;
+  }
+  for (const field of ['hasBackgroundShell', 'archived']) {
+    f.sessions.worker[field] = true; assert.deepEqual(f.flags(), []); delete f.sessions.worker[field];
+  }
+  f.rt.snapshots.graph.edges.push({ dependent: 'work', prerequisite: 'root', blocking: true });
+  assert.deepEqual(f.flags(), []); f.rt.snapshots.graph.edges = [];
+  f.rt.metadata.mutate(d => { d.requests.r = { state: 'open', cellId: 'cell', requesterSessionId: 'worker' }; });
+  assert.deepEqual(f.flags(), []);
+  f.rt.metadata.mutate(d => { d.requests.r.state = 'answered'; d.reviews.r = { state: 'in_review', cellId: 'cell', workBeadId: 'work', createdAt: f.now() }; });
+  assert.deepEqual(f.flags(), []);
+});
+
 test('idle workers, exited and errored claims flag; handoffs suppress idle only', t => {
   const f = fixture(t);
   f.sessions.worker.status = 'idle';
@@ -54,7 +138,7 @@ test('idle workers, exited and errored claims flag; handoffs suppress idle only'
   f.advance(1); assert.equal(f.flags()[0].kind, 'stalled_worker');
   f.sessions.worker.status = 'working'; assert.deepEqual(f.flags(), []);
   f.sessions.worker.status = 'idle';
-  for (const status of ['blocked', 'deferred']) { f.beads.work.status = status; f.beads.work.resume = { reviewAt: '2099-01-01' }; f.beads.work.waitingFor = 'prerequisite'; assert.deepEqual(f.flags(), []); }
+  for (const status of ['deferred']) { f.beads.work.status = status; f.beads.work.resume = { reviewAt: '2099-01-01' }; f.beads.work.waitingFor = 'prerequisite'; assert.deepEqual(f.flags(), []); }
   f.beads.work.status = 'in_progress'; f.beads.work.waitingFor = 'Waiting for merge'; assert.deepEqual(f.flags(), []);
   for (const status of ['exited', 'error']) { f.sessions.worker.status = status; assert.equal(f.flags()[0].kind, 'stalled_worker'); }
   f.beads.work.status = 'closed'; assert.deepEqual(f.flags(), []);
@@ -172,7 +256,7 @@ test('all thresholds are hive-specific and review/message/wait clear before thei
     d.reviews.r = { id: 'r', cellId: 'cell', workBeadId: 'work', state: 'requested', createdAt: f.now() };
     d.conversation.cell = [{ id: 'm', author: 'human', at: f.now(), response: { required: true } }];
   });
-  f.beads.work.status = 'blocked'; f.beads.work.resume = { reviewAt: '2099-01-01' };
+  f.beads.work.status = 'deferred'; f.beads.work.resume = { reviewAt: '2099-01-01' }; f.beads.work.waitingFor = 'Awaiting prerequisite';
   setWatchdogSettings(f.rt, { cellId: 'cell', settings: { workerMinutes: 1, reviewMinutes: 1, messageMinutes: 1, waitHours: 1 / 60 } });
   f.advance(MIN - 1); assert.deepEqual(f.flags(), []);
   f.advance(1); assert.equal(f.flags().length, 3);
@@ -246,7 +330,7 @@ test('large conversations and requests are traversed once rather than once per b
 
 test('backlogs and queen replacement send one readable digest with a receipt per item', async t => {
   const f = fixture(t);
-  for (let i = 0; i < 50; i++) f.beads[`wait${i}`] = { id: `wait${i}`, parentId: 'root', status: 'blocked', resume: { reviewAt: '2099-01-01' }, waitingFor: 'dependency', updatedAt: f.now() - 25 * 3600000 };
+  for (let i = 0; i < 50; i++) f.beads[`wait${i}`] = { id: `wait${i}`, parentId: 'root', status: 'deferred', resume: { reviewAt: '2099-01-01' }, waitingFor: 'dependency', updatedAt: f.now() - 25 * 3600000 };
   await f.watchdog.run(); assert.equal(f.sent.length, 1);
   assert.match(f.sent[0].text, /50/); assert.match(f.sent[0].text, /stale_wait/); assert.match(f.sent[0].text, /full list/i);
   assert.ok(f.sent[0].text.length < 4000);
@@ -275,7 +359,7 @@ test('a hung delivery times out while all cells still flag and later clear', asy
   f.host.deliver = () => new Promise(() => {});
   const watchdog = createWatchdog({ runtime: f.rt, host: f.host, now: f.now, setTimer: fn => { timeout = fn; return 1; }, clearTimer() {} });
   const pass = watchdog.run();
-  await Promise.resolve();
+  await new Promise(resolve => setImmediate(resolve));
   assert.ok(Object.keys(f.rt.metadata.cell('second').watchdogFlags || {}).length);
   assert.equal(typeof timeout, 'function'); timeout(); await pass;
   for (const cell of f.rt.metadata.cells()) assert.equal(Object.values(cell.watchdogFlags)[0].noticed['queen:0'].state, 'uncertain');

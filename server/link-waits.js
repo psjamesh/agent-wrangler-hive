@@ -5,8 +5,8 @@ import { managedPickupReceipt } from './pickup.js';
 import { isCurrent } from './lifetime.js';
 import { newId } from './metadata-store.js';
 
-export const STRUCTURED_WAIT_HELP = 'A blocked or deferred bead needs a structured condition: add an open prerequisite with hive_link_beads (type "blocks", using a normal or external bead), or set resume_after_bead or resume_review_at with hive_update_bead. Prose in waiting_for is only an annotation.';
-export const waitStatus = status => ['blocked', 'deferred'].includes(status);
+export const STRUCTURED_WAIT_HELP = 'A deferred bead needs a structured condition: add an open prerequisite with hive_link_beads (type "blocks", using a normal or external bead), or set resume_after_bead or resume_review_at with hive_update_bead. Prose in waiting_for is only an annotation.';
+export const waitStatus = status => status === 'deferred';
 export const explicitResume = bead => Boolean(bead.resume?.afterBead || bead.resume?.reviewAt);
 export const prerequisites = (graph, id) => (graph.edges || []).filter(e => e.dependent === id && e.blocking);
 export const linksResolved = (graph, id) => {
@@ -20,7 +20,11 @@ export function requireStructuredWait(graph, bead) {
   if (waitStatus(bead.status) && !structuredWait(graph, bead)) throw new HiveError(STRUCTURED_WAIT_HELP, 'refused');
 }
 
-const needsResolution = (graph, bead) => bead.status !== 'closed' && !explicitResume(bead) && linksResolved(graph, bead.id) && waitStatus(bead.status);
+const prerequisiteRefs = (graph, id) => JSON.stringify([...new Set(prerequisites(graph, id).map(e => e.prerequisite))].sort());
+const migratedAnnotation = (graph, bead, migration) => migration?.linkAnnotation?.text
+  && migration.linkAnnotation.text === bead.waitingFor && migration.linkAnnotation.refs === prerequisiteRefs(graph, bead.id);
+const needsResolution = (graph, bead, migration) => bead.status !== 'closed' && !explicitResume(bead) && linksResolved(graph, bead.id)
+  && (waitStatus(bead.status) || migratedAnnotation(graph, bead, migration));
 
 function recordResolution(doc, cellId, id, refs, at) {
   const records = doc.cells[cellId].linkWaits ||= {};
@@ -64,26 +68,31 @@ export function observeLinkWaits(rt, at = Date.now()) {
 export async function resolveLinkWaits(rt, host, at = Date.now()) {
   const usable = () => isCurrent(rt, host) && !rt.metadata.error && rt.snapshots.hierarchyCurrent !== false && !rt.snapshots.current.error;
   if (!usable()) return;
+  await migrateBlocked(rt, host, at);
+  if (!usable()) return;
   observeLinkWaits(rt, at);
   for (const cell of rt.metadata.cells()) {
     if (!cell.enabled || cell.snapshot) continue;
     for (const id of descendantIds(rt.snapshots.graph.beads, cell.rootBeadId)) {
       const bead = rt.snapshots.graph.beads[id];
-      if (!bead || !needsResolution(rt.snapshots.graph, bead)) continue;
+      if (!bead || !needsResolution(rt.snapshots.graph, bead, rt.metadata.cell(cell.id)?.blockedMigrations?.[id])) continue;
       const refs = JSON.stringify([...new Set(prerequisites(rt.snapshots.graph, id).map(e => e.prerequisite))].sort());
       await withLocks([`bead:${id}`], async () => {
         if (!usable()) return;
         const unsettled = Object.values(rt.metadata.read().operations || {}).some(o => ['pending', 'uncertain', 'partial'].includes(o.state) && (o.beadIds?.includes(id) || o.intent?.beadId === id));
         if (unsettled) return;
         try {
-          await journaled(rt, { kind: 'resolve-link-wait', cellId: cell.id, actor: 'hive', summary: `Resolve prerequisites for ${id}`, beadIds: [id], intent: { beadId: id }, onApplied: d => recordResolution(d, cell.id, id, refs, at) }, async (opId, phase) => {
+          await journaled(rt, { kind: 'resolve-link-wait', cellId: cell.id, actor: 'hive', summary: `Resolve prerequisites for ${id}`, beadIds: [id], intent: { beadId: id }, onApplied: d => {
+            recordResolution(d, cell.id, id, refs, at);
+            if (d.cells[cell.id].blockedMigrations?.[id]) delete d.cells[cell.id].blockedMigrations[id].linkAnnotation;
+          } }, async (opId, phase) => {
             let before;
-            const patch = { waitingFor: '', status: 'open' };
+            const patch = { waitingFor: '', ...(waitStatus(bead.status) ? { status: 'open' } : {}) };
             const written = await rt.beads.update(id, patch, 'hive', context => {
               if (!usable() || !rt.metadata.cell(cell.id)?.enabled || rt.metadata.cell(cell.id)?.snapshot) throw new HiveError('Hive changed before resolving the wait.', 'conflict');
               const graph = exportedGraph(context);
               const current = graph.beads[id];
-              if (!current || current.updatedAt !== bead.updatedAt || current.status !== bead.status || current.assignee !== bead.assignee || !needsResolution(graph, current) || !descendantIds(graph.beads, cell.rootBeadId).has(id)) throw new HiveError('The linked wait changed; reread it before resolving.', 'conflict');
+              if (!current || current.updatedAt !== bead.updatedAt || current.status !== bead.status || current.assignee !== bead.assignee || !needsResolution(graph, current, rt.metadata.cell(cell.id)?.blockedMigrations?.[id]) || !descendantIds(graph.beads, cell.rootBeadId).has(id)) throw new HiveError('The linked wait changed; reread it before resolving.', 'conflict');
               before = current;
               return { assignee: current.assignee || '', status: current.status };
             });
@@ -93,6 +102,44 @@ export async function resolveLinkWaits(rt, host, at = Date.now()) {
             return { journal: { fields: Object.keys(patch) } };
           });
         } catch (err) { rt.log(`hive: could not resolve linked wait ${id}: ${err.message}`); }
+      });
+    }
+  }
+}
+
+async function migrateBlocked(rt, host, at) {
+  for (const cell of rt.metadata.cells()) {
+    if (!cell.enabled || cell.snapshot) continue;
+    for (const id of descendantIds(rt.snapshots.graph.beads, cell.rootBeadId)) {
+      const bead = rt.snapshots.graph.beads[id];
+      if (bead?.status !== 'blocked') continue;
+      await withLocks([`bead:${id}`], async () => {
+        const usable = () => isCurrent(rt, host) && !rt.metadata.error && rt.snapshots.hierarchyCurrent !== false && !rt.snapshots.current.error
+          && rt.metadata.cell(cell.id)?.enabled && !rt.metadata.cell(cell.id)?.snapshot;
+        if (!usable() || Object.values(rt.metadata.read().operations || {}).some(o => ['pending', 'uncertain', 'partial'].includes(o.state) && (o.beadIds?.includes(id) || o.intent?.beadId === id))) return;
+        const migration = { at };
+        const graph = rt.snapshots.graph;
+        if (bead.waitingFor && !explicitResume(bead) && prerequisites(graph, id).some(e => graph.beads[e.prerequisite]?.status !== 'closed' && graph.beads[e.prerequisite])) {
+          migration.linkAnnotation = { text: bead.waitingFor, refs: prerequisiteRefs(graph, id) };
+        }
+        try {
+          await journaled(rt, { kind: 'migrate-blocked', cellId: cell.id, actor: 'hive', summary: `Migrate blocked status for ${id}`, beadIds: [id], intent: { beadId: id, migration }, onApplied: d => {
+            (d.cells[cell.id].blockedMigrations ||= {})[id] = { ...migration };
+          } }, async (opId, phase) => {
+            let before;
+            const written = await rt.beads.update(id, { status: 'open' }, 'hive', context => {
+              const graph = exportedGraph(context);
+              const current = graph.beads[id];
+              if (!usable() || !current || current.status !== 'blocked' || current.updatedAt !== bead.updatedAt || current.assignee !== bead.assignee || !descendantIds(graph.beads, cell.rootBeadId).has(id)) throw new HiveError('Bead changed before blocked status migration.', 'conflict');
+              before = current;
+              return { assignee: current.assignee || '', status: 'blocked' };
+            });
+            phase.applied = true;
+            if (written) managedPickupReceipt(rt, before, normalizeIssue(written));
+            await rt.snapshots.refresh();
+            return { journal: { fields: ['status'] } };
+          });
+        } catch (err) { rt.log(`hive: could not migrate blocked bead ${id}: ${err.message}`); }
       });
     }
   }

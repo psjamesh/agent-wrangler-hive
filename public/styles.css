@@ -572,6 +572,33 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   gap: 4px;
 }
 
+.hive-map-menu-launcher { display: flex; align-items: center; gap: 4px; }
+.hive-zoom-btn[hidden],
+.hive-map-menu[hidden] { display: none; }
+.hive-map-resume-slot > .hive-zoom-btn[hidden] {
+  display: inline-flex;
+  visibility: hidden;
+}
+.hive-wsmenu.hive-map-menu {
+  right: 0;
+  bottom: calc(100% + 8px);
+  gap: 4px;
+  max-width: calc(100vw - 32px);
+  max-height: min(60vh, 400px);
+  overflow-y: auto;
+}
+.hive-map-menu .hive-control-group { display: flex; }
+.hive-map-menu .hive-control-group:not(:first-child) {
+  flex-direction: column;
+  align-items: stretch;
+  border-left: none;
+  border-top: 1px solid var(--border-muted, var(--border));
+  padding: 4px 0 0;
+  margin: 0;
+}
+.hive-map-menu .hive-zoom-btn { margin: 0; }
+.hive-map-menu .hive-control-group:not(:first-child) .hive-zoom-btn { justify-content: flex-start; }
+
 .hive-control-group {
   display: flex;
   align-items: center;
@@ -599,8 +626,8 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   white-space: nowrap;
 }
 .hive-zoom-icon { font-size: 20px; padding: 0; }
-.hive-zoom-btn:hover:not(:disabled):not([aria-pressed="true"]) { background: var(--surface-2); }
-.hive-zoom-btn[aria-pressed="true"]:hover { box-shadow: inset 0 0 0 2px var(--surface-2); }
+.hive-zoom-btn:hover:not(:disabled):not([aria-pressed="true"]):not([aria-checked="true"]) { background: var(--surface-2); }
+.hive-zoom-btn:is([aria-pressed="true"], [aria-checked="true"]):hover { box-shadow: inset 0 0 0 2px var(--surface-2); }
 .hive-zoom-btn:disabled { opacity: 0.5; cursor: default; }
 .hive-quiet-btn[aria-pressed] {
   display: inline-flex;
@@ -610,16 +637,16 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 }
 .hive-quiet-btn[hidden] { display: none; }
 .hive-quiet-btn[aria-pressed="true"]:hover { box-shadow: inset 0 0 0 2px var(--surface-2); }
-.hive-zoom-btn[aria-pressed]::before,
+.hive-zoom-btn:is([aria-pressed], [aria-checked])::before,
 .hive-quiet-btn[aria-pressed]::before { content: '\25cb'; }
-.hive-zoom-btn[aria-pressed="true"],
+.hive-zoom-btn:is([aria-pressed="true"], [aria-checked="true"]),
 .hive-quiet-btn[aria-pressed="true"] {
   background: var(--fg);
   color: var(--surface);
   border-color: var(--fg);
   font-weight: 600;
 }
-.hive-zoom-btn[aria-pressed="true"]::before,
+.hive-zoom-btn:is([aria-pressed="true"], [aria-checked="true"])::before,
 .hive-quiet-btn[aria-pressed="true"]::before { content: '\2713'; }
 .hive-zoom-btn[data-paused="true"] {
   background: var(--surface-2);
@@ -734,7 +761,7 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 /* The primary mark: one per item, centred at the bottom, in Agent
    Wrangler's own status colours and never a workstream hue. Solid red person
    (an agent waiting for input) and solid green robot (an agent working),
-   each with the theme's paired bar ink; a bare warning-ink cross (blocked or
+   each with the theme's paired bar ink; a bare warning-ink cross (prerequisite
    waiting on a prerequisite); an outlined grey tick (done), so it never
    reads as the green of work in progress; grey minus (closed otherwise) and
    grey pause (deferred). Words are in its title and the tile's name. */
@@ -1033,7 +1060,6 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 
 .hive-status-pill.hive-status-in_progress { background: var(--hive-fill); }
 .hive-status-pill.hive-status-closed { background: var(--hive-cap); }
-.hive-status-pill.hive-status-blocked { border-color: var(--warn, var(--border)); color: var(--warn-fg, var(--fg)); }
 
 .hive-row { margin: 5px 0; overflow-wrap: anywhere; }
 
@@ -1050,6 +1076,9 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
   min-height: 4.5em;
   overflow: auto;
 }
+
+.hive-messages[data-hive-revealing] { overflow-anchor: none; }
+.hive-messages::after { content: ''; display: block; height: var(--hive-reveal-space, 0px); }
 
 .hive-message { position: relative; padding: 8px 0; border-bottom: 1px solid var(--border-muted, var(--border)); }
 .hive-message:last-child { border-bottom: none; }
