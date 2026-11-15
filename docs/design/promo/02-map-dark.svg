@@ -11,8 +11,7 @@
 <text x="60" y="47" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" text-anchor="start">H I V E   /   INTRODUCING A SHARED WAY TO WORK</text>
 <text x="1380" y="47" fill="#efbd61" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="600" text-anchor="end">DESIGN PROPOSAL</text>
 <polygon points="240,120 1200,120 1370,500 1200,880 240,880 70,500" fill="#1b2428" stroke="#435149" stroke-width="2"/>
-<path d="M240 120 H1200 L1370 500" fill="none" stroke="#efbd61" stroke-width="2"/>
-<text x="720" y="188" fill="#efbd61" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700" text-anchor="middle">INTRODUCING HIVE</text>
+<text x="720" y="198" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500" text-anchor="middle">PAGE 2 OF 6</text>
 <text x="1326" y="93" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="400" text-anchor="middle">×</text>
 <text x="1302" y="64" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="400" text-anchor="start">Close intro</text>
 <text x="320" y="249" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="36" font-weight="650" text-anchor="start">See the work and what it needs.</text>
@@ -50,7 +49,7 @@
 <text x="320" y="710" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="500" text-anchor="start">Nearby hexagons do not imply a dependency.</text>
 <text x="1120" y="738" fill="#efbd61" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="500" text-anchor="end">Enlarge example ↗</text>
 <path d="M320 756 L1120 756" stroke="#435149" stroke-width="1" fill="none"/>
-<text x="320" y="796" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="400" text-anchor="start">Skip intro</text>
+<text x="320" y="796" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="400" text-anchor="start">Close intro</text>
 <text x="830" y="796" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="400" text-anchor="start">← Back</text>
 <rect x="920" y="771" width="200" height="43" rx="9" fill="#f1c574" stroke="#f1c574"/>
 <text x="1020" y="798" fill="#30240e" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="650" text-anchor="middle">Meet the agents →</text>

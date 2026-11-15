@@ -140,13 +140,17 @@ Ship a small static manifest with positive integer `contentVersion`, the six sta
 
 Evaluate automatic eligibility once per deliberate Hive view entry, not every graph refresh or window focus. Hold an in-memory “offered this entry” flag. Read storage again just before opening, and observe cross-tab dismissal when available. Another tab's dismissal suppresses a pending offer; it does not forcibly close a dialog already being read. Simultaneous offers in two tabs are acceptable; no lease or server coordination is proposed.
 
-Close, Skip intro, Escape and the final action all persist the opened edition, build version and time; merely opening, visiting a page, reloading, switching views or disabling/unmounting Hive does not. Manual replay does not erase older state on entry. On explicit dismissal, re-read storage and preserve a higher known content version and its accompanying build/time; write only when the opened edition is at least as new. Thus replay after a downgrade does not make a previously dismissed edition look new. Best-effort local writes cannot promise atomic cross-tab updates; re-read-on-write and the in-memory guard cover ordinary use. If saving fails after opening, close normally, suppress more automatic offers for that tab lifetime, and show a quiet “Dismissal could not be saved on this browser” status. Manual replay still works.
+Close intro (the top-right control or footer), Escape and the final action all persist the opened edition, build version and time; merely opening, visiting a page, reloading, switching views or disabling/unmounting Hive does not. Manual replay does not erase older state on entry. On explicit dismissal, re-read storage and preserve a higher known content version and its accompanying build/time; write only when the opened edition is at least as new. Thus replay after a downgrade does not make a previously dismissed edition look new. Use a promo-specific write and read-back check; the existing client `save()` helper swallows errors and cannot establish success. Best-effort local writes cannot promise atomic cross-tab updates; re-read-on-write and the in-memory guard cover ordinary use. If saving fails after opening, close normally, suppress more automatic offers for that tab lifetime, and show a quiet “Dismissal could not be saved on this browser” status. Manual replay still works.
 
 ## Screenshots from a disposable instance
 
 The SVG scenes in this PR are intentionally drawn placeholders. Production needs real captures of the **running UI with synthetic state**, not screenshots of these drawings or a viewer's working board. No capture runs as part of this design bead.
 
 The repository prohibits local browser launches and reserves browser tests for opt-in CI. A follow-up **Claude helper** owns the capture work, invoked through Hive on the screenshot bead. It configures and reviews an opt-in CI capture job and downloads its output; it must not launch a browser on this machine. The helper can inspect rendered PNGs without a browser. A local live-dev capture would require an explicit repository-policy exception from the human; it is not the default plan.
+
+### Capture feasibility and repository scope
+
+Require a real disposable core server, not a Hive-side shim that merely imitates one. Before the capture package is ready, a bounded feasibility package must identify and exercise the pinned core's fixture injection seams for sessions, GitHub observations and delivery. The current browser job supplies static core assets only; it does not prove these seams exist. If test-only hooks are missing, the queen creates a separate **core-repository prerequisite** with its own review and delivery contract. Capture waits for that prerequisite's verified delivery; this Hive proposal does not authorize core changes. Prefer existing supported dependency injection, and keep any added hooks inaccessible to production launches.
 
 ### Isolated capture contract
 
@@ -185,8 +189,9 @@ These are proposed bounded implementation beads, **not created or ready to launc
 
 | Work package | Deliverable and acceptance | Depends on |
 | --- | --- | --- |
-| A · Demo fixture and isolated capture | Deterministic disposable AW/Beads server, deny-real-effects adapters, opt-in CI job, twelve scene captures and provenance; Claude helper inspects them | Approved design |
-| B · Promo content and display policy | Six pages, curated epoch manifest, active build version, validated per-viewer record, all display/dismiss/replay rules | Approved design; runs parallel with A |
+| A0 · Prove real-instance capture seams | CI proof that pinned core can run with temporary state and inert session/GitHub/delivery adapters; identify any separate core prerequisite and its acceptance before A is ready | Approved design |
+| A · Demo fixture and isolated capture | Deterministic disposable AW/Beads server, deny-real-effects adapters, opt-in CI job, twelve scene captures and provenance; Claude helper inspects them | A0 and any delivered core prerequisite |
+| B · Promo content and display policy | Six pages, curated epoch manifest, active build version, validated per-viewer record, all display/dismiss/replay rules | Approved design; runs parallel with A0 and A |
 | C · Hexagonal dialog and narrow fallback | Desktop/narrow layouts, all six destinations, themed assets, captions, image failure fallback, keyboard/focus/reduced-motion behavior | A and B |
 | D · Entry points and acceptance | About Hive, Settings replay, safe initial offer, setup/create routing; CI screenshots and accessibility checks; user-facing docs | C |
 
@@ -197,7 +202,7 @@ Implementation verification includes pure policy cases for every display-table r
 ## Open questions for the human
 
 1. **Approve the broad hexagonal silhouette?** Recommended: keep it for spacious screens and use the rectangular sheet whenever content would feel cramped. The simpler alternative keeps only a small hexagonal navigator in a rectangular dialog.
-2. **Should meaningful new content open automatically on the next ordinary Hive visit?** Recommended: yes, starting at the first changed page, with all close routes remembering the edition. A quieter alternative shows an “Updated intro” badge and waits for a click. Routine releases stay quiet either way.
+2. **Should meaningful new content open automatically on the next ordinary Hive visit, including a one-time full tour for existing users who have no record?** Recommended: yes, starting at the first changed page, with all close routes remembering the edition. A quieter alternative shows an “Updated intro” badge and waits for a click. Routine releases stay quiet either way.
 3. **Is browser-profile scope right for dismissal?** Recommended: use local per-board storage now. Cross-device identity would need a separate host capability and product design.
 
 The queen should present these choices with the mockups. An approval to publish or merge this proposal does not answer these product questions or arm the implementation packages.
