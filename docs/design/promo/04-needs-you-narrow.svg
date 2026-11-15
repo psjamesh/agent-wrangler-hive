@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+<title id="title">Hive introduction: page 4, Needs you, narrow layout</title>
+<desc id="desc">Static design proposal. Step in where it matters. Six numbered pages surround a broad hexagon on desktop; the narrow version is a rectangular sheet. The demo UI is a schematic placeholder, not a live screenshot. Answer request settles it; a conversation reply alone does not.</desc>
+<rect width="390" height="844" fill="#101619"/>
+<rect x="10" y="12" width="370" height="820" rx="20" fill="#1b2428" stroke="#435149"/>
+<polygon points="53.0,44.0 46.0,56.1 32.0,56.1 25.0,44.0 32.0,31.9 46.0,31.9" fill="#111a1e" stroke="#efbd61" stroke-width="2"/>
+<text x="63" y="49" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="17" font-weight="600" text-anchor="start">Introducing Hive</text>
+<text x="346" y="50" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="26" font-weight="400" text-anchor="middle">×</text>
+<text x="30" y="96" fill="#efbd61" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700" text-anchor="start">PAGE 4 OF 6</text>
+<text x="30" y="129" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="400" text-anchor="start">Jump to page</text>
+<rect x="30" y="140" width="330" height="43" rx="7" fill="#111a1e" stroke="#435149"/>
+<text x="44" y="168" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="400" text-anchor="start">4 · Needs you</text>
+<text x="337" y="168" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="400" text-anchor="start">⌄</text>
+<text x="30" y="231" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="29" font-weight="650" text-anchor="start">Step in where</text>
+<text x="30" y="267" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="29" font-weight="650" text-anchor="start">it matters.</text>
+<text x="30" y="306" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="400" text-anchor="start">Open a request, read the choices</text>
+<text x="30" y="331" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="400" text-anchor="start">and send your answer. The queen</text>
+<text x="30" y="356" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="400" text-anchor="start">brings the decisions that need you.</text>
+<rect x="30" y="387" width="330" height="188" rx="10" fill="#111a1e" stroke="#435149"/>
+<rect x="46" y="402" width="142" height="28" rx="14" fill="#f1c574" stroke="#efbd61"/>
+<text x="117.0" y="421" fill="#30240e" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" text-anchor="middle">Demo request</text>
+<text x="46" y="460" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="600" text-anchor="start">Which cover should</text>
+<text x="46" y="487" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="600" text-anchor="start">the guide use?</text>
+<text x="46" y="527" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="400" text-anchor="start">● Illustrated     ○ Typographic</text>
+<rect x="172" y="537" width="168" height="28" rx="14" fill="#f1c574" stroke="#efbd61"/>
+<text x="256.0" y="556" fill="#30240e" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" text-anchor="middle">Answer request</text>
+<text x="30" y="608" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="400" text-anchor="start">Drawn placeholder · not a live capture</text>
+<text x="30" y="649" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="600" text-anchor="start">Answer request settles it.</text>
+<text x="30" y="673" fill="#b4c1bb" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="400" text-anchor="start">A conversation reply alone does not.</text>
+<text x="30" y="715" fill="#efbd61" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="400" text-anchor="start">Enlarge example ↗</text>
+<path d="M30 742 L360 742" stroke="#435149" stroke-width="1" fill="none"/>
+<rect x="30" y="763" width="93" height="45" rx="8" fill="#111a1e" stroke="#435149"/>
+<text x="76" y="791" fill="#f3f1e8" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="600" text-anchor="middle">Back</text>
+<rect x="137" y="763" width="223" height="45" rx="8" fill="#f1c574" stroke="#f1c574"/>
+<text x="248" y="791" fill="#30240e" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="600" text-anchor="middle">Follow delivery →</text>
+</svg>
