@@ -14,6 +14,7 @@ export function createPrTracker({ gh = runGh, now = Date.now } = {}) {
   let remoteFailures = 0;
   let remoteError = null;
   const negatives = new Map();
+  const searches = new Map();
   const delay = failures => Math.min(60000 * (2 ** Math.min(failures - 1, 4)), 900000);
   function defer(key, message) {
     const failures = Math.min((negatives.get(key)?.failures || 0) + 1, 5);
@@ -49,10 +50,14 @@ export function createPrTracker({ gh = runGh, now = Date.now } = {}) {
     stop() { stopped = true; },
     async search(repo) {
       if (!prRepository(`https://github.com/${repo}/pull/1`)) return [];
-      return await read(`search:${repo.toLowerCase()}`, repo, ['search', 'prs', '--repo', repo, '--label', 'hive', '--limit', '1000', '--json', 'url'], rows => {
+      const key = repo.toLowerCase();
+      if (now() < (searches.get(key) || 0)) return [];
+      const found = await read(`search:${key}`, repo, ['search', 'prs', '--repo', repo, '--label', 'hive', '--state', 'open', '--sort', 'updated', '--order', 'desc', '--limit', '100', '--json', 'url'], rows => {
         if (!Array.isArray(rows)) throw new Error('Invalid PR search');
         return [...new Set(rows.map(row => row?.url).filter(url => prRepository(url)?.toLowerCase() === repo.toLowerCase()))];
-      }) || [];
+      });
+      if (found) searches.set(key, now() + 300000);
+      return found || [];
     },
     async state(prUrl) {
       if (!prRepository(prUrl)) return null;

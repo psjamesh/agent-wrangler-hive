@@ -243,9 +243,12 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
   }
   for (const [sid, closedIds] of linkedSessions) {
     for (const link of host.links?.get?.(sid) || []) {
-      if (link.type !== 'pr' || !prRepository(link.url) || doc.prLabels?.[link.url]?.state !== 'OPEN') continue;
+      const observed = doc.prLabels?.[link.url];
+      if (link.type !== 'pr' || !prRepository(link.url) || observed?.state !== 'OPEN' || observed.observationError) continue;
       for (const beadId of closedIds) {
         const bead = beads[beadId];
+        const closedAt = stamp(bead.closedAt) || stamp(bead.updatedAt);
+        if (!closedAt || stamp(observed.stateCheckedAt) <= closedAt) continue;
         add('closed_bead_pr', [sid, beadId, link.url], 'OPEN', stamp(bead.closedAt) || stamp(bead.updatedAt) || now,
           `Open PR ${link.url} is still linked to a session bound to closed bead ${beadId}. Relink it to its current owner or remove the stale session link.`,
           { bead_id: beadId, session_id: sid, pr_url: link.url });

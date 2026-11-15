@@ -55,6 +55,10 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
           if (!active()) break;
           const found = await tracker.search(repo);
           if (!active()) return;
+          const reopened = found.filter(url => ['MERGED', 'CLOSED'].includes(runtime.metadata.read().prLabels?.[url]?.state));
+          if (reopened.length) runtime.metadata.mutate(doc => {
+            for (const url of reopened) Object.assign(doc.prLabels[url], { state: 'OPEN', stateCheckedAt: null, observationError: null });
+          });
           const unknown = found.filter(url => !Object.hasOwn(runtime.metadata.read().prLabels || {}, url));
           if (unknown.length) runtime.metadata.mutate(doc => {
             for (const url of unknown) if (!Object.hasOwn(doc.prLabels, url)) doc.prLabels[url] = { url, source: 'label-search', sessionId: null, cellIds: [], associations: [], beadIds: [], firstSeenAt: now(), enrolledAt: null, status: 'labelled', labelledAt: now(), state: null, stateCheckedAt: null };
@@ -76,7 +80,8 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
         const observations = [];
         for (const record of Object.values(runtime.metadata.read().prLabels || {})) {
           if (!active() || !canReadLinks(host)) break;
-          const observed = await tracker.state(record?.url);
+          if (!record || ['MERGED', 'CLOSED'].includes(record.state)) continue;
+          const observed = await tracker.state(record.url);
           if (!active()) return;
           if (observed) observations.push({ url: record.url, ...observed });
         }

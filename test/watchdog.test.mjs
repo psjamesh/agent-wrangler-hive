@@ -485,7 +485,7 @@ test('open PR linked to a closed-bead session flags and notifies until the link 
   f.host.links = { get: () => links };
   f.rt.metadata.mutate(d => {
     d.bindings.cell = [{ sessionId: 'worker', beadId: 'work', active: true }];
-    d.prLabels[url] = { url, state: 'OPEN' };
+    d.prLabels[url] = { url, state: 'OPEN', stateCheckedAt: f.now() + 1 };
   });
   f.beads.work.status = 'closed';
   const flag = f.flags().find(x => x.kind === 'closed_bead_pr');
@@ -508,7 +508,7 @@ test('closed-bead PR flags require a current binding, live card, actual link and
   f.host.links = { get: () => [{ type: 'pr', url }] };
   f.rt.metadata.mutate(d => {
     d.bindings.cell = [{ sessionId: 'worker', beadId: 'work', active: true }];
-    d.prLabels[url] = { url, state: 'OPEN' };
+    d.prLabels[url] = { url, state: 'OPEN', stateCheckedAt: f.now() + 1 };
     d.cells.other = { id: 'other', enabled: true, rootBeadId: 'other-root' };
   });
   f.beads['other-root'] = { id: 'other-root', status: 'open' };
@@ -535,3 +535,34 @@ test('stalled flags persist a toast episode across restarts and renew after reco
   f.sessions.worker.status = 'idle'; await f.watchdog.run();
   assert.notEqual(Object.values(f.rt.metadata.cell('cell').watchdogFlags)[0].episodeAt, first.episodeAt);
 });
+
+for (const terminal of ['MERGED', 'CLOSED']) {
+  test(`closed-bead PR attention waits for confirmation and clears on ${terminal}`, t => {
+    const f = fixture(t), url = 'https://github.com/example/repo/pull/42';
+    f.host.links = { get: () => [{ type: 'pr', url }] };
+    f.rt.metadata.mutate(d => {
+      d.bindings.cell = [{ sessionId: 'worker', beadId: 'work', active: true }];
+      d.prLabels[url] = { url, state: 'OPEN', stateCheckedAt: f.now() - 1 };
+    });
+    f.beads.work.status = 'closed';
+    f.beads.work.closedAt = f.now();
+    assert.deepEqual(f.flags(), [], 'cached OPEN before closure is not confirmation');
+    f.rt.metadata.mutate(d => { d.prLabels[url].stateCheckedAt = f.now() + 1; });
+    assert.equal(f.flags().filter(x => x.kind === 'closed_bead_pr').length, 1, 'confirmed still-open PR is flagged');
+    f.rt.metadata.mutate(d => { d.prLabels[url].observationError = { message: 'offline' }; });
+    assert.deepEqual(f.flags(), [], 'failed refresh cannot confirm current OPEN');
+    f.rt.metadata.mutate(d => { Object.assign(d.prLabels[url], { state: terminal, observationError: null }); });
+    assert.deepEqual(f.flags(), [], 'known merge/close clears stale attention');
+  });
+  test(`a PR observed ${terminal} before bead closure never raises closed-bead attention`, t => {
+    const f = fixture(t), url = 'https://github.com/example/repo/pull/42';
+    f.host.links = { get: () => [{ type: 'pr', url }] };
+    f.rt.metadata.mutate(d => {
+      d.bindings.cell = [{ sessionId: 'worker', beadId: 'work', active: true }];
+      d.prLabels[url] = { url, state: terminal, stateCheckedAt: f.now() - 1 };
+    });
+    f.beads.work.status = 'closed';
+    f.beads.work.closedAt = f.now();
+    assert.deepEqual(f.flags(), []);
+  });
+}

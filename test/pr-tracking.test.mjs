@@ -18,7 +18,7 @@ function fixture() {
   f.host = { version: '1.70.0', sessions: { list: () => [{ sessionId: SID }] }, tasks: { forSession: () => ({ taskId: 'task' }) }, links: { get: () => f.links.map(url => ({ type: 'pr', url })) } };
   f.gh = async args => {
     if (args[0] === 'search') {
-      assert.deepEqual(args, ['search', 'prs', '--repo', 'example/repo', '--label', 'hive', '--limit', '1000', '--json', 'url']);
+      assert.deepEqual(args, ['search', 'prs', '--repo', 'example/repo', '--label', 'hive', '--state', 'open', '--sort', 'updated', '--order', 'desc', '--limit', '100', '--json', 'url']);
       f.searches.push(args);
       return JSON.stringify(f.searchResults.map(url => ({ url })));
     }
@@ -68,18 +68,81 @@ test('a session without bead bindings has a distinguishable cell-root associatio
   assert.deepEqual(f.doc.prLabels[PR].associations, [{ cellId: 'cell', beadId: 'hive-root', kind: 'cell-root' }]);
 });
 
-test('state polling tracks closing, reopening and merging independently of AW links', async () => {
+for (const terminal of ['CLOSED', 'MERGED']) {
+  test(`state polling stops after a final ${terminal} observation, including after restart`, async () => {
+    const f = fixture();
+    await f.sweep.run();
+    f.links = [];
+    f.time = 60000;
+    f.states.set(PR, terminal);
+    await f.sweep.run();
+    const reads = f.views.length;
+    assert.equal(f.doc.prLabels[PR].state, terminal);
+    f.restart();
+    f.time = 120000;
+    await f.sweep.run();
+    assert.equal(f.views.length, reads);
+    assert.equal(f.doc.prLabels[PR].stateCheckedAt, 60000);
+  });
+}
+
+test('open label discovery resumes observation of a reopened historical PR', async () => {
+  const f = fixture();
+  f.links = [];
+  f.doc.prLabels[PR] = { url: PR, status: 'labelled', state: 'CLOSED', stateCheckedAt: 0 };
+  await f.sweep.run();
+  assert.equal(f.views.length, 0);
+  f.time = 300000;
+  f.searchResults = [PR];
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].state, 'OPEN');
+  assert.equal(f.doc.prLabels[PR].stateCheckedAt, 300000);
+});
+
+test('20 open and 100 historical PRs cost 20 state queries per sweep', async () => {
+  const f = fixture();
+  f.links = [];
+  for (let number = 1; number <= 120; number++) {
+    const url = `https://github.com/example/repo/pull/${number}`;
+    f.doc.prLabels[url] = { url, status: 'labelled', state: number <= 20 ? 'OPEN' : number % 2 ? 'MERGED' : 'CLOSED' };
+    f.states.set(url, number <= 20 ? 'OPEN' : 'MERGED');
+  }
+  for (let minute = 0; minute < 60; minute++) {
+    f.time = minute * 60000;
+    await f.sweep.run();
+  }
+  assert.equal(f.views.length, 1200);
+  assert.equal(f.searches.length, 12);
+});
+
+test('successful discovery is limited to once per five minutes per repository', async () => {
   const f = fixture();
   await f.sweep.run();
-  f.links = [];
-  for (const state of ['CLOSED', 'OPEN', 'MERGED']) {
-    f.time += 60000;
-    f.states.set(PR, state);
-    await f.sweep.run();
-    assert.equal(f.doc.prLabels[PR].state, state);
-    assert.equal(f.doc.prLabels[PR].stateCheckedAt, f.time);
-  }
-  assert.deepEqual(f.additions, [PR]);
+  for (const time of [0, 60000, 299999]) { f.time = time; await f.sweep.run(); }
+  assert.equal(f.searches.length, 1);
+  f.time = 300000;
+  await f.sweep.run();
+  assert.equal(f.searches.length, 2);
+});
+
+test('failed discovery backs off without preventing active PR observations', async () => {
+  let time = 0, searches = 0;
+  const tracker = createPrTracker({ now: () => time, gh: async args => {
+    if (args[0] === 'search') { searches++; throw new Error('temporary search failure'); }
+    return JSON.stringify({ state: 'OPEN' });
+  } });
+  await tracker.search('example/repo');
+  await tracker.search('example/repo');
+  assert.equal(searches, 1);
+  assert.equal((await tracker.state(PR)).state, 'OPEN');
+  time = 60000;
+  await tracker.search('example/repo');
+  time = 120000;
+  await tracker.search('example/repo');
+  assert.equal(searches, 2);
+  time = 180000;
+  await tracker.search('example/repo');
+  assert.equal(searches, 3);
 });
 
 test('label search in known repositories records unknown PRs as unassigned without writing labels', async () => {
