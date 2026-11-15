@@ -9,6 +9,7 @@ import { isBeadId } from './bead-model.js';
 import { requireBeadAccess, requireQueen, requireCoordinator, cellOfBead, resolveCaller } from './access.js';
 import { HiveError, text, refuseSnapshot } from './ops.js';
 import { safeDeliver } from './sessions.js';
+import { runtimeKey } from './lifetime.js';
 
 const MESSAGE_MAX = 20000;
 const CELL_MESSAGE_CAP = 2000;
@@ -548,8 +549,8 @@ function replyRef(rt, cellId, replyTo) {
 // queen message stays unread until the human acknowledges it.
 const messageWrites = new WeakMap();
 function messageWrite(rt, cellId, run) {
-  if (!messageWrites.has(rt)) messageWrites.set(rt, new Map());
-  const queues = messageWrites.get(rt), prior = queues.get(cellId) || Promise.resolve();
+  if (!messageWrites.has(runtimeKey(rt))) messageWrites.set(runtimeKey(rt), new Map());
+  const queues = messageWrites.get(runtimeKey(rt)), prior = queues.get(cellId) || Promise.resolve();
   const next = prior.catch(() => {}).then(run);
   queues.set(cellId, next);
   next.finally(() => { if (queues.get(cellId) === next) queues.delete(cellId); }).catch(() => {});

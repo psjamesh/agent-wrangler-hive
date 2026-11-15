@@ -6,7 +6,7 @@ import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { HiveError } from './ops.js';
-import { assertCurrent } from './lifetime.js';
+import { assertCurrent, runtimeKey } from './lifetime.js';
 import { MAX_IMAGE_BYTES, MAX_ATTACHMENTS, imageName, safeId } from './attachment-validation.js';
 export { MAX_IMAGE_BYTES, MAX_ATTACHMENTS, imageName, sniffImage } from './attachment-validation.js';
 
@@ -107,8 +107,8 @@ const queues = new WeakMap();
 function imageRequest(rt, cellId, messageId, file, full, run) {
   const m = (rt.metadata.read().conversation[cellId] || []).find(x => x.id === messageId);
   if (!m?.attachments?.some(a => a.file === file) || !imageName(file)) return Promise.resolve(null);
-  if (!queues.has(rt)) queues.set(rt, { pending: new Map(), ready: [], scheduled: false });
-  const queue = queues.get(rt), key = `${cellId}/${messageId}/${file}/${full}`;
+  if (!queues.has(runtimeKey(rt))) queues.set(runtimeKey(rt), { pending: new Map(), ready: [], scheduled: false });
+  const queue = queues.get(runtimeKey(rt)), key = `${cellId}/${messageId}/${file}/${full}`;
   if (queue.pending.has(key)) return queue.pending.get(key);
   const promise = new Promise(resolve => queue.ready.push({ cellId, messageId, file, full, run, resolve, key }));
   queue.pending.set(key, promise);

@@ -1,6 +1,6 @@
 import { readReviewerFront } from './reviewer-front.js';
 import { HiveError } from './ops.js';
-import { isCurrent } from './lifetime.js';
+import { isCurrent, runtimeKey } from './lifetime.js';
 
 const catalogs = new WeakMap();
 const REFRESH_MS = 60000;
@@ -17,10 +17,10 @@ export async function readAgentCatalog(host) {
 }
 
 export function agentCatalogForGraph(rt, host) {
-  let state = catalogs.get(rt);
+  let state = catalogs.get(runtimeKey(rt));
   if (!state) {
     state = { value: { agents: null, agentsError: '' }, pending: null, checkedAt: 0 };
-    catalogs.set(rt, state);
+    catalogs.set(runtimeKey(rt), state);
   }
   if (!state.pending && Date.now() - state.checkedAt >= REFRESH_MS && isCurrent(rt, host)) {
     state.pending = readAgentCatalog(host).then(agents => ({ agents, agentsError: '' }), error => ({ agents: null, agentsError: error.message })).then(async catalog => ({ ...catalog, reviewerFront: await readReviewerFront(host, { agents: catalog.agents }) })).then(value => {

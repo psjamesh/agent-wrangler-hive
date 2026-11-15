@@ -3,7 +3,7 @@ import { reconcilePendingCreates, settleOperations, settleOne, needsSettling, ch
 import { releaseArchivedClaims } from './archived-claims.js';
 import { recoverReviews } from './reviews.js';
 import { safeDeliver } from './sessions.js';
-import { isCurrent } from './lifetime.js';
+import { isCurrent, runtimeKey } from './lifetime.js';
 
 // Hive settles its own unfinished writes. Each pass reads the store for the
 // final state each operation asked for, records it when it is there, and tells
@@ -19,7 +19,7 @@ const passes = new WeakMap();
 
 export function recover(rt, host) {
   if (!isCurrent(rt, host)) return Promise.resolve();
-  if (passes.has(rt)) return passes.get(rt);
+  if (passes.has(runtimeKey(rt))) return passes.get(runtimeKey(rt));
   const pass = (async () => {
     if (rt.metadata.error || rt.beads.status.state !== 'ready') return;
     const before = rt.metadata.version;
@@ -31,8 +31,8 @@ export function recover(rt, host) {
     if (host && rt.host === host) await notifyQueens(rt, host);
     if (rt.metadata.version !== before) rt.changed();
     return true;
-  })().catch((err) => { rt.log(`hive: recovery pass failed: ${err.message}`); return false; }).finally(() => { passes.delete(rt); });
-  passes.set(rt, pass);
+  })().catch((err) => { rt.log(`hive: recovery pass failed: ${err.message}`); return false; }).finally(() => { passes.delete(runtimeKey(rt)); });
+  passes.set(runtimeKey(rt), pass);
   return pass;
 }
 
@@ -44,12 +44,12 @@ const touches = new WeakMap();
 
 export function afterWrite(rt, beadIds = []) {
   if (!isCurrent(rt)) return;
-  let batch = touches.get(rt);
-  if (!batch) { batch = { ids: new Set(), timer: null }; touches.set(rt, batch); }
+  let batch = touches.get(runtimeKey(rt));
+  if (!batch) { batch = { ids: new Set(), timer: null }; touches.set(runtimeKey(rt), batch); }
   for (const id of beadIds) batch.ids.add(id);
   if (batch.timer || !batch.ids.size) return;
   batch.timer = setTimeout(async () => {
-    touches.delete(rt);
+    touches.delete(runtimeKey(rt));
     const ids = batch.ids;
     try {
       if (!isCurrent(rt) || rt.metadata.error || rt.beads.status.state !== 'ready') return;
