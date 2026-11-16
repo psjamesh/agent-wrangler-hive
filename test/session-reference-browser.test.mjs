@@ -49,13 +49,15 @@ else {
 }
 document.getElementById('fixture').append(node);
 const anchors = [...node.querySelectorAll('a[href]')].filter(a=>a.getAttribute('href').startsWith('#session='));
-const valid = anchors.length === (inboxMode ? 1 : 2) && anchors.every(a=>a.getAttribute('href')==='#session=${worker}' && !a.target) && (inboxMode ? !node.querySelector('.hive-topic-btn a') && node.querySelector('.hive-inbox-item .hive-needs-count').textContent === '1' : node.textContent.includes('Archived session') && node.textContent.includes('Unknown session'));
+const valid = anchors.length === (inboxMode ? 0 : 2) && anchors.every(a=>a.getAttribute('href')==='#session=${worker}' && !a.target) && (inboxMode ? !node.querySelector('.hive-topic-btn a') && node.querySelector('.hive-inbox-item .hive-needs-count').textContent === '1' : node.textContent.includes('Archived session') && node.textContent.includes('Unknown session'));
 anchors[0]?.click();
-const markdownNavigated = location.hash === '#session=${worker}';
+const markdownNavigated = inboxMode || location.hash === '#session=${worker}';
 location.hash = '';
 const expectedLabel = ${JSON.stringify(mode === 'inbox-bare' ? 'Build worker' : mode === 'inbox-markdown' ? 'Worker session' : 'Open session')};
 anchors.find(a=>a.textContent===expectedLabel)?.click();
-const unavailableVisible = !inboxMode || ${JSON.stringify(mode)} === 'inbox' || (() => { const strip = node.querySelector('.hive-inbox-session-links'); return strip.querySelectorAll('span.hive-muted').length === 2 && (${JSON.stringify(mode)} === 'inbox-bare' ? strip.textContent.includes('Open session') : strip.textContent.includes('Archived session') && strip.textContent.includes('Unknown session')); })();
+const rowLinksAbsent = !inboxMode || !node.querySelector('.hive-inbox-session-links');
+if (inboxMode) node.querySelector('.hive-topic-btn').click();
+const destinationCorrect = inboxMode ? location.hash.includes('cell=cell_fixture&topic=topic&message=m') : location.hash === '#session=${worker}';
 const rowVisible = !inboxMode || (() => { const row = node.querySelector('.hive-inbox-item').getBoundingClientRect(); const dock = node.getBoundingClientRect(); return row.height > 0 && row.top >= dock.top && row.bottom <= dock.bottom; })();
 const badgesVisible = !inboxMode || (() => {
   const needs = node.querySelector('.hive-inbox-item .hive-needs-count');
@@ -64,7 +66,7 @@ const badgesVisible = !inboxMode || (() => {
   return style.backgroundColor === 'rgb(180, 35, 50)' && style.color === 'rgb(255, 255, 255)' && style.borderRadius === '999px'
     && unread?.textContent === '1' && getComputedStyle(unread).borderRadius === '999px';
 })();
-setTimeout(()=>{document.body.dataset.verification = valid && badgesVisible && unavailableVisible && rowVisible && markdownNavigated && location.hash === '#session=${worker}' ? 'passed' : 'failed';},0);
+setTimeout(()=>{document.body.dataset.verification = valid && badgesVisible && rowLinksAbsent && rowVisible && markdownNavigated && destinationCorrect ? 'passed' : 'failed';},0);
 </script></body></html>`;
 
 test('isolated Chrome renders request and message links and navigates their session fragments', { skip: !process.env.HIVE_TEST_CHROME ? 'Set HIVE_TEST_CHROME to a Chrome binary' : !process.env.HIVE_SCREENSHOT_DIR ? 'Set HIVE_SCREENSHOT_DIR to a screenshot directory' : false }, async t => {

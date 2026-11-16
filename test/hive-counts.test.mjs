@@ -190,7 +190,7 @@ test('metadata-only launch and claim reservations refresh the cached card counte
 });
 
 
-test('queen attention joins Needs you with a session link and clears on resume', t => {
+test('queen attention keeps row navigation without a session link strip and clears on resume', t => {
   const f = fixture(t);
   const sessionId = 'a1234567-1234-4567-8901-123456789abc';
   f.cell.queenSessionId = sessionId;
@@ -217,7 +217,7 @@ test('queen attention joins Needs you with a session link and clears on resume',
         assert.equal(row.querySelector('.hive-topic-time'), null);
       }
       const links = list.querySelectorAll('a').filter(a => a.getAttribute('href') === `#session=${sessionId}`);
-      assert.equal(links.some(a => a.textContent === 'Open session'), needs);
+      assert.equal(links.some(a => a.textContent === 'Open session'), false);
     }
     assert.match(tile.getAttribute('aria-label'), needs ? /waiting for input/ : new RegExp(status));
   }
@@ -289,7 +289,7 @@ test('stopped queens appear in global and hive inboxes and tab badge until runni
       if (stopped) {
         assert.equal(rows[0].querySelector('a').getAttribute('href'), queen.dormant ? '#session=queen' : '#view=ext:hive:overview&cell=cell_test');
         const sessionLinks = rows[0].querySelectorAll('a').filter(link => link.textContent === 'Open session');
-        assert.equal(sessionLinks.length, queen.archived ? 0 : 1, JSON.stringify({state, list: list.textContent}));
+        assert.equal(sessionLinks.length, 0, JSON.stringify({state, list: list.textContent}));
       }
     }
   }
