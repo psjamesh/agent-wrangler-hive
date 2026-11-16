@@ -5,7 +5,7 @@ const params = new URLSearchParams(location.search);
 document.body.className = params.get('theme') || 'light';
 if (params.get('view') === 'cell') store.set('cell', JSON.stringify('alpha'));
 let view;
-client.register({ api: { storage: { get: k => store.get(k), set: (k, v) => store.set(k, v), remove: k => store.delete(k) } }, register(kind, v) { view = v; } });
+client.register({ api: { state: () => ({ hive: graph.hive }), storage: { get: k => store.get(k), set: (k, v) => store.set(k, v), remove: k => store.delete(k) } }, register(kind, v) { view = v; } });
 const base = { launches: [], bindings: [], beadLayout: {}, arrangeAspect: null, workstreamColours: {}, workstreamShades: {}, archived: {}, restoreNotices: [], regionAttachments: {}, detachedWorkstreams: [], threads: [], messages: [], threadsTruncated: false, threadsAfter: null, inbox: { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } }, requestCounts: {} };
 const req = (id, title, body, at, extra = {}) => ({ id, audience: 'human', state: 'open', title, body, createdAt: at, threadId: 't_' + id, messageId: 'm_' + id, requesterSessionId: 's1', ...extra });
 const cells = {
