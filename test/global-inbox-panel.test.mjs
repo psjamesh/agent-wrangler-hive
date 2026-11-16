@@ -109,27 +109,13 @@ test('unavailable browser storage falls back to a hidden inbox without throwing'
 });
 
 
-test('merged Inbox session actions stay outside the thread anchor and disable unavailable sessions', t => {
+test('merged Inbox rows omit structured and body session links but retain request navigation', t => {
   const f = fixture(t);
-  f.doc.requests = { r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: 'Choose', threadId: 't', messageId: 'm', requesterSessionId: 'worker', sessionLink: { sessionId: 'old', label: 'Archived worker' } } };
+  f.doc.requests = { r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: '#session=worker', threadId: 't', messageId: 'm', requesterSessionId: 'worker', sessionLink: { sessionId: 'old', label: 'Archived worker' }, requesterSessionLink: { sessionId: 'worker', label: 'Open requester session' } } };
   const row = f.draw().bottom.querySelector('.hive-inbox-item');
-  assert.ok(row);
-  const topic = row.querySelector('.hive-topic-btn');
-  assert.equal(topic.querySelector('a'), null);
-  const actions = row.querySelector('.hive-inbox-session-links');
-  assert.equal(actions.querySelector('a').getAttribute('href'), '#session=worker');
-  assert.match(actions.textContent, /Archived worker/);
-  assert.equal(actions.querySelectorAll('a').length, 1);
+  assert.equal(row.querySelector('.hive-inbox-session-links'), null);
+  assert.deepEqual(row.querySelectorAll('a').map(a => a.getAttribute('href')), ['#view=ext:hive:overview&cell=live&topic=t&message=m']);
   assert.equal(row.querySelector('.hive-needs-count').textContent, '1');
-});
-
-
-test('merged Inbox keeps the first structured label when session links repeat', t => {
-  const f = fixture(t);
-  f.doc.requests = { r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: 'Choose', threadId: 't', messageId: 'm', requesterSessionId: 'worker', sessionLink: { sessionId: 'worker', label: 'Open session' }, requesterSessionLink: { sessionId: 'worker', label: 'Open requester session' } } };
-  const actions = f.draw().bottom.querySelector('.hive-inbox-session-links');
-  assert.equal(actions.querySelectorAll('a').length, 1);
-  assert.equal(actions.querySelector('a').textContent, 'Open session');
 });
 
 
@@ -168,9 +154,7 @@ test('cell Inbox merges only its own messages and needs using the shared row pre
   assert.equal(panel.querySelectorAll('.hive-inbox-item').length, 2);
   assert.doesNotMatch(panel.querySelector('.hive-inbox').textContent, /Other hive need/);
   assert.equal(panel.querySelectorAll('.hive-unread').length, 1);
-  assert.equal(panel.querySelectorAll('.hive-inbox-session-links').length, 1);
-  assert.match(panel.querySelector('.hive-inbox-session-links').textContent, /Archived worker/);
-  assert.equal(panel.querySelector('.hive-inbox-session-links').querySelectorAll('a').length, 1);
+  assert.equal(panel.querySelectorAll('.hive-inbox-session-links').length, 0);
   f.doc.conversation.live.push({ ...f.doc.conversation.live[0], id: 'm2', at: 4 });
   panel = f.draw().bottom;
   assert.equal(panel.querySelector('.hive-unread').textContent, '2');
@@ -247,12 +231,11 @@ for (const local of [false, true]) test(`${local ? 'cell' : 'global'} Waiting fo
   assert.equal(row.querySelector('.hive-unread'), null);
 });
 
-test('Needs you request rows automatically link to their requester even when it is the queen', t => {
+test('queen request rows contain only topic navigation', t => {
   const f = fixture(t);
   f.doc.cells.live.queenSessionId = 'worker';
   f.doc.requests = { r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: 'Choose', threadId: 't', messageId: 'm', requesterSessionId: 'worker' } };
   const row = f.draw().bottom.querySelector('.hive-inbox-item');
-  const link = row.querySelector('.hive-inbox-session-links').querySelector('a');
-  assert.equal(link.getAttribute('href'), '#session=worker');
-  assert.equal(link.textContent, 'Open requester session');
+  assert.equal(row.querySelector('.hive-inbox-session-links'), null);
+  assert.deepEqual(row.querySelectorAll('a').map(a => a.getAttribute('href')), ['#view=ext:hive:overview&cell=live&topic=t&message=m']);
 });

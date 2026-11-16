@@ -175,3 +175,20 @@ test('request Markdown preserves session fragments and strips archived and unkno
   assert.deepEqual(el.querySelectorAll('a[href]').map(a => a.getAttribute('href')), ['#session=worker']);
   assert.match(el.textContent, /Archived Unknown/);
 });
+
+for (const scenario of [
+  { name: 'worker requester without forwarding', requesterSessionId: 'worker', expected: ['#session=worker'] },
+  { name: 'queen requester', requesterSessionId: 'queen', expected: [] },
+  { name: 'queen with legacy requester link', requesterSessionId: 'queen', requesterSessionLink: { sessionId: 'queen', label: 'Open requester session' }, expected: [] },
+  { name: 'queen with explicit target', requesterSessionId: 'queen', sessionLink: { sessionId: 'target', label: 'Build session' }, expected: ['#session=target'] },
+  { name: 'worker with separate target', requesterSessionId: 'worker', sessionLink: { sessionId: 'target', label: 'Build session' }, expected: ['#session=target', '#session=worker'] },
+  { name: 'worker with same target', requesterSessionId: 'worker', sessionLink: { sessionId: 'worker', label: 'Build session' }, expected: ['#session=worker'] },
+  { name: 'missing requester', expected: [] },
+]) test(`opened request session links: ${scenario.name}`, async t => {
+  dom(t);
+  const { requestCard } = await import('../public/requests.js');
+  const r = { id: 'r', audience: 'human', title: 'Approve command', body: 'Review this command.', state: 'resolved', ...scenario };
+  const graph = { sessions: ['worker', 'queen', 'target'].map(sessionId => ({ sessionId })) };
+  const el = requestCard(r, { cell: { id: 'cell', queenSessionId: 'queen' }, graph, api: {}, ui: createUi(), ctx: { busy: () => false } });
+  assert.deepEqual(el.querySelectorAll('a[href]').map(a => a.getAttribute('href')), scenario.expected);
+});

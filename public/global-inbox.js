@@ -1,5 +1,5 @@
 import { compareTopics } from './topic-order.js';
-import { h, relativeTime, markdown, sessionReference } from './dom.js';
+import { h, relativeTime } from './dom.js';
 import { hiveLink } from './deep-links.js';
 import { needsHuman, requestAuthor } from './requests.js';
 import { cellName, queenNeedsAttention, queenNotResponding, queenStopped, queenSuspended, sessionNode } from './model.js';
@@ -171,17 +171,6 @@ function needsBadge(count) {
   return h('span', { class: 'hive-inbox-count hive-needs-count', 'aria-label': `${count} needs you`, title: `${count} needs you` }, String(count));
 }
 
-function rowSessionLinks(ctx, row) {
-  const references = new Map();
-  const remember = link => { if (!references.has(link.sessionId)) references.set(link.sessionId, link); };
-  for (const link of row.sessionLinks || []) remember(link);
-  if (row.scanSessionReferences !== false) markdown(ctx.api, (row.texts || []).join('\n'), {
-    sessions: ctx.graph?.sessions || [],
-    onSessionReference: ({ sessionId, label, bare }) => remember({ sessionId, label: bare ? ctx.graph?.sessions?.find(s => s.sessionId === sessionId)?.name || 'Open session' : label }),
-  });
-  return references.size ? h('div', { class: 'hive-session-links hive-inbox-session-links' }, [...references.values()].map(link => sessionReference(ctx.graph, link))) : null;
-}
-
 export function globalInbox(ctx, cells) {
   const { ui, hive } = ctx;
   const view = ui.globalInboxView() === 'queen' ? 'queen' : 'human';
@@ -235,7 +224,7 @@ export function inboxRow(ctx, r, { query = '', open, id = r.key, action, showCon
         showContext ? h('span', { class: 'hive-chip hive-topic-context' }, r.hive) : null,
         h('span', { class: 'hive-muted hive-topic-preview' }, query ? [r.author ? `${r.author}: ` : '', marked(r.snippet || r.preview || '', query)] : [r.author, r.preview].filter(Boolean).join(': ')),
         r.repair ? h('span', { class: 'hive-warning' }, r.repair) : null)),
-    rowSessionLinks(ctx, r), action);
+    action);
 }
 
 export function searchStatus(query, rows, found) {

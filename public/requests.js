@@ -49,7 +49,8 @@ export function requestCard(r, { cell, graph, api, ui, ctx }) {
   const busy = form.pending || ctx.busy('hive-request-answer') || ctx.busy('hive-request-dismiss') || ctx.busy('hive-request-retry');
   const author = requestAuthor(graph, r);
   const md = text => markdown(api, text, { sessions: graph?.sessions || [] });
-  const requesterLink = r.requesterSessionLink || (r.forwarded ? { sessionId: r.requesterSessionId, label: 'Open requester session' } : null);
+  const requesterLink = r.requesterSessionId && r.requesterSessionId !== cell.queenSessionId
+    ? r.requesterSessionLink || { sessionId: r.requesterSessionId, label: 'Open requester session' } : null;
   const sessionLinks = [r.sessionLink, requesterLink].filter((link, i, all) => link && all.findIndex(other => other?.sessionId === link.sessionId) === i);
   const focusFallback = { focusFallback: `request-card:${r.id}`, focusFinal: `request-list:${cell.id}` };
   const out = h('article', { class: 'hive-request', tabindex: -1, 'data-focus-key': `request-card:${r.id}`, dataset: { requestId: r.id, focusFinal: `request-list:${cell.id}` }, 'aria-label': `Request: ${r.title}` },

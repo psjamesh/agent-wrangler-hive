@@ -1781,7 +1781,6 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
   .hive-needs-count { forced-color-adjust: none; background: Highlight; color: HighlightText; }
 }
 
-.hive-inbox-session-links { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 8px; }
 
 .hive-inbox-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
 .hive-inbox-heading h3 { margin: 0; }

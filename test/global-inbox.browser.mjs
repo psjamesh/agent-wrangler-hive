@@ -273,9 +273,8 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.equal(cellInbox.rows.length, 3);
   assert.ok(!cellInbox.rows.some(r => r.title.includes('Rename the export')));
   assert.deepEqual(cellInbox.rows.map(r => r.count), [null, '2', '1']);
-  assert.ok(cellInbox.labels.includes('Importer worker'));
-  assert.ok(cellInbox.labels.includes('Open session'));
-  assert.ok(cellInbox.archived.includes('Archived worker'));
+  assert.deepEqual(cellInbox.labels, []);
+  assert.deepEqual(cellInbox.archived, []);
   assert.equal(cellInbox.zeros, false);
   const checkCellLayout = async () => {
     await run(`if (document.querySelector('.hive-map-search').hidden) document.querySelector('.hive-search-open').click();`);
