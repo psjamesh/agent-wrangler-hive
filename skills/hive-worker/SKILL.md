@@ -13,7 +13,7 @@ When another skill, a brief or the task instructs you to start or spawn another 
 
 Use `hive_spawn_worker` for tracked work and `hive_spawn_worker(role: "review")` for reviews (`hive_request_review` is its alias). Do not use `spawn_session`, `spawn_workflow`, `schedule_session` or `adversarial-pr-review` for Hive work. Claim holders may launch reviews or short-lived helpers on their own cell with role review or helper; helpers require a live holder, keep its capacity slot until they end even if the holder releases, and cannot claim cells, launch sessions or give review verdicts. Follow global review and merge requirements using these Hive launch mechanisms.
 
-Before archiving a session that hosts an environment, verify access survives its processes ending and record how to start and stop it. If access still depends on that session, keep it until testing is finished.
+Before archiving a session that hosts an environment, verify access survives its processes ending and record how to start and stop it. If access still depends on that session, keep it until dependent use ends or access has a verified independent owner and lifecycle.
 
 Follow Hive’s archive and handover rules: a closed PR alone does not authorize archiving a session. Archive an ordinary worker only after its cell is closed following verified delivery (including merge and required install), with no open claims, reviews or remaining obligations; archive a handover source only when the current launch requests it and the handover requirements are met. On host API ^1.95.0, the queen can manually restore an archived worker with `restore_session` if its cell remains claimable; Hive revalidates ownership and capacity and rebinds it. Scheduled resumes remain refused.
 
