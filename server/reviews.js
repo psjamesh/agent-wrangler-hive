@@ -31,7 +31,7 @@ export function startReviewRound(rt, reviewId, { commit, summary } = {}) {
     for (const key of ['verdict', 'verdictOpId', 'delivery', 'completedAt']) delete r[key];
     r.round = (r.round || 1) + 1;
     if (commit) r.commit = commit; else delete r.commit;
-    r.state = 'in_review'; r.updatedAt = Date.now();
+    r.state = 'in_review'; r.requestedAt = r.updatedAt = Date.now();
     r.summary = summary || `Round ${r.round} in progress${commit ? ` for ${commit}` : ''}; earlier findings are in the review history.`;
   });
 }
@@ -188,7 +188,7 @@ export async function requestReview(rt, host, actor, input) {
       await journaled(rt, { kind: 'review-request', cellId: cell.id, actor: actorFor(actor.sessionId), summary: `Request review of ${bead.id}`, beadIds: [bead.id] }, async () => {
         rt.metadata.mutate((d) => {
           if (Object.values(d.reviews).some((r) => r.workBeadId === bead.id && r.id !== reviewId && OPEN_REVIEW_STATES.has(r.state))) throw new HiveError('This bead already has an open review; wait for its verdict or cancel it.', 'conflict');
-          d.reviews[reviewId] = { ...d.reviews[reviewId], id: reviewId, cellId: cell.id, workBeadId: bead.id, requestedBy: actor.sessionId, state: 'requested', reviewerSessionId: null, summary: intent, createdAt: d.reviews[reviewId]?.createdAt || Date.now(), updatedAt: Date.now(), policy, ...(commit ? { commit } : {}) };
+          d.reviews[reviewId] = { ...d.reviews[reviewId], id: reviewId, cellId: cell.id, workBeadId: bead.id, requestedBy: actor.sessionId, state: 'requested', reviewerSessionId: null, summary: intent, createdAt: d.reviews[reviewId]?.createdAt || Date.now(), requestedAt: Date.now(), updatedAt: Date.now(), policy, ...(commit ? { commit } : {}) };
         });
         return { journal: { reviewId } };
       });

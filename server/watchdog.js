@@ -280,7 +280,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     }
   }
   for (const review of reviews) {
-    const since = stamp(review.createdAt);
+    const since = stamp(review.requestedAt) || ((review.round || 1) > 1 ? stamp(review.updatedAt) : 0) || stamp(review.createdAt);
     if (OPEN_REVIEW_STATES.has(review.state) && !review.verdict && ids.has(review.workBeadId) && beads[review.workBeadId]?.status !== 'closed' && since && now - since >= settings.reviewMinutes * 60000) {
       add('stuck_review', review.id, since, since, 'Requested review has no verdict.', { bead_id: review.workBeadId, session_id: review.reviewerSessionId || null, review_id: review.id });
     }
