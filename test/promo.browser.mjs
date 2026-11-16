@@ -17,7 +17,7 @@ test('intro geometry, pages, focus and responsive layouts', { skip: !cdp && 'CI 
     if (path === '/') { res.setHeader('Content-Type', 'text/html'); res.end(html); return; }
     if (!/^\/public\/(?:promo\/)?[\w.-]+$/.test(path)) { res.writeHead(404).end(); return; }
     try {
-      res.setHeader('Content-Type', path.endsWith('.css') ? 'text/css' : path.endsWith('.svg') ? 'image/svg+xml' : 'text/javascript');
+      res.setHeader('Content-Type', path.endsWith('.css') ? 'text/css' : path.endsWith('.png') ? 'image/png' : path.endsWith('.svg') ? 'image/svg+xml' : 'text/javascript');
       res.end(await readFile(new URL(`..${path}`, import.meta.url)));
     } catch { res.writeHead(404).end(); }
   });
@@ -33,7 +33,7 @@ test('intro geometry, pages, focus and responsive layouts', { skip: !cdp && 'CI 
   const call = (method, params = {}) => new Promise((resolve, reject) => { const key = ++id; pending.set(key, { resolve, reject }); socket.send(JSON.stringify({ id: key, method, params })); });
   const run = async expression => { const out = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); assert.equal(out.exceptionDetails, undefined, JSON.stringify(out.exceptionDetails)); return out.result.value; };
   await call('Page.bringToFront');
-  for (const [width, height] of [[1440, 1000], [1200, 820], [390, 844], [320, 640]]) {
+  for (const [width, height] of [[1440, 1000], [1366, 768], [1280, 720], [1024, 650], [900, 600], [390, 844], [320, 640]]) {
     await call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
     await call('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` });
     for (let i = 0; i < 100; i++) { if (await run('Boolean(window.promo?.isOpen())')) break; await new Promise(resolve => setTimeout(resolve, 25)); }
@@ -45,8 +45,9 @@ test('intro geometry, pages, focus and responsive layouts', { skip: !cdp && 'CI 
         await run('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
         assert.equal(await run(`document.querySelector('.hive-promo-page').dataset.page`), page);
         assert.equal(await run(`document.querySelectorAll('.hive-promo-page h2').length`), 1);
-        if (width === 1440) {
-          assert.equal(await run(`document.querySelector('dialog').hasAttribute('data-rectangle')`), false, 'roomy desktop must show the hexagon');
+        assert.equal(await run(`Promise.all([...document.querySelectorAll('.hive-promo-page img')].map(async img=>{try{await img.decode();return img.naturalWidth>=600&&img.naturalHeight>=300}catch{return false}})).then(results=>results.length===2&&results.every(Boolean))`), true, 'both real scene captures must load');
+        if (width >= 900) {
+          assert.equal(await run(`document.querySelector('dialog').hasAttribute('data-rectangle')`), false, 'desktop must show the hexagon at this viewport');
           assert.notEqual(await run(`getComputedStyle(document.querySelector('.hive-promo-shape')).display`), 'none');
         }
         await run(`document.querySelectorAll('.hive-promo-nav button').forEach(button=>{if(!button.textContent.endsWith(' · New'))button.textContent+=' · New'})`);
@@ -62,11 +63,23 @@ test('intro geometry, pages, focus and responsive layouts', { skip: !cdp && 'CI 
           });
         })()`);
         for (const stop of stopChecks) { assert.equal(stop.overlap, false, stop.label); assert.equal(stop.hits, true, stop.label); }
+        assert.equal(await run(`(()=>{const el=document.querySelector('.hive-promo-page');return getComputedStyle(el).overflowY==='auto'})()`), true, 'page content scrolls within the shape');
+        const fixed = await run(`(()=>{
+          const page=document.querySelector('.hive-promo-page');page.scrollTop=0;
+          const rect=el=>el.getBoundingClientRect();
+          const inner=rect(document.querySelector('.hive-promo-inner'));
+          const selectors=['.hive-promo-caption','.hive-promo-close','.hive-promo-footer'];
+          const before=selectors.map(s=>rect(document.querySelector(s)).top);
+          page.scrollTop=page.scrollHeight;
+          return selectors.map((s,i)=>{const el=document.querySelector(s),r=rect(el);return {s,stable:Math.abs(r.top-before[i])<1,inside:r.top>=inner.top&&r.bottom<=inner.bottom+1&&r.left>=inner.left&&r.right<=inner.right+1,unclipped:el.scrollHeight<=el.clientHeight+1}});
+        })()`);
+        for(const el of fixed){assert.ok(el.stable,el.s);assert.ok(el.inside,el.s);assert.ok(el.unclipped,el.s);}
+        await run(`document.querySelector('.hive-promo-page').scrollTop=0`);
         const bounds = await run(`(()=>{const r=document.querySelector('dialog').getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}})()`);
         assert.ok(bounds.left >= 0 && bounds.right <= width + 1 && bounds.top >= 0 && bounds.bottom <= height + 1);
         const edges = await run(`(()=>{const svg=document.querySelector('.hive-promo-shape');if(getComputedStyle(svg).display==='none')return [];const p=[...svg.querySelector('polygon').points],m=svg.getScreenCTM();return p.map((v,i)=>{const a=new DOMPoint(v.x,v.y).matrixTransform(m),w=p[(i+1)%6],b=new DOMPoint(w.x,w.y).matrixTransform(m);return Math.hypot(a.x-b.x,a.y-b.y)})})()`);
-        if (width >= 1200 && await run(`getComputedStyle(document.querySelector('.hive-promo-shape')).display!=='none'`)) assert.ok(Math.max(...edges) - Math.min(...edges) < .01);
-        if (width < 1200) assert.equal(await run(`getComputedStyle(document.querySelector('.hive-promo-jump')).display`), 'flex');
+        if (width >= 900 && await run(`getComputedStyle(document.querySelector('.hive-promo-shape')).display!=='none'`)) assert.ok(Math.max(...edges) - Math.min(...edges) < .01);
+        if (width < 900) assert.equal(await run(`getComputedStyle(document.querySelector('.hive-promo-jump')).display`), 'flex');
         if (process.env.HIVE_SCREENSHOT_DIR) {
           const shot = await call('Page.captureScreenshot', { format: 'png' });
           await writeFile(join(process.env.HIVE_SCREENSHOT_DIR, `intro-${width}-${theme}-${page}.png`), Buffer.from(shot.data, 'base64'));

@@ -134,3 +134,27 @@ test('an unavailable scene keeps its fallback within that image theme', t => {
   const fallback = walk(f.dialog()).find(el => el.getAttribute('class') === 'hive-promo-image-fallback');
   assert.equal(fallback.parentNode.getAttribute('class'), 'hive-promo-art-light');
 });
+
+test('the page is a labelled keyboard-scrollable region while navigation stays outside it', t => {
+  const f = fixture(t);
+  f.promo.open(f.opener);
+  const page = walk(f.dialog()).find(el => el.getAttribute('class') === 'hive-promo-page');
+  assert.equal(page.getAttribute('role'), 'region');
+  assert.equal(page.getAttribute('tabindex'), '0');
+  assert.equal(page.getAttribute('aria-labelledby'), 'hive-promo-page-title');
+  assert.equal(walk(page).some(el => el.tagName === 'button'), false);
+});
+
+test('caption and close stay outside the scrolling page', t => {
+  const f = fixture(t);
+  f.promo.open(f.opener);
+  const elements = walk(f.dialog());
+  const page = elements.find(el => el.getAttribute('class') === 'hive-promo-page');
+  const caption = elements.find(el => el.getAttribute('class') === 'hive-promo-caption');
+  const close = f.button('Close intro ×');
+  assert.equal(caption.parentNode, page.parentNode);
+  assert.equal(close.parentNode.getAttribute('class'), 'hive-promo-eyebrow');
+  assert.match(caption.textContent, /One hive/);
+  f.button('Explore the map →').click();
+  assert.match(caption.textContent, /Select a bead/);
+});

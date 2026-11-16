@@ -23,8 +23,6 @@ export function createPromo({ root, storage, buildVersion, notice = () => {}, pa
     if (!active) return;
     const current = active;
     active = null;
-    current.observer?.disconnect();
-    if (current.fitFrame) cancelAnimationFrame(current.fitFrame);
     current.dialog.close();
     current.dialog.remove();
     pause(false);
@@ -36,7 +34,7 @@ export function createPromo({ root, storage, buildVersion, notice = () => {}, pa
   const image = page => h('div', { class: 'hive-promo-art' }, ['', '-light'].map(theme => h('div', {
     class: theme ? 'hive-promo-art-light' : 'hive-promo-art-dark',
   }, h('img', {
-    src: new URL(`./promo/${page.id}${theme}.svg`, import.meta.url).href,
+    src: new URL(`./promo/${page.id}${theme}.png`, import.meta.url).href,
     alt: page.alt,
     onerror: event => {
       event.target.hidden = true;
@@ -55,15 +53,17 @@ export function createPromo({ root, storage, buildVersion, notice = () => {}, pa
     const status = h('span', { class: 'hive-sr-only', role: 'status', 'aria-live': 'polite' });
     const select = h('select', { id: 'hive-promo-jump', onchange: event => draw(Number(event.target.value), false) }, manifest.pages.map((page, index) => h('option', { value: String(index) }, `${index + 1} · ${page.label}`)));
     const jump = h('label', { class: 'hive-promo-jump', for: 'hive-promo-jump' }, 'Jump to page', select);
-    const pageSlot = h('div', { class: 'hive-promo-page' });
+    const pageSlot = h('div', { class: 'hive-promo-page', role: 'region', tabindex: '0', 'aria-labelledby': 'hive-promo-page-title' });
     const counter = h('span', { class: 'hive-promo-counter' });
+    const caption = h('p', { class: 'hive-promo-caption', id: 'hive-promo-caption' });
+    const close = button('Close intro ×', () => end(true), { class: 'hive-quiet-btn hive-promo-close' });
     const back = button('← Back', () => draw(current.page - 1, true));
     const next = button('', () => current.page === manifest.pages.length - 1 ? end(true) : draw(current.page + 1, true), { class: 'hive-btn hive-promo-next' });
     const enlarge = button('Enlarge example', () => enlargePage(true), { class: 'hive-quiet-btn hive-promo-enlarge' });
     const body = h('section', { class: 'hive-promo-inner' },
-      h('div', { class: 'hive-promo-eyebrow' }, h('span', {}, 'Introducing Hive'), counter),
+      h('div', { class: 'hive-promo-eyebrow' }, h('span', {}, 'Introducing Hive'), counter, close),
       offer.digest ? h('p', { class: 'hive-promo-digest' }, offer.digest) : null,
-      jump, pageSlot, enlarge,
+      jump, pageSlot, caption, enlarge,
       h('footer', { class: 'hive-promo-footer' }, button('Close intro', () => end(true), { class: 'hive-quiet-btn' }), back, next));
     const enlarged = h('section', { class: 'hive-promo-large', hidden: true });
     function enlargePage(on) {
@@ -75,7 +75,7 @@ export function createPromo({ root, storage, buildVersion, notice = () => {}, pa
       dialog.setAttribute('data-enlarged', String(on));
       if (on) {
         const close = button('Back to intro', () => enlargePage(false));
-        enlarged.replaceChildren(h('h2', {}, `${page.label} example`), h('p', {}, 'Demo hive · drawn example'), image(page), h('p', {}, page.caption), close);
+        enlarged.replaceChildren(h('h2', {}, `${page.label} example`), h('p', {}, 'Demo hive · actual Hive UI'), image(page), h('p', {}, page.caption), close, button('Close intro', () => end(true)));
         close.focus();
       } else enlarge.focus();
     }
@@ -83,8 +83,9 @@ export function createPromo({ root, storage, buildVersion, notice = () => {}, pa
       current.page = Math.max(0, Math.min(manifest.pages.length - 1, index));
       const page = manifest.pages[current.page];
       const title = h('h2', { tabindex: '-1', id: 'hive-promo-page-title' }, page.title);
-      const figure = h('figure', {}, h('div', { class: 'hive-promo-image' }, image(page)), h('figcaption', {}, page.caption));
-      pageSlot.replaceChildren(title, h('p', {}, page.text), figure);
+      const example = h('div', { class: 'hive-promo-image', 'aria-describedby': 'hive-promo-caption' }, image(page));
+      pageSlot.replaceChildren(title, h('p', {}, page.text), example);
+      caption.textContent = page.caption;
       pageSlot.setAttribute('data-page', page.id);
       counter.textContent = `Page ${current.page + 1} of ${manifest.pages.length}`;
       status.textContent = `${page.label}, page ${current.page + 1} of ${manifest.pages.length}`;
@@ -94,23 +95,14 @@ export function createPromo({ root, storage, buildVersion, notice = () => {}, pa
       back.disabled = !current.page;
       next.textContent = page.next + (current.page === manifest.pages.length - 1 ? '' : ' →');
       if (focus) title.focus();
-      body.scrollTop = 0;
-      if (globalThis.requestAnimationFrame) {
-        if (current.fitFrame) cancelAnimationFrame(current.fitFrame);
-        current.fitFrame = requestAnimationFrame(() => { current.fitFrame = null; fitContent(); });
-      }
+      pageSlot.scrollTop = 0;
     }
-    function fitContent() {
-      if (active !== current || current.enlarged) return;
-      if (body.scrollHeight > body.clientHeight + 2 || pageSlot.scrollHeight > pageSlot.clientHeight + 2) dialog.setAttribute('data-rectangle', 'true');
-    }
-    const close = button('Close intro ×', () => end(true), { class: 'hive-quiet-btn hive-promo-close' });
-    dialog.append(silhouette, nav, body, close, status, enlarged);
+    dialog.append(silhouette, nav, body, status, enlarged);
     dialog.addEventListener('cancel', event => { event.preventDefault(); current.enlarged ? enlargePage(false) : end(true); });
     dialog.addEventListener('keydown', event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); current.enlarged ? enlargePage(false) : end(true); }
       if (event.key !== 'Tab') return;
-      const controls = [...dialog.querySelectorAll('*')].filter(el => ['button', 'select'].includes(el.tagName.toLowerCase())).filter(el => !el.disabled && !el.hidden && !el.closest?.('[hidden]') && (el.getClientRects ? el.getClientRects().length > 0 : true));
+      const controls = [...dialog.querySelectorAll('*')].filter(el => (['button', 'select'].includes(el.tagName.toLowerCase()) || el.getAttribute('tabindex') === '0')).filter(el => !el.disabled && !el.hidden && !el.closest?.('[hidden]') && (el.getClientRects ? el.getClientRects().length > 0 : true));
       const first = controls[0], last = controls.at(-1), at = document.activeElement;
       if (controls.length && ((!controls.includes(at)) || (event.shiftKey ? at === first : at === last))) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
     });
@@ -118,10 +110,6 @@ export function createPromo({ root, storage, buildVersion, notice = () => {}, pa
     pause(true);
     dialog.showModal();
     draw(current.page, true);
-    if (globalThis.ResizeObserver) {
-      current.observer = new ResizeObserver(fitContent);
-      current.observer.observe(body);
-    }
     return true;
   };
   return {

@@ -1,6 +1,6 @@
 # Introducing Hive
 
-**Status: approved introduction design.** The implementation uses six pages in the order Welcome, Map, People, Inbox, Needs you and Delivery. Drawn examples illustrate a fictional hive; real running-UI captures are a separate package. A disposable dev-server demo requires human approval before merge.
+**Status: approved introduction design.** The implementation uses six pages in the order Welcome, Map, People, Inbox, Needs you and Delivery. Real captures of the running Hive UI illustrate a fictional hive. The capture uses isolated temporary data and a throwaway browser profile. A disposable dev-server demo requires human approval before merge.
 
 Hive needs a short, beautiful introduction that answers three questions: what am I looking at, who keeps it current, and when does it need me? A new viewer should leave able to open a hive, select a bead and answer a request. An existing viewer should hear about meaningful additions without repeating the introduction after every release.
 
@@ -12,7 +12,7 @@ Three approaches were considered:
 
 | Approach | Advantage | Cost | Recommendation |
 | --- | --- | --- | --- |
-| Hexagonal dialog, rectangular inner page | Distinctive Hive identity; six sides give six memorable destinations | Requires a wide-screen layout and a rectangular fallback | **Proposed** |
+| Hexagonal dialog, rectangular inner page | Distinctive Hive identity; six sides give six memorable destinations | Requires a wide-screen layout and a rectangular fallback | **Selected** |
 | Rectangular dialog with a small six-cell navigator | Most space for pictures; simpler responsive layout | The hexagon becomes a minor ornament | Fallback if the silhouette cannot keep screenshots readable |
 | Six triangular panels or a rotating 3D hexagon | Strong visual spectacle | Clips copy, shrinks screenshots, complicates reading order and motion | Avoid |
 
@@ -31,13 +31,13 @@ These SVG files can be opened in an image viewer or viewed directly on GitHub. N
 | 3 · People | [Dark](promo/03-people-dark.svg) |
 | Needs you | [Dark](promo/04-needs-you-dark.svg), [narrow](promo/04-needs-you-narrow.svg) |
 | Delivery | [Dark](promo/05-delivery-dark.svg) |
-| Intro artwork | [Inbox](../../public/promo/inbox.svg) |
+| Intro artwork | [Inbox](../../public/promo/inbox.png) |
 
 The static mockups are concept drawings. The running intro follows the page order and regular geometry specified below; the drawings are not renderings of the final implementation. Production captures cover **all six pages in both themes**. The copy below is authoritative.
 
 ## Six pages
 
-Use a single fictional task throughout: **Launch a field guide**. Its goal is “Publish a small guide with searchable chapters.” Beads include “Write chapters”, “Build search”, “Choose the cover” and “Publish the guide”. The queen is “Guide coordinator”; workers are “Writer” and “Search builder”; the reviewer is “Reviewer”. These are demo roles, not real people's names. Do not insert an organisation's work into this fixture.
+Use a single fictional task throughout: **Launch a field guide**. Its goal is “Publish a printed and online field guide to local wildflowers, with a launch event, by the end of spring.” Beads include “Write chapters”, “Build search”, “Choose the cover” and “Publish the guide”. The queen is “Guide coordinator”; workers are “Writer” and “Search builder”; the reviewer is “Reviewer”. These are demo roles, not real people's names. Do not insert an organisation's work into this fixture.
 
 ### 1 · Welcome — Give your work a home
 
@@ -61,13 +61,13 @@ Show a queen header and selected bead's attached worker and reviewer sessions. C
 
 > The inbox brings Hive conversations together. Open a topic to read the context, follow a linked bead and reply to the queen. Unread messages and requests waiting on you are different things.
 
-Show a demo inbox with a field-guide topic, a linked Build search bead and a conversation reply. Caption: “Read and reply in context. Use Answer request when a decision needs your answer.” Next: **See what needs you**.
+Show a demo inbox with a field-guide topic, a linked Plan the launch event bead and a conversation reply. Caption: “Read and reply in context. Use Answer request when a decision needs your answer.” Next: **See what needs you**.
 
 ### 5 · Needs you — Step in where it matters
 
 > A person mark points to work waiting on you. Open the request, read the choices and send your answer. The queen handles worker questions first and forwards the ones that need you.
 
-Show “Choose the cover” with a person mark and its forwarded request open. The fictional question is “Which cover should the guide use?” with “Illustrated” and “Typographic” choices. Caption: “Answer request settles the question; a conversation reply alone does not.” Mention in supporting text: “If there is no available queen, requests can come directly to you.” Unread messages and requests are different; do not use an unread dot as a decision badge. This introduces Hive's own waiting surfaces without implying dependency on a separate Needs You extension. Next: **Follow delivery**.
+Show “Choose the cover” with a person mark and its forwarded request open. The fictional question is “Which cover should the guide use?” with “Meadow”, “Hedgerow” and “Foxglove” choices. Caption: “Answer request settles the question; a conversation reply alone does not.” Mention in supporting text: “If there is no available queen, requests can come directly to you.” Unread messages and requests are different; do not use an unread dot as a decision badge. This introduces Hive's own waiting surfaces without implying dependency on a separate Needs You extension. Next: **Follow delivery**.
 
 ### 6 · Delivery — Follow the result, with evidence
 
@@ -79,11 +79,11 @@ The final action is **Close intro**. Closing returns to the current Hive view wi
 
 ## Shape, navigation and narrow screens
 
-Desktop target: viewport at least 1200 CSS px wide and 820 high at the viewer's current zoom. Centre a regular hexagon, at most 1080 CSS px wide, within the viewport. Its height is width × √3 / 2: every edge is half its width, with six 120° internal angles. Six stops run clockwise: Welcome at the top, Map upper right, People lower right, Inbox at the bottom, Needs you lower left, Delivery upper left. Number and label every stop; the active one has an outline, filled marker and “current” accessible state. Completed visits may have a small tick, never a colour-only distinction. Labels and focus rings sit inside the dialog's rectangular hit boundary and outside the decorative clipping path.
+Desktop layout: viewport at least 900 CSS px wide and 600 high at the viewer's current zoom. A regular hexagon is required at 1280 × 720 and 1366 × 768. Centre a regular hexagon, at most 1080 CSS px wide, within the viewport. Its height is width × √3 / 2: every edge is half its width, with six 120° internal angles. Six stops run clockwise: Welcome at the top, Map upper right, People lower right, Inbox at the bottom, Needs you lower left, Delivery upper left. Number and label every stop; the active one has an outline, filled marker and “current” accessible state. Completed visits may have a small tick, never a colour-only distinction. Labels and focus rings sit inside the dialog's rectangular hit boundary and outside the decorative clipping path.
 
-The inner page has a maximum width around 720 px. Reserve a consistent image frame and footer row; text is allowed to grow. Back and Next are in a stable footer in ordinary left-to-right order. Page 1 hides Back without moving Next. Close is always reachable at the top right of the dialog's rectangular boundary. Clicking the backdrop does nothing, avoiding accidental dismissal. No swipe, rotation or hover is required. Selecting any stop jumps directly to it; Next and Back follow numeric order, independent of visual position. This is an ordered page navigator, not six product settings.
+The inner page has a maximum width around 720 px. The inner reading region scrolls when text or pictures need more room. The navigation and footer remain fixed and visible; content overflow never switches the shape to a rectangle. Back and Next are in a stable footer in ordinary left-to-right order. Page 1 hides Back without moving Next. Close sits inside the intro header, with another Close action in the fixed footer. The image caption remains visible outside the scrollable reading region. Clicking the backdrop does nothing, avoiding accidental dismissal. No swipe, rotation or hover is required. Selecting any stop jumps directly to it; Next and Back follow numeric order, independent of visual position. This is an ordered page navigator, not six product settings.
 
-At smaller widths **or heights**, at browser zoom that no longer meets those dimensions, or when translated content cannot fit, use a rounded rectangular dialog with a small decorative hexagon in the title. No text or pictures are clipped into a polygon. At 320 CSS px wide it has a single content column, a “Page 4 of 6” line and a labelled **Jump to page** select. Back and Next remain visible in the footer; the content region scrolls without covering text. Respect safe-area insets and the software keyboard. At 200–400% zoom this same layout applies. A picture can open in a larger, separately labelled image dialog through **Enlarge example**; it is never necessary for understanding the page.
+At genuinely narrow widths or tiny heights (below 900 × 600 CSS px), including browser zoom that no longer meets those dimensions, use a rounded rectangular dialog with a small decorative hexagon in the title. No text or pictures are clipped into a polygon. At 320 CSS px wide it has a single content column, a “Page 4 of 6” line and a labelled **Jump to page** select. Back and Next remain visible in the footer; the content region scrolls without covering text. Respect safe-area insets and the software keyboard. At 200–400% zoom this same layout applies. A picture can open in a larger, separately labelled image dialog through **Enlarge example**; it is never necessary for understanding the page.
 
 ## Appearance and accessibility
 
@@ -140,13 +140,13 @@ Ship a small static manifest with positive integer `contentVersion`, the six sta
 
 Evaluate automatic eligibility once per deliberate Hive view entry, not every graph refresh or window focus. Hold an in-memory “offered this entry” flag. Read storage again just before opening, and observe cross-tab dismissal when available. Another tab's dismissal suppresses a pending offer; it does not forcibly close a dialog already being read. Simultaneous offers in two tabs are acceptable; no lease or server coordination is proposed.
 
-Close intro (the top-right control or footer), Escape and the final action all persist the opened edition, build version and time; merely opening, visiting a page, reloading, switching views or disabling/unmounting Hive does not. Manual replay does not erase older state on entry. On explicit dismissal, re-read storage and preserve a higher known content version and its accompanying build/time; write only when the opened edition is at least as new. Thus replay after a downgrade does not make a previously dismissed edition look new. Use a promo-specific write and read-back check; the existing client `save()` helper swallows errors and cannot establish success. Best-effort local writes cannot promise atomic cross-tab updates; re-read-on-write and the in-memory guard cover ordinary use. If saving fails after opening, close normally, suppress more automatic offers for that tab lifetime, and show a quiet “Dismissal could not be saved on this browser” status. Manual replay still works.
+Close intro (the header control or footer), Escape and the final action all persist the opened edition, build version and time; merely opening, visiting a page, reloading, switching views or disabling/unmounting Hive does not. Manual replay does not erase older state on entry. On explicit dismissal, re-read storage and preserve a higher known content version and its accompanying build/time; write only when the opened edition is at least as new. Thus replay after a downgrade does not make a previously dismissed edition look new. Use a promo-specific write and read-back check; the existing client `save()` helper swallows errors and cannot establish success. Best-effort local writes cannot promise atomic cross-tab updates; re-read-on-write and the in-memory guard cover ordinary use. If saving fails after opening, close normally, suppress more automatic offers for that tab lifetime, and show a quiet “Dismissal could not be saved on this browser” status. Manual replay still works.
 
 ## Screenshots from a disposable instance
 
-The SVG scenes in this PR are intentionally drawn placeholders. Production needs real captures of the **running UI with synthetic state**, not screenshots of these drawings or a viewer's working board. No capture runs as part of this design bead.
+The introduction uses real captures of the **running UI with synthetic state**. The SVG concept drawings above describe the design; they are not used as product screenshots. Captures never use the viewer's working board.
 
-The repository prohibits local browser launches and reserves browser tests for opt-in CI. A follow-up **Claude helper** owns the capture work, invoked through Hive on the screenshot bead. It configures and reviews an opt-in CI capture job and downloads its output; it must not launch a browser on this machine. The helper can inspect rendered PNGs without a browser. A local live-dev capture would require an explicit repository-policy exception from the human; it is not the default plan.
+The human approved a bead-specific exception for a tracked Claude helper to take these captures locally through the browser-testing skill. It uses headless Chromium with a fresh temporary profile and may connect only to the isolated demo instance on localhost:65384. It never accesses the human's Chrome profile, tabs or live board on port 7777. The Codex builder does not launch a browser. CI capture remains a future route; this exception does not change the repository's general browser policy.
 
 ### Capture feasibility and repository scope
 
@@ -154,15 +154,15 @@ Require a real disposable core server, not a Hive-side shim that merely imitates
 
 ### Isolated capture contract
 
-1. Start a real disposable Agent Wrangler server **inside the CI job**, on loopback with an ephemeral port and fresh temporary data, config, Beads/Dolt store, extension generation, home and browser profile. Pin compatible public core, Hive and Beads revisions. The existing [.github/workflows/test.yml](../../.github/workflows/test.yml) browser job demonstrates the separate CI environment; its current fixtures are not themselves the full seeded-instance pipeline proposed here.
+1. Start a real disposable Agent Wrangler server **inside the capture harness**, on loopback on port 65384 for the approved local run, with fresh temporary data, config, Beads/Dolt store, extension generation, home and browser profile. Pin compatible public core, Hive and Beads revisions. The existing [.github/workflows/test.yml](../../.github/workflows/test.yml) browser job demonstrates the separate CI environment; its current fixtures are not themselves the full seeded-instance pipeline proposed here.
 2. Create only the field-guide fixture through supported host/Hive paths, with deterministic IDs and a fixed clock where supported. Seed genuine Beads hierarchy/links and synthetic conversation, request, evidence and session projection data. Session adapters return fixture statuses; GitHub observations are fixture responses; there are no real agents or network writes. Put those adapters behind a capture-only harness, absent from production entrypoints. Exercise the real UI and read paths; do not paint HTML over a blank board. No secrets, production credentials, shared data paths, real tmux sessions or automatic updates. Refuse a non-temporary data directory or non-loopback target before seeding.
 3. Use a readiness endpoint plus explicit fixture assertions, rather than sleep-based timing. Verify expected hive name, bead titles, selected page and current theme before capture. Block non-loopback browser requests, and prevent server subprocesses from invoking real providers, GitHub writes or mail delivery. The fixture produces no real PRs, mail or agent launches.
-4. A browser running **only in that opt-in CI job** visits the disposable URL, sets a fixed viewport, freezes decoration/timestamps and captures each named view. Do not capture the host's real board or log in to external services. Use public pinned dependencies without production secrets, including on pull requests.
-5. Upload captures and a provenance manifest as CI artifacts; terminate the browser, server and store and remove temporary state on success or failure. The helper inspects all images for unintended content, clipping, misleading state and consistency with captions before proposing selected crops in a PR.
+4. The authorized helper’s headless browser visits the disposable URL, sets a fixed viewport, freezes decoration/timestamps and captures each named view. Do not capture the host's real board or log in to external services. Use public pinned dependencies without production secrets, including on pull requests.
+5. Save captures and a provenance manifest; terminate the browser, server and store and remove temporary state on success or failure. The helper inspects all images for unintended content, clipping, misleading state and consistency with captions before proposing selected crops in a PR.
 
 ### Shot list
 
-Capture at 1440 × 1000 CSS px, device scale 2, in light and dark. Crop to the relevant UI, keeping readable text and enough surrounding navigation to locate it. The starting target is a 960 × 540 asset displayed around 720 × 405 CSS px; adjust the crop rather than downscaling an entire huge board. Retain full-resolution originals as CI artifacts. Also capture the actual narrow promo at 390 × 844 and 320 × 640 in both themes for QA; these are not replacements for the in-page scene assets.
+The local harness captures at 1120 × 630 CSS px, device scale 1.3, in light and dark. The Needs you scene uses 1318 × 741 at scale 1.105 to keep the question, choices and Send row visible. Crop to the relevant UI, keeping readable text and enough surrounding navigation to locate it. The 1456 × 819 assets preserve the source UI; adjust the crop rather than downscaling an entire huge board. Retain full-resolution originals in the capture output directory. Also capture the actual narrow promo at 390 × 844 and 320 × 640 in both themes for QA; these are not replacements for the in-page scene assets.
 
 | Asset stem | Real view and fixture state | Point to preserve |
 | --- | --- | --- |
@@ -173,13 +173,15 @@ Capture at 1440 × 1000 CSS px, device scale 2, in light and dark. Crop to the r
 | `delivery` | Build search Details + evidence | Review, checks, merge and a separate installation obligation |
 | `inbox` | Inbox with a field-guide topic open | Context, linked bead and reply |
 
-Deliver `public/promo/<stem>-light.webp` and `-dark.webp` with fallback PNG if conversion is unavailable; choose the active theme without a flash of the opposite theme. Alt text/captions ship as ordinary page data. Avoid real repository URLs or machine paths even inside fixture screenshots. Use generic repository labels such as `example/guide` and clearly synthetic IDs. A fixture-only PR link never triggers an external lookup.
+Deliver `public/promo/<stem>.png` and `<stem>-light.png`; choose the active theme without a flash of the opposite theme. Alt text/captions ship as ordinary page data. Avoid real repository URLs or machine paths even inside fixture screenshots. Use generic repository labels such as `example/guide` and clearly synthetic IDs. A fixture-only PR link never triggers an external lookup.
 
 ### Refresh and ownership
 
-Keep a source manifest next to the fixture: scenario revision, core/Hive/Beads full SHAs, viewport/scale, theme, shot name, selected UI state, caption/alt text and output checksum. Strip image metadata before publication. The screenshot bead's builder owns capture correctness and asset review; its Claude helper runs and inspects the CI capture, and the usual adversarial reviewer checks the final image diff. The queen coordinates capacity and readiness, not manual recurring screenshots.
+The repeatable harness is [scripts/capture-promo.mjs](../../scripts/capture-promo.mjs). Its fixture and isolation setup live in [scripts/capture-promo/](../../scripts/capture-promo/). Only the authorized Claude helper runs the local browser capture.
 
-Refresh affected shots when visible labels, marks, layout, forms or theme tokens change. A PR touching those surfaces must either refresh the affected assets or state why the existing images remain accurate. CI can validate the shot manifest, dimensions, asset pairs and fixture scene assertions; image comparisons are advisory because fonts and rendering vary. A maintainer chooses when visual drift merits new images. Updating images alone does not make the promo reappear. Budget the six theme pairs to roughly 1.5 MB total, load only the current page eagerly, and retain a captioned fallback if an image fails.
+Keep a source manifest next to the fixture: scenario revision, core/Hive/Beads full SHAs, viewport/scale, theme, shot name, selected UI state, caption/alt text and output checksum. Strip image metadata before publication. The screenshot bead's builder owns capture correctness and asset review; its Claude helper runs and inspects the capture, and the usual adversarial reviewer checks the final image diff. The queen coordinates capacity and readiness, not manual recurring screenshots.
+
+Refresh affected shots when visible labels, marks, layout, forms or theme tokens change. A PR touching those surfaces must either refresh the affected assets or state why the existing images remain accurate. CI can validate the shot manifest, dimensions, asset pairs and fixture scene assertions; image comparisons are advisory because fonts and rendering vary. A maintainer chooses when visual drift merits new images. Updating images alone does not make the promo reappear. The six theme pairs total about 2.9 MiB to preserve readable UI text; load only the current page eagerly, and retain a captioned fallback if an image fails.
 
 ## Integration and verification
 
@@ -187,4 +189,4 @@ The introduction uses the existing client lifecycle and host storage. `public/pr
 
 Node tests cover editions, denied storage, competing tabs, downgrade replay, equal edge lengths, page navigation, focus restoration, dismissal, enlargement and view-entry guards. CI-only browser coverage exercises the six pages in both themes, regular rendered geometry, responsive layouts, reduced motion and Escape. Existing browser fixtures explicitly remember a dismissed intro when testing other features. Screen-reader review supplements automated checks.
 
-The bounded implementation accepts drawn page art. The real-instance screenshot package follows the capture contract above and does not change the content edition solely for refreshed imagery. The development demo uses a separate core process, temporary data and a fictional seeded hive; it never uses the live board or launches demo agents.
+The implementation requires actual-UI captures for all six scenes and a repeatable recapture script. Refreshing imagery alone does not change the content edition. The development demo uses a separate core process, temporary data and a fictional seeded hive; it never uses the live board or launches demo agents.

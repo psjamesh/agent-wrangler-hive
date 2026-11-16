@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Introduce Hive with six illustrated pages and a regular hexagonal desktop dialog.
+**Goal:** Introduce Hive with six pages with real UI captures and a regular hexagonal desktop dialog.
 
 **Architecture:** Separate pure content/edition policy, guarded browser storage and a persistent native modal. Integrate at Hive view entry and expose replay in headers and Settings. A tracked Claude helper owns the disposable server.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-No version bump, local browser, live-instance writes or new dependencies. Use the repository test entrypoint. Demo approval through the queen is required before merge. Drawn example art is sufficient; real captures are separate work.
+No version bump or live-instance writes. Codex never launches a browser. The human-approved exception permits the tracked Claude helper to capture only the disposable localhost:65384 instance using headless Chromium with a fresh profile. Use the repository test entrypoint. Demo approval through the queen is required before merge. All six scenes require real actual-UI captures with synthetic data, both themes and a recapture script. Normal desktop windows retain a regular hexagon with a scrollable inner page and fixed footer; only genuinely narrow/tiny viewports use a rectangle.
 
 ## Review Focus
 
@@ -42,7 +42,15 @@ Interfaces: createPromo controller exposes open, offer, dispose and isOpen; view
 
 ### Task 3: Review and disposable demo
 
-- [ ] Inspect public diff, leak-check, commit and publish bead PR.
+- [x] Inspect public diff, leak-check, commit and publish bead PR.
 - [ ] Obtain exact-head adversarial Hive review and required CI.
 - [ ] Have tracked helper run branch on isolated localhost core instance with synthetic demo hive; send URL and stop command to queen.
 - [ ] Hold merge until queen relays human demo approval. Verify protections/checks and approved full head before merging; record installation delegation and finish bead only at delivery boundary.
+
+### Task 4: Correct the rejected demo
+
+- [x] Require the regular hexagon at 1280 × 720 and 1366 × 768; test down to 900 × 600.
+- [x] Keep footer and navigation fixed while the inner reading region scrolls; remove overflow-triggered shape switching.
+- [x] Have the authorized Claude helper capture twelve real actual-UI scenes with synthetic state and provide a recapture script.
+- [x] Inspect every asset and have the helper verify the running promo at ordinary desktop and narrow sizes before requesting another human demo.
+- [ ] Obtain fresh exact-head review and CI, then queen-relayed human approval before merge.

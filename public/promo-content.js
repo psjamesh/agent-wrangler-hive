@@ -6,7 +6,7 @@ export const PROMO = {
       id: 'welcome', label: 'Welcome', title: 'Give your work a home',
       text: 'A hive brings a goal, its agents and their decisions into one place. The queen keeps the work organised while you steer the outcome.',
       caption: 'One hive is one Agent Wrangler task, with a shared work record.',
-      alt: 'All hives with the fictional Launch a field guide task and its goal selected.',
+      alt: 'All hives showing the fictional Launch a field guide task and its goal.',
       next: 'Explore the map',
     },
     {
@@ -27,14 +27,14 @@ export const PROMO = {
       id: 'inbox', label: 'Inbox', title: 'Keep the conversation with the work',
       text: 'The inbox brings Hive conversations together. Open a topic to read the context, follow a linked bead and reply to the queen. Unread messages and requests waiting on you are different things.',
       caption: 'Read and reply in context. Use Answer request when a decision needs your answer.',
-      alt: 'Demo inbox with a field-guide topic, a linked Build search bead and a conversation reply.',
+      alt: 'Demo inbox with a field-guide topic, a linked Plan the launch event bead and a conversation reply.',
       next: 'See what needs you',
     },
     {
       id: 'needs-you', label: 'Needs you', title: 'Step in where it matters',
       text: 'A person mark points to work waiting on you. Open the request, read the choices and send your answer. The queen handles worker questions first and forwards the ones that need you.',
       caption: 'Answer request settles the question; a conversation reply alone does not. If there is no available queen, requests can come directly to you.',
-      alt: 'Choose the cover with a person mark and an illustrated or typographic cover request.',
+      alt: 'Choose the cover with a person mark and a request offering Meadow, Hedgerow and Foxglove cover choices.',
       next: 'Follow delivery',
     },
     {

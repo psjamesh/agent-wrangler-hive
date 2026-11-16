@@ -1,0 +1,202 @@
+{
+  "scenario": "launch-a-field-guide",
+  "viewport": {
+    "default": {
+      "width": 1120,
+      "height": 630
+    },
+    "deviceScaleFactor": 1.3
+  },
+  "hive": {
+    "sha": "132417532151fc937d098eef8ebf2e40731a8b4a",
+    "dirty": true,
+    "dirtySourceDigest": "10920e2f9cc5e984194702b720ffb1a31ea5f02f43c6e7eecb9b6ceb7acadeb8",
+    "packageVersion": "0.1.153",
+    "buildVersion": "0.1.153"
+  },
+  "core": {
+    "sha": "986091190e9e0525059d96fff7ea1ba7f6d949c5"
+  },
+  "beads": {
+    "version": "bd version 1.3.4 (Homebrew)"
+  },
+  "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "sessions": {
+    "queen": "Guide coordinator",
+    "search": "Search builder",
+    "cover": "Cover designer",
+    "reviewer": "Reviewer"
+  },
+  "isolation": {
+    "browserOrigin": "http://localhost:65384",
+    "requestsOutsideOrigin": "blocked",
+    "blockedExternalHosts": [
+      "cdn.jsdelivr.net",
+      "fonts.googleapis.com"
+    ],
+    "unexpectedBlockedRequests": 0,
+    "guardSelfChecks": [
+      "claude blocked",
+      "codex blocked",
+      "gemini blocked",
+      "gh blocked",
+      "tmux new-session blocked",
+      "tmux send-keys blocked",
+      "tmux run-shell blocked",
+      "tmux respawn-pane blocked",
+      "no provider binary resolves outside the guard",
+      "tmux -L and -S requests are redirected to the capture-only socket",
+      "tmux -c / -C top-level commands blocked"
+    ],
+    "guardBlockedDuringCapture": [
+      "tmux run-shell lsappinfo",
+      "codex debug models"
+    ]
+  },
+  "shots": [
+    {
+      "file": "welcome.png",
+      "scene": "welcome",
+      "theme": "dark",
+      "bytes": 156961,
+      "sha256": "521afe299a3cee06adb45a217ed8e8badc05eabf18dc94e45b61f43123c683ec",
+      "viewport": {
+        "width": 1120,
+        "height": 630
+      },
+      "deviceScaleFactor": 1.3
+    },
+    {
+      "file": "map.png",
+      "scene": "map",
+      "theme": "dark",
+      "bytes": 296465,
+      "sha256": "88d94f56777aef9e412faee9b13f10bf613d62e100864400860896280cddda7e",
+      "viewport": {
+        "width": 1120,
+        "height": 630
+      },
+      "deviceScaleFactor": 1.3
+    },
+    {
+      "file": "people.png",
+      "scene": "people",
+      "theme": "dark",
+      "bytes": 294317,
+      "sha256": "9f060859baf45f436de43906f329be1b6d29ff12772428c33edbbe824efbddfa",
+      "viewport": {
+        "width": 1120,
+        "height": 630
+      },
+      "deviceScaleFactor": 1.3
+    },
+    {
+      "file": "inbox.png",
+      "scene": "inbox",
+      "theme": "dark",
+      "bytes": 275545,
+      "sha256": "d3cbe4e54f5f20a3c31f320f2d197fc94209dae693395d5cc5f261413ba00a6d",
+      "viewport": {
+        "width": 1120,
+        "height": 630
+      },
+      "deviceScaleFactor": 1.3
+    },
+    {
+      "file": "needs-you.png",
+      "scene": "needs-you",
+      "theme": "dark",
+      "bytes": 242283,
+      "sha256": "4f7693e3c4f58eda6f0a82c8947b2b9e867b3e7ab071aec39de1cdef56991378",
+      "viewport": {
+        "width": 1318,
+        "height": 741
+      },
+      "deviceScaleFactor": 1.105
+    },
+    {
+      "file": "welcome-light.png",
+      "scene": "welcome",
+      "theme": "light",
+      "bytes": 132513,
+      "sha256": "437003ddea921464164bcf21b3f87844927cde718a80b0de16fec7c53f122d63",
+      "viewport": {
+        "width": 1120,
+        "height": 630
+      },
+      "deviceScaleFactor": 1.3
+    },
+    {
+      "file": "map-light.png",
+      "scene": "map",
+      "theme": "light",
+      "bytes": 270080,
+      "sha256": "5b9dfa2240c1ae0613bd08664da16843defefc8329ef2fef4320e3b179710978",
+      "viewport": {
+        "width": 1120,
+        "height": 630
+      },
+      "deviceScaleFactor": 1.3
+    },
+    {
+      "file": "people-light.png",
+      "scene": "people",
+      "theme": "light",
+      "bytes": 268238,
+      "sha256": "2e1fd4cc49b552bc0e2bcd8a956c45f6797c6c0c9fe3afafacf64264f3552be3",
+      "viewport": {
+        "width": 1120,
+        "height": 630
+      },
+      "deviceScaleFactor": 1.3
+    },
+    {
+      "file": "inbox-light.png",
+      "scene": "inbox",
+      "theme": "light",
+      "bytes": 246313,
+      "sha256": "bbcae0f5378a3623813ba9b81ff7af02121f12d2d1a5e925dcb1f029edb5ac55",
+      "viewport": {
+        "width": 1120,
+        "height": 630
+      },
+      "deviceScaleFactor": 1.3
+    },
+    {
+      "file": "needs-you-light.png",
+      "scene": "needs-you",
+      "theme": "light",
+      "bytes": 219287,
+      "sha256": "2e65cb5c1ca1ee0d932215e08b8a02b9158176f6e41202b06f5267fc11f932ae",
+      "viewport": {
+        "width": 1318,
+        "height": 741
+      },
+      "deviceScaleFactor": 1.105
+    },
+    {
+      "file": "delivery.png",
+      "scene": "delivery",
+      "theme": "dark",
+      "bytes": 316621,
+      "sha256": "a9bb5f757a8cd3c63e6b6bfa19d95dfa4ba65532cfdf07396b1e54aebc5da922",
+      "viewport": {
+        "width": 1120,
+        "height": 630
+      },
+      "deviceScaleFactor": 1.3
+    },
+    {
+      "file": "delivery-light.png",
+      "scene": "delivery",
+      "theme": "light",
+      "bytes": 290848,
+      "sha256": "5cc4302b7feb061fc6844c245e381499968e21ea0a98db0795c862c5fb884046",
+      "viewport": {
+        "width": 1120,
+        "height": 630
+      },
+      "deviceScaleFactor": 1.3
+    }
+  ]
+}
