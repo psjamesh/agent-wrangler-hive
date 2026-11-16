@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { HiveRuntime } from '../server/runtime.js';
 import { collectWatchdog, createWatchdog, setWatchdogSettings } from '../server/watchdog.js';
+import { startReviewRound } from '../server/reviews.js';
 
 const MIN = 60000;
 function fixture(t) {
@@ -45,6 +46,35 @@ test('each timed condition flags at its boundary and carries subject, reason and
   f.rt.metadata.mutate(d => { d.reviews.r.state = 'approved'; d.conversation.cell[0].response.answers = [{ messageId: 'answer' }]; d.conversation.cell.push({ id: 'answer', author: 'session', sessionId: 'queen', at: f.now() }); });
   f.beads.work.waitingFor = '';
   assert.deepEqual(f.flags(), []);
+});
+
+test('stuck reviews time each reopened round from its request, not creation or later updates', t => {
+  const f = fixture(t);
+  t.mock.method(Date, 'now', f.now);
+  f.rt.metadata.mutate(d => {
+    d.reviews.r = { id: 'r', cellId: 'cell', workBeadId: 'work', state: 'approved', createdAt: f.now(), verdict: { value: 'approved' } };
+  });
+  f.advance(4 * 60 * MIN);
+  const requestedAt = f.now();
+  startReviewRound(f.rt, 'r', { commit: 'next' });
+  assert.deepEqual(f.flags(), []);
+  f.advance(60 * MIN - 1);
+  f.rt.metadata.mutate(d => { d.reviews.r.updatedAt = f.now(); });
+  assert.deepEqual(f.flags(), []);
+  f.advance(1);
+  const flag = f.flags().find(x => x.kind === 'stuck_review');
+  assert.equal(flag?.age_ms, 60 * MIN);
+  assert.equal(flag?.since, requestedAt);
+});
+
+test('legacy reopened reviews use the reopen update time', t => {
+  const f = fixture(t);
+  f.rt.metadata.mutate(d => {
+    d.reviews.r = { id: 'r', cellId: 'cell', workBeadId: 'work', state: 'in_review', round: 2, createdAt: f.now() - 4 * 60 * MIN, updatedAt: f.now() };
+  });
+  assert.deepEqual(f.flags(), []);
+  f.advance(60 * MIN);
+  assert.equal(f.flags().find(x => x.kind === 'stuck_review')?.age_ms, 60 * MIN);
 });
 
 for (const outcome of ['aborted', 'error']) {

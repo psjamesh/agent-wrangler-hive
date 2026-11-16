@@ -669,6 +669,9 @@ test('archive recovery leaves a pending wait, fences the stale reviewer and allo
   const f = fixture(1); reviewFixture(f); await dispatchFixture(f); archiveFixture(f);
   await claimBead(f.rt, f.actor(), { bead_id: 'a' });
   const first = await reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review' });
+  assert.ok(f.doc().reviews[first.review_id].requestedAt >= f.doc().reviews[first.review_id].createdAt);
+  const oldRequest = Date.now() - 4 * 60 * 60000;
+  Object.assign(f.doc().reviews[first.review_id], { createdAt: oldRequest, requestedAt: oldRequest });
   f.board.get(first.session_id).archived = true;
   await archival.onArchive({ sessionId: first.session_id, host: f.host });
   assert.equal(f.doc().reviews[first.review_id].state, 'requested');
@@ -682,6 +685,8 @@ test('archive recovery leaves a pending wait, fences the stale reviewer and allo
   assert.equal(next.review_id, first.review_id);
   assert.notEqual(next.session_id, first.session_id);
   assert.equal(f.doc().reviews[first.review_id].reviewerSessionId, next.session_id);
+  assert.ok(f.doc().reviews[first.review_id].requestedAt > oldRequest);
+  assert.equal(f.doc().reviews[first.review_id].createdAt, oldRequest);
   assert.match((await workers.workerLaunchContext(payload))?.refuse || '', /replaced|reviewer/);
 });
 
