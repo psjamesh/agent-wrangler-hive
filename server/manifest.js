@@ -48,7 +48,8 @@ export function createManifest({ dir }) {
     help: 'Adds a Hive view to the rail. Each opted-in task is a cell with a nominated queen; the cell\'s durable work lives in a private Beads store under the wrangler data directory, maintained through hive_* tools. Turning Hive off removes the view and tools; the store and Hive metadata are kept.',
     author: 'Agent Wrangler Hive contributors',
     defaultEnabled: false,
-    engines: { wranglerApi: '^1.80.0' },
+    engines: { wranglerApi: '^2.0.0' },
+    boardApi: '^2.0.0',
     requires: ['tasks:read', 'tasks:write', 'sessions:read', 'mail:read', 'sessions:spawn', 'sessions:archive', 'deliver', 'board:rebuild', 'links:read', 'events', 'agents:read'],
     settings: [{
       key: BD_PATH_SETTING,
@@ -119,7 +120,6 @@ export function createManifest({ dir }) {
       everyMs: REFRESH_EVERY_MS,
       run: ({ host }) => host.stores.hive.prLabels?.run(),
     }],
-    client: 'public/client.js',
-    styles: 'public/styles.css',
+    board: { client: 'public/client.js', styles: 'public/styles.css' },
   };
 }

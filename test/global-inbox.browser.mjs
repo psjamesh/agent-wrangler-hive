@@ -15,7 +15,7 @@ const send = frame => {
   const messages = cell?.messages.filter(m => m.threadId === frame.threadId) || [];
   queueMicrotask(() => receive({ op: frame.type, requestId: frame.requestId, ok: Boolean(thread), cellId: frame.cellId, thread, messages, messageId: frame.messageId, more: false }));
 };
-client.register({ onMessage(fn) { receive = fn; }, api: { send, storage: { get: k => localStorage.getItem("hive:" + k), set: (k, v) => localStorage.setItem("hive:" + k, v), remove: k => localStorage.removeItem("hive:" + k) } }, register(kind, v) { view = v; } });
+client.register({ onMessage(fn) { receive = fn; }, api: { state: () => ({ hive: graph.hive }), act: (type, args) => { send({ type, ...args }); return new Promise(() => {}); }, storage: { get: k => localStorage.getItem("hive:" + k), set: (k, v) => localStorage.setItem("hive:" + k, v), remove: k => localStorage.removeItem("hive:" + k) } }, register(kind, v) { view = v; } });
 const base = { launches: [], bindings: [], beadLayout: {}, arrangeAspect: null, workstreamColours: {}, workstreamShades: {}, archived: {}, restoreNotices: [], regionAttachments: {}, detachedWorkstreams: [], threads: [], messages: [], threadsTruncated: false, threadsAfter: null, inbox: { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } }, requestCounts: {} };
 const req = (id, title, body, at, extra = {}) => ({ id, audience: 'human', state: 'open', title, body, createdAt: at, threadId: 't_' + id, messageId: 'm_' + id, requesterSessionId: 's1', sessionLink: { sessionId: 'archived', label: 'Archived worker' }, ...extra });
 const cells = {

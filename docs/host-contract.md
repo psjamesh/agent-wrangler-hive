@@ -4,7 +4,7 @@ This page lists exactly what Hive relies on from Agent Wrangler and from Beads. 
 
 ## Agent Wrangler host API
 
-The manifest declares `engines.wranglerApi: ^1.80.0`. Hive uses the synchronous `codexPolicy` manifest hook (host API 1.12.0) for per-cell Codex approvals, and `host.sessions.spawn({ agent: 'codex', approvalPolicy })` from host API 1.80.0 for explicit tracked Codex launch overrides, needs metadata-only `host.mail.list` from host API 1.79.0, and the read-only `links:read` capability introduced in host API 1.70.0. Earlier hosts reject this build as incompatible. The session context and view also use the live `status` and `waitingReason` projections introduced in 1.59.0.
+The manifest declares `engines.wranglerApi: ^2.0.0`. Hive uses the synchronous `codexPolicy` manifest hook (host API 1.12.0) for per-cell Codex approvals, and `host.sessions.spawn({ agent: 'codex', approvalPolicy })` from host API 1.80.0 for explicit tracked Codex launch overrides, needs metadata-only `host.mail.list` from host API 1.79.0, and the read-only `links:read` capability introduced in host API 1.70.0. The split board half declares `boardApi: ^2.0.0`, reads its Hive projection through `api.state()`, and submits handlers through `api.act()`. The package installation metadata declares the same host range, so older hosts refuse the update before replacing a working install. The session context and view also use the live `status` and `waitingReason` projections introduced in 1.59.0.
 
 ### Capabilities
 

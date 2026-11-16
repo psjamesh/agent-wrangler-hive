@@ -2351,7 +2351,7 @@ for (const holder of ['aw:worker-1', null]) test(`manual archived restore reclai
   });
   const { createManifest } = await import('../server/manifest.js');
   const manifest = createManifest({ dir: '.' });
-  assert.equal(manifest.engines.wranglerApi, '^1.80.0');
+  assert.equal(manifest.engines.wranglerApi, '^2.0.0');
   const result = await manifest.hooks['session.launchContext']({ sid: 'worker-1', task: { id: 'task' }, reason: 'restore', host: f.host });
   assert.equal(result?.refuse, undefined);
   assert.equal(f.live.a.assignee, 'aw:worker-1');

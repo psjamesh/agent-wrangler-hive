@@ -465,7 +465,7 @@ export function createUi() {
       const key = `${query}\n${epoch}\n${revision}\n${cellIds.join(',')}`;
       const remote = q.remote?.query === query && q.remote.epoch === epoch && q.failedKey !== key ? q.remote : null;
       const failed = q.failedKey === key;
-      if (state.api?.send && q.remote?.key !== key && !failed && q.inflight !== key && q.scheduled !== key) {
+      if (state.api?.act && q.remote?.key !== key && !failed && q.inflight !== key && q.scheduled !== key) {
         clearTimeout(q.timer);
         q.scheduled = key;
         q.timer = setTimeout(() => {
@@ -482,7 +482,7 @@ export function createUi() {
           });
         }, 150);
       }
-      return { remote, failed, pending: !failed && (!remote || remote.key !== key) && Boolean(state.api?.send) };
+      return { remote, failed, pending: !failed && (!remote || remote.key !== key) && Boolean(state.api?.act) };
     },
     setGlobalInboxView(kind) {
       mem.globalInbox = kind === 'queen' ? 'queen' : 'human';
@@ -667,7 +667,12 @@ export function send(frame, { onReply, quiet = false } = {}) {
     if (!quiet) forceRender();
   }, SEND_TIMEOUT_MS);
   state.pending.set(requestId, { type: frame.type, onReply, timer, quiet });
-  state.api.send({ ...frame, requestId });
+  const { type, ...args } = frame;
+  state.api.act(type, { ...args, requestId }).then(result => onFrame({
+    ...(result.ok ? result.data : { ok: false, error: result.error?.message || 'The action failed.' }),
+    op: type,
+    requestId,
+  }));
   if (!quiet) forceRender();
   return requestId;
 }
@@ -983,7 +988,7 @@ function layoutOf(root) {
 
 export function resolveLink(hive) {
   const request = state.linkRequest;
-  if (!request || request.sent || !state.api?.send) return;
+  if (!request || request.sent || !state.api?.act) return;
   request.sent = true;
   const scrollKey = `messages:${request.target.cellId}:${request.target.threadId}`;
   const messageId = request.restore ? state.scrollMemo.get(scrollKey)?.anchor?.id || request.target.messageId : request.target.messageId;
@@ -1096,7 +1101,7 @@ export function rerender() {
     return;
   }
   resolveLink(hive);
-  if (state.linkRequest && !state.hiveShown && state.api?.send) {
+  if (state.linkRequest && !state.hiveShown && state.api?.act) {
     const l = layoutOf(root);
     setView(root, null);
     clear(l.top).append(h('div', { class: 'hive-empty', role: 'status' }, 'Opening link…'));
@@ -1290,8 +1295,9 @@ const overview = {
   label: 'Hive',
   icon: HIVE_ICON,
   badge(graph) {
-    if (graph?.hive?.metadataError) return 0;
-    return overviewCells(graph, graph?.hive).reduce((total, cell) => total + cellMetrics({ hive: graph.hive, graph }, cell).needs, 0);
+    const hive = state.api?.state()?.hive;
+    if (!hive || hive.metadataError) return 0;
+    return overviewCells(graph, hive).reduce((total, cell) => total + cellMetrics({ hive, graph }, cell).needs, 0);
   },
   mount(el, api) {
     state.api = api || state.api;
@@ -1310,10 +1316,10 @@ const overview = {
   },
   update(el, session, graph) {
     if (graph) {
-      state.graph = graph;
+      state.graph = { sessions: graph.sessions, tasks: graph.tasks, hive: state.api.state()?.hive };
       if ('history' in graph) state.history = graph.history || [];
-      state.requestNotifications?.(graph.hive);
-      state.watchdogNotifications?.(graph.hive);
+      state.requestNotifications?.(state.graph.hive);
+      state.watchdogNotifications?.(state.graph.hive);
       settlePlacements();
     }
     state.root = el;

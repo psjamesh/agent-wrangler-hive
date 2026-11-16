@@ -43,7 +43,7 @@ function fixture(t, saved = {}) {
   const values = new Map(Object.entries({ cell: 'cell_test', 'bead:cell_test': 'hive-one', ...saved }).map(([k, v]) => [k, JSON.stringify(v)]));
   const storage = { get: (k) => values.get(k), set: (k, v) => values.set(k, v), remove: (k) => values.delete(k) };
   let view;
-  client.register({ api: { storage }, register(slot, contribution) { if (slot === 'view') view = contribution; } });
+  client.register({ api: { storage, state: () => ({ hive }) }, register(slot, contribution) { if (slot === 'view') view = contribution; } });
   const ui = createUi(), sent = [], replies = [], relationRequests = [];
   const ctx = { busy: () => false, send: (frame, opts) => { if (frame.type === 'hive-thread-relations') { relationRequests.push({ frame, opts }); return; } sent.push(frame); replies.push(opts); }, notice() {} };
   const cell = { id: 'cell_test', rootBeadId: 'hive-root', enabled: true, queenSessionId: 'queen', messages: [], threads: [] };
@@ -698,7 +698,7 @@ test('delayed link replies and timeouts preserve navigation made after the looku
       globalThis.window = win;
       const sent = [];
       let reply;
-      client.register({ api: { storage: f.storage, send: frame => sent.push(frame) }, register() {}, onMessage(fn) { reply = fn; } });
+      client.register({ api: { storage: f.storage, state: () => ({ hive: f.hive }), act: (type, args) => { sent.push({ type, ...args }); return new Promise(() => {}); } }, register() {}, onMessage(fn) { reply = fn; } });
       resolveLink({ cells: { cell_test: f.cell } });
       assert.equal(sent.length, 1);
       if (navigation === 'outside') {
@@ -763,7 +763,7 @@ test('reload lookup requests the saved older scroll anchor so it can be restored
   globalThis.window = { location: { hash }, history: { replaceState(_state, _title, hash) { window.location.hash = hash; } }, addEventListener() {}, removeEventListener() {} };
   const sent = [];
   let reply;
-  client.register({ api: { storage: f.storage, send: frame => sent.push(frame) }, register() {}, onMessage(fn) { reply = fn; } });
+  client.register({ api: { storage: f.storage, state: () => ({ hive: f.hive }), act: (type, args) => { sent.push({ type, ...args }); return new Promise(() => {}); } }, register() {}, onMessage(fn) { reply = fn; } });
   resolveLink({ cells: { cell_test: f.cell } });
   assert.equal(sent[0].messageId, 'msg_old');
   assert.equal(sent[0].restore, true);
@@ -796,7 +796,7 @@ test('the actual delayed reply applies the newest of two queued deep links', t =
   globalThis.window = win;
   const sent = [];
   let reply, view;
-  client.register({ api: { storage: f.storage, send: frame => sent.push(frame) }, register(type, entry) { if (type === 'view') view = entry; }, onMessage(fn) { reply = fn; } });
+  client.register({ api: { storage: f.storage, state: () => ({ hive }), act: (type, args) => { sent.push({ type, ...args }); return new Promise(() => {}); } }, register(type, entry) { if (type === 'view') view = entry; }, onMessage(fn) { reply = fn; } });
   const hive = { cells: { cell_new: { ...f.cell, id: 'cell_new' } }, metaEpoch: f.hive.metaEpoch };
   view.update(null, null, { hive });
   win.queue('#view=ext:hive:overview&cell=cell_old&topic=thr_old&message=msg_old');
@@ -875,7 +875,7 @@ test('a fresh message click after loading plain Hive honors its target instead o
   globalThis.window = win;
   const sent = [];
   let reply;
-  client.register({ api: { storage: f.storage, send: frame => sent.push(frame) }, register() {}, onMessage(fn) { reply = fn; } });
+  client.register({ api: { storage: f.storage, state: () => ({ hive: f.hive }), act: (type, args) => { sent.push({ type, ...args }); return new Promise(() => {}); } }, register() {}, onMessage(fn) { reply = fn; } });
   win.location.hash = '#view=ext:hive:overview&cell=cell_test&topic=thr_old&message=msg_original';
   for (const fn of listeners) fn();
   resolveLink({ cells: { cell_test: f.cell } });
@@ -1127,7 +1127,7 @@ test('an unavailable deep-link reply clears the prior selection and preserves th
   globalThis.window = win;
   const sent = [];
   let reply, view;
-  client.register({ api: { storage: f.storage, send: frame => sent.push(frame) }, register(type, entry) { if (type === 'view') view = entry; }, onMessage(fn) { reply = fn; } });
+  client.register({ api: { storage: f.storage, state: () => ({ hive }), act: (type, args) => { sent.push({ type, ...args }); return new Promise(() => {}); } }, register(type, entry) { if (type === 'view') view = entry; }, onMessage(fn) { reply = fn; } });
   const hive = { cells: { cell_test: f.cell }, metaEpoch: f.hive.metaEpoch };
   view.update(null, null, { hive });
   resolveLink(hive);
@@ -1557,8 +1557,9 @@ test('merged Inbox includes needs across the cell despite a bead selection', t =
 
 test('rail badge stays empty when cell metadata is unavailable', t => {
   const f = fixture(t);
-  assert.equal(f.view.badge({ hive: { requestCount: 3 } }), 0);
-  assert.equal(f.view.badge({ hive: { metadataError: 'Corrupt metadata' } }), 0);
+  assert.equal(f.view.badge({}), 0);
+  f.hive.metadataError = 'Corrupt metadata';
+  assert.equal(f.view.badge({}), 0);
 });
 
 test('visibility changes discard old numbered pages and late responses while preserving answer drafts', t => {
@@ -1588,7 +1589,7 @@ test('a deep-link response from an older audience view is refreshed before openi
   globalThis.window = win;
   const sent = [];
   let reply, view;
-  client.register({ api: { storage: f.storage, send: frame => sent.push(frame) }, register(type, entry) { if (type === 'view') view = entry; }, onMessage(fn) { reply = fn; } });
+  client.register({ api: { storage: f.storage, state: () => ({ hive }), act: (type, args) => { sent.push({ type, ...args }); return new Promise(() => {}); } }, register(type, entry) { if (type === 'view') view = entry; }, onMessage(fn) { reply = fn; } });
   f.cell.conversationRevision = 'current';
   const hive = { cells: { [f.cell.id]: f.cell }, metaEpoch: f.hive.metaEpoch };
   view.update(null, null, { hive });

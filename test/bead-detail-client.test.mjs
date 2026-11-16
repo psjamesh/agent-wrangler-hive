@@ -11,7 +11,7 @@ function setup(t) {
   const sent = [];
   let deliver;
   const values = new Map();
-  client.register({ api: { storage: { get: k => values.get(k), set: (k, v) => values.set(k, v), remove: k => values.delete(k) }, send: frame => sent.push(frame) }, register() {}, onMessage: fn => { deliver = fn; } });
+  client.register({ api: { storage: { get: k => values.get(k), set: (k, v) => values.set(k, v), remove: k => values.delete(k) }, act: (type, args) => { sent.push({ type, ...args }); return new Promise(() => {}); } }, register() {}, onMessage: fn => { deliver = fn; } });
   const ui = createUi();
   const reply = (frame, extra) => deliver({ op: frame.type, requestId: frame.requestId, ok: true, ...extra });
   const flush = () => new Promise(resolve => queueMicrotask(resolve));

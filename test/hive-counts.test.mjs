@@ -41,7 +41,7 @@ function fixture(t) {
   Object.assign(globalThis, { Node: Element, document: { createElement: t => new Element(t), createElementNS: (_, t) => new Element(t), createTextNode: t => Object.assign(new Element('#text'), { text: t }), body: new Element('body'), addEventListener() {}, removeEventListener() {} }, requestAnimationFrame: () => 1, cancelAnimationFrame() {}, CSS: { escape: s => s } });
   t.after(() => Object.assign(globalThis, saved));
   let view;
-  client.register({ api: { settings: () => ({ beeLevel: 0, showBees: false }), storage: { get() {}, set() {}, remove() {} } }, register(kind, value) { if (kind === 'view') view = value; } });
+  client.register({ api: { state: () => ({ hive: graph.hive || hive }), settings: () => ({ beeLevel: 0, showBees: false }), storage: { get() {}, set() {}, remove() {} } }, register(kind, value) { if (kind === 'view') view = value; } });
   const cell = { id: 'cell_test', taskId: 'Test hive', enabled: true, rootBeadId: 'root', queenSessionId: 'queen', position: {q:0,r:0} };
   const beads = { root: { id:'root', title:'Test hive', kind:'goal', status:'in_progress' }, work: {id:'work', title:'Work', parentId:'root', status:'in_progress', assignee:'aw:worker'}, done: {id:'done', title:'Done', parentId:'root', status:'closed'}, other: {id:'other', title:'Other hive', status:'in_progress'} };
   const doc = { cells: { [cell.id]: cell }, conversation: {}, threads: {}, inbox: {}, bindings: {}, beadLayout: {}, arrangeAspect: {}, restoreNotices: {}, operations: {}, launches: {}, requests: {} };
@@ -261,7 +261,8 @@ test('client clock refreshes overdue queen attention without a new snapshot and 
     f.view.update(root, null, f.graph);
     assert.doesNotMatch(root.textContent, /Queen queen: waiting for input/);
     assert.equal(f.view.badge(f.graph), 1);
-    assert.equal(f.view.badge({ ...f.graph, hive: { ...f.hive, metadataError: 'unavailable' } }), 0);
+    f.graph.hive = { ...f.hive, metadataError: 'unavailable' };
+    assert.equal(f.view.badge(f.graph), 0);
   } finally { f.view.unmount(root); }
   assert.equal(cleared, 42);
 });
@@ -318,7 +319,8 @@ test('tile and header share counts for blocked work, requests, worker input and 
     const local = renderHive({ ...ctx(), ui: { ...f.ui, cellId: () => f.cell.id } }).top;
     const header = local.querySelector('.hive-cellhead');
     assert.equal(counter(tile, 'needs')?.querySelector('text')?.textContent || '0', String(needs));
-    assert.equal(f.view.badge({ ...f.graph, hive }), needs);
+    f.graph.hive = hive;
+    assert.equal(f.view.badge(f.graph), needs);
     assert.equal(header.querySelector('[data-focus-key="waiting-header"]')?.textContent || '', needs ? `${needs} need you` : '');
     assert.equal(header.querySelector('.hive-headprogress').textContent, '1/6 closed');
     assert.match(tile.getAttribute('aria-label'), /1 in progress, 1 in review, 1 not active, 1 waiting, 2 open, 1 of 6 closed/);

@@ -29,7 +29,7 @@ test('message selection uses the mounted highlight updater without rerendering t
 for (const failure of [{ ok: false }, { ok: false, timeout: true }, { ok: true, conversationRevision: 'stale' }]) {
   test(`relation reads recover at unchanged metadata after ${JSON.stringify(failure)}`, () => {
     let now = 0, renders = 0;
-    const state = { startAt: new Map(), uiVersion: 0, root: { querySelector: () => ({ hiveSelectMessage() {} }) } };
+    const state = { api: { state: () => null }, startAt: new Map(), uiVersion: 0, root: { querySelector: () => ({ hiveSelectMessage() {} }) } };
     const createUi = vm.runInNewContext(`${code}\ncreateUi`, {
       state, Date: { now: () => now }, RELATION_RETRY_MS: 1000,
       sendPlacement() {}, load: (key, fallback) => key === 'cell' ? 'cell' : fallback,

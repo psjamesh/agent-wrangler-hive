@@ -939,7 +939,7 @@ for (const action of ['read', 'reaction', 'reply']) test(`${action} acknowledges
   const { inboxRows } = await import('../public/global-inbox.js');
   const { default: client, createUi } = await import('../public/client.js');
   let view;
-  client.register({ register: (kind, value) => { if (kind === 'view') view = value; } });
+  client.register({ api: { state: () => ({ hive: f.projection() }) }, register: (kind, value) => { if (kind === 'view') view = value; } });
   const ui = createUi();
   const update = await f.conv.publish(f.rt, f.actor, { text: 'FYI: the build is running.' }, f.host);
   const check = (unread, needs) => {
