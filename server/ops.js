@@ -960,10 +960,25 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
   const out = await journaled(rt, { kind: 'create-beads', cellId: cell.id, actor: actorFor(actor.sessionId), summary: `Create ${nodes.length} bead(s)`, beadIds: affected }, async (opId, phase) => {
     const { ids } = await rt.beads.createMany({ nodes, edges }, actorFor(actor.sessionId), opId);
     phase.applied = true;
-    await rt.snapshots.refresh();
     return { ids, journal: { ids } };
   });
-  return { op_id: out.opId, ids: out.ids, cross_cell: touchedCells.size > 1 };
+  let timer;
+  let settled;
+  try {
+    settled = await Promise.race([
+      Promise.resolve().then(() => rt.snapshots.refresh()).then(
+        snapshot => !snapshot.error && rt.snapshots.hierarchyCurrent !== false && rt.beads.status.state === 'ready',
+        () => false,
+      ),
+      new Promise(resolve => { timer = setTimeout(() => resolve(false), 10000); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+  return {
+    op_id: out.opId, ids: out.ids, cross_cell: touchedCells.size > 1,
+    ...(!settled ? { note: 'The beads were created. Hive’s snapshot is still settling in the background; do not repeat this create call. Wait for a complete refresh before changing or launching this work.' } : {}),
+  };
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;

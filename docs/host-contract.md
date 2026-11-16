@@ -117,7 +117,7 @@ Hive supports bd **>=1.3.4 <1.4.0** with `bd schema` reporting `schema_version: 
 ### Process rules
 
 - All calls go through one queue, one subprocess at a time, as an `execFile` argument array with no shell, at most 64 queued.
-- Reads time out after 20 s, writes after 30 s and `init` after 120 s, with a 64 MB output cap. Stdin is closed.
+- Subprocess timeouts send `SIGTERM` after 20 s for reads, 30 s for writes and 120 s for `init`, excluding queue wait, with a 64 MB output cap. There is no termination escalation. Stdin is closed.
 - The environment drops inherited `BEADS_*`, `BD_*`, `CLAUDE_SESSION_ID` and `XDG_CONFIG_HOME`, and sets `BEADS_DIR`, `HOME` and `XDG_CONFIG_HOME` under Hive's data folder, plus `DO_NOT_TRACK=1`, `BD_NON_INTERACTIVE=1`, `BD_LAST_TOUCHED_FALLBACK=0`, `BD_NO_DEP_TYPE_WARNING=1` and `NO_COLOR=1`.
 - Immediately before each command, in the same queued job, Hive checks that the binary that job will run is the one the last probe accepted, and that the configured path and that binary's identity (real path, inode, size, modification time) still match. A probe drops readiness as it starts, so no command queued under an older check can run against a newer one. If they differ, the command is not run, readiness is dropped and Hive probes again. A binary that will not start, or a store that cannot be read, also drops readiness, which brings the setup screen back.
 - Every read passes `--readonly`. Every write passes `--json --actor aw:<session id>`, or `--actor aw:human` for a human action.
