@@ -114,7 +114,7 @@ for (const state of [{ status: 'idle', exitOutput: 'Process exited' }, { status:
     const rows = needsRows(ctx, [cell]);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].title, 'Queen stopped');
-    assert.equal(rows[0].link, '#view=ext:hive:overview&cell=cell');
+    assert.equal(rows[0].link, '#view=ext:hive:overview&hive=cell');
     assert.equal(rows[0].sessionLinks.length, state.archived ? 0 : 1);
     assert.equal(JSON.stringify(rows).includes('Private title'), false);
     assert.equal(cellWaitingItems(ctx, cell).length, 1);

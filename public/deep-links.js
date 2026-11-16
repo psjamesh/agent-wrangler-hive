@@ -2,7 +2,7 @@ export const HIVE_VIEW = '#view=ext:hive:overview';
 
 export function hiveLink(cellId, threadId, messageId, { beadId, pane } = {}) {
   const params = new URLSearchParams();
-  if (cellId) params.set('cell', cellId);
+  if (cellId) params.set('hive', cellId);
   if (threadId) params.set('topic', threadId);
   if (messageId) params.set('message', messageId);
   if (beadId) params.set('bead', beadId);
@@ -17,7 +17,7 @@ export function parseHiveLink(hash) {
     const value = p.get(name);
     return value && /^[a-zA-Z0-9_-]{1,80}$/.test(value) ? value : null;
   };
-  return { cellId: id('cell'), threadId: id('topic'), messageId: id('message'), ...(id('bead') ? { beadId: id('bead') } : {}), ...(p.get('pane') === 'details' ? { pane: 'details' } : {}) };
+  return { cellId: id('hive') || id('cell'), threadId: id('topic'), messageId: id('message'), ...(id('bead') ? { beadId: id('bead') } : {}), ...(p.get('pane') === 'details' ? { pane: 'details' } : {}) };
 }
 
 const bridges = new WeakMap();

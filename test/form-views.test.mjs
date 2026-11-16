@@ -84,7 +84,7 @@ test('a failed complete reply after the form changed is raised as an error notic
   submit(workstreamDrawer(s.ctx, cell));
   s.forms[key] = null;
   s.sent[0][1]({ ok: false, error: 'Stale.' });
-  assert.deepEqual(s.notices, [['The workstream was not completed: Stale.', { severity: 'error' }]]);
+  assert.deepEqual(s.notices, [['The cluster was not completed: Stale.', { severity: 'error' }]]);
 });
 
 test('the queen-instructions form sends the text with an id built from the editor id and handles stale replies', async (t) => {

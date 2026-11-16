@@ -26,7 +26,7 @@ export async function renameCell(rt, host, { cellId, name }) {
 
 export async function saveCellGoal(rt, host, { cellId, goal, acceptance, expectedUpdatedAt }) {
   const cell = editableCell(rt, cellId);
-  if (!cell.rootBeadId) throw new HiveError('This hive has no goal bead yet.');
+  if (!cell.rootBeadId) throw new HiveError('This hive has no goal cell yet.');
   if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt) throw new HiveError('The goal revision is missing. Reopen settings and try again.', 'stale');
   const patch = {};
   for (const [key, value] of Object.entries({ goal, acceptance })) {

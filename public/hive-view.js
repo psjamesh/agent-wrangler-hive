@@ -220,8 +220,8 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 function revealWarning(plan, allClosed) {
   const verb = 'Fitting this work back';
   const things = (n) => plural(n, allClosed ? 'closed item' : 'item', allClosed ? 'closed items' : 'items');
-  if (!plan.shift) return `${verb} will place ${things(plan.crowded)} next to this workstream, because their hexes are now in use.`;
-  return `${verb} will move this workstream ${plural(plan.shift, 'hex', 'hexes')} to make room for ${things(plan.crowded)}. Some ${allClosed ? 'closed items' : 'items'} may also be placed in new spots within the workstream.`;
+  if (!plan.shift) return `${verb} will place ${things(plan.crowded)} next to this cluster, because their hexes are now in use.`;
+  return `${verb} will move this cluster ${plural(plan.shift, 'hex', 'hexes')} to make room for ${things(plan.crowded)}. Some ${allClosed ? 'closed items' : 'items'} may also be placed in new spots within the cluster.`;
 }
 
 function workstreamMenu({ title, at, arranging, fitLabel, confirm, onFit, onConfirm, onSuggest, onArchive, archiveLabel, onClose, onDismiss }) {
@@ -537,7 +537,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
     relations: rel,
     describe: (id) => describeRelations(hive, rel, id),
     outlines: groupOutlines(drawn, BEAD_SIZE).map((o) => ({ d: o.d, headId: o.headId, className: workstreamClasses(o.headId, cell.workstreamColours, layout.regionParents, cell.workstreamShades) })),
-    ariaLabel: 'Every bead in this hive, as a honeycomb. Each workstream has its own labelled region and outline. Child workstreams are separate regions. Position is only your arrangement; neighbouring cells are not linked. Shift+F10 on a workstream for its actions.',
+    ariaLabel: 'Every cell in this hive, as a honeycomb. Each cluster has its own labelled region and outline. Child clusters are separate regions. Position is only your arrangement; neighbouring cells are not linked. Shift+F10 on a cluster for its actions.',
     onClick: (id) => ui.selectBead(id),
     onActivate: id => {
       const item = items.find(item => item.id === id);
@@ -613,7 +613,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
         confirm,
         onSuggest: writable && menuOpen ? suggestCompletion : null,
         onArchive: writable && menuClosed ? archiveGroup : null,
-        archiveLabel: cell.archived?.[menuHead]?.shown ? 'Hide again' : 'Archive workstream',
+        archiveLabel: cell.archived?.[menuHead]?.shown ? 'Hide again' : 'Archive cluster',
         onFit: startReveal,
         onConfirm: confirmReveal,
         onClose: closeMenu,
@@ -623,7 +623,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
         title: 'Show done across this hive', at: menuForm.at || { x: 0, y: 0 }, arranging,
         confirm: { text: menuForm.confirm.text, action: 'Move and show' }, onConfirm: confirmHiveReveal, onClose: closeMenu, onDismiss: dismissMenu,
       }) : null,
-      layout.order.length ? null : h('div', { class: 'hive-stage-empty' }, h('p', {}, h('strong', {}, 'Waiting for the queen\'s work map.'), ' Once it is active, the queen maps the task\'s existing work into beads and links its sessions. Existing sessions are not turned into beads automatically.')),
+      layout.order.length ? null : h('div', { class: 'hive-stage-empty' }, h('p', {}, h('strong', {}, 'Waiting for the queen\'s work map.'), ' Once it is active, the queen maps the task\'s existing work into cells and links its sessions. Existing sessions are not turned into cells automatically.')),
     ],
   });
   if (hidden.size && Object.keys(layout.automatic).length && snapshotComplete && !cell.snapshot && cell.enabled && !arranging) {
@@ -736,7 +736,7 @@ export function renderHive(ctx) {
         h('span', { class: 'hive-mark', 'aria-hidden': 'true' }),
         h('h2', { class: 'hive-title' }, 'All hives'),
         capacityControl(ctx),
-        h('span', { class: 'hive-counts' }, `${cells.length} hive${cells.length === 1 ? '' : 's'}, ${total} bead${total === 1 ? '' : 's'}`),
+        h('span', { class: 'hive-counts' }, `${cells.length} hive${cells.length === 1 ? '' : 's'}, ${total} cell${total === 1 ? '' : 's'}`),
         cells.length ? h('button', { type: 'button', class: 'hive-quiet-btn', 'aria-pressed': ui.globalInboxOpen() ? 'true' : 'false', onclick: () => ui.setGlobalInboxOpen(!ui.globalInboxOpen()), 'data-focus-key': 'global-inbox-toggle', title: ui.globalInboxOpen() ? 'Hide the inbox across all hives' : 'Show the inbox across all hives' }, 'Inbox') : null,
         h('div', { class: 'hive-head-actions' },
           h('button', { type: 'button', class: 'hive-btn hive-btn-primary', onclick: () => openCellDialog(ui, 'new', 'open-new'), 'data-focus-key': 'open-new', 'aria-haspopup': 'dialog' }, 'New hive'),

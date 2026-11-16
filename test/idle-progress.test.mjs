@@ -11,7 +11,7 @@ function fixture(extra = {}, sessions = [{ sessionId: 'builder', name: 'Builder'
   return { bead, hive, tile, render: () => beadTile({ hive, graph: { sessions } }, bead, tile, childrenMap(hive.beads)) };
 }
 
-test('idle live claim has an accessible progress mark distinct from Untracked', () => {
+test('idle live claim has an accessible progress mark distinct from No active owner', () => {
   const f = fixture();
   const tile = f.render();
   assert.equal(tile.mark?.kind, 'in-progress');

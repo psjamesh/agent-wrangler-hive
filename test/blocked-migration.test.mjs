@@ -40,7 +40,7 @@ test('upgrade preserves links, annotations, resume and ownership and reports mig
   assert.deepEqual(f.live.a.metadata, before.metadata);
   assert.deepEqual(f.live.a.dependencies, before.dependencies);
   assert.equal(f.delivered.length, 1);
-  assert.match(f.delivered[0].message, /Migrated blocked beads to open: a/); assert.match(f.delivered[0].message, /b \(b\)/);
+  assert.match(f.delivered[0].message, /Migrated blocked cells to open: a/); assert.match(f.delivered[0].message, /b \(b\)/);
   const after = structuredClone(f.live);
   await wd().run(); f.doc().cells.cell.queenGeneration++; await wd().run();
   assert.deepEqual(f.live, after); assert.equal(f.delivered.length, 1);
@@ -53,7 +53,7 @@ test('migration notices survive no recipient and closed migrated work', async ()
   await wd.run(); assert.equal(f.delivered.length, 0);
   f.live.a.status = 'closed'; await f.rt.snapshots.refresh();
   f.board.set('queen', { sessionId: 'queen', taskId: 'task', status: 'idle' });
-  await wd.run(); assert.equal(f.delivered.length, 1); assert.match(f.delivered[0].message, /Migrated blocked beads to open: a/);
+  await wd.run(); assert.equal(f.delivered.length, 1); assert.match(f.delivered[0].message, /Migrated blocked cells to open: a/);
 });
 
 test('migration respects incomplete reads, disabled cells, snapshots, native races and unsettled writes', async () => {
@@ -74,7 +74,7 @@ test('uncertain migration bookkeeping recovers its notice without repeating the 
   assert.equal((await settleOne(f.rt, 'op')).settled, true);
   await f.rt.snapshots.refresh();
   await createWatchdog({ runtime: f.rt, host: f.host, now: f.now }).run();
-  assert.equal(f.delivered.length, 1); assert.match(f.delivered[0].message, /Migrated blocked beads to open: a/);
+  assert.equal(f.delivered.length, 1); assert.match(f.delivered[0].message, /Migrated blocked cells to open: a/);
 });
 
 test('external and design prerequisites derive waiting display, counts and watchdog flags from open statuses', async () => {

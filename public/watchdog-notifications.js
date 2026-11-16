@@ -20,7 +20,7 @@ export function createWatchdogNotifications(api, { read = () => [], write = () =
     for (const [episode, { cell, flag }] of current) {
       if (seen.has(episode) || !api.ui?.notify) continue;
       const token = { id: `hive-stalled:${episode}` };
-      const actions = [{ id: 'bead', label: 'View bead', primary: true }];
+      const actions = [{ id: 'bead', label: 'View cell', primary: true }];
       if (flag.session_link) actions.push({ id: 'session', label: 'Open session' });
       seen.add(episode); shown.set(episode, token);
       write([...seen].slice(-2000));

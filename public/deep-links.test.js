@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { HIVE_VIEW, hiveLink, parseHiveLink, installHiveLinks, openHiveLink, revealMessage, syncHiveSelection } from './deep-links.js';
 
 test('topic and message links round trip through the registered Hive overview', () => {
-  assert.equal(hiveLink('cell_one', 'thr_two', 'msg_three'), `${HIVE_VIEW}&cell=cell_one&topic=thr_two&message=msg_three`);
+  assert.equal(hiveLink('cell_one', 'thr_two', 'msg_three'), `${HIVE_VIEW}&hive=cell_one&topic=thr_two&message=msg_three`);
   assert.deepEqual(parseHiveLink(hiveLink('cell_one', 'thr_two')), { cellId: 'cell_one', threadId: 'thr_two', messageId: null });
   assert.deepEqual(parseHiveLink(`${HIVE_VIEW}&cell=%3Cbad%3E&topic=%E0%A4%A`), { cellId: null, threadId: null, messageId: null });
   for (const hash of ['', '#view=search', HIVE_VIEW, '#view=ext:hive:overview-other']) assert.equal(parseHiveLink(hash), null);
@@ -346,4 +346,11 @@ test('notification navigation reopens the same request and navigates to a differ
   openHiveLink(win, next);
   assert.equal(win.location.hash, next);
   bridge.dispose();
+});
+
+test('new hive links and legacy cell links resolve to the same target', () => {
+  const target = { cellId: 'cell_one', threadId: 'thr_two', messageId: 'msg_three' };
+  assert.deepEqual(parseHiveLink(`${HIVE_VIEW}&hive=cell_one&topic=thr_two&message=msg_three`), target);
+  assert.deepEqual(parseHiveLink(`${HIVE_VIEW}&cell=cell_one&topic=thr_two&message=msg_three`), target);
+  assert.match(hiveLink('cell_one'), /&hive=cell_one/);
 });

@@ -114,7 +114,7 @@ test('nested heading tiles identify their logical parent visibly', async () => {
   const ctx = { hive: { beads, edges: [], cells: { cell: { bindings: [] } } }, graph: { sessions: [] } };
   const tile = beadTile(ctx, beads.child, { cellId: 'cell', layout: f.layout, local: saved.child, x: 0, y: 0 }, f.kids);
   assert.match(tile.sub?.join(' ') || '', /parent/);
-  assert.match(tile.ariaLabel, /this workstream and its descendants/);
+  assert.match(tile.ariaLabel, /this cluster and its descendants/);
 });
 
 test('colours are assigned to all nested regions and exclude other cells', async () => {

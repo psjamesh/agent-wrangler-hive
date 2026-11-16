@@ -27,7 +27,7 @@ test('openDescendants is empty for leaves and fully closed subtrees', () => {
 
 test('hive-queen skill requires open descendants and demonstrated intent before proposing a close', () => {
   const skill = fs.readFileSync(new URL('../skills/hive-queen/SKILL.md', import.meta.url), 'utf8');
-  assert.match(skill, /Before proposing to close a goal or workstream, list its open descendants/);
+  assert.match(skill, /Before proposing to close a goal or cluster, list its open descendants/);
   assert.match(skill, /open_descendants/);
   assert.match(skill, /intent, not only its ticked criteria/);
 });

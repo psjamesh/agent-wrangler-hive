@@ -354,7 +354,7 @@ test('changing related beads updates rings and chips without rebuilding the map'
   ids = new Set();
   related.el.hiveSelectMessage();
   assert.doesNotMatch(original.find(t => t.dataset.tileId === 'parent').attributes['aria-label'], /Related to conversation/);
-  assert.match(JSON.stringify(nodes), /No related beads/);
+  assert.match(JSON.stringify(nodes), /No related cells/);
 });
 
 test('a retained map reconnects new conversation relations and clears them on leaving a thread', () => {

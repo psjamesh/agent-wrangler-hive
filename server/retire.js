@@ -10,7 +10,7 @@ export const isRetired = (cell) => Boolean(cell?.retired);
 
 function liveCell(rt, cellId) {
   const cell = rt.metadata.cell(cellId);
-  if (!cell) throw new HiveError(`Unknown cell ${cellId}.`);
+  if (!cell) throw new HiveError(`Unknown hive ${cellId}.`);
   if (rt.metadata.error) throw new HiveError(rt.metadata.error, 'metadata-unavailable');
   return cell;
 }

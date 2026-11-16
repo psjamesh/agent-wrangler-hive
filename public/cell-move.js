@@ -69,15 +69,15 @@ function splits(layout, kids, from, moves) {
   return pieces(ids.map((o) => moves[o] || layout.positions[o])) > pieces(ids.map((o) => layout.positions[o]));
 }
 
-const DETACH = 'That would detach a child workstream. Keep it attached to its parent or an attached sibling.';
+const DETACH = 'That would detach a child cluster. Keep it attached to its parent or an attached sibling.';
 
-const SPLIT = 'That would split a workstream into separate pieces. Keep it touching the rest of its workstream.';
+const SPLIT = 'That would split a cluster into separate pieces. Keep it touching the rest of its cluster.';
 
 // A heading carries its whole subtree; hidden work travels from its canonical origin.
 export function previewMove({ layout: full, kids, id, target, hidden = new Set(), saved = {}, attachmentBaseline = null, dragContext = null }) {
   const layout = visible(full, hidden);
   const from = layout.positions[id];
-  if (!from) return fail('That bead is not on the map.');
+  if (!from) return fail('That cell is not on the map.');
   if (key(target) === key(from)) return { ok: true, same: true, moves: {} };
   if (!valid(target)) return fail(TOO_FAR);
   const at = dragContext?.occupied || new Map(layout.order.map((o) => [key(layout.positions[o]), o]));
@@ -88,7 +88,7 @@ export function previewMove({ layout: full, kids, id, target, hidden = new Set()
     const dr = target.r - from.r;
     for (const m of members) moves[m] = { q: layout.positions[m].q + dq, r: layout.positions[m].r + dr };
     if (Object.values(moves).some((p) => at.has(key(p)) && !members.has(at.get(key(p))))) {
-      return fail('The workstream would land on other beads. Move it where all of it fits on empty hexes.', moves);
+      return fail('The cluster would land on other cells. Move it where all of it fits on empty hexes.', moves);
     }
     const carried = {};
     for (const m of dragContext?.fullMembers || subtreeMembers(full, kids, id)) {
@@ -104,13 +104,13 @@ export function previewMove({ layout: full, kids, id, target, hidden = new Set()
   moves[id] = target;
   const occupant = at.get(key(target));
   if (occupant) {
-    if (layout.groupHeads.includes(occupant)) return fail('That hex holds a workstream heading. Drag the heading to move its whole workstream.', moves);
+    if (layout.groupHeads.includes(occupant)) return fail('That hex holds a cluster heading. Drag the heading to move its whole cluster.', moves);
     const mine = containerOf(layout, kids, id);
     const theirs = containerOf(layout, kids, occupant);
     if (mine !== theirs) {
       return fail(mine === null || theirs === null
-        ? 'Beads outside workstreams swap only with each other.'
-        : 'That hex belongs to another workstream. Beads swap only within their own workstream.', moves);
+        ? 'Cells outside clusters swap only with each other.'
+        : 'That hex belongs to another cluster. Cells swap only within their own cluster.', moves);
     }
     moves[occupant] = from;
   }
@@ -185,7 +185,7 @@ export function planMove({ layout, kids, rootId, saved = {}, aspect, id, target,
   if (!preview.ok || preview.same) return preview;
   const moves = { ...preview.moves, ...preview.carried };
   const pinned = pinBatch({ layout, kids, rootId, saved, aspect, moves, yieldIds, hidden });
-  if (!pinned) return fail('Hive could not keep the other beads where they are, so nothing was moved. Arrange repacks the hive.', preview.moves);
+  if (!pinned) return fail('Hive could not keep the other cells where they are, so nothing was moved. Arrange repacks the hive.', preview.moves);
   return { ok: true, moves: preview.moves, positions: pinned.batch, stack: pinned.stack };
 }
 
@@ -194,8 +194,8 @@ export function planMove({ layout, kids, rootId, saved = {}, aspect, id, target,
 const xx = (p) => 2 * p.q + p.r;
 const dist2 = (a, b) => 0.75 * (xx(a) - xx(b)) ** 2 + 2.25 * (a.r - b.r) ** 2;
 
-export const NO_REVEAL = 'This workstream is walled in by other work, so there\'s no free hex beside it to show its closed work. Move some of that work away, or Arrange the whole hive.';
-export const REVEAL_RETRY = 'Hive could not keep the other work where it is while showing this workstream\'s closed work, so nothing was moved. Try again.';
+export const NO_REVEAL = 'This cluster is walled in by other work, so there\'s no free hex beside it to show its closed work. Move some of that work away, or Arrange the whole hive.';
+export const REVEAL_RETRY = 'Hive could not keep the other work where it is while showing this cluster\'s closed work, so nothing was moved. Try again.';
 const TRIES = 8;
 const wide = (o) => (Math.sqrt(3) * (o.q + o.r / 2) / LANDSCAPE) ** 2 + (1.5 * o.r) ** 2;
 const at = (p) => { const [q, r] = p.split(',').map(Number); return { q, r }; };
@@ -233,7 +233,7 @@ function revealShifts({ layout, kids, headId, shape, rules, hidden, beforeHidden
 }
 
 export function planReveal({ layout, kids, rootId, saved = {}, aspect, headId, back, hidden = new Set(), yieldIds = new Set(), baseline = null }) {
-  if (!layout.positions[headId]) return fail('That workstream is not on the map.');
+  if (!layout.positions[headId]) return fail('That cluster is not on the map.');
   const group = membersOf(layout, kids, headId);
   for (const id of layout.groupHeads || []) {
     if (back.has(id) && !hidden.has(id)) for (const m of subtreeMembers(layout, kids, id)) group.add(m);
@@ -483,7 +483,7 @@ export function createDragPlanner(args, { budgetMs = 8, now = () => performance.
       remember(target,plan);
       return plan;
     }
-    if (fullMembers.size > BATCH_MAX) return fail('This workstream is too large to move in one saved batch.');
+    if (fullMembers.size > BATCH_MAX) return fail('This cluster is too large to move in one saved batch.');
     if (!parent) {
       if(budgetMs===Infinity) {
         const shape=offsets.map((p)=>({q:p.q+target.q,r:p.r+target.r}));
@@ -522,7 +522,7 @@ export function createDragPlanner(args, { budgetMs = 8, now = () => performance.
       remember(target,result);
       return result;
     }
-    return { ...exact, target, pending: !complete, reason: complete ? 'No free attached placement fits this workstream.' : 'Finding a free attached placement for this workstream.' };
+    return { ...exact, target, pending: !complete, reason: complete ? 'No free attached placement fits this cluster.' : 'Finding a free attached placement for this cluster.' };
   };
   preview.drop = (target) => {
     const shown = preview(target);

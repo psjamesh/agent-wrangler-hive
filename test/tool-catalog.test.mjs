@@ -12,7 +12,9 @@ test('every tool publishes a self-contained JSON Schema for hosts with an older 
     assert.equal(schema.$schema, undefined, name);
     if (schema.properties.cell_id) {
       assert.equal(schema.properties.cell_id.maxLength, 80, name);
-      assert.match(schema.properties.cell_id.description, /exactly one enabled cell/, name);
+      assert.equal(schema.properties.hive_id.maxLength, 80, name);
+      assert.match(schema.properties.hive_id.description, /exactly one enabled hive/, name);
+      assert.match(schema.properties.cell_id.description, /Legacy alias for hive_id/, name);
     }
   }
 });

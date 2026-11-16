@@ -114,7 +114,7 @@ test('merged Inbox rows omit structured and body session links but retain reques
   f.doc.requests = { r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: '#session=worker', threadId: 't', messageId: 'm', requesterSessionId: 'worker', sessionLink: { sessionId: 'old', label: 'Archived worker' }, requesterSessionLink: { sessionId: 'worker', label: 'Open requester session' } } };
   const row = f.draw().bottom.querySelector('.hive-inbox-item');
   assert.equal(row.querySelector('.hive-inbox-session-links'), null);
-  assert.deepEqual(row.querySelectorAll('a').map(a => a.getAttribute('href')), ['#view=ext:hive:overview&cell=live&topic=t&message=m']);
+  assert.deepEqual(row.querySelectorAll('a').map(a => a.getAttribute('href')), ['#view=ext:hive:overview&hive=live&topic=t&message=m']);
   assert.equal(row.querySelector('.hive-needs-count').textContent, '1');
 });
 
@@ -237,5 +237,5 @@ test('queen request rows contain only topic navigation', t => {
   f.doc.requests = { r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: 'Choose', threadId: 't', messageId: 'm', requesterSessionId: 'worker' } };
   const row = f.draw().bottom.querySelector('.hive-inbox-item');
   assert.equal(row.querySelector('.hive-inbox-session-links'), null);
-  assert.deepEqual(row.querySelectorAll('a').map(a => a.getAttribute('href')), ['#view=ext:hive:overview&cell=live&topic=t&message=m']);
+  assert.deepEqual(row.querySelectorAll('a').map(a => a.getAttribute('href')), ['#view=ext:hive:overview&hive=live&topic=t&message=m']);
 });

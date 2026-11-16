@@ -58,9 +58,9 @@ const MARK_WORDS = {
   'review-working': 'In review: reviewer working',
   'review-pending': 'In review: review pending',
   done: 'Done',
-  untracked: 'Untracked: started work has no live claimant or open blocker',
+  untracked: 'No active owner: started work has no live claimant or open blocker',
   busy: 'An agent is working on it',
-  approved: 'Approved, awaiting release',
+  approved: 'Review approved; delivery pending',
   'in-progress': 'In progress; agent idle',
   deferred: 'Deferred',
   external: 'External prerequisite',
@@ -71,6 +71,7 @@ export function markWords(kind, bead) {
   if (kind === 'waiting') return 'Waiting on a prerequisite';
   return MARK_WORDS[kind] || '';
 }
+const kindLabel = kind => kind === 'workstream' ? 'Cluster' : kind;
 const STATUS_LABEL = { in_review: 'In review', open: 'Open', in_progress: 'In progress', deferred: 'Deferred', closed: 'Closed' };
 
 function sessionButton(ctx, sessionId, suffix = '') {
@@ -134,7 +135,7 @@ export function beadTile(ctx, bead, tile, kids) {
   const prIds = isHead ? cellBeadIds({ beads: hive.beads }, { rootBeadId: bead.id }) : new Set([bead.id]);
   const prs = prSummary((cell?.pullRequests || []).filter(pr => pr.beadIds.some(id => prIds.has(id))));
   const marks = [];
-  if (kind) marks.push({ kind, focus: kind === 'waiting' && Boolean(waitReason), count: waiting.length, onMark: waiting.length ? anchor => openWaitingMenu(ctx, waiting, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true }) : null, title: [attention || markWords(kind, bead), kind === 'waiting' && waitReason ? `Waiting for: ${waitReason}` : ''].filter(Boolean).join('. ') });
+  if (kind) marks.push({ kind, focus: kind === 'waiting' && Boolean(waitReason), count: waiting.length, onMark: waiting.length ? anchor => openWaitingMenu(ctx, waiting, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true }) : null, title: [attention || (kind === 'waiting' && designWait ? 'Waiting on design' : markWords(kind, bead)), kind === 'waiting' && waitReason ? `Waiting for: ${waitReason}` : ''].filter(Boolean).join('. ') });
   if (status === 'in_review' && !kind?.startsWith('review-')) marks.push({ kind: bead.reviewWorking ? 'review-working' : 'review-pending', title: markWords(bead.reviewWorking ? 'review-working' : 'review-pending', bead) });
   if (waitReason && kind !== 'waiting') marks.push({ kind: 'recorded-wait', title: `Waiting for: ${waitReason}` });
   const detail = `${externalWait ? 'Waiting on something outside this hive. ' : ''}${waitReason ? `Waiting for: ${waitReason}. ` : ''}${attachmentText ? `${attachmentText} ` : ''}Work: ${isHead ? `${countText}; ` : ''}${own}. ${agentText}.${waitReasons.length ? ` Waiting: ${waitReasons.join('; ')}.` : ''}`;
@@ -153,13 +154,13 @@ export function beadTile(ctx, bead, tile, kids) {
     badge,
     progress,
     lineHeight: 11,
-    mark: kind ? { kind, count: waiting.length, title: `${attention || markWords(kind, bead)}. ${detail}` } : null,
+    mark: kind ? { kind, count: waiting.length, title: `${attention || (kind === 'waiting' && designWait ? 'Waiting on design' : markWords(kind, bead))}. ${detail}` } : null,
     marks,
     onMark: waiting.length ? anchor => openWaitingMenu(ctx, waiting, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true }) : null,
     menu: isHead,
     classes: `hive-bead hive-status-${displayStatus(bead)}${isDone(bead) ? ' hive-done' : ''}${isHead ? ' is-head' : ''}${isHead && colour != null ? ` has-ws ${colour}${bead.parentId === layout.rootId ? ' is-top' : ''}` : ''} hive-kind-${bead.kind}`,
-    ariaLabel: `${isHead ? 'Workstream ' : bead.kind === 'external' ? 'External prerequisite ' : ''}${bead.title}. ${groupName ? `In ${groupName}. ` : ''}${kind ? `${attention || markWords(kind, bead)}. ` : ''}${detail}${prs ? ` ${prs}.` : ''}${owner ? ` Claimed by ${sessionLabel(graph, owner)}.` : ''} Enter ${waiting.length ? 'opens the waiting-for-you dialog' : 'shows its details'}; Shift and an arrow key moves ${isHead ? 'this workstream and its descendants; Shift+F10 shows its actions' : 'it'}.`,
-    title: `${bead.title}${externalWait ? '\nWaiting on something outside this hive' : ''}${groupName ? `\nIn ${groupName}` : ''}${marks.length ? `\n${marks.map(m => m.title).join('\n')}` : ''}\n${isHead ? `Workstream: ${countText}; ${own}` : `${bead.kind === 'external' ? 'External prerequisite' : bead.kind}, ${own}`}\n${agentText}${prs ? `\n${prs}` : ''}${waitReasons.length ? `\nWaiting: ${waitReasons.join('; ')}` : ''}`,
+    ariaLabel: `${isHead ? 'Cluster ' : bead.kind === 'external' ? 'External prerequisite ' : ''}${bead.title}. ${groupName ? `In ${groupName}. ` : ''}${kind ? `${attention || (kind === 'waiting' && designWait ? 'Waiting on design' : markWords(kind, bead))}. ` : ''}${detail}${prs ? ` ${prs}.` : ''}${owner ? ` Claimed by ${sessionLabel(graph, owner)}.` : ''} Enter ${waiting.length ? 'opens the waiting-for-you dialog' : 'shows its details'}; Shift and an arrow key moves ${isHead ? 'this cluster and its descendants; Shift+F10 shows its actions' : 'it'}.`,
+    title: `${bead.title}${externalWait ? '\nWaiting on something outside this hive' : ''}${groupName ? `\nIn ${groupName}` : ''}${marks.length ? `\n${marks.map(m => m.title).join('\n')}` : ''}\n${isHead ? `Cluster: ${countText}; ${own}` : `${bead.kind === 'external' ? 'External prerequisite' : kindLabel(bead.kind)}, ${own}`}\n${agentText}${prs ? `\n${prs}` : ''}${waitReasons.length ? `\nWaiting: ${waitReasons.join('; ')}` : ''}`,
   };
 }
 
@@ -209,12 +210,12 @@ export function legend(snapshot = false) {
       class: 'hive-legend-item hive-legend-marks',
       title: snapshot
         ? 'One mark per item, from its recorded work status. Captured sessions describe the capture, not now, so this hive never shows an agent working or waiting for input; their states are in each tooltip.'
-        : 'One person icon for every human wait: agent input, a Hive decision or action request or a PR explicitly waiting on you. Unread messages stay in Topics and Inbox. Several waits get a count badge. Worker-handled failing checks stay quiet. One mark per item, most urgent first. Waiting for input means an attached agent is asking someone something; the cross means the work itself waits on a prerequisite. Plain magnifier badges show review: green while the reviewer works, blue while pending. The prerequisite cross is grey; amber marks untracked work. A green outlined triangle means ready for automatic pickup. A chain-link glyph marks an external prerequisite. Review marks remain visible alongside them. A recorded wait uses an hourglass unless the primary mark is a waiting cross; then its reason is included in the cross tooltip. The outlined progress arc means in-progress work with an idle live owner. Items with no mark have no activity or recorded wait. Each tooltip names every agent and its state.',
-    }, [...(snapshot ? [] : [['person', 'waiting for you (count when several)'], ['busy', 'agent working'], ['review-working', 'in review: reviewer working'], ['review-pending', 'in review: review pending'], ['in-progress', 'in progress; agent idle']]), ['approved', MARK_WORDS.approved], ['pickup', 'ready for automatic pickup'], ['external', 'external: outside this hive (teammate PR, release, vendor)'], ['recorded-wait', 'recorded wait (cross carries reason when waiting)'], ['untracked', 'untracked work'], ['waiting', 'waiting on prerequisites'], ['deferred', 'deferred'], ['done', 'done'], ['closed', 'closed otherwise']].map(([k, label]) => h('span', { class: 'hive-legend-st' },
+        : 'One person icon for every human wait: agent input, a Hive decision or action request or a PR explicitly waiting on you. Unread messages stay in Topics and Inbox. Several waits get a count badge. Worker-handled failing checks stay quiet. One mark per item, most urgent first. Waiting for input means an attached agent is asking someone something; the cross means the work itself waits on a prerequisite. Plain magnifier badges show review: green while the reviewer works, blue while pending. The prerequisite cross is grey; amber marks work with no active owner. A green outlined triangle means ready for automatic pickup. A chain-link glyph marks an external prerequisite. Review marks remain visible alongside them. A recorded wait uses an hourglass unless the primary mark is a waiting cross; then its reason is included in the cross tooltip. The outlined progress arc means in-progress work with an idle live owner. Items with no mark have no activity or recorded wait. Each tooltip names every agent and its state.',
+    }, [...(snapshot ? [] : [['person', 'waiting for you (count when several)'], ['busy', 'agent working'], ['review-working', 'in review: reviewer working'], ['review-pending', 'in review: review pending'], ['in-progress', 'in progress; agent idle']]), ['approved', MARK_WORDS.approved], ['pickup', 'ready for automatic pickup'], ['external', 'external: outside this hive (teammate PR, release, vendor)'], ['recorded-wait', 'recorded wait (cross carries reason when waiting)'], ['untracked', 'No active owner'], ['waiting', 'waiting on prerequisites'], ['waiting', 'Waiting on design (decision or investigation needed first)'], ['deferred', 'deferred'], ['done', 'done'], ['closed', 'closed otherwise']].map(([k, label]) => h('span', { class: 'hive-legend-st' },
       h('svg:svg', { viewBox: '-8 -8 16 16', width: '14', height: '14', 'aria-hidden': 'true' }, primaryMark(k, label)), label))),
     h('span', { class: 'hive-legend-item hive-legend-note' }, 'No mark: no activity or recorded wait'),
     swatch('is-done', 'Closed work'),
-    swatch('is-group', 'Workstream'),
+    swatch('is-group', 'Cluster'),
     swatch('is-external', 'External'),
     h('span', { class: 'hive-legend-item hive-legend-marks', title: 'Shown on the items that must come first for, or wait on, the one you point at, focus or select. Other kinds of link are listed in the details.' }, '▲ needed first · ▼ waits on it'));
 }
@@ -250,7 +251,7 @@ function beadDetails(ctx, cell) {
         ? [h('p', { class: 'hive-muted' }, 'Board brief, not a confirmed goal:'), markdown(api, cell.snapshot.brief)]
         : h('p', { class: 'hive-muted' }, cell.snapshot ? 'No goal was confirmed on the captured board.' : 'No goal written yet.'),
       root?.acceptance ? [h('h4', {}, 'Done when'), markdown(api, root.acceptance)] : null,
-      h('p', { class: 'hive-muted' }, 'Select a bead or a workstream to see its details here. Use the queen pill to manage the queen, and Settings for its instructions.'));
+      h('p', { class: 'hive-muted' }, 'Select a cell or a cluster to see its details here. Use the queen pill to manage the queen, and Settings for its instructions.'));
   }
   const detail = ui.beadDetail(bead);
   const full = { goal: bead.goal || '', acceptance: bead.acceptance || '', summary: '', nextAction: '', evidence: [], nativeMetadataKeys: [], ...(detail.bead ? { goal: detail.bead.goal, acceptance: detail.bead.acceptance, summary: detail.bead.summary, nextAction: detail.bead.nextAction, evidence: detail.bead.evidence, nativeMetadataKeys: detail.bead.nativeMetadataKeys } : {}) };
@@ -264,7 +265,7 @@ function beadDetails(ctx, cell) {
   const snap = cell.snapshot || null;
   const refId = snap?.beadSessions?.[bead.id] || null;
   const ref = refId ? snap.sessions?.[refId] : null;
-  return h('section', { class: 'hive-panel hive-details', tabindex: '-1', 'data-focus-key': 'panel:details', 'aria-label': 'Bead details', 'data-pane': 'details', dataset: { scrollKey: `details:${cell.id}:${bead.id}` } },
+  return h('section', { class: 'hive-panel hive-details', tabindex: '-1', 'data-focus-key': 'panel:details', 'aria-label': 'Cell details', 'data-pane': 'details', dataset: { scrollKey: `details:${cell.id}:${bead.id}` } },
     h('div', { class: 'hive-details-head' },
       h('h3', {}, bead.title),
       h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => ui.selectBead(null), title: 'Show the hive goal' }, 'Hive goal')),
@@ -273,7 +274,7 @@ function beadDetails(ctx, cell) {
     cell.snapshot ? null : pickupDetails(ctx, cell, { ...bead, pickup: detail.bead?.pickup || bead.pickup }),
     h('p', { class: 'hive-meta' },
       h('span', { class: `hive-status-pill hive-status-${displayStatus(bead)}` }, STATUS_LABEL[displayStatus(bead)] || bead.status),
-      h('span', {}, bead.kind),
+      h('span', {}, kindLabel(bead.kind)),
       h('code', {}, bead.id),
       bead.updatedAt ? h('span', {}, `updated ${relativeTime(bead.updatedAt)}`) : null,
       inCell ? null : h('span', {}, 'in another hive')),
@@ -281,7 +282,7 @@ function beadDetails(ctx, cell) {
     ref ? h('div', { class: 'hive-row' }, h('strong', {}, 'Captured session: '),
       h('span', { class: 'hive-session' }, h('span', { class: `hive-dot-inline hive-dot-${snapshotDot(ref.status)}`, 'aria-hidden': 'true' }), `${ref.label || refId.slice(0, 8)}, ${ref.status || 'unknown'} when captured`),
       h('span', { class: 'hive-muted' }, 'Read-only reference; it is not a session on this board.')) : null,
-    bead.untracked ? h('p', { class: 'hive-warning' }, 'Untracked: this started work has no live claimant or open blocking prerequisite.') : null,
+    bead.untracked ? h('p', { class: 'hive-warning' }, 'No active owner: this started work has no live claimant or open blocking prerequisite.') : null,
     bead.ownerSessionId ? h('div', { class: 'hive-row' }, h('strong', {}, 'Claimed by '), sessionButton(ctx, bead.ownerSessionId),
       isRetired(cell) ? null : h('button', {
         type: 'button',
@@ -292,7 +293,7 @@ function beadDetails(ctx, cell) {
           if (reason && reason.trim()) send({ type: 'hive-bead-release', beadId: bead.id, reason });
         },
       }, 'Release…')) : (bead.assignee ? h('div', {}, `Assigned to ${bead.assignee}`) : null),
-    bound.length ? h('div', { class: 'hive-row' }, h('strong', {}, 'Also bound: '), bound.map((b) => sessionButton(ctx, b.sessionId, ` (${b.role})`))) : null,
+    bound.length ? h('div', { class: 'hive-row' }, h('strong', {}, 'Other attached agents: '), bound.map((b) => sessionButton(ctx, b.sessionId, ` (${b.role})`))) : null,
     waits.length ? h('div', { class: 'hive-row' }, h('strong', {}, 'Waiting on: '), waits.map(link)) : null,
     bead.review ? h('div', { class: 'hive-row' }, h('strong', {}, `Review: ${String(bead.reviewState).replaceAll('_', ' ')}. `), detail.bead?.review?.summary || bead.review.summary || '', bead.review.reviewerSessionId ? sessionButton(ctx, bead.review.reviewerSessionId, ' (reviewer)') : null) : null,
     recordedWait(bead) ? h('div', { class: 'hive-row' }, h('strong', {}, 'Waiting for: '), recordedWait(bead)) : null,

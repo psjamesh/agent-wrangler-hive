@@ -56,13 +56,13 @@ const hidden = (f) => archiveHidden({ beads: f.rt.snapshots.graph.beads, rootId:
 test('fenced reopen refuses a changed parent and writes nothing', async () => {
   const f = fixture({ root: bead('root'), a: bead('a', 'root'), z: bead('z', 'root'), n: bead('n', 'a') });
   f.live.n.parentId = 'z';
-  await assert.rejects(reopenWorkstream(f.rt, { cellId: 'cell', headId: 'n', reason: 'more', confirmAncestors: ['a'] }), /workstreams around n changed/);
+  await assert.rejects(reopenWorkstream(f.rt, { cellId: 'cell', headId: 'n', reason: 'more', confirmAncestors: ['a'] }), /clusters around n changed/);
   assert.equal(f.calls.length, 0);
 });
 
 test('only top-level workstreams are archived, and reopening work inside one brings the whole group back in shape', async () => {
   const f = fixture({ root: bead('root'), a: bead('a', 'root'), n: bead('n', 'a'), b: bead('b', 'n'), s: bead('s', 'a') }, { a: p(0, 0), n: p(1, 0), b: p(2, 0), s: p(0, 1) });
-  await assert.rejects(archiveWorkstream(f.rt, { cellId: 'cell', headId: 'n' }), /Only top-level workstreams/);
+  await assert.rejects(archiveWorkstream(f.rt, { cellId: 'cell', headId: 'n' }), /Only top-level clusters/);
   await archiveWorkstream(f.rt, { cellId: 'cell', headId: 'a' });
   const out = await reopenWorkstream(f.rt, { cellId: 'cell', headId: 'n', reason: 'more', confirmAncestors: ['a'] });
   const l = lay(f.rt.snapshots.graph.beads, f.doc().beadLayout.cell);

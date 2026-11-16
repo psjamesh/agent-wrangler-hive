@@ -42,7 +42,7 @@ export function text(value, field, max, { required = false, allowEmpty = true } 
 }
 
 export function beadIdArg(value, field) {
-  if (!isBeadId(value)) throw new HiveError(`${field} must be a bead id.`);
+  if (!isBeadId(value)) throw new HiveError(`${field} must be a cell id.`);
   return value;
 }
 
@@ -120,7 +120,7 @@ export async function journaled(rt, { kind, cellId = null, actor, summary = '', 
   }
   for (const [id, before] of prepared) {
     if (JSON.stringify(structure(id)) !== JSON.stringify(before)) {
-      throw new HiveError(`Bead ${id} changed while waiting for the hierarchy. Re-read the work before retrying.`, 'conflict');
+      throw new HiveError(`Cell ${id} changed while waiting for the hierarchy. Re-read the work before retrying.`, 'conflict');
     }
   }
   const blocked = Object.values(rt.metadata.read?.().operations || {}).find((op) =>
@@ -323,7 +323,7 @@ export async function adoptTask(rt, host, { taskId, goal, acceptance, instructio
   const cleanInstructions = text(instructions, 'instructions', LIMITS.instructions);
   const task = host.tasks.get(taskId);
   if (!task || task.archived) throw new HiveError(`Unknown or archived task ${taskId}.`);
-  if (taskId === host.tasks.adhocId) throw new HiveError('The Unassigned tile cannot be a Hive cell.');
+  if (taskId === host.tasks.adhocId) throw new HiveError('The Unassigned tile cannot be a Hive.');
   const existing = rt.metadata.cellForTask(taskId);
   if (existing) {
     if (existing.retired) throw new HiveError('This task\'s hive is retired. Use Reopen hive to bring it back.', 'refused');
@@ -337,9 +337,9 @@ export async function adoptTask(rt, host, { taskId, goal, acceptance, instructio
   if (rootBeadId !== undefined && rootBeadId !== null && rootBeadId !== '') {
     beadIdArg(rootBeadId, 'root_bead_id');
     const bead = rt.snapshots.graph.beads[rootBeadId] || null;
-    if (!bead) throw new HiveError(`Bead ${rootBeadId} is not in Hive's store.`);
+    if (!bead) throw new HiveError(`Cell ${rootBeadId} is not in Hive's store.`);
     const owner = cellOfBead(rt, rootBeadId);
-    if (owner) throw new HiveError(`Bead ${rootBeadId} already belongs to cell ${owner.id}.`);
+    if (owner) throw new HiveError(`Cell ${rootBeadId} already belongs to hive ${owner.id}.`);
   }
   const cellId = newId('cell');
   const at = Date.now();
@@ -373,7 +373,7 @@ export async function adoptTask(rt, host, { taskId, goal, acceptance, instructio
 export function setQueenInstructions(rt, { cellId, instructions }) {
   ensureWritable(rt);
   const cell = rt.metadata.cell(cellId);
-  if (!cell) throw new HiveError(`Unknown cell ${cellId}.`);
+  if (!cell) throw new HiveError(`Unknown hive ${cellId}.`);
   refuseSnapshot(cell);
   if (instructions === undefined || instructions === null) throw new HiveError('instructions is required; send an empty string to clear them.');
   const clean = text(instructions, 'instructions', LIMITS.instructions);
@@ -386,18 +386,18 @@ export function setQueenInstructions(rt, { cellId, instructions }) {
 
 export function retryCellRoot(rt, host, { cellId }) {
   const cell = rt.metadata.cell(cellId);
-  if (!cell) throw new HiveError(`Unknown cell ${cellId}.`);
-  if (cell.rootBeadId) throw new HiveError('This cell already has a root goal.');
+  if (!cell) throw new HiveError(`Unknown hive ${cellId}.`);
+  if (cell.rootBeadId) throw new HiveError('This hive already has a root goal.');
   if (cell.setup?.state === 'uncertain' || cell.setup?.state === 'pending') {
-    throw new HiveError('The last attempt to create this cell\'s root goal has an unknown outcome. Reconcile it first.');
+    throw new HiveError('The last attempt to create this hive\'s root goal has an unknown outcome. Reconcile it first.');
   }
   const task = host.tasks.get(cell.taskId);
-  return createCellRoot(rt, { cellId, title: task?.name || 'Hive cell', goal: '', acceptance: '', actor: actorFor(null) });
+  return createCellRoot(rt, { cellId, title: task?.name || 'Hive', goal: '', acceptance: '', actor: actorFor(null) });
 }
 
 export function setCellEnabled(rt, { cellId, enabled }) {
   const cell = rt.metadata.cell(cellId);
-  if (!cell) throw new HiveError(`Unknown cell ${cellId}.`);
+  if (!cell) throw new HiveError(`Unknown hive ${cellId}.`);
   if (cell.retired) throw new HiveError('This hive is retired. Use Reopen hive to bring it back.', 'refused');
   rt.metadata.mutate((d) => {
     d.cells[cellId].enabled = Boolean(enabled);
@@ -407,7 +407,7 @@ export function setCellEnabled(rt, { cellId, enabled }) {
 }
 
 export function moveCell(rt, { cellId, position }) {
-  if (!rt.metadata.cell(cellId)) throw new HiveError(`Unknown cell ${cellId}.`);
+  if (!rt.metadata.cell(cellId)) throw new HiveError(`Unknown hive ${cellId}.`);
   const pos = axial(position);
   rt.metadata.mutate((d) => {
     const clash = Object.values(d.cells).find((c) => c.id !== cellId && !c.retired && c.position?.q === pos.q && c.position?.r === pos.r);
@@ -442,7 +442,7 @@ export const CATCHING_UP = 'Hive is still catching up with a change to the work 
 
 export function moveBeads(rt, { cellId, positions, aspect, base, stack }) {
   const cell = rt.metadata.cell(cellId);
-  if (!cell) throw new HiveError(`Unknown cell ${cellId}.`);
+  if (!cell) throw new HiveError(`Unknown hive ${cellId}.`);
   if (!positions || typeof positions !== 'object') throw new HiveError('positions must be an object.');
   const ratio = aspect === undefined || aspect === null ? null : arrangeAspect(aspect);
   if (ratio !== null && (cell.snapshot || !cell.enabled)) throw new HiveError('Only a hive that is on and not a captured snapshot can be arranged.');
@@ -454,7 +454,7 @@ export function moveBeads(rt, { cellId, positions, aspect, base, stack }) {
     beadIdArg(id, 'bead id');
     clean[id] = pos === null ? null : axial(pos);
   }
-  if (stack !== undefined && stack !== null && (!Array.isArray(stack) || stack.length > 2000)) throw new HiveError('stack must be a list of bead ids.');
+  if (stack !== undefined && stack !== null && (!Array.isArray(stack) || stack.length > 2000)) throw new HiveError('stack must be a list of cell ids.');
   const stacked = new Set((stack || []).map((id) => beadIdArg(id, 'bead id')));
   const placed = Object.entries(clean).filter(([, pos]) => pos !== null);
   if (placed.length) {
@@ -463,7 +463,7 @@ export function moveBeads(rt, { cellId, positions, aspect, base, stack }) {
     const beads = rt.snapshots.graph.beads;
     const inCell = cell.rootBeadId && beads[cell.rootBeadId] ? descendantIds(beads, cell.rootBeadId) : new Set();
     for (const [id] of placed) {
-      if (id === cell.rootBeadId || !inCell.has(id)) throw new HiveError(`Bead ${id} is not in this hive any more. Nothing was moved.`, 'stale');
+      if (id === cell.rootBeadId || !inCell.has(id)) throw new HiveError(`Cell ${id} is not in this hive any more. Nothing was moved.`, 'stale');
     }
   }
   rt.metadata.mutate((d) => {
@@ -489,7 +489,7 @@ export function moveBeads(rt, { cellId, positions, aspect, base, stack }) {
       }
       for (const ids of onHex.values()) {
         if (ids.length < 2 || !ids.some((id) => id in clean)) continue;
-        if (ids.filter((id) => !(stacked.has(id) && stackable(beads[id]))).length > 1) throw new HiveError('That move would put two beads on one hex. Nothing was moved.', 'stale');
+        if (ids.filter((id) => !(stacked.has(id) && stackable(beads[id]))).length > 1) throw new HiveError('That move would put two cells on one hex. Nothing was moved.', 'stale');
       }
     }
     const layout = d.beadLayout[cellId] || (d.beadLayout[cellId] = {});
@@ -534,7 +534,7 @@ export function clearQueen(d, cellId, at) {
 // session references are not sessions on this board, so nothing may launch,
 // nominate, brief or deliver to them.
 export function refuseSnapshot(cell) {
-  if (cell?.snapshot) throw new HiveError(`Cell ${cell.id} is a captured snapshot: it is read only and its sessions cannot be reached from here.`, 'snapshot');
+  if (cell?.snapshot) throw new HiveError(`Hive ${cell.id} is a captured snapshot: it is read only and its sessions cannot be reached from here.`, 'snapshot');
 }
 
 // The human settles only an interrupted cell creation, after checking the
@@ -542,7 +542,7 @@ export function refuseSnapshot(cell) {
 export async function resolveOperation(rt, { opId, note }, actor) {
   const op = rt.metadata.read().operations[opId];
   if (!op) throw new HiveError(`Unknown operation ${opId}.`);
-  if (op.kind !== 'cell-create') throw new HiveError('Hive and the cell\'s queen settle this operation; nothing is needed from you.');
+  if (op.kind !== 'cell-create') throw new HiveError('Hive and the hive\'s queen settle this operation; nothing is needed from you.');
   if (op.state !== 'uncertain' && op.state !== 'partial' && op.state !== 'pending') throw new HiveError(`Operation ${opId} is already ${op.state}.`);
   rt.metadata.mutate((d) => {
     d.operations[opId] = stamp(d.operations[opId], { state: 'resolved', resolvedBy: actor, resolution: (note || '').slice(0, 500) });
@@ -780,9 +780,9 @@ export async function reconcileForAgent(rt, actor, { op_id, verdict, note }) {
   if (rt.metadata.error) throw new HiveError(rt.metadata.error, 'metadata-unavailable');
   const opId = text(op_id, 'op_id', 80, { required: true });
   const op = rt.metadata.read().operations[opId];
-  if (!op || !op.cellId || op.cellId !== actor.cell.id) throw new AccessError(`Operation ${opId} is not one of this cell's operations.`);
+  if (!op || !op.cellId || op.cellId !== actor.cell.id) throw new AccessError(`Operation ${opId} is not one of this hive's operations.`);
   requireCoordinator(actor, 'settle operations');
-  if (['cell-create', 'cell-root'].includes(op.kind)) throw new HiveError('Cell setup operations are settled by the human in the Hive view.', 'refused');
+  if (['cell-create', 'cell-root'].includes(op.kind)) throw new HiveError('Hive setup operations are settled by the human in the Hive view.', 'refused');
   if (!UNSETTLED.has(op.state)) return { op_id: opId, state: op.state, message: `Already ${op.state}; nothing to do.` };
   if (running.has(opId)) throw new HiveError(`Operation ${opId} is still running. Check again once it finishes.`, 'busy');
   if (op.state === 'pending' && !needsSettling(op)) throw new HiveError(`Operation ${opId} started moments ago and may still be running. Check again in a few minutes.`, 'busy');
@@ -880,30 +880,30 @@ function withHumanAnswerPins(rt, cellId, beadId, evidence) {
 
 function kindArg(value) {
   const kind = text(value, 'kind', 40);
-  if (kind !== undefined && !/^[a-z][a-z0-9-]{0,39}$/.test(kind)) throw new HiveError('kind must be a short lowercase word such as work, workstream, goal, investigation, fix, review or decision.');
+  if (kind !== undefined && !/^[a-z][a-z0-9-]{0,39}$/.test(kind)) throw new HiveError('kind must be a short lowercase word such as work, workstream (cluster), goal, investigation, fix, review or decision.');
   return kind;
 }
 
 export async function createBeads(rt, actor, { beads = [], links = [] }) {
   actor = await waitForWritable(rt, actor);
-  if (!Array.isArray(beads) || !beads.length) throw new HiveError('Give at least one bead.');
-  if (beads.length > LIMITS.beads) throw new HiveError(`At most ${LIMITS.beads} beads per call.`);
+  if (!Array.isArray(beads) || !beads.length) throw new HiveError('Give at least one cell.');
+  if (beads.length > LIMITS.beads) throw new HiveError(`At most ${LIMITS.beads} cells per call.`);
   if (!Array.isArray(links) || links.length > LIMITS.links) throw new HiveError(`At most ${LIMITS.links} links per call.`);
   const cell = actor.cell;
-  if (!cell.rootBeadId) throw new HiveError('This cell has no root goal yet; the human must finish creating the cell.');
+  if (!cell.rootBeadId) throw new HiveError('This hive has no root goal yet; the human must finish creating the hive.');
   const refs = new Map();
   const nodes = beads.map((b, i) => {
     const ref = text(b.ref, `beads[${i}].ref`, 40) || `n${i}`;
-    if (!/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(ref)) throw new HiveError(`beads[${i}].ref must be a short name (letters, digits, - or _).`);
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(ref)) throw new HiveError(`cells[${i}].ref must be a short name (letters, digits, - or _).`);
     if (refs.has(ref)) throw new HiveError(`Duplicate ref ${ref}.`);
     refs.set(ref, i);
-    if (b.hold !== undefined && typeof b.hold !== 'boolean') throw new HiveError(`beads[${i}].hold must be true or false.`);
+    if (b.hold !== undefined && typeof b.hold !== 'boolean') throw new HiveError(`cells[${i}].hold must be true or false.`);
     if (b.hold === false && !['queen', 'human'].includes(actor.role)) throw new HiveError('Only the queen or human can create unheld work.', 'access');
     const kind = kindArg(b.kind) || 'work';
-    if (kind === 'goal') throw new HiveError('A cell has exactly one goal bead, its root. Use kind "workstream" for nested goals.');
+    if (kind === 'goal') throw new HiveError('A hive has exactly one goal cell, its root. Use kind "workstream" for nested goals.');
     const status = b.status === undefined ? undefined : text(b.status, `beads[${i}].status`, 20);
     if (status === 'blocked') throw new HiveError(BLOCKED_STATUS_HELP, 'refused');
-    if (status !== undefined && !SETTABLE_STATUSES.includes(status)) throw new HiveError(`beads[${i}].status must be one of ${SETTABLE_STATUSES.join(', ')}.`);
+    if (status !== undefined && !SETTABLE_STATUSES.includes(status)) throw new HiveError(`cells[${i}].status must be one of ${SETTABLE_STATUSES.join(', ')}.`);
     if (status === 'in_progress' && !GROUP_KINDS.has(kind)) throw new HiveError('Create work as open, then claim it with hive_claim_bead before starting it.');
     return {
       key: ref,
@@ -931,7 +931,7 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
     } else {
       beadIdArg(p, 'parent');
       const { cell: parentCell } = requireBeadAccess(rt, actor, p);
-      if (parentCell.id !== cell.id) throw new HiveError(`Parent ${p} is in another cell; create beads from that cell instead.`);
+      if (parentCell.id !== cell.id) throw new HiveError(`Parent ${p} is in another hive; create cells from that hive instead.`);
       n.parentId = p;
     }
   }
@@ -948,7 +948,7 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
     };
     const dep = end(l.dependent, `links[${i}].dependent`);
     const pre = end(l.prerequisite, `links[${i}].prerequisite`);
-    if (dep.key && pre.key && dep.key === pre.key) throw new HiveError(`links[${i}] links a bead to itself.`);
+    if (dep.key && pre.key && dep.key === pre.key) throw new HiveError(`links[${i}] links a cell to itself.`);
     return { fromKey: dep.key, fromId: dep.id, toKey: pre.key, toId: pre.id, type };
   });
   const waitGraph = {
@@ -957,7 +957,7 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
   };
   for (const node of nodes) requireStructuredWait(waitGraph, waitGraph.beads[`new:${node.key}`]);
   const affected = [...new Set([...nodes.map((n) => n.parentId), ...edges.flatMap((e) => [e.fromId, e.toId])].filter(Boolean))];
-  const out = await journaled(rt, { kind: 'create-beads', cellId: cell.id, actor: actorFor(actor.sessionId), summary: `Create ${nodes.length} bead(s)`, beadIds: affected }, async (opId, phase) => {
+  const out = await journaled(rt, { kind: 'create-beads', cellId: cell.id, actor: actorFor(actor.sessionId), summary: `Create ${nodes.length} cell(s)`, beadIds: affected }, async (opId, phase) => {
     const { ids } = await rt.beads.createMany({ nodes, edges }, actorFor(actor.sessionId), opId);
     phase.applied = true;
     return { ids, journal: { ids } };
@@ -998,22 +998,22 @@ export async function updateBead(rt, actor, input) {
   };
   const kind = kindArg(input.kind);
   if (kind !== undefined) {
-    if (isRoot) throw new HiveError('The cell root is always the goal bead.');
+    if (isRoot) throw new HiveError('The hive root is always the goal cell.');
     if (kind === 'goal') throw new HiveError('Use kind "workstream" for nested goals.');
     patch.kind = kind;
   }
   if (input.status !== undefined) {
     if (input.status === 'blocked') throw new HiveError(BLOCKED_STATUS_HELP, 'refused');
     if (!SETTABLE_STATUSES.includes(input.status)) throw new HiveError(`status must be one of ${SETTABLE_STATUSES.join(', ')}. Use hive_finish_bead to close work.`);
-    if (bead.status === 'closed') throw new HiveError(`Bead ${id} is closed. Reopening is a human or queen decision; publish the reason if it should reopen.`);
+    if (bead.status === 'closed') throw new HiveError(`Cell ${id} is closed. Reopening is a human or queen decision; publish the reason if it should reopen.`);
     patch.status = input.status;
   }
   if (input.parent_id !== undefined) {
-    if (isRoot) throw new HiveError('The cell root cannot be moved.');
+    if (isRoot) throw new HiveError('The hive root cannot be moved.');
     const parentId = input.parent_id || cell.rootBeadId;
     beadIdArg(parentId, 'parent_id');
     const { cell: target } = requireBeadAccess(rt, actor, parentId);
-    if (descendantIds(rt.snapshots.graph.beads, id).has(parentId)) throw new HiveError('That would make the bead its own ancestor.');
+    if (descendantIds(rt.snapshots.graph.beads, id).has(parentId)) throw new HiveError('That would make the cell its own ancestor.');
     if (target.id !== cell.id) requireCoordinator(actor.cells.find((p) => p.cell.id === target.id) || { role: null }, 'move work into another cell');
     patch.parentId = parentId;
   }
@@ -1030,13 +1030,13 @@ export async function updateBead(rt, actor, input) {
       const clean = text(resumeAfter, 'resume_after_bead', 80);
       if (clean) {
         beadIdArg(clean, 'resume_after_bead');
-        if (clean === id) throw new HiveError('A bead cannot wait for itself.');
+        if (clean === id) throw new HiveError('A cell cannot wait for itself.');
         if (!rt.snapshots.graph.beads[clean]) throw new HiveError(`resume_after_bead ${clean} does not exist.`);
         resume.afterBead = clean;
       } else delete resume.afterBead;
     }
     const cleared = !resume.reviewAt && !resume.afterBead;
-    if (!cleared && !waitStatus(finalStatus)) throw new HiveError('A resume condition only applies to a deferred bead; set status "deferred" too.');
+    if (!cleared && !waitStatus(finalStatus)) throw new HiveError('A resume condition only applies to a deferred cell; set status "deferred" too.');
     patch.resume = cleared ? '' : resume;
   } else if (patch.status !== undefined && bead.resume && !waitStatus(patch.status)) {
     patch.resume = '';
@@ -1047,7 +1047,7 @@ export async function updateBead(rt, actor, input) {
   for (const k of Object.keys(patch)) if (patch[k] === undefined) delete patch[k];
   if (!Object.keys(patch).length && !add.length && !removeLabels.length) throw new HiveError('Nothing to update.');
   const expectedUpdatedAt = input.expected_updated_at;
-  if (expectedUpdatedAt !== undefined && (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt)) throw new HiveError('expected_updated_at must be the updated_at that hive_context showed for this bead.');
+  if (expectedUpdatedAt !== undefined && (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt)) throw new HiveError('expected_updated_at must be the updated_at that hive_context showed for this cell.');
   const validatesWait = input.status !== undefined || resumeAt !== undefined || resumeAfter !== undefined;
   if (validatesWait) requireStructuredWait(rt.snapshots.graph, { ...bead, ...patch });
   const affectsCapacity = patch.status !== undefined || patch.kind !== undefined || patch.parentId !== undefined;
@@ -1056,19 +1056,19 @@ export async function updateBead(rt, actor, input) {
     let parentId = bead.parentId;
     if (patch.parentId !== undefined) {
       const fresh = await rt.beads.show(id);
-      if (!fresh) throw new HiveError(`Bead ${id} no longer exists.`);
+      if (!fresh) throw new HiveError(`Cell ${id} no longer exists.`);
       parentId = fresh.parent || normalizeIssue(fresh).parentId;
     }
     const affected = [...new Set([id, ...(patch.parentId !== undefined ? [parentId, patch.parentId] : [])].filter(Boolean))];
     return journaled(rt, { kind: 'update-bead', cellId: cell.id, actor: actorFor(actor.sessionId), summary: `Update ${id}`, beadIds: affected, intent: { beadId: id, fields: Object.keys(patch) } }, async (opId, phase) => {
       if (add.length || removeLabels.length) {
         const fresh = await rt.beads.show(id);
-        if (!fresh) throw new HiveError(`Bead ${id} no longer exists.`);
+        if (!fresh) throw new HiveError(`Cell ${id} no longer exists.`);
         requireApprovedMergeHead(rt, cell.id, id, add);
         const { evidence } = normalizeIssue(fresh);
         const kept = evidence.filter((e) => !removeLabels.includes(e.label));
         const next = [...kept, ...add];
-        if (next.length > LIMITS.evidence) throw new HiveError(`A bead holds at most ${LIMITS.evidence} evidence entries; remove some first.`);
+        if (next.length > LIMITS.evidence) throw new HiveError(`A cell holds at most ${LIMITS.evidence} evidence entries; remove some first.`);
         patch.evidence = next;
       }
       const refreshToken = rt.metadata.read().workstreamRefresh?.[id]?.token;
@@ -1076,9 +1076,9 @@ export async function updateBead(rt, actor, input) {
       const written = await rt.beads.update(id, patch, actorFor(actor.sessionId), affectsCapacity || validatesWait || expectedUpdatedAt || bead.pickup?.armed ? (context) => {
         const graph = exportedGraph(context);
         const current = graph.beads[id];
-        if (!current) throw new HiveError(`Bead ${id} no longer exists.`, 'conflict');
+        if (!current) throw new HiveError(`Cell ${id} no longer exists.`, 'conflict');
         pickupBefore = current;
-        if (expectedUpdatedAt && current.updatedAt !== expectedUpdatedAt) throw new HiveError(`Bead ${id} changed since ${expectedUpdatedAt} (now ${current.updatedAt}); nothing was applied. Re-read it with hive_context and resend against the current version.`, 'conflict');
+        if (expectedUpdatedAt && current.updatedAt !== expectedUpdatedAt) throw new HiveError(`Cell ${id} changed since ${expectedUpdatedAt} (now ${current.updatedAt}); nothing was applied. Re-read it with hive_context and resend against the current version.`, 'conflict');
         if (validatesWait) requireStructuredWait(graph, { ...current, ...patch });
         if (!affectsCapacity) return;
         const nextBead = { ...current, ...patch };
@@ -1133,7 +1133,7 @@ export async function linkBeads(rt, actor, { links }) {
   for (const [i, l] of links.entries()) {
     const dependent = beadIdArg(l.dependent, `links[${i}].dependent`);
     const prerequisite = beadIdArg(l.prerequisite, `links[${i}].prerequisite`);
-    if (dependent === prerequisite) throw new HiveError(`links[${i}] links a bead to itself.`);
+    if (dependent === prerequisite) throw new HiveError(`links[${i}] links a cell to itself.`);
     const a = requireBeadAccess(rt, actor, dependent);
     const b = requireBeadAccess(rt, actor, prerequisite);
     touched.add(a.cell.id);
@@ -1163,8 +1163,8 @@ export async function claimBead(rt, actor, { bead_id }, { launchId = null, reval
   requireNonHelper(rt, actor, 'claim beads');
   const id = beadIdArg(bead_id, 'bead_id');
   const { cell, bead } = requireBeadAccess(rt, actor, id);
-  if (cell.rootBeadId === id) throw new HiveError('The cell goal is not claimed; claim a piece of work under it.');
-  if (bead.status === 'closed') throw new HiveError(`Bead ${id} is closed.`);
+  if (cell.rootBeadId === id) throw new HiveError('The hive goal is not claimed; claim a piece of work under it.');
+  if (bead.status === 'closed') throw new HiveError(`Cell ${id} is closed.`);
   const who = actorFor(actor.sessionId);
   const out = await withLocks([ADMISSION_LOCK, `bead:${id}`], () => journaled(rt, { kind: 'claim', cellId: cell.id, actor: who, summary: `Claim ${id}`, beadIds: [id], intent: { beadId: id, assignee: who } }, async (opId, phase) => {
     const res = await rt.beads.claim(id, who, (context) => {
@@ -1176,7 +1176,7 @@ export async function claimBead(rt, actor, { bead_id }, { launchId = null, reval
         if (!launch || launch.state !== 'binding' || launch.sessionId !== actor.sessionId || launch.beadId !== id) throw new HiveError('Worker launch changed before claiming.', 'conflict');
       }
       const graph = exportedGraph(context);
-      if (!descendantIds(graph.beads, cell.rootBeadId).has(id)) throw new HiveError(`Bead ${id} moved outside this cell.`, 'conflict');
+      if (!descendantIds(graph.beads, cell.rootBeadId).has(id)) throw new HiveError(`Cell ${id} moved outside this hive.`, 'conflict');
       checkAdmission(rt, graph, id, { sessionId: actor.sessionId, launchId, ownOperationId: opId, revalidateCapacity });
       rt.metadata.mutate(d => consumePickup(d, graph.beads[id], { source: 'claim', operationId: opId }));
     });
@@ -1197,12 +1197,12 @@ export async function releaseBead(rt, actor, { bead_id, reason, force, status })
   if (status !== undefined && !SETTABLE_STATUSES.includes(status)) throw new HiveError(`status must be one of ${SETTABLE_STATUSES.join(', ')}.`);
   return withLock(`bead:${id}`, async () => {
     const fresh = await rt.beads.show(id);
-    if (!fresh) throw new HiveError(`Bead ${id} no longer exists.`);
+    if (!fresh) throw new HiveError(`Cell ${id} no longer exists.`);
     const holder = fresh.assignee || null;
     if (!holder) return { bead_id: id, released: false, message: 'It was not claimed.' };
     const mine = holder === who;
     if (!mine) {
-      if (!force) throw new HiveError(`Bead ${id} is claimed by ${holder}, not you. A queen or coordinator can release it with force: true and a reason, after checking with the holder.`, 'conflict');
+      if (!force) throw new HiveError(`Cell ${id} is claimed by ${holder}, not you. A queen or coordinator can release it with force: true and a reason, after checking with the holder.`, 'conflict');
       requireCoordinator({ role }, `release another session's claim in cell ${cell.id}`);
       if (!cleanReason) throw new HiveError('Releasing another session\'s claim needs a reason.');
     }
@@ -1290,19 +1290,19 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
   if (bead_id !== undefined && bead_id !== null && bead_id !== '') {
     beadId = beadIdArg(bead_id, 'bead_id');
     const { cell: c } = requireBeadAccess(rt, actor, beadId);
-    if (c.id !== cell.id) throw new HiveError(`Bead ${beadId} is in cell ${c.id}; bind from that cell.`);
+    if (c.id !== cell.id) throw new HiveError(`Cell ${beadId} is in hive ${c.id}; bind from that hive.`);
   }
   const cleanRole = storedRole(text(role, 'role', 40) || 'worker');
   if (!/^[a-z][a-z-]{0,39}$/.test(cleanRole)) throw new HiveError('role must be work, review, helper, or a short lowercase word such as coordinator.');
   const attachRole = ['reviewer', 'investigator'].includes(cleanRole);
   const holds = Boolean(beadId) && holdsBead(rt, host, actor.sessionId, beadId);
-  if (cleanRole === 'reviewer' && !unbind && !beadId) throw new HiveError('A review session must be joined to a bead (bead_id).');
+  if (cleanRole === 'reviewer' && !unbind && !beadId) throw new HiveError('A review session must be joined to a cell (bead_id).');
   if (target !== actor.sessionId) {
     if (!(attachRole && holds && !unbind)) requireCoordinator(actor, 'bind another session');
     const session = host.sessions.get(target);
     if (!session || session.archived) throw new HiveError(`Unknown or archived session ${target}.`);
     const inTask = session.taskId === cell.taskId;
-    if (!inTask && session.spawnedBy !== actor.sessionId) throw new AccessError('You can bind another session only if it is in this cell\'s task or you launched it.');
+    if (!inTask && session.spawnedBy !== actor.sessionId) throw new AccessError('You can bind another session only if it is in this hive\'s task or you launched it.');
     if (cleanRole === 'coordinator') requireQueen(actor, 'make another session a coordinator');
   } else if (cleanRole === 'coordinator' && actor.role !== 'coordinator' && actor.role !== 'queen') {
     throw new AccessError('Only the queen can grant the coordinator role.');
@@ -1315,13 +1315,13 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
   if (cleanRole === 'reviewer' && !unbind) {
     const targetSession = host.sessions.get(target);
     assertAllowedReviewer({ agent: targetSession?.agent, model: targetSession?.model });
-    if (target === actor.sessionId) throw new AccessError('A session cannot nominate itself as a reviewer. The bead\'s holder or the queen joins it with hive_bind_session(session_id).');
-    if (!COORDINATING_ROLES.has(actor.role) && !holds) throw new AccessError('Only the queen, a coordinator or the bead\'s live holder can nominate a review session.');
+    if (target === actor.sessionId) throw new AccessError('A session cannot nominate itself as a reviewer. The cell\'s holder or the queen joins it with hive_bind_session(session_id).');
+    if (!COORDINATING_ROLES.has(actor.role) && !holds) throw new AccessError('Only the queen, a coordinator or the cell\'s live holder can nominate a review session.');
     const doc = rt.metadata.read();
     const worked = (doc.bindings[cell.id] || []).some((b) => b.sessionId === target && b.beadId === beadId && ['worker', 'investigator'].includes(b.role))
       || Object.values(doc.workerLaunches || {}).some((l) => l.sessionId === target && l.beadId === beadId && !l.reviewId)
       || rt.snapshots.graph.beads[beadId]?.assignee === actorFor(target);
-    if (worked) throw new AccessError('A session that has worked on this bead cannot review it.');
+    if (worked) throw new AccessError('A session that has worked on this cell cannot review it.');
     requireNonHelper(rt, { sessionId: target, cell }, 'review beads');
   }
   if (attachRole && beadId && !unbind) checkAdmission(rt, await rt.beads.loadSnapshot({ all: true }), beadId, { sessionId: null, review: true });
@@ -1346,9 +1346,9 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
   }
   let reviewId = null;
   if (cleanRole === 'reviewer') {
-    if (Object.values(rt.metadata.read().reviews || {}).some((r) => r.workBeadId === beadId && ['requested', 'in_review'].includes(r.state))) throw new HiveError('This bead already has an open review; wait for its verdict or cancel it.', 'conflict');
+    if (Object.values(rt.metadata.read().reviews || {}).some((r) => r.workBeadId === beadId && ['requested', 'in_review'].includes(r.state))) throw new HiveError('This cell already has an open review; wait for its verdict or cancel it.', 'conflict');
     const bead = rt.snapshots.graph.beads[beadId];
-    if (!bead || bead.status === 'closed' || bead.id === cell.rootBeadId) throw new HiveError('Join a review session to open work in this cell.');
+    if (!bead || bead.status === 'closed' || bead.id === cell.rootBeadId) throw new HiveError('Join a review session to open work in this hive.');
     reviewId = newId('review');
   }
   rt.metadata.mutate((d) => {
@@ -1418,7 +1418,7 @@ export async function finishBead(rt, actor, input) {
   const id = beadIdArg(input.bead_id, 'bead_id');
   if (openReview(rt, id)) throw new HiveError('An open review must end with hive_review_verdict or a coordinator using hive_cancel_review before this work can finish.');
   const { cell, bead, role } = requireBeadAccess(rt, actor, id);
-  if (bead.status === 'closed') throw new HiveError(`Bead ${id} is already closed.`);
+  if (bead.status === 'closed') throw new HiveError(`Cell ${id} is already closed.`);
   if (cell.rootBeadId === id) requireQueen({ role }, `close the goal of cell ${cell.id}`);
   const outcome = input.outcome;
   if (!OUTCOMES.includes(outcome)) throw new HiveError(`outcome must be one of ${OUTCOMES.join(', ')}.`);
@@ -1437,23 +1437,23 @@ export async function finishBead(rt, actor, input) {
   }
   const openChildren = Object.values(rt.snapshots.graph.beads).filter((b) => b.parentId === id && OPEN_STATUSES.includes(b.status));
   if (openChildren.length) {
-    throw new HiveError(`Bead ${id} still has ${openChildren.length} open child bead(s) (${openChildren.slice(0, 5).map((b) => b.id).join(', ')}). Finish or re-parent them first.`);
+    throw new HiveError(`Cell ${id} still has ${openChildren.length} open child cell(s) (${openChildren.slice(0, 5).map((b) => b.id).join(', ')}). Finish or re-parent them first.`);
   }
   const blockers = waitingOn(rt, id);
   if (blockers.length) {
-    throw new HiveError(`Bead ${id} is still waiting on ${blockers.join(', ')}. Beads will not close it while a blocking prerequisite is open: finish the prerequisite, or remove the link with hive_link_beads if it no longer applies.`);
+    throw new HiveError(`Cell ${id} is still waiting on ${blockers.join(', ')}. Beads will not close it while a blocking prerequisite is open: finish the prerequisite, or remove the link with hive_link_beads if it no longer applies.`);
   }
   let workstreamRefresh = null;
   const out = await withLock(`bead:${id}`, () => journaled(rt, { kind: 'finish', cellId: cell.id, actor: who, summary: `Finish ${id} as ${outcome}`, beadIds: [id], intent: { beadId: id, outcome } }, async (opId, phase) => {
     if (openReview(rt, id)) throw new HiveError('This work still has an open review.');
     const fresh = await rt.beads.show(id);
-    if (!fresh) throw new HiveError(`Bead ${id} no longer exists.`);
-    if (fresh.status === 'closed') throw new HiveError(`Bead ${id} was closed meanwhile.`);
+    if (!fresh) throw new HiveError(`Cell ${id} no longer exists.`);
+    if (fresh.status === 'closed') throw new HiveError(`Cell ${id} was closed meanwhile.`);
     // Beads refuses to close an item another actor holds. Checking before any
     // write means that predictable refusal changes nothing, instead of saving
     // the summary and evidence and then failing to close.
     if (fresh.assignee && fresh.assignee !== who) {
-      throw new HiveError(`Bead ${id} is claimed by ${fresh.assignee}, so only that session can finish it. Nothing was changed. Ask the holder to finish it with hive_finish_bead; if it cannot, a queen or coordinator can check with it and then release the claim with hive_release_bead (force: true and a reason) before finishing.`, 'conflict');
+      throw new HiveError(`Cell ${id} is claimed by ${fresh.assignee}, so only that session can finish it. Nothing was changed. Ask the holder to finish it with hive_finish_bead; if it cannot, a queen or coordinator can check with it and then release the claim with hive_release_bead (force: true and a reason) before finishing.`, 'conflict');
     }
     requireApprovedMergeHead(rt, cell.id, id, add);
     const normalized = normalizeIssue(fresh);
@@ -1492,7 +1492,7 @@ export function readyBeads(rt, actor, { under_bead_id, limit }) {
   if (under_bead_id) {
     beadIdArg(under_bead_id, 'under_bead_id');
     const { cell: c } = requireBeadAccess(rt, actor, under_bead_id);
-    if (c.id !== cell.id) throw new HiveError(`Bead ${under_bead_id} is in another cell.`);
+    if (c.id !== cell.id) throw new HiveError(`Cell ${under_bead_id} is in another hive.`);
     scope = descendantIds(beads, under_bead_id);
   }
   const hasOpenChildren = new Set(Object.values(beads).filter(b => b.parentId && OPEN_STATUSES.includes(b.status)).map(b => b.parentId));
@@ -1517,7 +1517,7 @@ export function assessCompletion(rt, cell, id, { beads, edges, errors = [] }, wh
   const head = beads[id];
   if (!head) return { problems: [...problems, `${id} is not in the store.`], ids: [] };
   if (head.status === 'closed') problems.push(`${id} is already closed.`);
-  if (!cell.rootBeadId || !descendantIds(beads, cell.rootBeadId).has(id) || id === cell.rootBeadId) problems.push(`${id} is not a workstream in this hive.`);
+  if (!cell.rootBeadId || !descendantIds(beads, cell.rootBeadId).has(id) || id === cell.rootBeadId) problems.push(`${id} is not a cluster in this hive.`);
   const ids = [...descendantIds(beads, id)];
   const reviews = ids.filter((d) => openReview(rt, d));
   if (reviews.length) problems.push(`Open reviews still wait on ${reviews.join(', ')}; record their verdicts or explicitly cancel them first.`);
@@ -1538,7 +1538,7 @@ export function assessCompletion(rt, cell, id, { beads, edges, errors = [] }, wh
 export function finishGroup(rt, { cell, id, outcome, summary, add = [], who, overrideReason, checkEvidence = false }) {
   return withLock(`bead:${id}`, () => journaled(rt, { kind: 'finish', cellId: cell.id, actor: who, summary: `Finish ${id} as ${outcome}`, beadIds: [id], intent: { beadId: id, outcome } }, async (opId, phase) => {
     const fresh = await rt.beads.show(id);
-    if (!fresh) throw new HiveError(`Bead ${id} no longer exists.`);
+    if (!fresh) throw new HiveError(`Cell ${id} no longer exists.`);
     const evidence = [...normalizeIssue(fresh).evidence, ...add].slice(-LIMITS.evidence);
     let workstreamRefresh = null;
     try {
@@ -1577,7 +1577,7 @@ export async function humanRelease(rt, { beadId, reason }) {
   if (cell?.retired) throw new HiveError('This hive is retired. Reopen it to release claims.', 'refused');
   return withLock(`bead:${id}`, async () => {
     const fresh = await rt.beads.show(id);
-    if (!fresh) throw new HiveError(`Unknown bead ${id}.`);
+    if (!fresh) throw new HiveError(`Unknown cell ${id}.`);
     if (!fresh.assignee) throw new HiveError('It is not claimed.');
     return releaseWithStatus(rt, { cellId: cell?.id || null, actor: actorFor(null), id, fresh, reason: cleanReason,
       summary: `Human released ${id} held by ${fresh.assignee}` });

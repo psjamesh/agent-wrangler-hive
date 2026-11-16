@@ -567,7 +567,7 @@ function publishedBeadMentions(rt, body) {
   const beads = rt.snapshots.graph.beads;
   const ids = beadReferences(body).filter(id => Object.hasOwn(beads, id) || (!HIVE_TERMS.has(id) && /^hive-[a-z0-9]{3,}(?:\.[0-9]+)*$/.test(id)));
   const unknown = ids.filter(id => !Object.hasOwn(beads, id));
-  if (unknown.length) throw new HiveError(`Unknown bead ids: ${unknown.join(', ')}. Create beads and wait for their returned ids before publishing; call hive_context for current ids. If this isn't a bead id, wrap it in backticks.`);
+  if (unknown.length) throw new HiveError(`Unknown cell ids: ${unknown.join(', ')}. Create cells and wait for their returned ids before publishing; call hive_context for current ids. If this isn't a cell id, wrap it in backticks.`);
   return ids;
 }
 

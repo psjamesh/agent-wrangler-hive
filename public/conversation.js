@@ -213,7 +213,7 @@ function beneath(hive, top) {
 export function renderRelatedBeads(related, renderChip) {
   const focused = related.el.contains?.(document.activeElement) ? document.activeElement?.dataset.focusKey : null;
   const ids = [...related.ids];
-  related.el.replaceChildren(h('span', { class: 'hive-muted' }, ids.length ? 'Related beads: ' : 'No related beads in this hive.'), ...ids.map(renderChip));
+  related.el.replaceChildren(h('span', { class: 'hive-muted' }, ids.length ? 'Related cells: ' : 'No related cells in this hive.'), ...ids.map(renderChip));
   if (focused) [...related.el.querySelectorAll('button')].find(chip => chip.dataset.focusKey === focused)?.focus({ preventScroll: true });
 }
 
@@ -340,7 +340,7 @@ function unreadIn(t, msgs, ackOf, snapshot) {
 
 function composerRow({ cell, beads, ui, ctx, attach, selected, onSubmit, label }) {
   return h('div', { class: 'hive-composer-row' },
-    attach ? h('label', { for: attach.id, class: 'hive-muted hive-attach' }, attach, selected ? ` About "${beads[selected]?.title || selected}" (untick to clear)` : ' Select a bead to attach it') : h('span'),
+    attach ? h('label', { for: attach.id, class: 'hive-muted hive-attach' }, attach, selected ? ` About "${beads[selected]?.title || selected}" (untick to clear)` : ' Select a cell to attach it') : h('span'),
     h('button', { type: 'button', class: 'hive-btn hive-btn-primary', disabled: ctx.busy('hive-send'), onclick: onSubmit }, ctx.busy('hive-send') ? 'Sending…' : label));
 }
 
@@ -841,7 +841,7 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
     titleEl = h('span', { class: 'hive-topic-name', title: t.title }, h('strong', {}, marked(t.title, query)));
   }
   const relations = ui.relationsFor(cell.id, t.id, epoch, hive.metaVersion) || (cell.topicRelations ? cell.topicRelations[t.id] || { references: [] } : t);
-  const related = { ids: relatedBeads(hive, cell, relations, msgs, ui.conversationMessage?.(cell.id, t.id)), el: h('div', { class: 'hive-conversation-relations', 'aria-label': 'Related beads' }) };
+  const related = { ids: relatedBeads(hive, cell, relations, msgs, ui.conversationMessage?.(cell.id, t.id)), el: h('div', { class: 'hive-conversation-relations', 'aria-label': 'Related cells' }) };
   const summary = h('summary', { 'data-focus-key': `topic-details:${key}` }, 'Details');
   const details = h('details', {
     class: 'hive-topic-details',
@@ -1045,7 +1045,7 @@ function renderStream({ cell, hive, graph, api, ui, ctx }) {
       h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setReplyFor(cell.id, null) }, 'Cancel')) : null,
     textarea,
     h('div', { class: 'hive-composer-row' },
-      h('label', { for: `hive-attach-${cell.id}`, class: 'hive-muted' }, attach, selected ? ` About "${beads[selected]?.title || selected}"` : ' Select a bead to attach it'),
+      h('label', { for: `hive-attach-${cell.id}`, class: 'hive-muted' }, attach, selected ? ` About "${beads[selected]?.title || selected}"` : ' Select a cell to attach it'),
       h('button', { type: 'button', class: 'hive-btn hive-btn-primary', disabled: ctx.busy('hive-send'), onclick: submit }, ctx.busy('hive-send') ? 'Sending…' : 'Send')));
   list = keepMessageList(ui, key, list, ctx);
   return { list, composer, textarea };

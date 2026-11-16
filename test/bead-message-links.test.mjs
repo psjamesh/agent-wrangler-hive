@@ -39,7 +39,7 @@ test('message markdown links known cell beads across formatting but leaves code,
     beadIds: new Set(['hive-one', 'hive-two']), cellId: 'cell-one',
   });
   assert.deepEqual(el.querySelectorAll('a').map(a => a.textContent), ['hive-one', 'hive-two', 'hive-one']);
-  assert.equal(el.querySelectorAll('a')[0].getAttribute('href'), '#view=ext:hive:overview&cell=cell-one&bead=hive-one&pane=details');
+  assert.equal(el.querySelectorAll('a')[0].getAttribute('href'), '#view=ext:hive:overview&hive=cell-one&bead=hive-one&pane=details');
   assert.equal(el.querySelectorAll('code').map(n => n.textContent).join(','), 'hive-one,hive-two');
   assert.equal(el.querySelectorAll('a').at(-1).getAttribute('href'), 'https://example.com');
 });
@@ -124,7 +124,7 @@ test('paragraphs and line breaks separate words while punctuation preserves form
 
 test('request-body Hive message links stay navigable in the same tab, other hash and relative links stay inert', t => {
   dom(t);
-  const link = '#view=ext:hive:overview&cell=cell_x&topic=thr_other&message=msg_target';
+  const link = '#view=ext:hive:overview&hive=cell_x&topic=thr_other&message=msg_target';
   const html = `<p><a href="${link}">Open Hive message</a> <a href="#view=search">grid</a> <a href="javascript:alert(1)">js</a> <a href="https://example.com">web</a></p>`;
   const el = markdown({ ui: { markdownPreview: () => html } }, '');
   const anchors = el.querySelectorAll('a');

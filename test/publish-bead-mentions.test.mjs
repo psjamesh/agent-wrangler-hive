@@ -32,7 +32,7 @@ function fixture(t) {
 test('publish rejects all unknown Hive ids before saving a message or topic', async t => {
   const f = fixture(t);
   await assert.rejects(publish(f.rt, f.actor, { text: 'See hive-demo2, **hive-zzzz**, hive-xxx and hive-zzzz.' }), err => {
-    assert.match(err.message, /Unknown bead ids/);
+    assert.match(err.message, /Unknown cell ids/);
     assert.match(err.message, /hive-zzzz/);
     assert.match(err.message, /hive-xxx/);
     assert.doesNotMatch(err.message, /hive-demo2/);
@@ -86,7 +86,7 @@ test('publish rejects guessed ids of any length, including child ids', async t =
     await assert.rejects(publish(f.rt, f.actor, { text: `See ${id}.` }), err => {
       assert.ok(err.message.includes(id));
       assert.match(err.message, /wait for their returned ids/);
-      assert.match(err.message, /If this isn.t a bead id, wrap it in backticks/);
+      assert.match(err.message, /If this isn.t a cell id, wrap it in backticks/);
       return true;
     });
   }

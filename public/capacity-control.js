@@ -25,14 +25,14 @@ export function capacityControl({ hive, ui, api }) {
   if (!usage) return null;
   const limit = capacityLimit(api, usage.limit);
   const breakdown = usage.breakdown;
-  const detail = breakdown ? `Across all hives: ${breakdown.claimed} claimed, ${breakdown.reviews} additional open reviews, ${breakdown.launching} launching or claim reservations${breakdown.helpers ? `, ${breakdown.helpers} held by helpers` : ''}. Each work bead counts once; reviews, launches and helpers share its slot. Live helpers retain the slot after holder release.` : 'Across all hives. Each work bead counts once.';
+  const detail = breakdown ? `Across all hives: ${breakdown.claimed} claimed, ${breakdown.reviews} additional open reviews, ${breakdown.launching} launching or claim reservations${breakdown.helpers ? `, ${breakdown.helpers} held by helpers` : ''}. Each work cell counts once; reviews, launches and helpers share its active work item. Live helpers retain the active work item after holder release.` : 'Across all hives. Each work cell counts once.';
   return h('div', { class: 'hive-capacity-control' },
     h('button', {
       type: 'button', class: 'hive-quiet-btn hive-capacity-count',
       'data-focus-key': 'capacity-toggle', 'aria-expanded': String(Boolean(ui.form('settings'))), 'aria-controls': 'hive-settings',
       title: `${detail} Open Hive Settings.`, 'aria-label': `${usage.used}${limit ? ` of ${limit}` : ''} in progress. ${detail} Open Hive Settings.`,
       onclick: () => openHiveSettings(ui, 'capacity-toggle'),
-    }, limit ? progressBar(usage.used, limit) : null, `${usage.used}${limit ? `/${limit}` : ''} slots`),
+    }, limit ? progressBar(usage.used, limit) : null, `${usage.used}${limit ? `/${limit}` : ''} active`),
     usage.outside > 0 ? h('span', { class: 'hive-capacity-note' }, `· ${usage.outside} outside a hive`) : null,
     limit > 0 && usage.used > limit ? h('span', { class: 'hive-capacity-note', role: 'status' }, 'Over limit. Current work continues; new work waits for room.') : null);
 }
@@ -66,9 +66,9 @@ export function capacityEditor({ hive, ui, api }) {
     }
   };
   return h('form', {
-      id: 'hive-capacity-editor', novalidate: true, class: 'hive-capacity-editor', 'aria-label': 'Maximum active workers', onsubmit: save,
+      id: 'hive-capacity-editor', novalidate: true, class: 'hive-capacity-editor', 'aria-label': 'Maximum active work items', onsubmit: save,
     },
-    h('label', { for: 'hive-capacity-limit' }, 'Maximum active workers'),
+    h('label', { for: 'hive-capacity-limit' }, 'Maximum active work items'),
     h('input', {
       id: 'hive-capacity-limit', type: 'number', min: 0, step: 1, value: form.value, disabled: form.saving,
       'data-focus-key': 'capacity-limit', 'aria-describedby': 'hive-capacity-help',
@@ -76,7 +76,7 @@ export function capacityEditor({ hive, ui, api }) {
     }),
     h('label', { class: 'hive-capacity-unlimited' }, h('input', { type: 'checkbox', checked: form.unlimited, disabled: form.saving, 'data-focus-key': 'capacity-unlimited', onchange: e => change({ unlimited: e.target.checked, saved: false }) }), 'Unlimited'),
     h('button', { type: 'submit', class: 'hive-btn hive-btn-primary', disabled: form.saving, 'data-focus-key': 'capacity-save' }, form.saving ? 'Saving…' : 'Save'),
-    form.saved ? h('span', { role: 'status' }, 'Worker limit saved.') : null,
+    form.saved ? h('span', { role: 'status' }, 'Active work limit saved.') : null,
     h('p', { id: 'hive-capacity-help', class: 'hive-muted' }, 'One limit across all hives. 0 means Unlimited. Lowering the limit keeps current work.'),
     form.error ? h('p', { role: 'alert' }, form.error) : null);
 }
