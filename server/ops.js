@@ -894,16 +894,16 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
   const refs = new Map();
   const nodes = beads.map((b, i) => {
     const ref = text(b.ref, `beads[${i}].ref`, 40) || `n${i}`;
-    if (!/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(ref)) throw new HiveError(`cells[${i}].ref must be a short name (letters, digits, - or _).`);
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(ref)) throw new HiveError(`beads[${i}].ref must be a short name (letters, digits, - or _).`);
     if (refs.has(ref)) throw new HiveError(`Duplicate ref ${ref}.`);
     refs.set(ref, i);
-    if (b.hold !== undefined && typeof b.hold !== 'boolean') throw new HiveError(`cells[${i}].hold must be true or false.`);
+    if (b.hold !== undefined && typeof b.hold !== 'boolean') throw new HiveError(`beads[${i}].hold must be true or false.`);
     if (b.hold === false && !['queen', 'human'].includes(actor.role)) throw new HiveError('Only the queen or human can create unheld work.', 'access');
     const kind = kindArg(b.kind) || 'work';
     if (kind === 'goal') throw new HiveError('A hive has exactly one goal cell, its root. Use kind "workstream" for nested goals.');
     const status = b.status === undefined ? undefined : text(b.status, `beads[${i}].status`, 20);
     if (status === 'blocked') throw new HiveError(BLOCKED_STATUS_HELP, 'refused');
-    if (status !== undefined && !SETTABLE_STATUSES.includes(status)) throw new HiveError(`cells[${i}].status must be one of ${SETTABLE_STATUSES.join(', ')}.`);
+    if (status !== undefined && !SETTABLE_STATUSES.includes(status)) throw new HiveError(`beads[${i}].status must be one of ${SETTABLE_STATUSES.join(', ')}.`);
     if (status === 'in_progress' && !GROUP_KINDS.has(kind)) throw new HiveError('Create work as open, then claim it with hive_claim_bead before starting it.');
     return {
       key: ref,
@@ -1014,7 +1014,7 @@ export async function updateBead(rt, actor, input) {
     beadIdArg(parentId, 'parent_id');
     const { cell: target } = requireBeadAccess(rt, actor, parentId);
     if (descendantIds(rt.snapshots.graph.beads, id).has(parentId)) throw new HiveError('That would make the cell its own ancestor.');
-    if (target.id !== cell.id) requireCoordinator(actor.cells.find((p) => p.cell.id === target.id) || { role: null }, 'move work into another cell');
+    if (target.id !== cell.id) requireCoordinator(actor.cells.find((p) => p.cell.id === target.id) || { role: null }, 'move work into another hive');
     patch.parentId = parentId;
   }
   const resumeAt = input.resume_review_at, resumeAfter = input.resume_after_bead;

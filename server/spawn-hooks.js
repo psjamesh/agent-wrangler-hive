@@ -34,7 +34,7 @@ export function beforeSpawn({ spawnedBy, parentSession, source, spawner, host })
     const slots = capacitySlots(rt, rt.snapshots.graph);
     slots.reserved.add(beadId);
     const usage = capacity(rt, rt.snapshots.graph, { slots });
-    if (usage.limit && usage.used > usage.limit) return { refuse: `Hive capacity limit is ${usage.limit}; ${usage.used} slots would be occupied. Ask the queen to free capacity or change Maximum active workers.` };
+    if (usage.limit && usage.used > usage.limit) return { refuse: `Hive capacity limit is ${usage.limit}; ${usage.used} slots would be occupied. Ask the queen to free capacity or change Maximum active work items.` };
     const data = { id: newId('helper'), cellId: cell.id, beadId, parentId, at: Date.now() };
     (rt.spawnAdmissions ||= new Map()).set(data.id, data);
     (rt.spawnAdmissionTokens ||= new WeakSet()).add(data);

@@ -323,13 +323,13 @@ function joinThread(d, cellId, { replyTo, threadId }) {
   if (replyTo) {
     const target = messagesOf(d, cellId).find((m) => m.id === replyTo);
     const t = target && threadIn(threads, target.threadId);
-    if (!t) throw new HiveError(`Unknown message ${replyTo} in this cell.`);
+    if (!t) throw new HiveError(`Unknown message ${replyTo} in this hive.`);
     if (threadId && threadId !== t.id) throw new HiveError('That reply belongs to another topic.');
     return t;
   }
   if (threadId) {
     const t = threadIn(threads, threadId);
-    if (!t) throw new HiveError(`Unknown topic ${threadId} in this cell.`);
+    if (!t) throw new HiveError(`Unknown topic ${threadId} in this hive.`);
     return t;
   }
   return null;
@@ -513,12 +513,12 @@ function findMessage(rt, cellId, messageId) {
 
 function beadRef(rt, cellId, beadId, actor) {
   if (beadId === undefined || beadId === null || beadId === '') return null;
-  if (!isBeadId(beadId)) throw new HiveError('bead_id must be a bead id.');
+  if (!isBeadId(beadId)) throw new HiveError('bead_id must be a cell id.');
   if (actor) {
     const { cell } = requireBeadAccess(rt, actor, beadId);
-    if (cell.id !== cellId) throw new HiveError(`Bead ${beadId} is in another cell.`);
+    if (cell.id !== cellId) throw new HiveError(`Cell ${beadId} is in another hive.`);
   } else {
-    if (!rt.snapshots.graph.beads[beadId]) throw new HiveError(`Unknown bead ${beadId}.`);
+    if (!rt.snapshots.graph.beads[beadId]) throw new HiveError(`Unknown cell ${beadId}.`);
     if (cellOfBead(rt, beadId)?.id !== cellId) throw new HiveError('That item is no longer in this hive. Choose another item, or make the topic hive-wide.');
   }
   return beadId;
@@ -530,14 +530,14 @@ function answersRef(rt, cellId, answers) {
   if (!Array.isArray(answers) || answers.length > ANSWERS_MAX) throw new HiveError(`answers must be a list of at most ${ANSWERS_MAX} human message ids.`);
   const list = rt.metadata.read().conversation[cellId] || [];
   for (const id of answers) {
-    if (typeof id !== 'string' || !list.some((m) => m.id === id && m.author === 'human')) throw new HiveError(`answers: ${id} is not a human message in this cell.`);
+    if (typeof id !== 'string' || !list.some((m) => m.id === id && m.author === 'human')) throw new HiveError(`answers: ${id} is not a human message in this hive.`);
   }
   return [...new Set(answers)];
 }
 
 function replyRef(rt, cellId, replyTo) {
   if (replyTo === undefined || replyTo === null || replyTo === '') return null;
-  if (typeof replyTo !== 'string' || !findMessage(rt, cellId, replyTo)) throw new HiveError(`Unknown message ${replyTo} in this cell.`);
+  if (typeof replyTo !== 'string' || !findMessage(rt, cellId, replyTo)) throw new HiveError(`Unknown message ${replyTo} in this hive.`);
   return replyTo;
 }
 
@@ -697,7 +697,7 @@ export function deliveryText({ cell, taskName, message, bead, target, thread, at
 function readableCell(rt, cellId) {
   if (rt.metadata.error) throw new HiveError(rt.metadata.error, 'metadata-unavailable');
   const cell = rt.metadata.cell(cellId);
-  if (!cell) throw new HiveError(`Unknown cell ${cellId}.`);
+  if (!cell) throw new HiveError(`Unknown hive ${cellId}.`);
   refuseSnapshot(cell);
   return cell;
 }
@@ -1003,7 +1003,7 @@ export function renameThread(rt, { cellId, threadId, title }) {
   const id = threadRef(threadId);
   rt.metadata.mutate((d) => {
     const t = id && threadIn(threadsOf(d, cellId), id);
-    if (!t) throw new HiveError('Unknown topic in this cell.');
+    if (!t) throw new HiveError('Unknown topic in this hive.');
     t.title = clean;
     t.titleBy = 'human';
   });
@@ -1014,7 +1014,7 @@ export function topicRelations(rt, { cellId, threadId }) {
   readableCell(rt, cellId);
   const doc = humanConversationDoc(rt.metadata.read(), cellId);
   const t = threadIn(threadRecords(doc, cellId), threadId);
-  if (!t) throw new HiveError('Unknown topic in this cell.');
+  if (!t) throw new HiveError('Unknown topic in this hive.');
   const mine = (doc.conversation[cellId] || []).filter(m => m.threadId === threadId);
   return { threadId, relations: threadRelations(t, threadIndex(mine, { references: true }).get(threadId) || { beads: new Set(), references: new Set() }), conversationRevision: doc.conversationRevision };
 }
@@ -1025,7 +1025,7 @@ export function threadHistory(rt, { cellId, threadId, before, limit }) {
   readableCell(rt, cellId);
   const doc = humanConversationDoc(rt.metadata.read(), cellId);
   const t = threadIn(threadRecords(doc, cellId), threadId);
-  if (!t) throw new HiveError('Unknown topic in this cell.');
+  if (!t) throw new HiveError('Unknown topic in this hive.');
   const mine = (doc.conversation[cellId] || []).filter((m) => m.threadId === threadId);
   const end = before ? mine.findIndex((m) => m.id === before) : mine.length;
   if (end < 0) throw new HiveError('That message is no longer kept.');
@@ -1074,7 +1074,7 @@ export function updateThread(rt, actor, { thread_id, title, bead_id }) {
   const id = threadRef(thread_id);
   requireAudienceTarget(rt.metadata.read(), cell.id, id, null, actor);
   const t = id && threadIn(threadRecords(rt.metadata.read(), cell.id), id);
-  if (!t) throw new HiveError(`Unknown topic ${thread_id} in this cell.`);
+  if (!t) throw new HiveError(`Unknown topic ${thread_id} in this hive.`);
   if (title === undefined && bead_id === undefined) throw new HiveError('Give a title or a bead_id.');
   const clean = title === undefined ? undefined : text(title, 'title', THREAD_TITLE_MAX, { required: true });
   if (clean !== undefined && t.titleBy === 'human') throw new HiveError('The human named this topic. Ask them if it should be renamed.');
@@ -1087,7 +1087,7 @@ export function updateThread(rt, actor, { thread_id, title, bead_id }) {
   let out;
   rt.metadata.mutate((d) => {
     const cur = threadIn(threadsOf(d, cell.id), id);
-    if (!cur) throw new HiveError(`Unknown topic ${thread_id} in this cell.`);
+    if (!cur) throw new HiveError(`Unknown topic ${thread_id} in this hive.`);
     if (clean !== undefined) {
       if (cur.titleBy === 'human') throw new HiveError('The human named this topic. Ask them if it should be renamed.');
       cur.title = clean;

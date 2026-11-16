@@ -42,7 +42,7 @@ function handoverBrief(launch) {
   return `
 Request a handover from session ${launch.handoverSourceSessionId} using send_message; request id ${launch.id}. You are already the newly launched and nominated queen of Hive ${launch.cellId}, task ${launch.taskId}. Archive-after-handover: ${launch.archiveSourceAfterHandover ? 'YES' : 'NO'}.
 Follow the hive-queen handover procedure: send a standalone request with your actual session id as reply address, verify the source reply and read all referenced files, publish a durable receipt, confirm receipt by mail, then explicitly reconcile releases, claims and bindings. Only archive the exact selected source after its readiness and obligations are settled, with archive_children:false. Delivery is not receipt. Recheck your current queen role before accepting, changing claims or archiving. Do not use generic handoff or ask the source to launch another queen.
-Source mail capability cannot be verified by the current host API: eligible local legacy cards may fail delivery or never reply. Failed/uncertain delivery, busy or incomplete replies and unreadable files leave handover pending: tell the human, keep the source unarchived and continue independent work. No polling or automatic timeout-to-archive. Cross-task sources provide context only; never move another cell's claims or archive while its obligations remain. Record request, receipt, dispositions and archive outcome in one Hive topic.`;
+Source mail capability cannot be verified by the current host API: eligible local legacy cards may fail delivery or never reply. Failed/uncertain delivery, busy or incomplete replies and unreadable files leave handover pending: tell the human, keep the source unarchived and continue independent work. No polling or automatic timeout-to-archive. Cross-task sources provide context only; never move another hive's claims or archive while its obligations remain. Record request, receipt, dispositions and archive outcome in one Hive topic.`;
 }
 
 export function queenBrief({ cell, taskName, extra = '', launch }) {
@@ -85,7 +85,7 @@ export async function safeDeliver(host, sessionId, textBody, rt = host?.stores?.
 export async function sendActivationBrief(rt, host, { cellId }) {
   const cell = rt.metadata.cell(cellId);
   refuseSnapshot(cell);
-  if (!cell?.queenSessionId) throw new HiveError('This cell has no queen to brief.');
+  if (!cell?.queenSessionId) throw new HiveError('This hive has no queen to brief.');
   const taskName = host.tasks.get(cell.taskId)?.name || cell.taskId;
   const attemptId = newId('brief');
   rt.metadata.mutate((d) => {
@@ -102,13 +102,13 @@ export async function sendActivationBrief(rt, host, { cellId }) {
 export async function launchQueen(rt, host, { cellId, cwd, agent, model, effort, autoCompactTokens, intent, instructions, handoff = null, handoverSourceSessionId, archiveSourceAfterHandover, allowCrossTaskSource = false }) {
   if (rt.metadata.error) throw new HiveError(rt.metadata.error);
   let cell = rt.metadata.cell(cellId);
-  if (!cell) throw new HiveError(`Unknown cell ${cellId}.`);
+  if (!cell) throw new HiveError(`Unknown hive ${cellId}.`);
   refuseSnapshot(cell);
-  if (!cell.enabled) throw new HiveError('Turn the cell on before launching a queen.');
+  if (!cell.enabled) throw new HiveError('Turn the hive on before launching a queen.');
   const active = Object.values(rt.metadata.read().launches).find((l) => l.cellId === cellId && ACTIVE_LAUNCH.has(l.state));
-  if (active) throw new HiveError(`A queen launch for this cell is already ${active.state}. Reconcile it before launching another.`);
+  if (active) throw new HiveError(`A queen launch for this hive is already ${active.state}. Reconcile it before launching another.`);
   const task = host.tasks.get(cell.taskId);
-  if (!task || task.archived) throw new HiveError('The cell\'s task is archived.');
+  if (!task || task.archived) throw new HiveError('The hive\'s task is archived.');
   if (handoff && ((cell.queenGeneration || 0) !== handoff.expectedGeneration || cell.queenSessionId !== handoff.fromSessionId)) throw new HiveError('The queen changed; this handoff is stale.', 'conflict');
   const source = validateHandoverSource(host, handoverSourceSessionId, cell.taskId, allowCrossTaskSource);
   if (archiveSourceAfterHandover !== undefined && typeof archiveSourceAfterHandover !== 'boolean') throw new HiveError('Archive source after handover must be a checkbox value.');

@@ -68,9 +68,9 @@ test('bead scope keeps focus, parent chain, direct links and only own topics, re
 test('scope infers reviewer bindings, rejects ambiguous or missing focus and rejects other cells', async t => {
   const f = fixture(t);
   assert.equal((await scoped(f, {}, 'reviewer')).focus.bead_id, 'work');
-  await assert.rejects(scoped(f, {}, 'peer'), /needs bead_id/);
+  await assert.rejects(scoped(f, {}, 'peer'), /Scope bead needs bead_id/);
   f.doc.bindings.cell.push({ active: true, sessionId: 'worker', beadId: 'linked', role: 'investigator' });
-  await assert.rejects(scoped(f), /needs bead_id/);
+  await assert.rejects(scoped(f), /Scope bead needs bead_id/);
   assert.equal((await scoped(f, { bead_id: 'work' })).focus.bead_id, 'work');
   await assert.rejects(scoped(f, { bead_id: 'missing' }), /Unknown cell/);
   f.rt.snapshots.graph.beads.outside = { id: 'outside', parentId: null };

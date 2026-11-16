@@ -1459,7 +1459,7 @@ for (const holder of ['aw:worker-1', 'aw:replacement', null]) test(`archived res
   const before = structuredClone(f.doc());
   const result = await restore(f);
   assert.match(result?.refuse || '', /Archived Hive worker worker-1 cannot be restored safely/);
-  assert.ok(result.refuse.includes(`Bead a; last known claim holder: ${holder || 'none'}`));
+  assert.ok(result.refuse.includes(`Cell a; last known claim holder: ${holder || 'none'}`));
   assert.match(result.refuse, /hive_context.*hive_release_bead.*bead_id: a, force: true.*reason.*hive_spawn_worker/);
   assert.doesNotMatch(result.refuse, /Restore this archived worker before launching it/);
   assert.equal(f.live.a.assignee, holder);
@@ -2703,4 +2703,14 @@ test('a reviewer post-admission hierarchy timeout cancels its definite failed st
   assert.equal(Object.values(f.doc().workerLaunches)[0].state, 'refused');
   assert.equal(Object.values(f.doc().reviews)[0].state, 'cancelled');
   assert.equal(capacity(f.rt).used, 0);
+});
+
+test('create validation errors preserve beads array field paths', async () => {
+  const f = fixture();
+  for (const [input, field] of [[{ ref: 'bad ref' }, 'ref'], [{ hold: 'yes' }, 'hold'], [{ status: 'invalid' }, 'status']]) {
+    await assert.rejects(createBeads(f.rt, f.actor(), { beads: [{ title: 'Work', ...input }] }), error => {
+      assert.ok(error.message.startsWith(`beads[0].${field}`), error.message);
+      return true;
+    });
+  }
 });
