@@ -36,6 +36,7 @@ export function createPromo({ root, storage, buildVersion, notice = () => {}, pa
   }, h('img', {
     src: new URL(`./promo/${page.id}${theme}.png`, import.meta.url).href,
     alt: page.alt,
+    'aria-describedby': 'hive-promo-caption',
     onerror: event => {
       event.target.hidden = true;
       if (!event.target.parentNode.querySelector('p')) event.target.parentNode.append(h('p', { class: 'hive-promo-image-fallback' }, `Example unavailable. ${page.alt}`));
@@ -83,7 +84,7 @@ export function createPromo({ root, storage, buildVersion, notice = () => {}, pa
       current.page = Math.max(0, Math.min(manifest.pages.length - 1, index));
       const page = manifest.pages[current.page];
       const title = h('h2', { tabindex: '-1', id: 'hive-promo-page-title' }, page.title);
-      const example = h('div', { class: 'hive-promo-image', 'aria-describedby': 'hive-promo-caption' }, image(page));
+      const example = h('div', { class: 'hive-promo-image' }, image(page));
       pageSlot.replaceChildren(title, h('p', {}, page.text), example);
       caption.textContent = page.caption;
       pageSlot.setAttribute('data-page', page.id);

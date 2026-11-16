@@ -61,13 +61,13 @@ Show a queen header and selected bead's attached worker and reviewer sessions. C
 
 > The inbox brings Hive conversations together. Open a topic to read the context, follow a linked bead and reply to the queen. Unread messages and requests waiting on you are different things.
 
-Show a demo inbox with a field-guide topic, a linked Plan the launch event bead and a conversation reply. Caption: “Read and reply in context. Use Answer request when a decision needs your answer.” Next: **See what needs you**.
+Show a demo inbox with a field-guide topic, a linked Plan the launch event bead and a conversation reply. Caption: “Read and reply in context. Answer decisions using the request card’s controls.” Next: **See what needs you**.
 
 ### 5 · Needs you — Step in where it matters
 
 > A person mark points to work waiting on you. Open the request, read the choices and send your answer. The queen handles worker questions first and forwards the ones that need you.
 
-Show “Choose the cover” with a person mark and its forwarded request open. The fictional question is “Which cover should the guide use?” with “Meadow”, “Hedgerow” and “Foxglove” choices. Caption: “Answer request settles the question; a conversation reply alone does not.” Mention in supporting text: “If there is no available queen, requests can come directly to you.” Unread messages and requests are different; do not use an unread dot as a decision badge. This introduces Hive's own waiting surfaces without implying dependency on a separate Needs You extension. Next: **Follow delivery**.
+Show “Choose the cover” with a person mark and its forwarded request open. The fictional question is “Which cover should the guide use?” with “Meadow”, “Hedgerow” and “Foxglove” choices. Caption: “Answer using the request card’s controls; a conversation reply alone does not settle it.” Mention in supporting text: “If there is no available queen, requests can come directly to you.” Unread messages and requests are different; do not use an unread dot as a decision badge. This introduces Hive's own waiting surfaces without implying dependency on a separate Needs You extension. Next: **Follow delivery**.
 
 ### 6 · Delivery — Follow the result, with evidence
 
@@ -169,7 +169,7 @@ The local harness captures at 1120 × 630 CSS px, device scale 1.3, in light and
 | `welcome` | All hives, field-guide cell selected | Task, goal, hive entry |
 | `map` | Cell map + Details, Build search selected | Two explicit prerequisites for Publish the guide |
 | `people` | Cell header + bead sessions | Queen, owning worker, reviewer |
-| `needs-you` | Choose the cover, forwarded request open | Person mark, choices, Answer request |
+| `needs-you` | Choose the cover, forwarded request open | Person mark, choices, request-card answer controls |
 | `delivery` | Build search Details + evidence | Review, checks, merge and a separate installation obligation |
 | `inbox` | Inbox with a field-guide topic open | Context, linked bead and reply |
 

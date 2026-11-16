@@ -4,6 +4,8 @@ The introduction tour shows 12 real Hive screenshots: six scenes (Welcome, Map, 
 
 `public/promo/manifest.json` records how the current images were made: Hive and core commit SHAs, a digest of uncommitted source, the `bd` and browser versions, the isolation facts and a SHA-256 for each image.
 
+The current manifest was normalized after capture to group the default viewport and record each shot's viewport and scale. PNG bytes and checksums were unchanged. Its dirty-source digest is SHA-256 of the trimmed tracked-source `git diff HEAD` at capture time, excluding `public/promo` and `.scratch`; it does not cover then-untracked harness files. Later edits corrected tour alt text, captions and documentation without changing the captured Hive scenes.
+
 ## Recapture
 
 Requires a checkout of Agent Wrangler core, `node` 24+, `tmux`, `bd` and Chrome. Repository policy keeps browsers out of ordinary agent runs, so run this only where a headless browser is permitted.
@@ -32,7 +34,7 @@ Stages the current checkout, including the installed `public/promo/` images, see
 
 ## Isolation
 
-- Core listens on loopback only; the script refuses port 7777. Browser capture is approved only for `http://localhost:65384` unless `--approved-origin` is passed deliberately.
+- Core binding relies on its loopback default; the script refuses port 7777. Browser capture is approved only for `http://localhost:65384` unless `--approved-origin` is passed deliberately.
 - Chrome uses a throwaway profile, background networking off, and a request allowlist: only the instance's own origin and deck port load. External fonts and CDN requests are blocked and counted in the manifest.
 - Core runs under an inert guard (`inert.mjs`) with a minimal environment: no provider API keys, no CLI-agent homes, temporary `HOME` and git config, no tokens. The guard's `PATH` blocks `claude`, `codex`, `gemini`, `gh` and similar commands. A `tmux` wrapper forces every call onto one capture-only socket and refuses anything that creates or drives panes. Sessions in the fixture are inert, so Inspect, Resume and Recreate cannot start an agent.
 - Verify the guard without a browser: `node scripts/capture-promo.mjs --core <checkout> --check-guard`. It starts core on a random port, tries resume and dispatch, prints the guard's log and exits.

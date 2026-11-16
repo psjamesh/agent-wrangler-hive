@@ -155,6 +155,7 @@ test('caption and close stay outside the scrolling page', t => {
   assert.equal(caption.parentNode, page.parentNode);
   assert.equal(close.parentNode.getAttribute('class'), 'hive-promo-eyebrow');
   assert.match(caption.textContent, /One hive/);
+  for (const img of elements.filter(el => el.tagName === 'img')) assert.equal(img.getAttribute('aria-describedby'), caption.getAttribute('id'));
   f.button('Explore the map →').click();
   assert.match(caption.textContent, /Select a bead/);
 });

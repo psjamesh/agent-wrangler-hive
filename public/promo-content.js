@@ -26,14 +26,14 @@ export const PROMO = {
     {
       id: 'inbox', label: 'Inbox', title: 'Keep the conversation with the work',
       text: 'The inbox brings Hive conversations together. Open a topic to read the context, follow a linked bead and reply to the queen. Unread messages and requests waiting on you are different things.',
-      caption: 'Read and reply in context. Use Answer request when a decision needs your answer.',
+      caption: 'Read and reply in context. Answer decisions using the request card’s controls.',
       alt: 'Demo inbox with a field-guide topic, a linked Plan the launch event bead and a conversation reply.',
       next: 'See what needs you',
     },
     {
       id: 'needs-you', label: 'Needs you', title: 'Step in where it matters',
       text: 'A person mark points to work waiting on you. Open the request, read the choices and send your answer. The queen handles worker questions first and forwards the ones that need you.',
-      caption: 'Answer request settles the question; a conversation reply alone does not. If there is no available queen, requests can come directly to you.',
+      caption: 'Answer using the request card’s controls; a conversation reply alone does not settle it. If there is no available queen, requests can come directly to you.',
       alt: 'Choose the cover with a person mark and a request offering Meadow, Hedgerow and Foxglove cover choices.',
       next: 'Follow delivery',
     },
