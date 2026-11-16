@@ -6,7 +6,7 @@ Expect changes to workflows and compatibility. Try a throwaway task first and ba
 
 ## Requirements
 
-- Hive 0.1.100 with Agent Wrangler host API **>=1.80.0 <2.0.0** (`^1.80.0`). Follow the host repository's installation instructions; the API version is separate from its application version.
+- Agent Wrangler host API **>=2.0.0 <3.0.0** (`^2.0.0`). Follow the host repository's installation instructions; the API version is separate from its application version.
 - **Node.js >=20** and Git.
 - [Beads (`bd`)](https://github.com/gastownhall/beads) **>=1.3.4 <1.4.0**, JSON schema 1, with the embedded Dolt engine. Install a compatible release using its installation guide; no separate Dolt server is needed. Check `bd --version` rather than assuming the latest release is compatible.
 - Optional: authenticated [GitHub CLI](https://cli.github.com/) for PR tracking and labels. On macOS, `sips` produces conversation image thumbnails; other platforms use a placeholder that opens the original.
@@ -74,7 +74,7 @@ Each hive has a **Codex approvals** selector in **Settings → This hive**:
 
 The setting applies to Codex queens, workers and reviewers at launch, resume and fork, including existing sessions on their next start. It does not change a running terminal. A session dispatched directly from the board into the hive task receives the hive policy from its next resume, because core assigns its task after the first dispatch. Existing hives with no saved setting use **Use my Codex config**. Sessions outside an enabled hive keep core defaults. A fork inherits its parent's hive policy before its own binding is established; an existing membership takes precedence. If a session belongs to several hives, Hive leaves the policy to core rather than choosing between them.
 
-An explicit hive choice takes precedence over `codex_approval` on `hive_spawn_worker` (or its review alias), as core gives extension policy answers precedence over stored launch settings. With **Use my Codex config**, an explicit `codex_approval` controls that launch and is stored by core for resume and fork; omitting it leaves core/user defaults untouched. Returning to **Use my Codex config** restores that stored policy, including an approval choice saved by an earlier launch. The hook answers the whole policy rather than merging with core's stored sandbox choice: **Ask me** and **Never ask** use core's default workspace-write sandbox, and **Approve for me** implies workspace-write. Agent Wrangler's existing host API requirement `^1.80.0` supports both the policy hook and per-launch approval option.
+An explicit hive choice takes precedence over `codex_approval` on `hive_spawn_worker` (or its review alias), as core gives extension policy answers precedence over stored launch settings. With **Use my Codex config**, an explicit `codex_approval` controls that launch and is stored by core for resume and fork; omitting it leaves core/user defaults untouched. Returning to **Use my Codex config** restores that stored policy, including an approval choice saved by an earlier launch. The hook answers the whole policy rather than merging with core's stored sandbox choice: **Ask me** and **Never ask** use core's default workspace-write sandbox, and **Approve for me** implies workspace-write. Agent Wrangler's host API requirement `^2.0.0` supports both the policy hook and per-launch approval option.
 
 ## Data and evaluation
 

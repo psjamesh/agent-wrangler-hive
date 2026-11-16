@@ -4,9 +4,9 @@ import client from './client.js';
 import { cellMetrics } from './cell-metrics.js';
 
 function badge() {
-  let view;
-  client.register({ api: {}, register(slot, contribution) { if (slot === 'view') view = contribution; } });
-  return graph => view.badge(graph);
+  let view, current;
+  client.register({ api: { state: () => ({ hive: current?.hive }) }, register(slot, contribution) { if (slot === 'view') view = contribution; } });
+  return graph => { current = graph; return view.badge(graph); };
 }
 
 function fixture() {

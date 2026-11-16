@@ -9,7 +9,7 @@ const start = source.indexOf('  update(el, session, graph) {');
 const updateCode = source.slice(start, source.indexOf('  unmount(el)', start));
 
 test('archived history survives frames that omit it and follows ones that carry it', () => {
-  const state = { history: [], ui: { retryRelations: () => false }, requestNotifications() {} };
+  const state = { api: { state: () => null }, history: [], ui: { retryRelations: () => false }, requestNotifications() {} };
   const update = vm.runInNewContext(`({${updateCode}}).update`, { state, settlePlacements() {}, rerender() {} });
   update({}, null, { sessions: [], history: [{ sessionId: 'old' }] });
   update({}, null, { sessions: [] });

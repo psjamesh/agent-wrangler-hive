@@ -22,9 +22,20 @@ jobs:
           node-version: 'lts/*'
           cache: npm
 
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: psjamesh/agent-wrangler
+          ref: 3d5fa8dddeab64b0aad80ba035ef4a3c52fc917a
+          path: .core
+          persist-credentials: false
+
+      - run: npm ci --ignore-scripts --prefix .core
+
       - run: npm ci
 
       - run: npm test
+        env:
+          HIVE_TEST_CORE: ${{ github.workspace }}/.core
 
   browser:
     runs-on: ubuntu-latest
@@ -38,7 +49,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: psjamesh/agent-wrangler
-          ref: 23612fb6ac7a11a9aa5f3ca34d01efe4c34ac9fd
+          ref: 3d5fa8dddeab64b0aad80ba035ef4a3c52fc917a
           path: .core
           persist-credentials: false
 

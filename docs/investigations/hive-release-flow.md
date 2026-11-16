@@ -76,7 +76,7 @@ Sources: core [`session-manager.js`](https://github.com/PortSwigger/agent-wrangl
 | Identifier | Current use | Release consequence |
 | --- | --- | --- |
 | `package.json` version, currently `0.1.152` | Package metadata, repeated at the lockfile root and root package entry; README carries a separate compatibility example | Keep these fields consistent when making a named release; ordinary Git deployments can share that version and differ by SHA |
-| `wranglerExtension.engines.wranglerApi` and manifest `engines.wranglerApi`, both `^1.80.0` | Admission to the host API, meaning `>=1.80.0 <2.0.0` | Change when required host APIs change; unrelated to the Hive package version |
+| `wranglerExtension.engines.wranglerApi` and manifest `engines.wranglerApi`, both `^2.0.0` | Admission to the host API, meaning `>=2.0.0 <3.0.0` | Change when required host APIs change; unrelated to the Hive package version |
 | Provenance installed/running SHA and optional ref | Core update detection, deployment receipts and client entry-asset identity | Use the full SHA as deployment identity |
 | Manifest `version` | Optional core extension field used for telemetry attribution | Hive currently omits it; core does not derive it automatically from Hive's package version |
 | Metadata schema, layout revision, Beads version/schema, pickup `nativeVersion` | Persisted-data compatibility, cache invalidation or a bead's native modification receipt | Separate contracts; none requires a Hive patch bump for each PR |

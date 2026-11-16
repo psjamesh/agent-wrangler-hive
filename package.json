@@ -37,7 +37,7 @@
       "agents:read"
     ],
     "engines": {
-      "wranglerApi": "^1.80.0"
+      "wranglerApi": "^2.0.0"
     }
   }
 }

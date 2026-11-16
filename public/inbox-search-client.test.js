@@ -8,7 +8,7 @@ function setup() {
   const sent = [];
   let reply;
   const values = new Map();
-  client.register({ api: { storage: { get: k => values.get(k), set: (k, v) => values.set(k, v), remove: k => values.delete(k) }, send: frame => sent.push(frame) }, register() {}, onMessage(fn) { reply = fn; } });
+  client.register({ api: { storage: { get: k => values.get(k), set: (k, v) => values.set(k, v), remove: k => values.delete(k) }, act: (type, args) => { sent.push({ type, ...args }); return new Promise(() => {}); } }, register() {}, onMessage(fn) { reply = fn; } });
   const ui = createUi();
   return { sent, ui, answer: (i, over = {}) => reply({ op: 'hive-inbox-search', requestId: sent[i].requestId, ok: true, human: [], queen: [], ...over }) };
 }
