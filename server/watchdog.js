@@ -211,7 +211,8 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     }
     if (!session) continue;
     const activity = workerLastActivity(session, bead, index.activity);
-    const handedOff = reviewOpen || index.requesters.get(cell.id)?.has(sid)
+    const requestOpen = index.asked.get(cell.id)?.has(bead.id) || index.requesters.get(cell.id)?.has(sid);
+    const handedOff = reviewOpen || requestOpen
       || recordsCompletion(bead, [...QUEEN_ASKED, ...WORK_DONE]);
     const turn = session.lastTurn;
     if (bead.status === 'in_progress' && !session.archived && !session.hasBackgroundShell && !handedOff
@@ -236,7 +237,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     const sleeping = sleepingReason(session);
     if (sleeping && !GROUP_KINDS.has(bead.kind) && !reviewOpen && !(session.hasBackgroundShell)) {
       const since = activity;
-      const sleepingWait = waiting || index.blockers.get(bead.id) || index.requesters.get(cell.id)?.has(sid);
+      const sleepingWait = waiting || index.blockers.get(bead.id) || requestOpen;
       if (!sleepingWait && since && now - since >= settings.workerMinutes * 60000) {
         add('dormant_claim', bead.id, [sid, sleeping], since, `Claim is held by a ${sleeping} session with no recorded wait, request or review.`, { bead_id: bead.id, session_id: sid });
       }

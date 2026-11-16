@@ -154,3 +154,43 @@ test('digests suggest archiving idle sessions whose last bead is closed, once, a
   await f.watchdog.run();
   assert.equal(f.sent.length, 2); assert.doesNotMatch(f.sent[1].text, /archiving/);
 });
+
+for (const dormant of [false, true]) {
+  for (const role of ['holder', 'helper', 'reviewer']) {
+    test(`${dormant ? 'dormant' : 'idle'} claims honor open ${role} requests for their bead and clear existing alerts`, async t => {
+      const f = fixture(t);
+      f.bead('work', { ownerSessionId: 'worker' });
+      f.sessions.worker.dormant = dormant;
+      f.advance(60 * MIN);
+      await f.watchdog.run();
+      assert.equal(f.sent.length, 1);
+      const requester = role === 'holder' ? 'worker' : role;
+      f.rt.metadata.mutate(d => {
+        d.bindings.cell = [{ beadId: 'work', sessionId: requester, role: role === 'holder' ? 'work' : role, active: true }];
+        d.requests.q = { id: 'q', cellId: 'cell', beadId: 'work', state: 'open', requesterSessionId: requester };
+      });
+      await f.watchdog.run();
+      assert.deepEqual(kinds(f), []);
+      assert.deepEqual(f.rt.metadata.cell('cell').watchdogFlags, {});
+      f.advance(60 * MIN);
+      await f.watchdog.run();
+      await f.watchdog.run();
+      assert.equal(f.sent.length, 1);
+      f.rt.metadata.mutate(d => { d.requests.q.state = 'answered'; });
+      assert.deepEqual(kinds(f), [dormant ? 'dormant_claim' : 'stalled_worker']);
+    });
+  }
+}
+
+test('requests for another bead or cell do not suppress a holder alert', t => {
+  const f = fixture(t);
+  f.bead('work', { ownerSessionId: 'worker' });
+  f.rt.metadata.mutate(d => {
+    d.requests.otherBead = { cellId: 'cell', beadId: 'other', state: 'open', requesterSessionId: 'helper' };
+    d.requests.otherCell = { cellId: 'elsewhere', beadId: 'work', state: 'open', requesterSessionId: 'helper' };
+  });
+  f.advance(60 * MIN);
+  assert.deepEqual(kinds(f), ['stalled_worker']);
+  f.sessions.worker.dormant = true;
+  assert.deepEqual(kinds(f), ['dormant_claim']);
+});
