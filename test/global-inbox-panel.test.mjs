@@ -235,3 +235,24 @@ for (const local of [false, true]) test(`${local ? 'cell' : 'global'} Inbox keep
   assert.equal(badge.textContent, '1');
   assert.equal(badge.getAttribute('aria-label'), '1 message');
 });
+
+for (const local of [false, true]) test(`${local ? 'cell' : 'global'} Waiting for queen keeps single-message counts quiet`, t => {
+  const f = fixture(t);
+  f.doc.conversation = { live: [{ id: 'm', threadId: 'topic', author: 'human', text: 'Question', at: 2, response: { required: true, answers: [] } }] };
+  f.doc.inbox = { live: { rev: 1 } };
+  if (local) { f.ui.openCell('live'); f.ui.setInboxView('live', 'queen'); }
+  else f.ui.setGlobalInboxView('queen');
+  const row = f.draw().bottom.querySelector('.hive-inbox-item');
+  assert.ok(row);
+  assert.equal(row.querySelector('.hive-unread'), null);
+});
+
+test('Needs you request rows automatically link to their requester even when it is the queen', t => {
+  const f = fixture(t);
+  f.doc.cells.live.queenSessionId = 'worker';
+  f.doc.requests = { r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: 'Choose', threadId: 't', messageId: 'm', requesterSessionId: 'worker' } };
+  const row = f.draw().bottom.querySelector('.hive-inbox-item');
+  const link = row.querySelector('.hive-inbox-session-links').querySelector('a');
+  assert.equal(link.getAttribute('href'), '#session=worker');
+  assert.equal(link.textContent, 'Open requester session');
+});
