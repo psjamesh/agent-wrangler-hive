@@ -57,7 +57,14 @@ const expectedLabel = ${JSON.stringify(mode === 'inbox-bare' ? 'Build worker' : 
 anchors.find(a=>a.textContent===expectedLabel)?.click();
 const unavailableVisible = !inboxMode || ${JSON.stringify(mode)} === 'inbox' || (() => { const strip = node.querySelector('.hive-inbox-session-links'); return strip.querySelectorAll('span.hive-muted').length === 2 && (${JSON.stringify(mode)} === 'inbox-bare' ? strip.textContent.includes('Open session') : strip.textContent.includes('Archived session') && strip.textContent.includes('Unknown session')); })();
 const rowVisible = !inboxMode || (() => { const row = node.querySelector('.hive-inbox-item').getBoundingClientRect(); const dock = node.getBoundingClientRect(); return row.height > 0 && row.top >= dock.top && row.bottom <= dock.bottom; })();
-setTimeout(()=>{document.body.dataset.verification = valid && unavailableVisible && rowVisible && markdownNavigated && location.hash === '#session=${worker}' ? 'passed' : 'failed';},0);
+const badgesVisible = !inboxMode || (() => {
+  const needs = node.querySelector('.hive-inbox-item .hive-needs-count');
+  const unread = node.querySelector('.hive-inbox-item .hive-unread');
+  const style = getComputedStyle(needs);
+  return style.backgroundColor === 'rgb(180, 35, 50)' && style.color === 'rgb(255, 255, 255)' && style.borderRadius === '999px'
+    && unread?.textContent === '1' && getComputedStyle(unread).borderRadius === '999px';
+})();
+setTimeout(()=>{document.body.dataset.verification = valid && badgesVisible && unavailableVisible && rowVisible && markdownNavigated && location.hash === '#session=${worker}' ? 'passed' : 'failed';},0);
 </script></body></html>`;
 
 test('isolated Chrome renders request and message links and navigates their session fragments', { skip: !process.env.HIVE_TEST_CHROME ? 'Set HIVE_TEST_CHROME to a Chrome binary' : !process.env.HIVE_SCREENSHOT_DIR ? 'Set HIVE_SCREENSHOT_DIR to a screenshot directory' : false }, async t => {

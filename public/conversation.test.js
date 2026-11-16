@@ -404,7 +404,7 @@ function busyInbox(t) {
 
 test('the Inbox lists a topic with several waiting messages once, with how many wait and the newest of them', (t) => {
   const f = busyInbox(t);
-  assert.deepEqual(f.rows('human'), [{ id: 'm3', title: 'Topic', waiting: '3' }, { id: 'm4', title: 'Other', waiting: null }]);
+  assert.deepEqual(f.rows('human'), [{ id: 'm3', title: 'Topic', waiting: '3' }, { id: 'm4', title: 'Other', waiting: '1' }]);
   assert.deepEqual(f.rows('queen'), [{ id: 'h2', title: 'Topic', waiting: '2' }]);
 });
 
@@ -1204,7 +1204,7 @@ test('Inbox follows server membership after a thread acknowledgement and Undo', 
   assert.deepEqual(f.shown(), []);
   f.cell.inbox.human = { count: 1, ids: ['m2'], rev: 3 };
   assert.deepEqual(f.shown(), ['m2']);
-  assert.equal(f.draw().list.querySelector('.hive-unread'), null);
+  assert.equal(f.draw().list.querySelector('.hive-unread').textContent, '1');
 });
 
 for (const recovery of ['sample', 'reopen']) test(`failed auto-read is re-armed for a later ${recovery} without a retry loop`, t => {

@@ -228,7 +228,7 @@ export function inboxRow(ctx, r, { query = '', open, id = r.key, action, showCon
     h(open ? 'button' : 'a', { ...props, class: 'hive-topic-btn', 'data-focus-key': `global-inbox-item:${r.key}` },
       h('span', { class: 'hive-topic-line' },
         h('strong', { class: 'hive-topic-title' }, query ? marked(r.title, query) : r.title),
-        r.count > 1 ? h('span', { class: 'hive-unread', 'aria-label': messageCount(r.count) }, String(r.count)) : null,
+        r.count > (r.unreadCount > 0 ? 0 : 1) ? h('span', { class: 'hive-unread', 'aria-label': messageCount(r.count) }, String(r.count)) : null,
         r.needsCount ? needsBadge(r.needsCount) : null,
         r.hideTime ? null : h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(r.at))),
       h('span', { class: 'hive-topic-line' },
