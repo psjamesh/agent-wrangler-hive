@@ -288,7 +288,7 @@ test('stopped queens appear in global and hive inboxes and tab badge until runni
       assert.equal(rows.length, Number(stopped));
       assert.equal(list.textContent.includes('Private question'), false);
       if (stopped) {
-        assert.equal(rows[0].querySelector('a').getAttribute('href'), queen.dormant ? '#session=queen' : '#view=ext:hive:overview&cell=cell_test');
+        assert.equal(rows[0].querySelector('a').getAttribute('href'), queen.dormant ? '#session=queen' : '#view=ext:hive:overview&hive=cell_test');
         const sessionLinks = rows[0].querySelectorAll('a').filter(link => link.textContent === 'Open session');
         assert.equal(sessionLinks.length, 0, JSON.stringify({state, list: list.textContent}));
       }

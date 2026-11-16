@@ -24,7 +24,7 @@ export function bindMapSearch({ ctx, cell = null, map, ids, hidden = new Set(), 
   let latest = ctx;
   const input = h('input', {
     class: 'hive-input hive-inbox-search-input', type: 'search', autocomplete: 'off', spellcheck: 'false', maxlength: '200',
-    'data-focus-key': 'global-inbox-search', 'aria-label': 'Search Hive', placeholder: 'Search beads, topics and messages',
+    'data-focus-key': 'global-inbox-search', 'aria-label': 'Search Hive', placeholder: 'Search cells, topics and messages',
     value: ctx.ui.searchQuery?.() || '',
     oninput: e => {
       if (e.isComposing) return;
@@ -71,7 +71,7 @@ export function bindMapSearch({ ctx, cell = null, map, ids, hidden = new Set(), 
   };
   const trigger = h('button', {
     type: 'button', class: 'hive-zoom-btn hive-search-open', 'data-focus-key': 'map-search-open',
-    title: 'Search beads, topics and messages (/ or start typing on the map)',
+    title: 'Search cells, topics and messages (/ or start typing on the map)',
     onclick: () => state.open ? close() : open(),
   }, 'Search');
   let results = [];

@@ -63,12 +63,12 @@ function str(v, max = 200) {
 // goal, then the queen launch. A failed or uncertain launch leaves the task and
 // cell in place for a launch from the cell; nothing is ever created twice.
 const createCell = humanHandler('hive-cell-create', async ({ msg, host, rt }) => {
-  if (!msg.queen || typeof msg.queen !== 'object') throw new HumanError('A new cell needs its queen: give the launch settings.');
+  if (!msg.queen || typeof msg.queen !== 'object') throw new HumanError('A new hive needs its queen: give the launch settings.');
   const queen = pickLaunch(msg.queen);
   validateHandoverSource(host, queen.handoverSourceSessionId, null, true);
   const out = await ops.createCell(rt, host, { name: msg.name, goal: msg.goal, acceptance: msg.acceptance, instructions: instructionsOf(msg), position: msg.position });
   if (out.rootError) {
-    out.launchError = 'The queen was not launched because the cell goal was not created. Reconcile the goal, then launch the queen from the cell.';
+    out.launchError = 'The queen was not launched because the hive goal was not created. Reconcile the goal, then launch the queen from the hive.';
   } else {
     try {
       out.launch = await launchQueen(rt, host, { cellId: out.cellId, ...queen, allowCrossTaskSource: true });
@@ -107,7 +107,7 @@ const adoptTask = humanHandler('hive-cell-adopt', async ({ msg, host, rt }) => {
   validateHandoverSource(host, queen.handoverSourceSessionId, msg.taskId);
   const out = await ops.adoptTask(rt, host, { taskId: str(msg.taskId, 80), goal: msg.goal, acceptance: msg.acceptance, instructions: instructionsOf(msg), rootBeadId: str(msg.rootBeadId, 80), position: msg.position });
   if (out.rootError) {
-    out.launchError = 'The queen was not set up because the cell goal was not created. Reconcile the goal, then launch the queen from the cell.';
+    out.launchError = 'The queen was not set up because the hive goal was not created. Reconcile the goal, then launch the queen from the hive.';
   } else {
     try {
       out.launch = await launchQueen(rt, host, { cellId: out.cellId, ...queen });

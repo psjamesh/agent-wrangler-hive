@@ -65,13 +65,13 @@ async function dispatchFixture(f, mode = 'ok') {
   f.host.sessions.spawn = async (opts) => {
     const sessionId = `worker-${++n}`;
     const ext = opts.ext.hive;
-    assert.ok(opts.intent.includes(`hive_context({ scope: "bead", bead_id: "${ext.beadId}", cell_id: "${f.rt.metadata.cellForTask(opts.taskId).id}" })`));
+    assert.ok(opts.intent.includes(`hive_context({ scope: "bead", bead_id: "${ext.beadId}", hive_id: "${f.rt.metadata.cellForTask(opts.taskId).id}" })`));
     manifest.hooks['session.prepare']({ sessionId, taskId: opts.taskId, spawnedBy: null, host: f.host });
     await manifest.session.onBeforeDispatch({ sessionId, ext, host: f.host });
     const out = await manifest.hooks['session.launchContext']({ sid: sessionId, task: { id: opts.taskId }, reason: 'spawn', host: f.host });
     if (out?.refuse) throw new Error(out.refuse);
     if (ext.reviewId) assert.equal(f.doc().reviews[ext.reviewId].reviewerSessionId, sessionId, 'reviewer is bound before its first action');
-    else if (opts.intent.includes('You are a helper on Hive bead')) assert.notEqual(f.live[ext.beadId].assignee, actorFor(sessionId), 'a helper never takes the claim');
+    else if (opts.intent.includes('You are a helper on Hive cell')) assert.notEqual(f.live[ext.beadId].assignee, actorFor(sessionId), 'a helper never takes the claim');
     else assert.equal(f.live[ext.beadId].assignee, actorFor(sessionId), 'the first agent action must see its claim');
     assert(Object.values(f.doc().bindings).flat().some((b) => b.sessionId === sessionId && b.beadId === ext.beadId && b.active));
     if (mode === 'throw-after-claim') throw new Error('startup failed after claim');
@@ -155,7 +155,7 @@ test('untracked work has a distinct map mark even when an unclaimed bound agent 
   const { primaryKind, markWords } = await import('../public/cell-view.js');
   const kind = primaryKind({ status: 'in_progress', untracked: true }, [], ['working']);
   assert.equal(kind, 'untracked');
-  assert.match(markWords(kind, {}), /Untracked/);
+  assert.match(markWords(kind, {}), /No active owner/);
 });
 
 test('default eight counts work across cells, excludes headings, and explicit zero is unlimited', async () => {
@@ -1459,7 +1459,7 @@ for (const holder of ['aw:worker-1', 'aw:replacement', null]) test(`archived res
   const before = structuredClone(f.doc());
   const result = await restore(f);
   assert.match(result?.refuse || '', /Archived Hive worker worker-1 cannot be restored safely/);
-  assert.ok(result.refuse.includes(`Bead a; last known claim holder: ${holder || 'none'}`));
+  assert.ok(result.refuse.includes(`Cell a; last known claim holder: ${holder || 'none'}`));
   assert.match(result.refuse, /hive_context.*hive_release_bead.*bead_id: a, force: true.*reason.*hive_spawn_worker/);
   assert.doesNotMatch(result.refuse, /Restore this archived worker before launching it/);
   assert.equal(f.live.a.assignee, holder);
@@ -1609,7 +1609,7 @@ test('a Claude builder gets the secondary reviewer; when neither differs the pri
 test('non-holders cannot spawn reviews or helpers and a holder cannot spawn another work session', async () => {
   const f = holderFixture(); await launchRecording(f);
   await assert.rejects(reviews.requestReview(f.rt, f.host, f.worker('other'), { bead_id: 'a', intent: 'review' }), /queen|coordinator|attach/);
-  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.worker('other'), { bead_id: 'a', intent: 'help' }, { role: 'investigator' }), /own bead|queen|coordinator|attach/);
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.worker('other'), { bead_id: 'a', intent: 'help' }, { role: 'investigator' }), /own cell|queen|coordinator|attach/);
   await assert.rejects(workers.spawnWorker(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'more' }), /queen|coordinator/);
   assert.equal(f.launched.length, 0);
 });
@@ -1636,8 +1636,8 @@ for (const launcher of ['builder', 'queen']) test(`${launcher} launches a bound 
   assert.equal(f.live.a.assignee, 'aw:builder');
   assert.equal(capacity(f.rt).used, used);
   assert.equal(f.launched[0].taskId, 'task');
-  assert.match(f.launched[0].intent, /You are a helper on Hive bead/);
-  assert.match(f.launched[0].intent, /cannot claim beads/);
+  assert.match(f.launched[0].intent, /You are a helper on Hive cell/);
+  assert.match(f.launched[0].intent, /cannot claim cells/);
   const { attachmentsFor } = await import('../server/bead-sessions.js');
   assert.ok(attachmentsFor(f.rt, f.host, 'a').some(a => a.session_id === launch.sessionId && a.role === 'helper' && a.live));
   const { ungovernedDescendants, reconcileInactiveBindings } = await import('../server/tracking.js');
@@ -2703,4 +2703,14 @@ test('a reviewer post-admission hierarchy timeout cancels its definite failed st
   assert.equal(Object.values(f.doc().workerLaunches)[0].state, 'refused');
   assert.equal(Object.values(f.doc().reviews)[0].state, 'cancelled');
   assert.equal(capacity(f.rt).used, 0);
+});
+
+test('create validation errors preserve beads array field paths', async () => {
+  const f = fixture();
+  for (const [input, field] of [[{ ref: 'bad ref' }, 'ref'], [{ hold: 'yes' }, 'hold'], [{ status: 'invalid' }, 'status']]) {
+    await assert.rejects(createBeads(f.rt, f.actor(), { beads: [{ title: 'Work', ...input }] }), error => {
+      assert.ok(error.message.startsWith(`beads[0].${field}`), error.message);
+      return true;
+    });
+  }
 });

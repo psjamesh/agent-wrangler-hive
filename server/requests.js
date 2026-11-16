@@ -63,8 +63,8 @@ function member(rt, host, id, cellId) {
   catch { fail('Hive membership is unavailable.', 'metadata-unavailable'); }
   const mine = participation(rt, host, id);
   const p = cellId ? mine.find(p => p.cell.id === cellId) : mine.length === 1 ? mine[0] : null;
-  if (!p && mine.length > 1 && !cellId) fail(`Several Hive cells are available (${mine.map(p => p.cell.id).join(', ')}); pass cell_id.`, 'access');
-  if (!p) fail('This session is not in that active Hive cell. Use the standard request_human_input tool if available. Ask your launcher or queen to check your task assignment or binding.', 'access');
+  if (!p && mine.length > 1 && !cellId) fail(`Several Hives are available (${mine.map(p => p.cell.id).join(', ')}); pass hive_id.`, 'access');
+  if (!p) fail('This session is not in that active Hive. Use the standard request_human_input tool if available. Ask your launcher or queen to check your task assignment or binding.', 'access');
   return { ...p, sessionId: id, cells: mine };
 }
 function get(rt, id) {
@@ -191,14 +191,14 @@ export async function createRequest(rt, host, id, args) {
   let bead = null;
   if (args.bead_id) {
     const access = requireBeadAccess(rt, actor, args.bead_id);
-    if (access.cell.id !== actor.cell.id) fail('The bead belongs to another hive.');
+    if (access.cell.id !== actor.cell.id) fail('The cell belongs to another hive.');
     bead = access.bead;
   }
   if (bead && !threadId && !replyTo) {
     const matching = Object.values(topics).filter(t => t.beadId === bead.id);
     if (matching.length === 1) topic = matching[0];
   }
-  if (bead && topic?.beadId && topic.beadId !== bead.id) fail('Topic and bead context disagree.');
+  if (bead && topic?.beadId && topic.beadId !== bead.id) fail('Topic and cell context disagree.');
   const at = Date.now(), rid = newId('hreq'), mid = newId('msg'), tid = topic?.id || newId('thr');
   const kept = args.attachments === undefined ? [] : await adoptAttachments(rt, actor.cell.id, mid, args.attachments, { sessionId: actor.sessionId });
   let r, removed = [];

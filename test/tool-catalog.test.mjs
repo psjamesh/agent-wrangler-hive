@@ -12,7 +12,9 @@ test('every tool publishes a self-contained JSON Schema for hosts with an older 
     assert.equal(schema.$schema, undefined, name);
     if (schema.properties.cell_id) {
       assert.equal(schema.properties.cell_id.maxLength, 80, name);
-      assert.match(schema.properties.cell_id.description, /exactly one enabled cell/, name);
+      assert.equal(schema.properties.hive_id.maxLength, 80, name);
+      assert.match(schema.properties.hive_id.description, /exactly one enabled hive/, name);
+      assert.match(schema.properties.cell_id.description, /Legacy alias for hive_id/, name);
     }
   }
 });
@@ -54,4 +56,11 @@ test('request images share publish schema limits and describe private forwarding
   assert.match(images.description, /Other sessions may use the same filenames independently/);
   assert.match(images.description, /only files staged there can be attached/);
   assert.match(images.description, /forwarding/);
+});
+
+test('tool descriptions distinguish the Hive from cells and preserve output field paths', () => {
+  for (const tool of workTools) assert.doesNotMatch(tool.description, /active Hive cell|in this cell\b|the cell goal/, tool.name);
+  const spawn = workTools.find(tool => tool.name === 'hive_spawn_worker');
+  assert.match(spawn.description, /cell\.review_policy/);
+  assert.doesNotMatch(spawn.description, /hive\.review_policy/);
 });

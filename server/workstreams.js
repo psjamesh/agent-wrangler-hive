@@ -13,17 +13,17 @@ import { planArchive, planReturn, planPlace, hiddenHead, archiveHidden, activeKi
 
 function workstream(rt, { cellId, headId }, { write = true } = {}) {
   const cell = rt.metadata.cell(cellId);
-  if (!cell) throw new HiveError(`Unknown cell ${cellId}.`);
+  if (!cell) throw new HiveError(`Unknown hive ${cellId}.`);
   const id = beadIdArg(headId, 'workstream');
   if (write) {
     if (rt.metadata.error) throw new HiveError(rt.metadata.error, 'metadata-unavailable');
     refuseSnapshot(cell);
-    if (!cell.enabled) throw new HiveError('This hive is off. Turn it on to change its workstreams.');
+    if (!cell.enabled) throw new HiveError('This hive is off. Turn it on to change its clusters.');
   }
   if (!rt.snapshots.hierarchyCurrent) throw new HiveError(CATCHING_UP, 'stale');
   const beads = rt.snapshots.graph.beads;
   if (!cell.rootBeadId || id === cell.rootBeadId || !beads[id] || !descendantIds(beads, cell.rootBeadId).has(id)) {
-    throw new HiveError(`${id} is not a workstream in this hive.`, 'stale');
+    throw new HiveError(`${id} is not a cluster in this hive.`, 'stale');
   }
   return { cell, id, beads };
 }
@@ -64,7 +64,7 @@ export function checkWorkstream(rt, { cellId, headId }) {
 
 export async function suggestWorkstreamCompletion(rt, { cellId, headId }) {
   const { cell, id, beads } = workstream(rt, { cellId, headId });
-  if (beads[id].status === 'closed') throw new HiveError('This workstream is already closed.');
+  if (beads[id].status === 'closed') throw new HiveError('This cluster is already closed.');
   return recordCompletionSuggestion(rt, { cellId: cell.id, beadId: id, title: beads[id].title || id });
 }
 
@@ -90,7 +90,7 @@ export async function archiveWorkstream(rt, { cellId, headId }) {
   workstream(rt, { cellId, headId });
   await rt.snapshots.refresh();
   const { cell, id, beads } = workstream(rt, { cellId, headId });
-  if (beads[id].parentId !== cell.rootBeadId) throw new HiveError(`Only top-level workstreams can be archived. ${id} is part of the workstream around it.`);
+  if (beads[id].parentId !== cell.rootBeadId) throw new HiveError(`Only top-level clusters can be archived. ${id} is part of the cluster around it.`);
   const group = [...under(activeKids(beads), id)];
   const open = group.filter((b) => beads[b].status !== 'closed');
   if (open.length) throw new HiveError(`Only finished work can be archived: ${open.slice(0, 5).join(', ')}${open.length > 5 ? ', …' : ''} ${open.length === 1 ? 'is' : 'are'} not closed.`);
@@ -195,10 +195,10 @@ function reopenFence(rt, cell, id, ancestors, ids, { opId, by, unfinished = null
     if (inFlight(doc, cell.id, new Set([...ids, ...triggers]), opId)) throw new HiveError('A deletion or another reopen of this work is still unsettled. Nothing was reopened.', 'conflict');
     if (read.errors?.length) throw new HiveError('Hive could not read every item in the store, so nothing was reopened. Check again.', 'stale');
     const { beads } = buildGraph(read.issues);
-    if (!beads[id] || !descendantIds(beads, live.rootBeadId).has(id) || id === live.rootBeadId) throw new HiveError(`${id} is no longer a workstream in this hive. Nothing was reopened.`, 'stale');
+    if (!beads[id] || !descendantIds(beads, live.rootBeadId).has(id) || id === live.rootBeadId) throw new HiveError(`${id} is no longer a cluster in this hive. Nothing was reopened.`, 'stale');
     for (const b of ids) if (beads[b]?.status !== 'closed') throw new HiveError(`${b} is no longer closed. Nothing was reopened.`, 'stale');
     const now = closedAncestors(beads, live.rootBeadId, id);
-    if (now.join() !== ancestors.join()) throw new HiveError(`The closed workstreams around ${id} changed. Reopening it now would also reopen ${now.length ? now.join(', ') : 'nothing else'}. Check again before reopening.`, 'stale');
+    if (now.join() !== ancestors.join()) throw new HiveError(`The closed clusters around ${id} changed. Reopening it now would also reopen ${now.length ? now.join(', ') : 'nothing else'}. Check again before reopening.`, 'stale');
     if (unfinished && !unfinished(beads).length) throw new HiveError(`Nothing under ${id} is unfinished any more.`, 'stale');
     const head = hiddenHead({ beads, rootId: live.rootBeadId, archived: doc.archived, heads: ids });
     const geo = head ? structuredClone(doc.archived[head].positions) : {};
@@ -354,7 +354,7 @@ export async function reopenWorkstream(rt, { cellId, headId, reason, confirmAnce
   const ancestors = closedAncestors(beads, cell.rootBeadId, id);
   const confirmed = Array.isArray(confirmAncestors) ? [...confirmAncestors].sort() : null;
   if (!confirmed || confirmed.join() !== [...ancestors].sort().join()) {
-    throw new HiveError(`The closed workstreams around ${id} changed. Reopening it now would also reopen ${ancestors.length ? ancestors.join(', ') : 'nothing else'}. Check again before reopening.`, 'stale');
+    throw new HiveError(`The closed clusters around ${id} changed. Reopening it now would also reopen ${ancestors.length ? ancestors.join(', ') : 'nothing else'}. Check again before reopening.`, 'stale');
   }
   const ids = [...ancestors, id];
   const key = intentKey(cell.id, id);

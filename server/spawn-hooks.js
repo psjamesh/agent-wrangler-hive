@@ -34,7 +34,7 @@ export function beforeSpawn({ spawnedBy, parentSession, source, spawner, host })
     const slots = capacitySlots(rt, rt.snapshots.graph);
     slots.reserved.add(beadId);
     const usage = capacity(rt, rt.snapshots.graph, { slots });
-    if (usage.limit && usage.used > usage.limit) return { refuse: `Hive capacity limit is ${usage.limit}; ${usage.used} slots would be occupied. Ask the queen to free capacity or change Maximum active workers.` };
+    if (usage.limit && usage.used > usage.limit) return { refuse: `Hive capacity limit is ${usage.limit}; ${usage.used} slots would be occupied. Ask the queen to free capacity or change Maximum active work items.` };
     const data = { id: newId('helper'), cellId: cell.id, beadId, parentId, at: Date.now() };
     (rt.spawnAdmissions ||= new Map()).set(data.id, data);
     (rt.spawnAdmissionTokens ||= new WeakSet()).add(data);
@@ -59,7 +59,7 @@ export async function spawned({ sessionId, data, host }) {
   rt.spawnAdmissions.delete(data.id);
   rt.spawnAdmissionTokens.delete(data);
   rt.changed();
-  const brief = `[Hive] You are a helper on Hive bead ${beadId} in cell ${cellId}. The parent keeps its claim. Use the hive-worker skill and start with hive_context({ scope: "bead", bead_id: "${beadId}", cell_id: "${cellId}" }). Report results to session ${parentId} by Agent Wrangler mail. For decisions or actions use hive_request_input, not request_human_input; requests go to this hive's queen. Delegate through Hive or ask the queen. If Hive tools are missing, ask the queen to check membership and refresh the agent terminal.`;
+  const brief = `[Hive] You are a helper on Hive cell ${beadId} in Hive ${cellId}. The parent keeps its claim. Use the hive-worker skill and start with hive_context({ scope: "bead", bead_id: "${beadId}", hive_id: "${cellId}" }). Report results to session ${parentId} by Agent Wrangler mail. For decisions or actions use hive_request_input, not request_human_input; requests go to this hive's queen. Delegate through Hive or ask the queen. If Hive tools are missing, ask the queen to check membership and refresh the agent terminal.`;
   const result = await safeDeliver(host, sessionId, brief, rt);
   assertCurrent(rt, host);
   if (result.state !== 'delivered') rt.log(`hive: helper ${sessionId} brief delivery ${result.state}: ${result.error}`);

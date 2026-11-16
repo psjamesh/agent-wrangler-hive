@@ -174,7 +174,7 @@ test('all search fields rank through the real render path and never enter unrela
   const input = f.search('rank');
   for (const field of fields) {
     input.fire('keydown', { key: 'ArrowDown' });
-    assert.ok(f.canvas().querySelector('.hive-search-field').textContent.endsWith(`— ${{ id: 'bead id', nextAction: 'next action' }[field] || field}`));
+    assert.ok(f.canvas().querySelector('.hive-search-field').textContent.endsWith(`— ${{ id: 'cell id', nextAction: 'next action' }[field] || field}`));
   }
   input.value = 'no results'; input.fire('input');
   assert.equal(f.canvas().querySelector('.hive-search-count').textContent, '0 matches');

@@ -56,7 +56,7 @@ test('cog opens labelled modal; tabs change content and preserve hive drafts', t
   f.key('watchdog:c:workerMinutes').value = '15';
   fire(f.key('watchdog:c:workerMinutes'), 'input');
   f.key('settings-tab-all').click(); f.draw();
-  assert.match(f.dialog().textContent, /Maximum active workers.*Pop up/s);
+  assert.match(f.dialog().textContent, /Maximum active work items.*Pop up/s);
   assert.doesNotMatch(f.dialog().textContent, /Watchdog thresholds/);
   assert.equal(f.key('settings-tab-all').getAttribute('aria-selected'), 'true');
   press(f.key('settings-tab-all'), 'ArrowLeft'); f.draw();
@@ -96,7 +96,7 @@ test('per-hive settings save and prevent closing across tabs while pending', t =
   assert.equal(f.key('settings-close').getAttribute('disabled'), '');
   f.sent[0].options.onReply({ ok: true }); f.draw();
   f.key('settings-tab-hive').click(); f.draw();
-  assert.match(f.dialog().textContent, /Watchdog settings saved/);
+  assert.match(f.dialog().textContent, /Work monitoring settings saved/);
   f.key('settings-close').click(); f.draw();
   assert.equal(f.dialog(), undefined);
 });
@@ -113,7 +113,7 @@ test('global saves prevent closing and successful saves persist', async t => {
   assert.ok(f.dialog());
   finish(); await new Promise(resolve => setImmediate(resolve)); f.draw(null);
   assert.deepEqual(f.writes, [['maxClaimedWork', 4]]);
-  assert.match(f.dialog().textContent, /Worker limit saved/);
+  assert.match(f.dialog().textContent, /Active work limit saved/);
   assert.equal(saving.defaultPrevented, true);
   f.key('settings-close').click(); f.draw(null);
   assert.equal(document.activeElement, f.key('open-settings'));
@@ -131,7 +131,7 @@ test('retired hives retain reopening and snapshots only offer All hives settings
   f.cell.snapshot = { brief: 'Captured brief', sessions: {} };
   f.open();
   assert.equal(f.key('settings-tab-hive'), undefined);
-  assert.match(f.dialog().textContent, /Maximum active workers/);
+  assert.match(f.dialog().textContent, /Maximum active work items/);
 });
 
 test('snapshot queen popover remains read only', t => {

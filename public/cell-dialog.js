@@ -110,7 +110,7 @@ export function cellDialog(ctx) {
         if (frame.launchError) ctx.notice(`The hive was added, but its queen did not launch: ${frame.launchError}. Launch it again from the hive; the task is kept.`, { severity: 'error' });
         if (mode === 'new') ui.openCell(frame.cellId);
         else {
-          if (!frame.reenabled) ctx.notice('The task is now a hive, shown in All hives. Once its queen is active, it maps the existing work into beads and links its sessions.', { severity: 'info' });
+          if (!frame.reenabled) ctx.notice('The task is now a hive, shown in All hives. Once its queen is active, it maps the existing work into cells and links its sessions.', { severity: 'info' });
           ui.highlightCell(frame.cellId);
         }
       },
@@ -195,7 +195,7 @@ export function cellDialog(ctx) {
   h('div', { class: 'hive-dialog-body', dataset: { scrollKey: 'cell-dialog' } },
     h('p', { class: 'hive-muted hive-dialog-lead' }, mode === 'new'
       ? 'Creates a task on the board and launches its queen. If the launch fails, the task is kept and you launch again from the hive.'
-      : 'Turns a task already on the board into a hive, and launches a new queen. Once active, the queen maps the task\'s existing work into beads and links its sessions; existing sessions are not turned into beads automatically.'),
+      : 'Turns a task already on the board into a hive, and launches a new queen. Once active, the queen maps the task\'s existing work into cells and links its sessions; existing sessions are not turned into cells automatically.'),
     body),
   !v.pending && inFlight() ? h('p', { class: 'hive-dialog-note', role: 'status' }, 'An earlier request is still running. You can submit once it finishes; its outcome appears as a notice.') : null,
   v.error ? h('p', { class: 'hive-dialog-error', role: 'alert' }, v.error) : null,

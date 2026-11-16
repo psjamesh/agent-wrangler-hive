@@ -9,9 +9,9 @@ test('worker orchestration routes session instructions through a tracked helper'
   assert.ok(paragraph, 'orchestration must cover session instructions from other sources');
   assert.match(paragraph, /start or spawn another (?:agent )?session/);
   assert.match(paragraph, /hive_spawn_worker\(bead_id, role: "helper", \.\.\.\)/);
-  assert.match(paragraph, /own bead/);
+  assert.match(paragraph, /own cell/);
   assert.match(paragraph, /agent.*,.*model.*and.*cwd/);
   assert.match(paragraph, /takes precedence over.*spawn_session.*other skills/);
-  assert.match(paragraph, /[Ii]ndependent work.*own bead.*queen/);
+  assert.match(paragraph, /[Ii]ndependent work.*own cell.*queen/);
   assert.doesNotMatch(paragraph, /browser/i);
 });

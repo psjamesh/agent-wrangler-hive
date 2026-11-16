@@ -67,7 +67,7 @@ export function setWatchdogSettings(rt, { cellId, settings }) {
   refuseSnapshot(cell);
   if (!settings || typeof settings !== 'object' || Array.isArray(settings) || !Object.keys(settings).length
     || Object.entries(settings).some(([key, value]) => !Object.hasOwn(WATCHDOG_DEFAULTS, key) || !Number.isFinite(value) || value <= 0 || value > 525600)) {
-    throw new HiveError('Watchdog thresholds must be positive numbers up to 525600, using workerMinutes, idleMinutes, reviewMinutes, messageMinutes, queenResponseMinutes, waitHours, deferredDays, untrackedMinutes, waitGraceMinutes, humanWaitMinutes, pickupHeldMinutes and idleReadyMinutes.');
+    throw new HiveError('Work monitoring thresholds must be positive numbers up to 525600, using workerMinutes, idleMinutes, reviewMinutes, messageMinutes, queenResponseMinutes, waitHours, deferredDays, untrackedMinutes, waitGraceMinutes, humanWaitMinutes, pickupHeldMinutes and idleReadyMinutes.');
   }
   rt.metadata.mutate(d => { d.cells[cellId].watchdogSettings = { ...watchdogSettings(cell), ...settings }; });
   return { cellId, settings: watchdogSettings(rt.metadata.cell(cellId)) };
@@ -134,7 +134,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
   if (migrations.length) {
     const ids = migrations.map(([id]) => id);
     add('blocked_status_migrated', cell.id, migrations.map(([id, migration]) => [id, migration.at]), Math.min(...migrations.map(([, migration]) => migration.at)),
-      `Migrated blocked beads to open: ${ids.map(id => `${id} (${beads[id]?.title || id})`).join(', ')}. Links and waiting annotations were preserved. Waiting now comes from open blocks prerequisites.`, { migrated_bead_ids: ids });
+      `Migrated blocked cells to open: ${ids.map(id => `${id} (${beads[id]?.title || id})`).join(', ')}. Links and waiting annotations were preserved. Waiting now comes from open blocks prerequisites.`, { migrated_bead_ids: ids });
   }
   const idleAvailable = open.some(bead => idleReadyCandidate(bead, cell)) && idleReadyAvailable(rt, host, cell);
   for (const bead of open) {
@@ -172,12 +172,12 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       const reviewAt = stamp(resume.reviewAt);
       const prerequisite = resume.afterBead ? beads[resume.afterBead] : null;
       if (reviewAt && now >= reviewAt) {
-        add('deferred_due', bead.id, ['review', reviewAt], reviewAt, `Waiting bead's review date has passed.`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
+        add('deferred_due', bead.id, ['review', reviewAt], reviewAt, `Waiting cell's review date has passed.`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
       } else if (resume.afterBead && (!prerequisite || prerequisite.status === 'closed')) {
         const since = prerequisite ? stamp(prerequisite.closedAt) || stamp(prerequisite.updatedAt) || now : now;
-        add('deferred_due', bead.id, ['prerequisite', resume.afterBead], since, `Waiting bead's prerequisite ${resume.afterBead} has closed.`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
+        add('deferred_due', bead.id, ['prerequisite', resume.afterBead], since, `Waiting cell's prerequisite ${resume.afterBead} has closed.`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
       } else if (!reviewAt && !resume.afterBead && updated && now - updated >= settings.deferredDays * DAY_MS) {
-        add('deferred_due', bead.id, ['age', updated], updated, `Deferred bead has not been reviewed for ${plural(settings.deferredDays, 'day')}.`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
+        add('deferred_due', bead.id, ['age', updated], updated, `Deferred cell has not been reviewed for ${plural(settings.deferredDays, 'day')}.`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
       }
     }
     const sid = bead.ownerSessionId;
@@ -199,7 +199,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       const finished = !waiting && !index.blockers.get(bead.id)
         && recordsCompletion(bead, sid ? [...QUEEN_ASKED, ...WORK_DONE] : QUEEN_ASKED);
       if (finished && !reviewOpen && now - updated >= settings.untrackedMinutes * 60000) {
-        add('finished_open', bead.id, [updated, bead.status], updated, 'No worker holds this bead and its record says the work is finished or asks the queen to close it.', { bead_id: bead.id, session_id: sid || null });
+        add('finished_open', bead.id, [updated, bead.status], updated, 'No worker holds this cell and its record says the work is finished or asks the queen to close it.', { bead_id: bead.id, session_id: sid || null });
       } else if (bead.status === 'in_progress' && !exitedClaim && !reviewOpen && now - updated >= settings.untrackedMinutes * 60000
         && !index.blockers.get(bead.id)) {
         add('untracked_work', bead.id, [updated, sid || ''], updated, 'In-progress work has no live claimant.', { bead_id: bead.id, session_id: sid || null });
@@ -207,7 +207,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     }
     const humanWait = humanWaitText(bead);
     if (humanWait && updated && now - updated >= settings.humanWaitMinutes * 60000 && !index.asked.get(cell.id)?.has(bead.id)) {
-      add('human_wait_unasked', bead.id, [updated, bead.status, humanWait], updated, `Bead waits on the human but no hive_request_input is open for it: ${humanWait}`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
+      add('human_wait_unasked', bead.id, [updated, bead.status, humanWait], updated, `Cell waits on the human but no hive_request_input is open for it: ${humanWait}`, { bead_id: bead.id, session_id: bead.ownerSessionId || null });
     }
     if (!session) continue;
     const activity = workerLastActivity(session, bead, index.activity);

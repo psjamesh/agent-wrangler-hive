@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { launchQueen, onBeforeDispatch } from '../server/sessions.js';
-import { buildContext, contextTool } from '../server/tools.js';
+import { buildContext, contextTool, hiveTool, workTools } from '../server/tools.js';
 import { buildGraph } from '../server/bead-model.js';
 
 function fixture(t) {
@@ -68,13 +68,13 @@ test('bead scope keeps focus, parent chain, direct links and only own topics, re
 test('scope infers reviewer bindings, rejects ambiguous or missing focus and rejects other cells', async t => {
   const f = fixture(t);
   assert.equal((await scoped(f, {}, 'reviewer')).focus.bead_id, 'work');
-  await assert.rejects(scoped(f, {}, 'peer'), /needs bead_id/);
+  await assert.rejects(scoped(f, {}, 'peer'), /Scope bead needs bead_id/);
   f.doc.bindings.cell.push({ active: true, sessionId: 'worker', beadId: 'linked', role: 'investigator' });
-  await assert.rejects(scoped(f), /needs bead_id/);
+  await assert.rejects(scoped(f), /Scope bead needs bead_id/);
   assert.equal((await scoped(f, { bead_id: 'work' })).focus.bead_id, 'work');
-  await assert.rejects(scoped(f, { bead_id: 'missing' }), /Unknown bead/);
+  await assert.rejects(scoped(f, { bead_id: 'missing' }), /Unknown cell/);
   f.rt.snapshots.graph.beads.outside = { id: 'outside', parentId: null };
-  await assert.rejects(scoped(f, { bead_id: 'outside' }), /Unknown bead/);
+  await assert.rejects(scoped(f, { bead_id: 'outside' }), /Unknown cell/);
   f.rt.snapshots.graph.beads.work.status = 'closed';
   assert.equal((await scoped(f, { bead_id: 'work' })).focus.status, 'closed');
 });
@@ -228,4 +228,45 @@ test('sequential fresh launches replace the recovery decision without changing t
   assert.equal(out.queen_launch.handoverSourceSessionId, 'queen');
   assert.equal(out.queen_launch.archiveSourceAfterHandover, false);
   assert.equal(source.archived, undefined);
+});
+
+test('hive_id and legacy cell_id select the same hive and expose both output identifiers', async t => {
+  const f = fixture(t);
+  f.host.stores = { hive: f.rt };
+  for (const ids of [{ hive_id: 'cell' }, { cell_id: 'cell' }, { hive_id: 'cell', cell_id: 'cell' }]) {
+    const out = await contextTool.handler({ host: f.host, caller: 'worker' }, { ...ids, scope: 'bead', bead_id: 'work' });
+    assert.equal(out.isError, undefined, JSON.stringify(out));
+    assert.equal(out.structuredContent.cell.hive_id, 'cell');
+    assert.equal(out.structuredContent.cell.cell_id, 'cell');
+    assert.deepEqual(JSON.parse(out.content[0].text), JSON.parse(JSON.stringify(out.structuredContent)));
+  }
+  const conflict = await contextTool.handler({ host: f.host, caller: 'worker' }, { hive_id: 'cell', cell_id: 'other' });
+  assert.equal(conflict.isError, true);
+  assert.match(conflict.content[0].text, /hive_id.*cell_id.*agree/);
+});
+
+
+test('request tools share hive alias validation, including after membership is lost', async t => {
+  const f = fixture(t);
+  f.host.stores = { hive: f.rt };
+  const tool = workTools.find(tool => tool.name === 'hive_list_my_requests');
+  for (const ids of [{ hive_id: 'cell' }, { cell_id: 'cell' }, { hive_id: 'cell', cell_id: 'cell' }]) {
+    const out = await tool.handler({ host: f.host, caller: 'worker' }, ids);
+    assert.equal(out.isError, undefined, JSON.stringify(out));
+    assert.deepEqual(out.structuredContent.requests, []);
+  }
+  for (const tool of [contextTool, ...workTools]) {
+    assert.equal(tool.inputSchema.safeParse({ hive_id: 'cell', cell_id: 'other' }).success, false, tool.name);
+  }
+  const conflict = await tool.handler({ host: f.host, caller: 'worker' }, { hive_id: 'cell', cell_id: 'other' });
+  assert.equal(conflict.isError, true);
+  assert.match(conflict.content[0].text, /hive_id and cell_id must agree/);
+});
+
+test('tool results keep legacy identifiers and add hive_id at each structured level', async t => {
+  const f = fixture(t);
+  f.host.stores = { hive: f.rt };
+  const tool = hiveTool({ name: 'test_alias', inputSchema: {} }, () => ({ cell_id: 'cell', others: [{ cell_id: 'second' }], unchanged: 'cell_legacy' }));
+  const out = await tool.handler({ host: f.host, caller: 'worker' }, { hive_id: 'cell' });
+  assert.deepEqual(out.structuredContent, { hive_id: 'cell', cell_id: 'cell', others: [{ hive_id: 'second', cell_id: 'second' }], unchanged: 'cell_legacy' });
 });

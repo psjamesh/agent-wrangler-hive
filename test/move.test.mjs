@@ -38,7 +38,7 @@ test('a tile drag may not fragment its own nested region', () => {
 test('a drag that splits the top-level workstream is still refused', () => {
   const kids = tree([['a', 'root', 'workstream'], ['x', 'a'], ['y', 'a']]);
   const layout = lay(kids, { a: p(0, 0), x: p(1, 0), y: p(2, 0) });
-  assert.match(previewMove({ layout, kids, id: 'x', target: p(5, 5) }).reason, /split a workstream/);
+  assert.match(previewMove({ layout, kids, id: 'x', target: p(5, 5) }).reason, /split a cluster/);
 });
 
 test('gaps between separate workstreams are fine', () => {
@@ -300,5 +300,5 @@ test('a closed bead of any outcome shares its saved hex and is drawn beside it',
 
 test('an open bead still may not share a hex', () => {
   const g = graph({ h: 'root', a: 'h', b: 'h' }, { h: p(0, 0), a: p(1, 0), b: p(2, 0) });
-  assert.throws(() => moveBeads(runtime(g), { cellId: 'cell', positions: { b: p(1, 0) }, stack: ['a'], base: layoutBase(g) }), /two beads on one hex/);
+  assert.throws(() => moveBeads(runtime(g), { cellId: 'cell', positions: { b: p(1, 0) }, stack: ['a'], base: layoutBase(g) }), /two cells on one hex/);
 });

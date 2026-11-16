@@ -55,22 +55,22 @@ export function resolveCaller(rt, host, caller, cellId) {
     const hit = mine.find((p) => p.cell.id === cellId);
     if (hit) return { sessionId: caller, cell: hit.cell, role: hit.role, cells: mine };
     const cell = rt.metadata.cell(cellId);
-    if (!cell) throw new AccessError(`Unknown Hive cell ${cellId}.`);
-    if (!cell.enabled) throw new AccessError(`Hive cell ${cellId} is turned off.`);
-    if (cell.snapshot) throw new AccessError(`Hive cell ${cellId} is a captured snapshot and is read only.`);
-    throw new AccessError(`You do not take part in Hive cell ${cellId}. A session takes part when it is the cell's queen, is in the cell's task, or is bound to the cell by its queen.`);
+    if (!cell) throw new AccessError(`Unknown Hive ${cellId}.`);
+    if (!cell.enabled) throw new AccessError(`Hive ${cellId} is turned off.`);
+    if (cell.snapshot) throw new AccessError(`Hive ${cellId} is a captured snapshot and is read only.`);
+    throw new AccessError(`You do not take part in Hive ${cellId}. A session takes part when it is the hive's queen, is in the hive's task, or is bound to the hive by its queen.`);
   }
   if (mine.length === 1) return { sessionId: caller, cell: mine[0].cell, role: mine[0].role, cells: mine };
-  if (!mine.length) throw new AccessError('You do not take part in any enabled Hive cell.');
-  throw new AccessError(`You take part in several Hive cells (${mine.map((p) => p.cell.id).join(', ')}); pass cell_id.`);
+  if (!mine.length) throw new AccessError('You do not take part in any enabled Hive.');
+  throw new AccessError(`You take part in several Hives (${mine.map((p) => p.cell.id).join(', ')}); pass hive_id.`);
 }
 
 export function requireCoordinator(actor, what) {
-  if (!COORDINATING_ROLES.has(actor.role)) throw new AccessError(`Only the cell's queen or a coordinator bound by it can ${what}.`);
+  if (!COORDINATING_ROLES.has(actor.role)) throw new AccessError(`Only the hive's queen or a coordinator bound by it can ${what}.`);
 }
 
 export function requireQueen(actor, what) {
-  if (actor.role !== 'queen') throw new AccessError(`Only the cell's nominated queen can ${what}.`);
+  if (actor.role !== 'queen') throw new AccessError(`Only the hive's nominated queen can ${what}.`);
 }
 
 // The cell a bead belongs to: the nearest ancestor (or itself) that is an
@@ -136,17 +136,17 @@ export async function waitForHierarchy(rt, { read, refresh = false, timeoutMs = 
 export function requireBeadAccess(rt, actor, beadId) {
   requireCompleteHierarchy(rt);
   const bead = rt.snapshots.graph.beads[beadId];
-  if (!bead) throw new AccessError(`Unknown bead ${beadId}. Call hive_context for current ids; a bead created outside Hive appears after the next refresh.`);
+  if (!bead) throw new AccessError(`Unknown cell ${beadId}. Call hive_context for current ids; a cell created outside Hive appears after the next refresh.`);
   const cell = cellOfBead(rt, beadId);
-  if (!cell) throw new AccessError(`Bead ${beadId} is not part of any Hive cell.`);
+  if (!cell) throw new AccessError(`Cell ${beadId} is not part of any Hive.`);
   const part = actor.cells.find((p) => p.cell.id === cell.id);
-  if (!part) throw new AccessError(`Bead ${beadId} belongs to cell ${cell.id}, which you do not take part in.`);
+  if (!part) throw new AccessError(`Cell ${beadId} belongs to hive ${cell.id}, which you do not take part in.`);
   return { bead, cell, role: part.role };
 }
 
 export function requireNonHelper(rt, actor, what) {
   if (isHelper(rt, actor.sessionId, actor.cell.id)) {
-    throw new AccessError(`Helper sessions cannot ${what}. Report back to the bead's holder.`);
+    throw new AccessError(`Helper sessions cannot ${what}. Report back to the cell's holder.`);
   }
 }
 

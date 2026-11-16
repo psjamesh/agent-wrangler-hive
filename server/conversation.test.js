@@ -326,7 +326,7 @@ test('hive_publish returns the relative hash link for its posted message', async
   assert.equal(response.isError, undefined);
   const result = response.structuredContent;
   assert.deepEqual(JSON.parse(response.content[0].text), result);
-  assert.equal(result.link, `#view=ext:hive:overview&cell=${f.cell.id}&topic=${result.thread_id}&message=${result.message_id}`);
+  assert.equal(result.link, `#view=ext:hive:overview&hive=${f.cell.id}&topic=${result.thread_id}&message=${result.message_id}`);
   assert.equal(publishTool.name, 'hive_publish');
 });
 
@@ -336,12 +336,12 @@ test('context provides links for topics and other authors’ messages, including
   const human = await recordHumanInput(f.rt, { cellId: f.cell.id, text: 'A question' });
   const reply = await publish(f.rt, f.actor, { text: 'Another topic' });
   const context = await cellContextConversation(f.rt, f.rt.host, f.actor);
-  const messageLink = m => `#view=ext:hive:overview&cell=${f.cell.id}&topic=${m.thread_id}&message=${m.message_id}`;
+  const messageLink = m => `#view=ext:hive:overview&hive=${f.cell.id}&topic=${m.thread_id}&message=${m.message_id}`;
   assert.equal(context.conversation.length, 2);
   for (const m of context.conversation) assert.equal(m.link, messageLink(m));
   assert.ok(context.conversation.some(m => m.message_id === human.id));
   assert.ok(context.conversation.some(m => m.message_id === reply.message_id));
-  for (const topic of context.threads) assert.equal(topic.link, `#view=ext:hive:overview&cell=${f.cell.id}&topic=${topic.thread_id}`);
+  for (const topic of context.threads) assert.equal(topic.link, `#view=ext:hive:overview&hive=${f.cell.id}&topic=${topic.thread_id}`);
   for (const key of ['unacknowledged_input', 'awaiting_response']) {
     assert.equal(context[key].length, 1);
     assert.equal(context[key][0].link, messageLink(context[key][0]));
@@ -601,7 +601,7 @@ test('completion suggestions are anchored human input, deduplicated concurrently
   const next = await suggestWorkstreamCompletion(f.rt, args);
   assert.equal(next.created, true);
   assert.notEqual(next.id, first.id);
-  await assert.rejects(suggestWorkstreamCompletion(f.rt, { ...args, headId: 'root' }), /not a workstream/);
+  await assert.rejects(suggestWorkstreamCompletion(f.rt, { ...args, headId: 'root' }), /not a cluster/);
   f.rt.snapshots.graph.beads.stream.status = 'closed';
   await assert.rejects(suggestWorkstreamCompletion(f.rt, args), /already closed/);
   f.rt.snapshots.graph.beads.stream.status = 'open';

@@ -901,7 +901,7 @@ test('thread-only request takes the topic bead while an explicit conflicting bea
   const r = await f.create(queen, { thread_id: h.threadId });
   assert.equal(r.beadId, 'hive-work');
   assert.equal(r.threadId, h.threadId);
-  await assert.rejects(f.create(queen, { thread_id: h.threadId, bead_id: 'hive-other' }), /Topic and bead context disagree/);
+  await assert.rejects(f.create(queen, { thread_id: h.threadId, bead_id: 'hive-other' }), /Topic and cell context disagree/);
 });
 
 test('bead-only request reuses its sole visible topic in the cell', async t => {

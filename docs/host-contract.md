@@ -1,5 +1,7 @@
 # Host and Beads contract
 
+User-facing names are Hive (top-level task), cluster (stored kind `workstream`) and cell (individual work item, stored as a Beads issue). Agent tools prefer `hive_id` for the Hive; `cell_id` remains a legacy alias, and both must agree if supplied. Responses retain both keys. `bead_id`, `cell_…` IDs, tool names and stored kinds are unchanged; no migration is required. Internal code and metadata below retain their existing identifiers.
+
 This page lists exactly what Hive relies on from Agent Wrangler and from Beads. It is the checklist for an upgrade of either.
 
 ## Agent Wrangler host API
@@ -38,7 +40,7 @@ The manifest declares `engines.wranglerApi: ^2.0.0`. Hive uses the synchronous `
 | `hooks['session.beforeSpawn']`, `hooks['session.spawned']` | Admit ordinary participant spawns and forks, bind them as helpers on the parent's bead after save, and deliver their Hive brief. Each helper consumes an additional global capacity slot. These hooks are version-gated by the declared host API floor; older hosts cannot load this build. |
 | `hooks['session.prepare']` | Notes a session that a participant is launching into the cell's own task, using the task the launch actually resolved to. |
 | `sweeps` | Every 60 seconds: refreshes the snapshot and reconciles uncertain operations. A separate sweep labels eligible session PRs. |
-| `settings.maxClaimedWork` | Maximum active workers: one global limit counting claimed beads, open reviews and launching workers, default 8; 0 means Unlimited. Read at each admission without restart; lowering it keeps current work. The view projects the same admission calculation, with shared slots counted once. |
+| `settings.maxClaimedWork` | Maximum active work items: one global limit counting claimed beads, open reviews and launching workers, default 8; 0 means Unlimited. Read at each admission without restart; lowering it keeps current work. The view projects the same admission calculation, with shared slots counted once. |
 | `settings.bdPath` | The human-owned absolute path to `bd`. |
 | `activate` / `deactivate` | Attach the runtime to the host façade, and detach it. |
 | `client`, `styles` | The `view` slot `overview` (label "Hive") on the rail. |

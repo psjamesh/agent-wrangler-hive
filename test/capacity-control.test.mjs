@@ -44,7 +44,7 @@ function fixture(t) {
 
 test('renders limited/unlimited global count with deduplicated breakdown and over-limit note', t => {
   const f = fixture(t);
-  assert.match(text(f.draw()), /5\/8 slots/);
+  assert.match(text(f.draw()), /5\/8 active/);
   assert.match(f.control('capacity-toggle').attrs.title, /2 claimed.*1.*reviews.*2.*launching/i);
   assert.equal(f.control('capacity-toggle').tag, 'button');
   assert.equal(f.control('capacity-toggle').attrs.type, 'button');
@@ -52,7 +52,7 @@ test('renders limited/unlimited global count with deduplicated breakdown and ove
   assert.equal(bar.children[0].style.width, '63%');
   assert.equal(bar.attrs['aria-hidden'], 'true');
   f.ctx.hive.capacity.limit = 0;
-  assert.match(text(f.draw()), /5 slots/);
+  assert.match(text(f.draw()), /5 active/);
   assert.equal(walk(f.control('capacity-toggle')).some(el => el.attrs.class === 'hive-progress-inline'), false);
   assert.doesNotMatch(text(f.draw()), /of 0/);
   f.ctx.hive.capacity.limit = 2;
@@ -110,7 +110,7 @@ test('submitting immediately after typing saves the current draft without a rere
 
 test('count opens the shared Settings modal and focuses the limit field', t => {
   const f = fixture(t); f.open();
-  assert.match(text(f.draw()), /Settings.*All hives.*Maximum active workers.*Bee slider/);
+  assert.match(text(f.draw()), /Settings.*All hives.*Maximum active work items.*Bee slider/);
   assert.equal(globalThis.document.activeElement.attrs['data-focus-key'], 'capacity-limit');
   assert.equal(f.control('capacity-toggle').attrs['aria-controls'], 'hive-settings');
   f.control('settings-close').events.click(); f.draw();
@@ -181,9 +181,9 @@ test('completed saves restore focus after the pending controls were disabled', a
 
 test('changing a saved choice removes the saved confirmation', async t => {
   const f = fixture(t); f.open(); await f.submit(); f.draw();
-  assert.match(text(f.draw()), /Worker limit saved/);
+  assert.match(text(f.draw()), /Active work limit saved/);
   f.control('capacity-unlimited').events.change({ target: { checked: true } });
-  assert.doesNotMatch(text(f.draw()), /Worker limit saved/);
+  assert.doesNotMatch(text(f.draw()), /Active work limit saved/);
 });
 
 test('request popups default on, save through host settings and recover from errors', async t => {

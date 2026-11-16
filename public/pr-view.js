@@ -20,19 +20,19 @@ export function pullRequestRow(ctx, bead, pr) {
   if (!submittedRequests.has(ctx.ui)) submittedRequests.set(ctx.ui, new Set());
   const submitted = submittedRequests.get(ctx.ui);
   const requestKey = JSON.stringify([pr.cellId, bead.id, pr.url, pr.headSha, pr.humanAttention?.at]);
-  const sent = h('p', { class: 'hive-muted' }, submitted.has(requestKey) ? 'Request submitted. Check the bead topic before repeating.' : '');
+  const sent = h('p', { class: 'hive-muted' }, submitted.has(requestKey) ? 'Request submitted. Check the cell topic before repeating.' : '');
   const ask = h('button', { type: 'button', class: 'hive-link-btn', dataset: { waitAction: 'ask-queen' }, onclick: () => {
     if (submitted.has(requestKey)) return;
     submitted.add(requestKey);
     ask.disabled = true;
-    sent.textContent = 'Request submitted. Check the bead topic before repeating.';
+    sent.textContent = 'Request submitted. Check the cell topic before repeating.';
     const topic = cell?.threads?.find(t => t.beadId === bead.id || t.beads?.includes(bead.id));
     ctx.send({ type: 'hive-send', cellId: pr.cellId, beadId: bead.id, threadId: topic?.id,
       ...(topic ? {} : { newThread: { title: `Help with PR #${pr.number}`, beadId: bead.id } }),
       text: `Please help resolve PR #${pr.number} (${pr.url}) on “${bead.title}”. ${pr.humanAttention?.reason || 'Please check what is needed next.'}`,
     }, { quiet: true, onReply: reply => {
       if (!reply.ok) ctx.notice(reply.error || 'Could not ask the queen. Check before repeating.');
-      else ctx.notice(reply.delivery?.state === 'failed' ? 'Saved in the bead topic; delivery failed. Check the topic before repeating.' : 'Asked the queen in the bead topic.', { brief: true });
+      else ctx.notice(reply.delivery?.state === 'failed' ? 'Saved in the cell topic; delivery failed. Check the topic before repeating.' : 'Asked the queen in the cell topic.', { brief: true });
     } });
   } }, 'Ask the queen to fix');
   ask.disabled = submitted.has(requestKey);

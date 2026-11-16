@@ -1493,7 +1493,7 @@ test('selected Yes toggles off silently and leaves its durable reply visible', t
   const signal = out.list.children.find(el => el.dataset.id === 'signal');
   const link = signal.querySelector('.hive-reaction-reply');
   assert.equal(link.textContent, 'Yes');
-  assert.equal(link.attributes.href, `#view=ext:hive:overview&cell=${f.cell.id}&topic=${source.threadId}&message=m2`);
+  assert.equal(link.attributes.href, `#view=ext:hive:overview&hive=${f.cell.id}&topic=${source.threadId}&message=m2`);
   assert.ok(link.querySelector('svg'));
   assert.equal(signal.querySelector('.hive-ack'), null);
   assert.equal(signal.querySelector('.hive-quote'), null);
@@ -1593,7 +1593,7 @@ test('a deep-link response from an older audience view is refreshed before openi
   f.cell.conversationRevision = 'current';
   const hive = { cells: { [f.cell.id]: f.cell }, metaEpoch: f.hive.metaEpoch };
   view.update(null, null, { hive });
-  win.location.hash = `#view=ext:hive:overview&cell=${f.cell.id}&topic=${thr}&message=msg_target`;
+  win.location.hash = `#view=ext:hive:overview&hive=${f.cell.id}&topic=${thr}&message=msg_target`;
   for (const fn of listeners) fn();
   resolveLink(hive);
   const frame = { op: 'hive-deep-link', requestId: sent[0].requestId, ok: true, cellId: f.cell.id, thread: { id: thr }, messageId: 'msg_target', messages: [], anchorN: 1 };
@@ -1862,7 +1862,7 @@ for (const count of [0, 1, 3, 35]) test(`topic details expose all ${count} relat
   const related = { ids: new Set(Array.from({ length: count }, (_, i) => `hive-${i}`)), el: document.createElement('div') };
   renderRelatedBeads(related, id => { const chip = document.createElement('button'); chip.textContent = id; return chip; });
   assert.equal(related.el.querySelectorAll('button').length, count);
-  if (!count) assert.match(related.el.textContent, /No related beads/);
+  if (!count) assert.match(related.el.textContent, /No related cells/);
 });
 
 const withdrawBtn = (root, label) => root.querySelectorAll('button').filter((b) => b.textContent === label);

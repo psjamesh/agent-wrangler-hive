@@ -21,7 +21,7 @@ for (const kind of ['stalled_worker', 'aborted_turn', 'errored_turn']) {
     notify(graph(2));
     assert.equal(shown.length, 2);
     action('bead'); await Promise.resolve();
-    assert.match(opened[1], /cell=cell&bead=work/);
+    assert.match(opened[1], /hive=cell&bead=work/);
     notify(graph(3, 'stale_wait'));
     assert.equal(shown.length, 2);
   });

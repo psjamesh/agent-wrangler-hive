@@ -18,12 +18,12 @@ test('header orders identity, capacity, progress, needs, queen and settings', ()
   const header = load('cellHeader', {
     cellMetrics, cellTitle: () => 'Title',
     queenPill: () => h('button', {}, 'Queen'), headProgress: progress,
-    capacityControl: () => h('button', {}, '5/8 slots'), settingsButton: () => h('button', {}, 'Settings'),
+    capacityControl: () => h('button', {}, '5/8 active'), settingsButton: () => h('button', {}, 'Settings'),
     settingsModal: () => null, attentionEl: () => null, noticesEl: () => null, isRetired: () => false,
   });
   const cell = { id: 'c', enabled: true, rootBeadId: 'root', requests: { r: { id: 'r', audience: 'human', state: 'open' } } };
   const ctx = { hive: { beads: { root: { id: 'root' }, done: { id: 'done', parentId: 'root', status: 'closed' } }, edges: [] }, ui: {}, graph: {} };
-  assert.match(text(header(ctx, cell, { id: 'root' })), /All hives\/Title5\/8 slots1\/1 closed1 need youQueenSettings/);
+  assert.match(text(header(ctx, cell, { id: 'root' })), /All hives\/Title5\/8 active1\/1 closed1 need youQueenSettings/);
   assert.equal(all(header(ctx, cell, { id: 'root' })).filter(n => n.attrs?.class === 'hive-progress-inline').length, 1);
 });
 
@@ -74,7 +74,7 @@ test('closed workstream menu entry preserves its drawer action and tooltip', () 
   });
   const ctx = { hive: {}, ui: { form: key => forms.get(key), setForm: (key, value) => forms.set(key, value) } };
   const button = closedButton(ctx, { id: 'c' }, 'hive-zoom-btn');
-  assert.equal(text(button), 'Closed workstreams (1)');
+  assert.equal(text(button), 'Closed clusters (1)');
   assert.equal(button.attrs.class, 'hive-zoom-btn');
   assert.match(button.attrs.title, /history.*reopening/);
   button.attrs.onclick();

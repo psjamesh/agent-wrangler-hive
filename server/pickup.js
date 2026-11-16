@@ -203,7 +203,7 @@ export function idleReadyProblem(rt, host, cell, bead, graph = rt.snapshots.grap
   if ((!mark.armed && replacementPickupReason(rt, bead)) || pickupConsumed(rt.metadata.read(), bead)) reasons.push('Work needs explicit rearm after a previous claim, binding or worker launch');
   if (mark.held) reasons.push('Automatic pickup is held');
   else if (bead.kind === 'investigation' || mark.armed === false || (!mark.automatic && !inherited.auto)) reasons.push('Work is unmarked and needs explicit pickup');
-  if (!profile) reasons.push('No worker profile is configured on this workstream or its ancestors');
+  if (!profile) reasons.push('No worker profile is configured on this cluster or its ancestors');
   return reasons.length ? reasons.join('; ') : null;
 }
 
@@ -214,7 +214,7 @@ export function defaultPickupProblem(rt, host, cell, bead, graph = rt.snapshots.
   const reasons = cellReasons(rt, host, cell);
   if (reasons.length) return reasons.join('; ');
   const { profile } = inheritedWorkerProfile(graph, bead);
-  if (!profile) return 'No worker profile is configured on this workstream or its ancestors';
+  if (!profile) return 'No worker profile is configured on this cluster or its ancestors';
   if (!profile.cwd || !path.isAbsolute(profile.cwd)) return 'Default worker profile needs an absolute working folder (cwd)';
   if (!profile.agent || !profile.model || typeof profile.effort !== 'string') return 'Default worker profile needs agent, model and effort';
   return rt.metadata.read().defaultPickupProblems?.[bead.id]?.reason || null;
@@ -232,8 +232,8 @@ export async function setWorkerProfile(rt, host, { cellId, beadId, profile, brie
     const graph = await rt.beads.loadSnapshot({ all: true });
     assertCurrent(rt, host);
     const bead = graph.beads[beadId];
-    if (!bead || bead.kind !== 'workstream' || pickupCell(rt, graph, beadId)?.id !== cellId) throw new HiveError('Choose a workstream in this hive.');
-    if (Object.values(rt.metadata.read().operations || {}).some(o => UNSETTLED.has(o.state) && (o.beadIds?.includes(beadId) || o.intent?.beadId === beadId))) throw new HiveError('Reconcile the earlier workstream write before saving its profile.', 'conflict');
+    if (!bead || bead.kind !== 'workstream' || pickupCell(rt, graph, beadId)?.id !== cellId) throw new HiveError('Choose a cluster in this hive.');
+    if (Object.values(rt.metadata.read().operations || {}).some(o => UNSETTLED.has(o.state) && (o.beadIds?.includes(beadId) || o.intent?.beadId === beadId))) throw new HiveError('Reconcile the earlier cluster write before saving its profile.', 'conflict');
     const mark = { ...bead.pickup, workerProfile: selected, briefTemplate: template, auto: selected ? auto : false };
     const out = await journaled(rt, { kind: 'set-pickup', cellId, actor: 'aw:human', summary: `Set worker profile for ${beadId}`, beadIds: [beadId], intent: { beadId, pickup: mark } }, async (opId, phase) => {
       phase.attempted = true;
@@ -241,7 +241,7 @@ export async function setWorkerProfile(rt, host, { cellId, beadId, profile, brie
         assertCurrent(rt, host);
         const fresh = exportedGraph(context).beads[beadId];
         const current = rt.metadata.cell(cellId);
-        if (!current || current.snapshot || current.retired || !fresh || fresh.kind !== 'workstream' || fresh.updatedAt !== bead.updatedAt) throw new HiveError('The workstream changed; reopen its profile.', 'conflict');
+        if (!current || current.snapshot || current.retired || !fresh || fresh.kind !== 'workstream' || fresh.updatedAt !== bead.updatedAt) throw new HiveError('The cluster changed; reopen its profile.', 'conflict');
       });
       phase.applied = true;
       rt.metadata.mutate(d => {
@@ -277,7 +277,7 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
   const unmarked = { ...mark, armed: false, eligible: false, state: 'unmarked', reason: 'Not marked ready for pickup' };
   if (!mark?.armToken) {
     const legacyHeld = bead && !GROUP_KINDS.has(bead.kind) && !['investigation', 'decision', 'external', 'idea'].includes(bead.kind) && !mark?.automatic && !inheritedWorkerProfile(graph, bead).auto;
-    return { ...unmarked, held: Boolean(mark?.held || legacyHeld), reason: mark?.held ? 'Automatic pickup is held' : replacementPickupReason(rt, bead) || (legacyHeld ? 'Existing work is held until unheld or its workstream enables auto' : defaultPickupProblem(rt, host, cell, bead, graph, null, now) || (defaultPickupCandidate(rt, cell, bead, graph, null, now) ? 'Scoped work uses its nearest workstream worker profile' : unmarked.reason)) };
+    return { ...unmarked, held: Boolean(mark?.held || legacyHeld), reason: mark?.held ? 'Automatic pickup is held' : replacementPickupReason(rt, bead) || (legacyHeld ? 'Existing work is held until unheld or its cluster enables auto' : defaultPickupProblem(rt, host, cell, bead, graph, null, now) || (defaultPickupCandidate(rt, cell, bead, graph, null, now) ? 'Scoped work uses its nearest cluster worker profile' : unmarked.reason)) };
   }
   const attempt = pickupConsumed(rt.metadata.read(), bead);
   const launch = attempt?.launchId && rt.metadata.read().workerLaunches?.[attempt.launchId];

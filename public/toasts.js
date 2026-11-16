@@ -45,7 +45,7 @@ export function announceRestoreNotices(seen, hive, toast, send, visible = true) 
   const opts = pending.length === 1
     ? { severity: 'warning' }
     : { severity: 'warning', detail: texts.join('\n\n') };
-  const text = pending.length === 1 ? texts[0] : `Hive reopened ${pending.length} workstreams: ${pending.map(({ n }) => n.headId).join(', ')}.`;
+  const text = pending.length === 1 ? texts[0] : `Hive reopened ${pending.length} clusters: ${pending.map(({ n }) => n.headId).join(', ')}.`;
   if (!toast(text, opts)) return;
   for (const { key, cell, n } of pending) {
     seen.add(key);

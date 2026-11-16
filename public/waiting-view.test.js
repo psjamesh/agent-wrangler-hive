@@ -174,7 +174,7 @@ test('native waits open the exact request card without adding answer controls an
   assert.equal(items.length, 1);
   const section = view.waitingSection(f.ctx, f.ctx.hive.beads.b);
   const link = all(section).find(n => n.tag === 'a' && text(n) === 'Open request');
-  assert.match(link?.attrs.href || '', /cell=c&topic=native-topic&message=native-message/);
+  assert.match(link?.attrs.href || '', /hive=c&topic=native-topic&message=native-message/);
   assert.equal(all(section).some(n => n.tag === 'textarea' || (n.tag === 'button' && /Answer|Dismiss|Retry/.test(text(n)))), false);
   assert.equal(f.frames.length, 0);
   view.openWaitingMenu(f.ctx, items, null, { cellId: 'c', beadId: 'b' });

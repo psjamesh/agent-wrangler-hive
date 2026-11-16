@@ -101,5 +101,5 @@ export function checkAdmission(rt, graph, beadId, { sessionId, launchId = null, 
   if (!review && bead.assignee && bead.assignee !== `aw:${sessionId}`) throw new HiveError(`Bead ${beadId} is already claimed by ${bead.assignee}.`, 'conflict');
   if (!hiveWorkIds(rt, graph).has(beadId)) return;
   const usage = capacity(rt, graph, { reserve: [beadId] });
-  if (usage.limit && usage.used > usage.limit) throw new HiveError(`Hive's global work limit is ${usage.limit}; ${usage.used} slots are claimed or reserved across all hives. Do not record this in the bead summary or next action: raise it to the queen now with hive_request_input, naming this bead, so the queen can free capacity or change Maximum active workers in Hive settings.`, 'busy');
+  if (usage.limit && usage.used > usage.limit) throw new HiveError(`Hive's global work limit is ${usage.limit}; ${usage.used} slots are claimed or reserved across all hives. Do not record this in the bead summary or next action: raise it to the queen now with hive_request_input, naming this bead, so the queen can free capacity or change Maximum active work items in Hive settings.`, 'busy');
 }

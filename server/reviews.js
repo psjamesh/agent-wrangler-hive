@@ -137,7 +137,7 @@ export async function requestReview(rt, host, actor, input) {
       const byHolder = !COORDINATING_ROLES.has(actor.role);
       const { bead, cell } = requireBeadAccess(rt, actor, input.bead_id);
       cellOf = cell;
-      if (cell.id !== actor.cell.id || bead.status === 'closed' || bead.id === cell.rootBeadId) throw new HiveError('Request a review for open work in this cell.');
+      if (cell.id !== actor.cell.id || bead.status === 'closed' || bead.id === cell.rootBeadId) throw new HiveError('Request a review for open work in this hive.');
       if (reviewerSessionId) {
         const launchOptions = ['agent', 'model', 'effort', 'override_reason', 'codex_approval'].filter(k => input[k] !== undefined);
         if (launchOptions.length) throw new HiveError(`Cannot use ${launchOptions.join(', ')} with reviewer_session_id; a retained reviewer keeps its existing configuration.`, 'refused');
@@ -147,9 +147,9 @@ export async function requestReview(rt, host, actor, input) {
         const worked = bead.assignee === actorFor(reviewerSessionId)
           || (doc.bindings[cell.id] || []).some(b => b.sessionId === reviewerSessionId && b.beadId === bead.id && ['worker', 'investigator'].includes(b.role))
           || Object.values(doc.workerLaunches || {}).some(l => l.sessionId === reviewerSessionId && l.beadId === bead.id && !l.reviewId);
-        if (worked) throw new HiveError('A session that has worked on this bead cannot review it.', 'access');
-        if (!record || record.cellId !== cell.id || !retainedReviewer(rt, host, record, reviewerSessionId)) throw new HiveError('The session must be this bead’s retained bound reviewer and must not be archived or exited.', 'access');
-        if (openReview(rt, bead.id)) throw new HiveError('This bead already has an open review; wait for its verdict or cancel it.', 'conflict');
+        if (worked) throw new HiveError('A session that has worked on this cell cannot review it.', 'access');
+        if (!record || record.cellId !== cell.id || !retainedReviewer(rt, host, record, reviewerSessionId)) throw new HiveError('The session must be this cell’s retained bound reviewer and must not be archived or exited.', 'access');
+        if (openReview(rt, bead.id)) throw new HiveError('This cell already has an open review; wait for its verdict or cancel it.', 'conflict');
         if (commit === record.commit || (record.history || []).some(h => h.commit === commit)) throw new HiveError('A retained review requires a new commit, not one from an earlier round.', 'conflict');
         checkAdmission(rt, await rt.beads.loadSnapshot({ all: true }), bead.id, { sessionId: null, review: true });
         const fresh = await rt.beads.show(bead.id);
@@ -187,7 +187,7 @@ export async function requestReview(rt, host, actor, input) {
       requireBeadAccess(rt, actor, input.bead_id);
       await journaled(rt, { kind: 'review-request', cellId: cell.id, actor: actorFor(actor.sessionId), summary: `Request review of ${bead.id}`, beadIds: [bead.id] }, async () => {
         rt.metadata.mutate((d) => {
-          if (Object.values(d.reviews).some((r) => r.workBeadId === bead.id && r.id !== reviewId && OPEN_REVIEW_STATES.has(r.state))) throw new HiveError('This bead already has an open review; wait for its verdict or cancel it.', 'conflict');
+          if (Object.values(d.reviews).some((r) => r.workBeadId === bead.id && r.id !== reviewId && OPEN_REVIEW_STATES.has(r.state))) throw new HiveError('This cell already has an open review; wait for its verdict or cancel it.', 'conflict');
           d.reviews[reviewId] = { ...d.reviews[reviewId], id: reviewId, cellId: cell.id, workBeadId: bead.id, requestedBy: actor.sessionId, state: 'requested', reviewerSessionId: null, summary: intent, createdAt: d.reviews[reviewId]?.createdAt || Date.now(), requestedAt: Date.now(), updatedAt: Date.now(), policy, ...(commit ? { commit } : {}) };
         });
         return { journal: { reviewId } };

@@ -50,7 +50,7 @@ test('pickup uses an outline play glyph and the Key explains pickup and external
     if (!snapshot) {
       const explanation = walk(key).find(n => n.attrs.class === 'hive-legend-item hive-legend-marks').attrs.title;
       assert.match(explanation, /Plain magnifier badges.*green.*blue/);
-      assert.match(explanation, /prerequisite cross is grey; amber marks untracked work/);
+      assert.match(explanation, /prerequisite cross is grey; amber marks work with no active owner/);
       assert.match(explanation, /green outlined triangle/);
       assert.match(explanation, /chain-link glyph/);
       assert.doesNotMatch(explanation, /cross beside a chain-link/);

@@ -1,6 +1,6 @@
 const fields = ['title', 'id', 'goal', 'summary', 'acceptance', 'nextAction', 'evidence'];
 
-export const SEARCH_FIELD_LABELS = { id: 'bead id', nextAction: 'next action' };
+export const SEARCH_FIELD_LABELS = { id: 'cell id', nextAction: 'next action' };
 
 export function rankBeads(beads, query) {
   const needle = query.trim().toLowerCase();

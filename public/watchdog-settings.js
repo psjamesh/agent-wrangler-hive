@@ -7,7 +7,7 @@ const fields = [
   ['messageMinutes', 'Unanswered message (minutes)', 30],
   ['waitHours', 'Untouched waiting work (hours)', 24],
   ['deferredDays', 'Deferred without a resume condition (days)', 7],
-  ['untrackedMinutes', 'Untracked or finished-but-open work (minutes)', 30],
+  ['untrackedMinutes', 'No active owner or finished-but-open work (minutes)', 30],
   ['waitGraceMinutes', 'Grace after a wait\'s named time (minutes)', 30],
   ['idleReadyMinutes', 'Ready work without pickup (minutes)', 15],
   ['pickupHeldMinutes', 'Automatic pickup held (minutes)', 5],
@@ -43,8 +43,8 @@ export function watchdogSettingsForm({ ui, send }, cell) {
       });
     },
   },
-  h('h4', {}, 'Watchdog'),
-  h('p', { class: 'hive-muted' }, 'Watchdog thresholds for this hive. New flags wake the queen once; quiet checks never wake it. Queen not responding appears in Needs you when the queen is idle and the oldest unanswered input has waited that long.'),
+  h('h4', {}, 'Work monitoring'),
+  h('p', { class: 'hive-muted' }, 'Work monitoring thresholds for this hive. New flags wake the queen once; quiet checks never wake it. Queen not responding appears in Needs you when the queen is idle and the oldest unanswered input has waited that long.'),
   ...fields.map(([name, label]) => {
     const id = `hive-watchdog-${cell.id}-${name}`;
     return h('label', { for: id, class: 'hive-field' }, label, h('input', {
@@ -54,10 +54,10 @@ export function watchdogSettingsForm({ ui, send }, cell) {
     }));
   }),
   draft.error ? h('p', { class: 'hive-error', role: 'alert' }, draft.error) : null,
-  draft.saved ? h('p', { role: 'status' }, 'Watchdog settings saved.') : null,
+  draft.saved ? h('p', { role: 'status' }, 'Work monitoring settings saved.') : null,
   h('div', { class: 'hive-actions' },
-    h('button', { type: 'submit', class: 'hive-btn', disabled: draft.saving }, draft.saving ? 'Saving…' : 'Save watchdog settings'),
+    h('button', { type: 'submit', class: 'hive-btn', disabled: draft.saving }, draft.saving ? 'Saving…' : 'Save work monitoring settings'),
     h('button', { type: 'button', class: 'hive-quiet-btn', disabled: draft.saving,
       onclick: () => ui.setForm(key, { ...ui.form(key), ...Object.fromEntries(fields.map(([name, , fallback]) => [name, fallback])), saved: false, error: '' }) }, 'Reset to defaults')),
-  h('p', { class: 'hive-muted' }, 'Reset changes the draft. Save watchdog settings to apply it.'));
+  h('p', { class: 'hive-muted' }, 'Reset changes the draft. Save work monitoring settings to apply it.'));
 }

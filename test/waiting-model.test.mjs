@@ -64,7 +64,7 @@ test('graph.inbox items never create waits or change the render key', () => {
   const key = model.waitingGraphKey(f.graph);
   f.graph.inbox = { rev: 1, items: [
     { id: 'status', source: 'status', state: 'open', sessionId: 'u' },
-    { id: 'explicit', source: 'agent', state: 'open', sessionId: 's', title: 'Decision', body: '#view=ext:hive:overview&cell=c&bead=b' },
+    { id: 'explicit', source: 'agent', state: 'open', sessionId: 's', title: 'Decision', body: '#view=ext:hive:overview&hive=c&bead=b' },
     { id: 'repair', source: 'agent', state: 'answered', sessionId: 's', answer: { delivery: 'failed' } },
   ] };
   assert.deepEqual(model.cellWaitingItems(f, f.cell), before);

@@ -12,7 +12,7 @@ test('approved open and in-progress beads remain visible without a live owner', 
       cellId: 'cell', x: 0, y: 0, layout: { groupHeads: [], parentHead: {}, halo: {}, rootId: 'root' },
     }, childrenMap(hive.beads));
     assert.equal(tile.mark.kind, 'approved');
-    for (const words of [tile.title, tile.ariaLabel, tile.mark.title, tile.marks[0].title]) assert.match(words, /Approved, awaiting release/);
+    for (const words of [tile.title, tile.ariaLabel, tile.mark.title, tile.marks[0].title]) assert.match(words, /Review approved; delivery pending/);
     assert.equal(primaryKind(bead, ['prerequisite'], ['idle'], 0, 'idle'), 'approved');
     assert.equal(primaryKind(bead, [], ['working']), 'busy');
     assert.equal(primaryKind(bead, [], ['needs']), 'person');
@@ -44,8 +44,12 @@ test('approved rocket is a plain glyph with a title and live and snapshot legend
   const words = node => nodes(node).map(n => n.text).join(' ');
   const mark = primaryMark('approved', markWords('approved', {}));
   assert.ok(mark);
-  assert.match(words(mark), /Approved, awaiting release/);
+  assert.match(words(mark), /Review approved; delivery pending/);
   assert.ok(nodes(mark).some(n => n.tag === 'path'));
   assert.ok(!nodes(mark).some(n => n.attrs.class === 'hive-pm-bg'));
-  for (const snapshot of [false, true]) assert.match(words(legend(snapshot)), /Approved, awaiting release/i);
+  for (const snapshot of [false, true]) {
+    const key = words(legend(snapshot));
+    for (const label of ['Review approved; delivery pending', 'No active owner', 'Cluster', 'Waiting on design']) assert.ok(key.includes(label), label);
+    assert.doesNotMatch(key, /Workstream|Untracked|awaiting release/);
+  }
 });

@@ -70,7 +70,7 @@ test('several restore notices in one pass share one toast with the full list in 
   const hive = { cells: { c: { id: 'c', restoreNotices: ['a', 'b', 'c', 'd'].map(x => ({ id: `n${x}`, headId: x, title: x.toUpperCase(), triggers: ['t'] })) } } };
   announceRestoreNotices(seen, hive, toast, f => sent.push(f));
   assert.equal(h.shown.length, 1);
-  assert.equal(h.shown[0].text, 'Hive reopened 4 workstreams: a, b, c, d.');
+  assert.equal(h.shown[0].text, 'Hive reopened 4 clusters: a, b, c, d.');
   for (const x of ['A (a)', 'B (b)', 'C (c)', 'D (d)']) assert.match(h.shown[0].detail, new RegExp(x.replace(/[()]/g, '\\$&')));
   assert.equal(sent.length, 4);
 });
