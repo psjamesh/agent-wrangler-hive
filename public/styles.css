@@ -1776,7 +1776,10 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .hive-search-hit { color: inherit; background: var(--hive-fill); border-bottom: 2px solid var(--hive-comb); border-radius: 2px; }
 
 .hive-inbox-totals { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-.hive-needs-count { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.hive-needs-count { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 1.4em; padding: 0 5px; line-height: 1.5; border-radius: 999px; background: #b42332; color: #fff; }
+@media (forced-colors: active) {
+  .hive-needs-count { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+}
 
 .hive-inbox-session-links { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 8px; }
 

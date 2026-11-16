@@ -155,7 +155,7 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.ok(!merged.filters.some(f => f.includes('Needs you')));
   assert.match(merged.totals, /3 needs you.*3 messages/);
   assert.deepEqual(merged.rows.map(r => r.needs || '0'), ['1', '1', '1', '0']);
-  assert.deepEqual(merged.rows.map(r => r.count), [null, null, '2', null]);
+  assert.deepEqual(merged.rows.map(r => r.count), [null, null, '2', '1']);
   await shot('all-hives-desktop-light');
   await theme(true);
   await shot('all-hives-desktop-dark');
@@ -272,7 +272,7 @@ test('All hives shows the global inbox as a side panel that matches the cell pag
   assert.match(cellInbox.totals, /2 needs you.*3 messages/);
   assert.equal(cellInbox.rows.length, 3);
   assert.ok(!cellInbox.rows.some(r => r.title.includes('Rename the export')));
-  assert.deepEqual(cellInbox.rows.map(r => r.count), [null, '2', null]);
+  assert.deepEqual(cellInbox.rows.map(r => r.count), [null, '2', '1']);
   assert.ok(cellInbox.labels.includes('Importer worker'));
   assert.ok(cellInbox.labels.includes('Open session'));
   assert.ok(cellInbox.archived.includes('Archived worker'));

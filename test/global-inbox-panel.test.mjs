@@ -133,7 +133,7 @@ test('merged Inbox keeps the first structured label when session links repeat', 
 });
 
 
-test('Inbox filter counts merged rows and message chips appear only above one', t => {
+test('Inbox filter counts merged rows and message chips include one', t => {
   const f = fixture(t);
   f.doc.requests = { r: { cellId: 'live', id: 'r', audience: 'human', state: 'open', createdAt: 1, title: 'Decision', body: 'Choose', threadId: 'request', messageId: 'rmsg', requesterSessionId: 'worker' } };
   f.doc.conversation = { live: [{ id: 'm', threadId: 'topic', author: 'session', sessionId: 'worker', text: 'Update', at: 2, ack: { required: true, rev: 1 } }] };
@@ -141,7 +141,7 @@ test('Inbox filter counts merged rows and message chips appear only above one', 
   let panel = f.draw().bottom;
   assert.match(panel.querySelector('.hive-inbox-totals').textContent, /1 needs you.*1 message$/);
   assert.equal(panel.querySelector('.hive-inbox-filter').querySelector('.hive-inbox-count').textContent, '2');
-  assert.equal(panel.querySelectorAll('.hive-unread').length, 0);
+  assert.equal(panel.querySelectorAll('.hive-unread').length, 1);
   f.doc.conversation.live.push({ ...f.doc.conversation.live[0], id: 'm2', at: 3 });
   panel = f.draw().bottom;
   assert.equal(panel.querySelector('.hive-inbox-filter').querySelector('.hive-inbox-count').textContent, '2');
@@ -167,7 +167,7 @@ test('cell Inbox merges only its own messages and needs using the shared row pre
   assert.equal(panel.querySelector('.hive-inbox-filters').querySelector('.hive-inbox-count').textContent, '2');
   assert.equal(panel.querySelectorAll('.hive-inbox-item').length, 2);
   assert.doesNotMatch(panel.querySelector('.hive-inbox').textContent, /Other hive need/);
-  assert.equal(panel.querySelectorAll('.hive-unread').length, 0);
+  assert.equal(panel.querySelectorAll('.hive-unread').length, 1);
   assert.equal(panel.querySelectorAll('.hive-inbox-session-links').length, 1);
   assert.match(panel.querySelector('.hive-inbox-session-links').textContent, /Archived worker/);
   assert.equal(panel.querySelector('.hive-inbox-session-links').querySelectorAll('a').length, 1);
@@ -209,4 +209,29 @@ test('cell dock stays visible without a panels toggle despite a saved closed pre
   assert.equal(out.view.panels, true);
   assert.equal(out.top.querySelector('[data-focus-key="panels:live"]'), null);
   assert.doesNotMatch(out.top.textContent, /Show panels|Hide panels/);
+});
+
+test('ordinary inbox messages do not acquire session shortcuts', t => {
+  const f = fixture(t);
+  f.doc.conversation = { live: [{ id: 'm', threadId: 'topic', author: 'session', sessionId: 'worker', text: 'An ordinary update', at: 2, ack: { required: true, rev: 1 } }] };
+  f.doc.inbox = { live: { rev: 1 } };
+  for (const local of [false, true]) {
+    if (local) { f.ui.openCell('live'); f.ui.setInboxView('live', 'human'); }
+    const row = f.draw().bottom.querySelector('.hive-inbox-item');
+    assert.ok(row);
+    assert.equal(row.querySelector('.hive-inbox-session-links'), null);
+    assert.equal(row.querySelectorAll('a').length, 1);
+  }
+});
+
+for (const local of [false, true]) test(`${local ? 'cell' : 'global'} Inbox keeps a single unread message in its topic badge`, t => {
+  const f = fixture(t);
+  f.doc.conversation = { live: [{ id: 'm', threadId: 'topic', author: 'session', sessionId: 'worker', text: 'Update', at: 2, ack: { required: true, rev: 1 } }] };
+  f.doc.inbox = { live: { rev: 1 } };
+  if (local) { f.ui.openCell('live'); f.ui.setInboxView('live', 'human'); }
+  const row = f.draw().bottom.querySelector('.hive-inbox-item');
+  const badge = row.querySelector('.hive-unread');
+  assert.ok(badge);
+  assert.equal(badge.textContent, '1');
+  assert.equal(badge.getAttribute('aria-label'), '1 message');
 });

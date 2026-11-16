@@ -48,7 +48,7 @@ function fixture(t, messages) {
   return { cell, hive, ui, counts, draw, refresh: messages => { cell.inbox = { ...cell.inbox, human: snapshot(messages) }; } };
 }
 
-const inboxChips = counts => ({ ...counts, badges: counts.badges.filter(n => n > 1) });
+const inboxChips = counts => ({ ...counts, badges: counts.badges.filter(n => n > 0) });
 
 const queen = (id, threadId = 'topic') => ({ id, threadId, author: 'session', sessionId: 'queen', role: 'queen', text: id, at: 100, n: 1, ack: { required: true, state: null, rev: 0 } });
 const worker = (id, threadId = 'worker-topic') => ({ id, threadId, author: 'session', sessionId: 'worker', role: 'worker', text: id, at: 200, n: 2 });
