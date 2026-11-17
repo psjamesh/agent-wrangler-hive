@@ -583,10 +583,11 @@ function publishedHumanAsk(body) {
     .map(part => part.replace(/^\s*(?:#{1,6}\s+|[-+]\s+|\d+[.)]\s+)?/, '').trim()).filter(Boolean);
   return sentences.some((sentence, i) => {
     if (/^needs? from you\s*:/i.test(sentence)) return true;
-    if (/^let me know (?:if|whether|which)\b/i.test(sentence)) return true;
+    if (/^let me know (?:(?:if|whether) you(?:['’]d| would)? (?:want|like) me to\b|(?:if|whether) you (?:prefer|approve)\b|which\b)/i.test(sentence)) return true;
     const question = /^(?:(?:shall|should|may|can|could) (?:I|we)\b|(?:can|could|will|would) you\b|do you (?:want|prefer|approve|agree)\b|would you like\b|want me to\b|is it (?:ok|okay|alright)\b|ok(?:ay)? to\b|which\b[^?]*\bdo you (?:want|prefer)\b)[^?]*\?$/i.test(sentence);
-    const answered = /^(?:yes|no|not|probably|only|maybe|unlikely|partly)\b/i.test(sentences[i + 1] || '');
-    return question && !answered;
+    const firstPerson = /^(?:shall|should|may|can|could) (?:I|we)\b/i.test(sentence);
+    const answered = /^(?:(?:yes|no)\b(?=\s*[.,:;!—-]|$)|(?:probably|maybe|unlikely|partly)\b|only (?:via|by)\b|not (?:really|anymore|at all)\b)/i.test(sentences[i + 1] || '');
+    return question && !(firstPerson && answered);
   });
 }
 
