@@ -1,3 +1,4 @@
+import { actionMetadata, errorRedactor, identifierPath } from '../public/action-diagnostics.js';
 import { renameCell, saveCellGoal } from './cell-settings.js';
 import { setCodexApprovals } from './codex-policy.js';
 import { setPickup, setWorkerProfile } from './pickup.js';
@@ -27,6 +28,10 @@ export function humanHandler(type, run) {
   return {
     type,
     async handler(msg = {}, host, reply) {
+      const startedAt = Date.now();
+      const metadata = actionMetadata(type, msg.requestId, msg);
+      const redactError = errorRedactor(msg);
+      let outcome = 'ok', error;
       const base = { op: type, requestId: typeof msg.requestId === 'string' ? msg.requestId.slice(0, 80) : null };
       try {
         const rt = runtimeOf(host);
@@ -34,10 +39,18 @@ export function humanHandler(type, run) {
         if (!READ_ONLY.has(type)) { rt.changed(); rt.pickup?.schedule(); }
         reply?.({ ...base, ok: true, ...(out || {}) });
       } catch (err) {
+        outcome = 'error';
+        error = redactError(err);
         const known = err instanceof HumanError || typeof err?.code === 'string';
         if (type !== 'hive-thread-relations' && type !== 'hive-bead-detail' && type !== 'hive-bead-search' && type !== 'hive-inbox-search') host?.stores?.hive?.changed?.();
         reply?.({ ...base, ok: false, error: known ? err.message : 'Hive could not complete that action.', code: err?.code || null });
-        if (!known) host?.stores?.hive?.log?.(`hive: ${type} failed: ${err?.stack || err}`);
+        if (!known) host?.stores?.hive?.log?.(`hive: ${type} failed: ${redactError(err?.stack || err)}`);
+      } finally {
+        const elapsedMs = Math.max(0, Date.now() - startedAt);
+        if (elapsedMs >= 5000) host?.stores?.hive?.log?.(`hive: action-timing ${JSON.stringify({
+          ...metadata, event: 'server-slow', elapsedMs, timestamp: new Date().toISOString(), outcome,
+          ...(error ? { error } : {}),
+        })}`);
       }
     },
   };
@@ -290,4 +303,27 @@ const pickupH = humanHandler('hive-bead-pickup', async ({ msg, host, rt }) => {
 
 const workerProfileH = humanHandler('hive-worker-profile', ({ msg, host, rt }) => setWorkerProfile(rt, host, { cellId: str(msg.cellId, 80), beadId: str(msg.beadId, 80), profile: msg.profile, auto: msg.auto, briefTemplate: msg.briefTemplate }));
 
-export const configHandlers = [workerProfileH, pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, renameCellH, cellGoalH, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsSuggest, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];
+const actionDiagnostic = {
+  type: 'hive-action-diagnostic',
+  async handler(msg = {}, host, reply) {
+    if (!['client-timeout', 'late-reply'].includes(msg.event) || !Number.isFinite(msg.elapsedMs) || msg.elapsedMs < 0 || typeof msg.timestamp !== 'string' || !Number.isFinite(Date.parse(msg.timestamp))) {
+      reply?.({ ok: false });
+      return;
+    }
+    const metadata = actionMetadata(msg.action, msg.requestId);
+    const ids = {};
+    for (const [path, value] of Object.entries(msg.ids || {}).slice(0, 100)) {
+      if (!identifierPath(path)) continue;
+      const key = path.split('.').at(-1);
+      const clean = actionMetadata(msg.action, msg.requestId, { [key]: value });
+      if (Object.hasOwn(clean.ids, key)) ids[path] = clean.ids[key];
+    }
+    runtimeOf(host).log(`hive: action-timing ${JSON.stringify({
+      ...metadata, ids, event: msg.event, elapsedMs: msg.elapsedMs, timestamp: new Date(msg.timestamp).toISOString(),
+      ...(msg.event === 'late-reply' ? { outcome: msg.outcome === 'ok' ? 'ok' : 'error', ...(msg.outcome !== 'ok' ? { error: typeof msg.error === 'string' ? msg.error.slice(0, 1000) : 'The action failed.' } : {}) } : {}),
+    })}`);
+    reply?.({ ok: true });
+  },
+};
+
+export const configHandlers = [actionDiagnostic, workerProfileH, pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, renameCellH, cellGoalH, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsSuggest, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];

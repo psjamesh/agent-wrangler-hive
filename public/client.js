@@ -1,3 +1,4 @@
+import { actionMetadata, errorRedactor } from './action-diagnostics.js';
 import { capturePanelState, restorePanelState } from './panel-state.js';
 import { cellMetrics } from './cell-metrics.js';
 import { overviewCells } from './model.js';
@@ -42,6 +43,7 @@ const state = {
   history: [],
   root: null,
   pending: new Map(),
+  timedOut: new Map(),
   placements: [],
   restoreToasted: new Set(),
   focusNext: null,
@@ -656,23 +658,39 @@ function closeInspector() {
   state.inspector = null;
 }
 
+function reportTiming(metadata, event, startedAt, extra = {}) {
+  try {
+    Promise.resolve(state.api.act('hive-action-diagnostic', {
+      ...metadata, event, elapsedMs: Math.max(0, Date.now() - startedAt), timestamp: new Date().toISOString(), ...extra,
+    })).catch(() => {});
+  } catch { }
+}
+
 export function send(frame, { onReply, quiet = false } = {}) {
   const requestId = `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  const startedAt = Date.now();
+  const metadata = actionMetadata(frame.type, requestId, frame);
+  const redactError = errorRedactor(frame);
+  const tracking = { metadata, startedAt, redactError, timedOut: false, done: false };
   const timer = setTimeout(() => {
     const p = state.pending.get(requestId);
     if (!p) return;
     state.pending.delete(requestId);
+    tracking.timedOut = true;
+    state.timedOut.set(requestId, tracking);
+    if (state.timedOut.size > 256) state.timedOut.delete(state.timedOut.keys().next().value);
+    reportTiming(metadata, 'client-timeout', startedAt);
     p.onReply?.({ op: frame.type, requestId, ok: false, error: 'No reply from the server yet. The action may still complete; check before repeating it.', timeout: true });
     if (!p.onReply) notice('No reply from the server yet. The action may still complete; check before repeating it.');
     if (!quiet) forceRender();
   }, SEND_TIMEOUT_MS);
-  state.pending.set(requestId, { type: frame.type, onReply, timer, quiet });
+  state.pending.set(requestId, { type: frame.type, onReply, timer, quiet, tracking });
   const { type, ...args } = frame;
   state.api.act(type, { ...args, requestId }).then(result => onFrame({
     ...(result.ok ? result.data : { ok: false, error: result.error?.message || 'The action failed.' }),
     op: type,
     requestId,
-  }));
+  }, tracking), error => onFrame({ op: type, requestId, ok: false, error: error?.message || 'The action failed.' }, tracking));
   if (!quiet) forceRender();
   return requestId;
 }
@@ -732,10 +750,21 @@ function announceRestores(hive) {
   if (hive) announceRestoreNotices(state.restoreToasted, hive, toast, send, document.visibilityState === 'visible');
 }
 
-function onFrame(frame) {
+function onFrame(frame, tracking = null) {
   if (!frame || typeof frame !== 'object' || typeof frame.op !== 'string') return;
+  const late = state.timedOut.get(frame.requestId) || (tracking?.timedOut && !tracking.done ? tracking : null);
+  if (late) {
+    late.done = true;
+    state.timedOut.delete(frame.requestId);
+    reportTiming(late.metadata, 'late-reply', late.startedAt, {
+      outcome: frame.ok ? 'ok' : 'error',
+      ...(!frame.ok ? { error: late.redactError(frame.error) } : {}),
+    });
+    return;
+  }
   const p = frame.requestId ? state.pending.get(frame.requestId) : null;
   if (p) {
+    p.tracking.done = true;
     clearTimeout(p.timer);
     state.pending.delete(frame.requestId);
     try { p.onReply?.(frame); } catch (err) { console.error('hive: reply handler failed', err); }
