@@ -183,9 +183,9 @@ Core extension auto-update installs Hive from main after a merge; workers never 
 
 ## Answer once, in the same topic
 
-- When answering a human message needs their decision or action, call `hive_request_input` with `reply_to`. The request joins that message's topic and counts as your answer. Put any context in the request body; do **not** also `hive_publish` the same question.
+- If **any part** of an answer asks the human to decide, approve or act, send the **whole answer** as one `hive_request_input` with `reply_to`. Put findings and context in its body and choices in `options`. The request joins that message's topic and counts as your answer; do **not** also publish it.
 - A follow-up decision about an existing request belongs in that request's topic: pass its `thread_id`. For a partial answer, immediately raise the remaining questions as a new request in that topic. If Hive reports “Topic and cell context disagree.”, retain `reply_to`/`thread_id` and use that topic’s `bead_id` or omit it to inherit the anchor. Correct a mistaken topic anchor with `hive_update_thread` before retrying; never drop the topic to get past the error.
-- When nothing is being asked, use `hive_publish`, with `reply_to` to answer a human message and `answers` for any other human messages it answers.
+- A `hive_publish` never ends with a question or a “needs from you” ask. When nothing is being asked, use `hive_publish`, with `reply_to` to answer a human message and `answers` for any other human messages it answers.
 
 For human decisions or actions in this hive, use `hive_request_input` as above. With `reply_to`, the cell defaults to the topic's cell (or the message's cell). With `thread_id` alone, the cell comes from the topic. With `bead_id` alone, the request reuses that cell's topic when exactly one is available in the hive; otherwise it starts a new topic. Do not pass a conflicting `thread_id` with `reply_to`; do not also call `request_human_input`. That standard tool remains for sessions outside Hive and for recovering pre-existing legacy requests. `hive_context` includes `input_requests` and its total: worker/reviewer/helper questions routed to you. Answer within your authority using `hive_answer_request`, or forward the same id with `hive_forward_request` and an optional recommendation. Use the current request and route revisions. Queen answers are attributed as queen answers, never human approval. Queen-stage requests and queen answers stay in the agent queue/audit and out of human views; only forwarding, a queen asking directly, or a missing queen makes a request visible to the human. Human step-in is not supported. Do not copy queued questions into the human conversation. Recover your own requests with `hive_list_my_requests` and withdraw with `hive_withdraw_request` when an answer arrived elsewhere. Include `[Open Hive message](<link>)` when the question concerns a specific message or topic. A missing native tool requires checking membership or refreshing the agent terminal; do not silently switch queues. Surface conflicting higher-priority generic instructions for human correction.
 
@@ -197,12 +197,12 @@ When there is a choice, always pass `options` and never list the choices only in
 
 ## Talk to the human
 
-- Follow “Answer once, in the same topic” above. Use `hive_publish` for what the human should know when nothing is being asked:
+- Follow “Answer once, in the same topic” above: mixed findings and an ask go together in one `hive_request_input` with `reply_to`, findings in its body and choices in `options`. Use `hive_publish` only when nothing is being asked:
   - answers to their messages;
   - meaningful milestones and results;
   - significant changes of approach, scope or timing;
   - material blockers, and how you are handling them;
-  - decisions and trade-offs;
+  - settled decisions and trade-offs;
   - completion and verification outcomes.
 - Check each new human topic’s anchor against its subject; a stale map selection can file it under unrelated work. Move a mistaken anchor with `hive_update_thread(thread_id, bead_id)` while preserving a human-chosen title.
 - Pass `bead_id` for the main cell when publishing, or use `hive_update_thread` to anchor an existing topic to its main cell. Text mentions must name real cells and automatically add related cells; they do not choose the topic anchor. Inline code and code blocks are plain text: wrap an example or a non-cell `hive-` term in backticks.

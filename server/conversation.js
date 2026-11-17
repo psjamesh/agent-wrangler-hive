@@ -571,6 +571,26 @@ function publishedBeadMentions(rt, body) {
   return ids;
 }
 
+function publishedHumanAsk(body) {
+  const prose = body
+    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[^\n]*(?:\n|$)|(?![\s\S]))/gm, '')
+    .replace(/^\s*>.*$/gm, '')
+    .replace(/^(?: {4}|\t).*$/gm, '')
+    .replace(/(`+)[^`]*?\1/g, '')
+    .replace(/“[^”]*”|"[^"\n]*"|(?:^|\s)'[^'\n]*'(?=\s|[.,!?]|$)/g, '')
+    .replace(/[*_]/g, '');
+  const sentences = prose.split(/(?<=[.!?])\s+|\n+/)
+    .map(part => part.replace(/^\s*(?:#{1,6}\s+|[-+]\s+|\d+[.)]\s+)?/, '').trim()).filter(Boolean);
+  return sentences.some((sentence, i) => {
+    if (/^needs? from you\s*:/i.test(sentence)) return true;
+    if (/^let me know (?:(?:if|whether) you(?:['’]d| would)? (?:want|like) me to\b|(?:if|whether) you (?:prefer|approve)\b|which\b)/i.test(sentence)) return true;
+    const question = /^(?:(?:shall|should|may|can|could) (?:I|we)\b|(?:can|could|will|would) you\b|do you (?:want|prefer|approve|agree)\b|would you like\b|want me to\b|is it (?:ok|okay|alright)\b|ok(?:ay)? to\b|which\b[^?]*\bdo you (?:want|prefer)\b)[^?]*\?$/i.test(sentence);
+    const firstPerson = /^(?:shall|should|may|can|could) (?:I|we)\b/i.test(sentence);
+    const answered = /^(?:(?:yes|no)\b(?=\s*[.,:;!—-]|$)|(?:probably|maybe|unlikely|partly)\b|only (?:via|by)\b|not (?:really|anymore|at all)\b)/i.test(sentences[i + 1] || '');
+    return question && !(firstPerson && answered);
+  });
+}
+
 async function publishMessage(rt, host, actor, { text: body, bead_id, reply_to, thread_id, thread_title, answers, attachments, session_id, session_label }) {
   if (rt.metadata.error) throw new HiveError(rt.metadata.error, 'metadata-unavailable');
   const cell = actor.cell;
@@ -643,7 +663,9 @@ async function publishMessage(rt, host, actor, { text: body, bead_id, reply_to, 
   await removeAttachmentBatch(rt, cell.id, removed);
   rt.changed();
   const link = hiveLink(cell.id, topic, id);
-  return { message_id: id, cell_id: cell.id, thread_id: topic, link, acknowledged_reply_target: acknowledged, answered };
+  const result = { message_id: id, cell_id: cell.id, thread_id: topic, link, acknowledged_reply_target: acknowledged, answered };
+  if (publishedHumanAsk(body)) result.warning = 'This published message looks like it asks the human to decide, approve or act. Use hive_request_input with reply_to instead: put the whole answer, including findings, in its body and choices in options. The publish succeeded; do not leave the ask only in this message.';
+  return result;
 }
 
 export function acknowledgeInput(rt, actor, { message_ids }) {

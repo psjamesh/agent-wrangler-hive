@@ -628,3 +628,68 @@ test('completion suggestion handler delivers once and retains uncertain delivery
   assert.match(deliveries[0][1], /Is Example work ready to close/);
   assert.equal(f.list().length, 1);
 });
+
+test('publish warns about direct human asks without refusing or changing the message', async (t) => {
+  const { publishTool } = await import('./tools.js');
+  const f = await fixture(t);
+  const human = await recordHumanInput(f.rt, { cellId: f.cell.id, text: 'What did you find?' });
+  for (const text of [
+    'The investigation is complete.\n\nNeeds from you: shall I create a Jira ticket for this?',
+    'Needs from you: approve the deployment.',
+    'Shall I create a ticket?',
+    'Should I proceed?',
+    'Shall I create a ticket? No other work is needed.',
+    'Should I merge? Only the docs changed.',
+    'Okay to proceed? No blockers remain.',
+    'Can you approve this? No rush, tomorrow is fine.',
+    'Want me to create a ticket?',
+    'Do you want me to create a ticket?',
+    'Let me know if you want me to create a ticket.',
+    'Is it OK to merge now?',
+    'Okay to proceed?',
+    'Which option do you want?',
+    'Shall I create a ticket? The investigation is complete.',
+    'The checks passed. Would you like me to merge?',
+    'Can you approve this change?',
+    'Which approach do you prefer?',
+    '**Needs from you:** choose the next step.',
+  ]) {
+    const response = await publishTool.handler({ host: { ...f.rt.host, stores: { hive: f.rt } }, caller: f.actor.sessionId }, { text, reply_to: human.id });
+    assert.equal(response.isError, undefined);
+    const result = response.structuredContent;
+    assert.match(result.warning || '', /hive_request_input.*reply_to/);
+    assert.equal(f.list().find(m => m.id === result.message_id).text, text);
+    assert.equal(result.thread_id, human.threadId);
+  }
+});
+
+test('publish does not warn about information, code, quoted, reported or rhetorical questions', async (t) => {
+  const f = await fixture(t);
+  for (const text of [
+    'The investigation is complete. A ticket already tracks the issue.',
+    'The checks passed; deployment is next.',
+    'Why does this matter? It prevents lost decisions.',
+    'Why create another ticket?',
+    'Let me know if you have any questions.',
+    'Let me know if anything is unclear.',
+    'Let me know whether that helps.',
+    'Can we reproduce it? Yes, on every run.',
+    'Could we have caught this earlier? Probably not.',
+    'Should we worry? No: the fallback handles it.',
+    '## Should we migrate?\nNo. The current schema is fine.',
+    'Can I see the logs? Only via the dashboard, which I checked.',
+    '> Shall I create a ticket?',
+    '    Shall I create a ticket?',
+    '```text\nShall I create a ticket?',
+    '```text\nNeeds from you: shall I create a ticket?\n```',
+    '~~~text\nShould I proceed?\n~~~',
+    'The example is `Should I proceed?`.',
+    'The user asked: Should I create a ticket?',
+    'The queen wrote “Needs from you: shall I create a ticket?”',
+    '"Should I proceed?" was the reported question.',
+    "The user asked 'Shall I create a ticket?'",
+  ]) {
+    const result = await publish(f.rt, f.actor, { text });
+    assert.equal(result.warning, undefined, text);
+  }
+});
