@@ -1,3 +1,4 @@
+import { notifyMissedInput, acknowledgeRecoveredAnswers } from './missed-input.js';
 import { sessionReference } from './session-links.js';
 import { beadReferences } from '../public/bead-references.js';
 import { hiveLink } from '../public/deep-links.js';
@@ -634,6 +635,7 @@ async function publishMessage(rt, host, actor, { text: body, bead_id, reply_to, 
       const scope = requestScopes(d, cell.id)(m, true);
       if (scope || t.origin === 'request') m.requestScopeId = scope;
       if (queen) {
+        acknowledgeRecoveredAnswers(d, cell, { threadId: t.id, sessionId: actor.sessionId, at });
         const links = new Set(listed);
         if (target?.author === 'human') links.add(target.id);
         if (links.size && scope && !maySeeRequest(d.requests?.[scope])) throw new HiveError('Private discussion cannot answer human messages. Post a separate visible answer.');
@@ -680,6 +682,7 @@ export function acknowledgeInput(rt, actor, { message_ids }) {
   rt.metadata.mutate((d) => {
     const list = messagesOf(d, cell.id);
     for (const mid of message_ids.slice(0, 100)) {
+      if (acknowledgeRecoveredAnswers(d, cell, { ids: [mid], sessionId: actor.sessionId, at }).length) { done.push(mid); continue; }
       const m = list.find((x) => x.id === mid && x.author === 'human');
       if (!m) { unknown.push(mid); continue; }
       if (!m.acknowledgedAt) {
@@ -1177,6 +1180,7 @@ export async function deliver(rt, host, { cellId, messageId, force = false }) {
       const latest = m.delivery.attempts.at(-1);
       if (latest?.id === attemptId) m.delivery = { ...m.delivery, state: outcome.state, error: outcome.error, sessionId: target };
     });
+    if (outcome.state === 'delivered') void notifyMissedInput(rt, host, target, { confirmedDelivery: true });
     return { message_id: messageId, state: outcome.state, error: outcome.error };
   } finally {
     inFlight.delete(key);

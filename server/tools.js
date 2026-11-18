@@ -1,3 +1,4 @@
+import { missedInput } from './missed-input.js';
 import { reportCiWait } from './ci-waits.js';
 import { hasBlockingPrerequisite } from './human-wait.js';
 import { setPickup, pickupState } from './pickup.js';
@@ -270,6 +271,7 @@ export async function buildContext(rt, host, actor, { include_closed = false, be
       sessions,
       capacity: capacity(rt),
       attention: {
+        ...(actor.role === 'queen' ? { missed_input: missedInput(doc, cell) } : {}),
         watchdog: collectWatchdog(rt, host, cell),
         workstreams_needing_refresh: Object.values(doc.workstreamRefresh || {}).filter(entry => entry.cellId === cell.id && ids.has(entry.bead_id) && beads[entry.bead_id]?.kind === 'workstream' && beads[entry.bead_id].status !== 'closed'),
         waiting_beads: open.filter((b) => hasBlockingPrerequisite(rt.snapshots.graph, b.id)).map((b) => ({ bead_id: b.id, title: b.title, status: b.status, owner_session_id: b.ownerSessionId, waiting_for: b.waitingFor })),
@@ -451,7 +453,7 @@ export const updateThreadTool = hiveTool({
 
 export const acknowledgeInputTool = hiveTool({
   name: 'hive_acknowledge_input',
-  description: 'Queen only. Confirm receipt: you have taken on board human messages listed under unacknowledged_input in hive_context, so Hive stops retrying them. It does not send anything and does not answer them; each still waits under awaiting_response until you answer it with hive_publish, or hive_request_input with reply_to.',
+  description: 'Queen only. Confirm receipt of human messages under unacknowledged_input or human answers under attention.missed_input. For request answers pass request_id or request_message_id in message_ids; this records receipt by the current queen, including successor queens. Acknowledging a conversation message sends no reply; each still waits under awaiting_response until you answer it with hive_publish, or hive_request_input with reply_to.',
   inputSchema: { message_ids: z.array(z.string().min(1).max(80)).min(1).max(100) },
 }, ({ rt, actor, args }) => acknowledgeInput(rt, actor, args));
 

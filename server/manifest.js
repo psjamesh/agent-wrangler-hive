@@ -1,4 +1,5 @@
 import { onResume } from './worker-restores.js';
+import { notifyReachableQueens } from './missed-input.js';
 import { agentCatalogForGraph } from './agent-catalog.js';
 import { codexPolicy } from './codex-policy.js';
 import { beforeSpawn, spawned } from './spawn-hooks.js';
@@ -114,6 +115,7 @@ export function createManifest({ dir }) {
         rt.snapshots.maybeRefresh();
         await rt.recover();
         await rt.watchdog?.run();
+        await notifyReachableQueens(rt, host);
       },
     }, {
       id: 'pr-labels',
