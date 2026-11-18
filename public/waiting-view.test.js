@@ -47,7 +47,7 @@ test('waiting modal uses native focus, closes on Escape and navigation, and labe
 });
 test('real PR actions open GitHub and ask the queen in the bead topic; checks and history stay collapsed', t => {
   const f = setup(t), pr = { url: 'https://github.com/example/repo/pull/7', number: 7, title: 'Ship', state: 'OPEN', headSha: 'a'.repeat(40), checks: 'failing', stateCheckedAt: Date.now(), beadIds: ['a'], cellId: 'c', humanAttention: { state: 'cannot-fix', headSha: 'a'.repeat(40), reason: 'Admin approval required' } };
-  f.cell.pullRequests = [pr, { ...pr, state: 'MERGED' }];
+  f.cell.pullRequests = [pr, { ...pr, url: 'https://github.com/example/repo/pull/6', number: 6, state: 'MERGED' }];
   const section = prv.pullRequestsSection(f.ctx, f.ctx.hive.beads.a);
   assert.ok(section);
   assert.equal(all(section).some(n => /Merge/.test(text(n)) && n.tag === 'button'), false);
@@ -212,3 +212,54 @@ for (const isHead of [false, true]) {
     assert.equal(dialog.removed, true);
   });
 }
+
+test('Details includes canonical evidence PRs once and prefers tracked records', t => {
+  const f = setup(t), bead = f.ctx.hive.beads.a;
+  const tracked = { url: 'https://github.com/example/repo/pull/7', number: 7, title: 'Tracked title', state: 'MERGED', beadIds: ['a'], cellId: 'c' };
+  f.cell.pullRequests = [tracked];
+  const evidence = [
+    { url: 'https://GitHub.com/Example/Repo/pull/7/?x=1#discussion' },
+    { url: 'https://github.com/example/repo/pull/12/files', label: 'PR merged' },
+    { url: 'https://github.com/example/repo/pull/12#review' },
+    { url: 'https://github.com/example/repo/issues/13' },
+    { url: 'https://github.com.evil.test/example/repo/pull/14' },
+  ];
+  const section = prv.pullRequestsSection(f.ctx, bead, evidence);
+  assert.equal(all(section).filter(n => n.tag === 'article').length, 2);
+  assert.match(text(section), /Tracked title.*Merged/);
+  assert.match(text(section), /#12.*Unknown/);
+  assert.equal(all(section).filter(n => n.tag === 'a').length, 2);
+  assert.equal(all(section).some(n => n.tag === 'button'), false);
+  assert.equal(all(section).some(n => n.attrs.class === 'hive-pr-history'), false);
+});
+
+test('evidence-only PRs remain visible on closed items in retired hives without actions', t => {
+  const f = setup(t), bead = { ...f.ctx.hive.beads.a, status: 'closed' };
+  f.cell.retired = true;
+  f.cell.enabled = false;
+  const section = prv.pullRequestsSection(f.ctx, bead, [{ url: 'https://github.com/example/repo/pull/12' }]);
+  assert.ok(section);
+  assert.match(text(section), /#12.*Unknown/);
+  assert.equal(all(section).filter(n => n.tag === 'a')[0].attrs.href, 'https://github.com/example/repo/pull/12');
+  assert.equal(all(section).some(n => n.tag === 'button' || n.tag === 'details'), false);
+});
+
+test('merged and closed PRs expand unless an open PR exists', t => {
+  const f = setup(t), bead = f.ctx.hive.beads.a;
+  const pr = { url: 'https://github.com/example/repo/pull/7', number: 7, title: 'Done', state: 'MERGED', beadIds: ['a'], cellId: 'c' };
+  f.cell.pullRequests = [pr, { ...pr, url: 'https://github.com/example/repo/pull/8', number: 8, state: 'CLOSED' }];
+  assert.equal(all(prv.pullRequestsSection(f.ctx, bead)).some(n => n.attrs.class === 'hive-pr-history'), false);
+  f.cell.pullRequests.push({ ...pr, url: 'https://github.com/example/repo/pull/9', number: 9, state: 'OPEN' });
+  const history = all(prv.pullRequestsSection(f.ctx, bead)).find(n => n.attrs.class === 'hive-pr-history');
+  assert.ok(history);
+  assert.equal('open' in history.attrs, false);
+  assert.match(text(history), /History \(2\)/);
+});
+
+test('evidence PRs reuse observations without borrowing another item’s fix action', t => {
+  const f = setup(t), bead = f.ctx.hive.beads.a;
+  f.cell.pullRequests = [{ url: 'https://github.com/example/repo/pull/12', number: 12, title: 'Known PR', state: 'CLOSED', beadIds: ['b'], cellId: 'c' }];
+  const section = prv.pullRequestsSection(f.ctx, bead, [{ url: 'https://github.com/example/repo/pull/12' }]);
+  assert.match(text(section), /#12 Known PR.*Closed/);
+  assert.equal(all(section).some(n => n.tag === 'button'), false);
+});

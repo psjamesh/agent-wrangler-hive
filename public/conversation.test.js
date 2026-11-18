@@ -2469,3 +2469,20 @@ for (const state of ['failed', 'uncertain', 'pending']) test(`dismiss control ac
   const list = requestList({ cell: f.cell, kind: 'needs', ui: f.ui, ctx });
   assert.equal(list.querySelectorAll('article').length, 0);
 });
+
+test('Details uses fetched evidence for closed items in retired hives', t => {
+  const f = fixture(t);
+  f.cell.bindings = [];
+  Object.assign(f.hive, { cells: { [f.cell.id]: f.cell }, operations: [], launches: [], edges: [] });
+  const bead = { id: f.cell.rootBeadId, title: 'Completed item', status: 'closed', kind: 'work' };
+  f.hive.beads[bead.id] = bead;
+  f.cell.retired = true;
+  f.ui.selectedBeadId = () => bead.id;
+  f.ui.beadDetail = () => ({ bead: { ...bead, evidence: [{ label: 'Delivered PR', url: 'https://github.com/example/repo/pull/12' }] } });
+  const ctx = { hive: f.hive, graph: { sessions: [] }, ui: f.ui, api: {}, notices: [], busy: () => false, send() {}, notice() {} };
+  const details = cellPanels(ctx, f.cell).dock.querySelector('.hive-details');
+  const prs = details.querySelector('.hive-prs');
+  assert.ok(prs);
+  assert.match(prs.textContent, /#12.*Unknown/);
+  assert.equal(prs.querySelector('a').attributes.href, 'https://github.com/example/repo/pull/12');
+});

@@ -303,7 +303,7 @@ function beadDetails(ctx, cell) {
     related.length ? h('div', { class: 'hive-row' }, h('strong', {}, 'Other links: '), related.map((e) => h('span', { class: 'hive-other-link' }, link(e.dependent === bead.id ? e.prerequisite : e.dependent), ` (${e.type})`))) : null,
     kids.length || bead.kind === 'workstream' ? workstreamProgress(workCounts(hive, childrenMap(hive.beads), bead.id)) : null,
     kids.length ? h('div', { class: 'hive-row' }, h('strong', {}, 'Contains: '), kids.map((k) => link(k.id))) : null,
-    pullRequestsSection(ctx, bead),
+    pullRequestsSection(ctx, bead, full.evidence),
     detailStatus(ctx, bead, detail),
     full.goal ? [h('h4', {}, 'Goal'), markdown(api, full.goal)] : null,
     full.acceptance ? [h('h4', {}, 'Done when'), markdown(api, full.acceptance)] : null,
