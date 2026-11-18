@@ -280,3 +280,18 @@ for (const [state, label] of [['OPEN', 'Open'], ['MERGED', 'Merged'], ['CLOSED',
     assert.equal(all(section).some(n => n.tag === 'button'), false);
   });
 }
+
+test('an evidence association to another bead’s session PR cannot borrow its fix action', async t => {
+  const { waitingProjection } = await import('../server/waiting.js');
+  const f = setup(t), url = 'https://github.com/example/repo/pull/12', headSha = 'a'.repeat(40);
+  const record = { url, source: 'session-link', state: 'OPEN', headSha, stateCheckedAt: Date.now(), humanAttention: { headSha, state: 'cannot-fix', reason: 'Owner needs help' }, associations: [
+    { cellId: 'c', beadId: 'b', kind: 'binding' }, { cellId: 'c', beadId: 'a', kind: 'bead-evidence' },
+  ] };
+  Object.assign(f.cell, waitingProjection({ metadata: { read: () => ({ prLabels: { [url]: record } }) } }, f.cell, new Set(['a', 'b'])));
+  const section = prv.pullRequestsSection(f.ctx, f.ctx.hive.beads.a);
+  assert.match(text(section), /Open/);
+  assert.doesNotMatch(text(section), /Needs your help|Owner needs help/);
+  assert.equal(all(section).some(n => n.tag === 'button'), false);
+  const ownerSection = prv.pullRequestsSection(f.ctx, f.ctx.hive.beads.b);
+  assert.ok(all(ownerSection).some(n => n.tag === 'button' && text(n) === 'Ask the queen to fix'));
+});

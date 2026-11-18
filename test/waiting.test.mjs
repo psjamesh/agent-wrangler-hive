@@ -120,3 +120,26 @@ test('failed PR refresh is immediately stale across tracker, sweep, projection a
   assert.equal(pr.observationError, null);
   assert.equal(prState(pr, time), 'ready');
 });
+
+test('evidence associations reuse state without sharing another bead’s PR attention or reporting rights', async () => {
+  const { trackEvidencePrs } = await import('../server/pr-evidence.js');
+  const { cellWaitingItems } = await import('../public/waiting-model.js');
+  const { beadPullRequests, prSummary } = await import('../public/pr-view.js');
+  const f = fixture(), record = f.doc.prLabels[URL];
+  record.source = 'session-link';
+  record.associations = [{ cellId: 'cell', beadId: 'hive-b', kind: 'binding' }];
+  record.humanAttention = { state: 'cannot-fix', headSha: SHA, reason: 'Owner needs help' };
+  trackEvidencePrs(f.rt, f.cell, { ...f.beads['hive-a'], evidence: [{ url: URL }] });
+  const projection = waiting.waitingProjection(f.rt, f.cell, new Set(Object.keys(f.beads)));
+  const cell = { ...f.cell, ...projection };
+  const ctx = { hive: { cells: { cell }, beads: f.beads }, graph: { sessions: [] } };
+  const evidence = beadPullRequests(ctx, f.beads['hive-a']);
+  assert.equal(evidence[0].evidenceOnly, true);
+  assert.equal(evidence[0].humanAttention, null);
+  assert.equal(evidence[0].state, 'OPEN');
+  assert.match(prSummary(evidence), /0 waiting for you/);
+  assert.match(prSummary(projection.pullRequests), /1 waiting for you/);
+  assert.deepEqual(cellWaitingItems(ctx, cell).filter(item => item.kind === 'pr').map(item => item.beadIds), [['hive-b']]);
+  assert.throws(() => waiting.reportPrWait(f.rt, f.actor, { bead_id: 'hive-a', url: URL, head_sha: SHA, state: 'clear' }), /associated/);
+  assert.equal(record.humanAttention.reason, 'Owner needs help');
+});

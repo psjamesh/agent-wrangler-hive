@@ -554,3 +554,25 @@ for (const state of ['MERGED', 'CLOSED']) {
     assert.deepEqual(f.doc.prLabels[PR].beadIds, ['hive-evidence']);
   });
 }
+
+test('an evidence-only repository does not trigger label searches or import unrelated PRs', async () => {
+  const f = evidenceFixture();
+  f.searchResults = [OTHER];
+  await f.sweep.run();
+  assert.deepEqual(f.searches, []);
+  assert.equal(f.doc.prLabels[OTHER], undefined);
+  assert.equal(f.views.length, 1);
+});
+
+test('session promotion keeps other beads evidence-only', async () => {
+  const { waitingProjection } = await import('../server/waiting.js');
+  const f = evidenceFixture();
+  await f.sweep.run();
+  f.links = [PR];
+  f.doc.bindings.cell = [{ active: true, sessionId: SID, beadId: 'hive-root' }];
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].source, 'session-link');
+  const rows = waitingProjection(f.runtime, f.doc.cells.cell, new Set(['hive-root', 'hive-evidence'])).pullRequests;
+  assert.deepEqual(rows.find(row => row.evidenceOnly)?.beadIds, ['hive-evidence']);
+  assert.deepEqual(rows.find(row => !row.evidenceOnly)?.beadIds, ['hive-root']);
+});

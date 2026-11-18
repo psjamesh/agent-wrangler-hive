@@ -67,7 +67,7 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
           }
         });
         const searchHits = new Map();
-        const repos = [...new Set(Object.values(runtime.metadata.read().prLabels || {}).map(record => prRepository(record?.url)).filter(Boolean))];
+        const repos = [...new Set(Object.values(runtime.metadata.read().prLabels || {}).filter(record => record?.source !== 'bead-evidence').map(record => prRepository(record?.url)).filter(Boolean))];
         for (const repo of repos) {
           if (!active()) break;
           const found = await tracker.search(repo);

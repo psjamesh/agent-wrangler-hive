@@ -37,7 +37,7 @@ export function cellWaitingItems(ctx, cell) {
     if (beadIds.length) items.push({ id: `agent:${s.sessionId}`, kind: 'agent', cellId: cell.id, beadIds, sessionId: s.sessionId, title: stopped && queenSuspended(ctx.graph, cell) ? 'Queen stopped or suspended' : stopped ? 'Queen stopped' : unresponsive ? 'Queen not responding' : queenAttention ? 'Queen needs attention' : `${sessionLabel(ctx.graph, s.sessionId)} needs input`, reason: stopped && queenSuspended(ctx.graph, cell) ? 'The queen may be suspended with unanswered input. Resume its session card on the board.' : stopped ? 'The queen has stopped with unanswered input. Resume or restore its session card on the board, or arrange a queen handoff.' : unresponsive ? 'Pending input has had no queen activity. Open the queen session to check.' : s.waitingReason || 'Open the session to answer its input request.' });
   }
   for (const pr of cell.pullRequests || []) {
-    if (!['ready', 'stuck'].includes(prState(pr))) continue;
+    if (pr.evidenceOnly || !['ready', 'stuck'].includes(prState(pr))) continue;
     items.push({ id: `pr:${pr.url}`, kind: 'pr', title: `#${pr.number} ${pr.title}`, reason: pr.humanAttention.reason, cellId: cell.id, beadIds: pr.beadIds, pr });
   }
   return [...new Map(items.map(item => [item.id, item])).values()].map(item => ({ ...item, beadIds: item.beadIds.filter(id => ids.has(id)) })).filter(item => item.beadIds.length);
