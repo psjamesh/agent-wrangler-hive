@@ -139,6 +139,7 @@ export function beadTile(ctx, bead, tile, kids) {
   if (status === 'in_review' && !kind?.startsWith('review-')) marks.push({ kind: bead.reviewWorking ? 'review-working' : 'review-pending', title: markWords(bead.reviewWorking ? 'review-working' : 'review-pending', bead) });
   if (waitReason && kind !== 'waiting') marks.push({ kind: 'recorded-wait', title: `Waiting for: ${waitReason}` });
   const detail = `${externalWait ? 'Waiting on something outside this hive. ' : ''}${waitReason ? `Waiting for: ${waitReason}. ` : ''}${attachmentText ? `${attachmentText} ` : ''}Work: ${isHead ? `${countText}; ` : ''}${own}. ${agentText}.${waitReasons.length ? ` Waiting: ${waitReasons.join('; ')}.` : ''}`;
+  const menu = isHead || Boolean(cell?.enabled && !snap && !cell.retired && bead.status !== 'closed' && bead.kind !== 'external');
   return {
     id: bead.id,
     cellId: tile.cellId,
@@ -157,9 +158,9 @@ export function beadTile(ctx, bead, tile, kids) {
     mark: kind ? { kind, count: waiting.length, title: `${attention || (kind === 'waiting' && designWait ? 'Waiting on design' : markWords(kind, bead))}. ${detail}` } : null,
     marks,
     onMark: waiting.length ? anchor => openWaitingMenu(ctx, waiting, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true }) : null,
-    menu: isHead,
+    menu,
     classes: `hive-bead hive-status-${displayStatus(bead)}${isDone(bead) ? ' hive-done' : ''}${isHead ? ' is-head' : ''}${isHead && colour != null ? ` has-ws ${colour}${bead.parentId === layout.rootId ? ' is-top' : ''}` : ''} hive-kind-${bead.kind}`,
-    ariaLabel: `${isHead ? 'Cluster ' : bead.kind === 'external' ? 'External prerequisite ' : ''}${bead.title}. ${groupName ? `In ${groupName}. ` : ''}${kind ? `${attention || (kind === 'waiting' && designWait ? 'Waiting on design' : markWords(kind, bead))}. ` : ''}${detail}${prs ? ` ${prs}.` : ''}${owner ? ` Claimed by ${sessionLabel(graph, owner)}.` : ''} Enter ${waiting.length ? 'opens the waiting-for-you dialog' : 'shows its details'}; Shift and an arrow key moves ${isHead ? 'this cluster and its descendants; Shift+F10 shows its actions' : 'it'}.`,
+    ariaLabel: `${isHead ? 'Cluster ' : bead.kind === 'external' ? 'External prerequisite ' : ''}${bead.title}. ${groupName ? `In ${groupName}. ` : ''}${kind ? `${attention || (kind === 'waiting' && designWait ? 'Waiting on design' : markWords(kind, bead))}. ` : ''}${detail}${prs ? ` ${prs}.` : ''}${owner ? ` Claimed by ${sessionLabel(graph, owner)}.` : ''} Enter ${waiting.length ? 'opens the waiting-for-you dialog' : 'shows its details'}; Shift and an arrow key moves ${isHead ? 'this cluster and its descendants' : 'it'}.${menu ? ' Shift+F10 shows its actions.' : ''}`,
     title: `${bead.title}${externalWait ? '\nWaiting on something outside this hive' : ''}${groupName ? `\nIn ${groupName}` : ''}${marks.length ? `\n${marks.map(m => m.title).join('\n')}` : ''}\n${isHead ? `Cluster: ${countText}; ${own}` : `${bead.kind === 'external' ? 'External prerequisite' : kindLabel(bead.kind)}, ${own}`}\n${agentText}${prs ? `\n${prs}` : ''}${waitReasons.length ? `\nWaiting: ${waitReasons.join('; ')}` : ''}`,
   };
 }

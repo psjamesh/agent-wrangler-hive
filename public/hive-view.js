@@ -224,7 +224,7 @@ function revealWarning(plan, allClosed) {
   return `${verb} will move this cluster ${plural(plan.shift, 'hex', 'hexes')} to make room for ${things(plan.crowded)}. Some ${allClosed ? 'closed items' : 'items'} may also be placed in new spots within the cluster.`;
 }
 
-function workstreamMenu({ title, at, arranging, fitLabel, confirm, onFit, onConfirm, onSuggest, onArchive, archiveLabel, onClose, onDismiss }) {
+function workstreamMenu({ title, at, arranging, fitLabel, confirm, onFit, onConfirm, onSuggest, onCloseRequest, onArchive, archiveLabel, onClose, onDismiss }) {
   const extra = (key, label, fn) => (fn ? h('button', {
     type: 'button',
     role: 'menuitem',
@@ -262,6 +262,7 @@ function workstreamMenu({ title, at, arranging, fitLabel, confirm, onFit, onConf
       onclick: () => { if (!arranging) onFit(); },
     }, fitLabel) : null,
     extra('suggest', 'Suggest completion', onSuggest),
+    extra('close-request', 'Ask queen to close', onCloseRequest),
     extra('archive', archiveLabel, onArchive),
   ].filter(Boolean);
   if (!items.length) return null;
@@ -407,7 +408,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
     send({ type: 'hive-bead-move', cellId: cell.id, positions: Object.fromEntries(savedHere.map((id) => [id, null])), ...(aspect === null ? {} : { aspect }) });
   };
   const menuForm = ui.form('wsMenu');
-  const menuHead = menuForm?.cellId === cell.id && heads.has(menuForm.headId) && !hidden.has(menuForm.headId) ? menuForm.headId : null;
+  const menuHead = menuForm?.cellId === cell.id && visible.has(menuForm.headId) && !hidden.has(menuForm.headId) ? menuForm.headId : null;
   const closeMenu = () => {
     ui.setForm('wsMenu', null);
     if (menuForm?.globalDone) document.querySelector(`[data-focus-key="hide-done:${cell.id}"]`)?.focus();
@@ -465,9 +466,10 @@ function cellMap(ctx, cell, related = null, previous = null) {
   const writable = cell.enabled && !cell.snapshot;
   const menuOpen = menuHead && hive.beads[menuHead]?.status !== 'closed';
   const menuClosed = menuHead && !menuOpen && hive.beads[menuHead]?.parentId === cell.rootBeadId && groupClosed(hive, menuHead);
-  const suggestCompletion = () => {
+  const canRequestClose = writable && !readOnly && menuOpen && hive.beads[menuHead]?.kind !== 'external';
+  const suggestCompletion = (item = false) => {
     ui.setForm('wsMenu', null);
-    send({ type: 'hive-ws-suggest-completion', cellId: cell.id, headId: menuHead }, {
+    send(item ? { type: 'hive-bead-suggest-completion', cellId: cell.id, beadId: menuHead } : { type: 'hive-ws-suggest-completion', cellId: cell.id, headId: menuHead }, {
       onReply: (frame) => {
         if (!frame.ok) ctx.notice(frame.error || 'The completion suggestion could not be sent.', { severity: 'error' });
         else if (['failed', 'uncertain', 'no-queen'].includes(frame.delivery?.state)) ctx.notice('Suggestion saved. Delivery to the queen needs attention.', { severity: 'error' });
@@ -515,7 +517,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
   };
   const asked = menuHead && menuForm.confirm?.kind === 'fit' ? menuForm.confirm : null;
   const confirm = asked ? { text: String(asked.text || ''), action: 'Move and fit' } : null;
-  const awayHere = menuHead ? away(menuHead) : [];
+  const awayHere = menuHead && heads.has(menuHead) ? away(menuHead) : [];
   const fitLabel = awayHere.length ? (awayHere.every((id) => closed.has(id)) ? 'Fit closed work back' : 'Fit work back') : null;
   const openMenu = (headId, at) => {
     const current = ui.form('wsMenu');
@@ -537,7 +539,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
     relations: rel,
     describe: (id) => describeRelations(hive, rel, id),
     outlines: groupOutlines(drawn, BEAD_SIZE).map((o) => ({ d: o.d, headId: o.headId, className: workstreamClasses(o.headId, cell.workstreamColours, layout.regionParents, cell.workstreamShades) })),
-    ariaLabel: 'Every cell in this hive, as a honeycomb. Each cluster has its own labelled region and outline. Child clusters are separate regions. Position is only your arrangement; neighbouring cells are not linked. Shift+F10 on a cluster for its actions.',
+    ariaLabel: 'Every cell in this hive, as a honeycomb. Each cluster has its own labelled region and outline. Child clusters are separate regions. Position is only your arrangement; neighbouring cells are not linked. Shift+F10 on an open item or cluster for its actions.',
     onClick: (id) => ui.selectBead(id),
     onActivate: id => {
       const item = items.find(item => item.id === id);
@@ -611,8 +613,9 @@ function cellMap(ctx, cell, related = null, previous = null) {
         arranging,
         fitLabel,
         confirm,
-        onSuggest: writable && menuOpen ? suggestCompletion : null,
-        onArchive: writable && menuClosed ? archiveGroup : null,
+        onSuggest: writable && heads.has(menuHead) && menuOpen ? () => suggestCompletion() : null,
+        onCloseRequest: canRequestClose ? () => suggestCompletion(true) : null,
+        onArchive: writable && heads.has(menuHead) && menuClosed ? archiveGroup : null,
         archiveLabel: cell.archived?.[menuHead]?.shown ? 'Hide again' : 'Archive cluster',
         onFit: startReveal,
         onConfirm: confirmReveal,

@@ -68,6 +68,14 @@ export async function suggestWorkstreamCompletion(rt, { cellId, headId }) {
   return recordCompletionSuggestion(rt, { cellId: cell.id, beadId: id, title: beads[id].title || id });
 }
 
+export async function suggestBeadCompletion(rt, { cellId, beadId }) {
+  const { cell, id, beads } = workstream(rt, { cellId, headId: beadId });
+  if (cell.retired) throw new HiveError('This hive is retired. Reopen it to ask its queen to close an item.');
+  if (beads[id].status === 'closed') throw new HiveError('This item is already closed.');
+  if (beads[id].kind === 'external') throw new HiveError('External items cannot be suggested for closure.');
+  return recordCompletionSuggestion(rt, { cellId: cell.id, beadId: id, title: beads[id].title || id, includeId: true });
+}
+
 export async function completeWorkstream(rt, { cellId, headId, outcome, summary, evidence, archive = false }) {
   ensureWritable(rt);
   const { cell, id, beads } = workstream(rt, { cellId, headId });

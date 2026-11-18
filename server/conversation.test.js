@@ -693,3 +693,65 @@ test('publish does not warn about information, code, quoted, reported or rhetori
     assert.equal(result.warning, undefined, text);
   }
 });
+
+test('item close requests name the item and deduplicate concurrent delivery until answered', async t => {
+  const f = await fixture(t);
+  f.cell.rootBeadId = 'root';
+  f.rt.snapshots.hierarchyCurrent = true;
+  f.rt.snapshots.graph.beads = {
+    root: { id: 'root', kind: 'goal' },
+    item: { id: 'item', parentId: 'root', kind: 'work', status: 'open', title: 'Example item' },
+  };
+  const before = structuredClone(f.rt.snapshots.graph);
+  const deliveries = [];
+  const host = { tasks: { get: () => ({ name: 'Fixture task' }) }, deliver: async (...args) => { deliveries.push(args); throw new Error('Offline'); } };
+  const ask = () => humanAction(f, 'hive-bead-suggest-completion', { beadId: 'item' }, host);
+  const [first, repeat] = await Promise.all([ask(), ask()]);
+  assert.equal(first.ok, true);
+  assert.equal(first.created, true);
+  assert.equal(first.delivery.state, 'uncertain');
+  assert.equal(repeat.created, false);
+  assert.equal(first.messageId, repeat.messageId);
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0][0], f.cell.queenSessionId);
+  assert.match(deliveries[0][1], /Example item/);
+  assert.match(deliveries[0][1], /bead_id: item/);
+  const message = f.list()[0];
+  assert.equal(message.beadId, 'item');
+  assert.match(message.text, /Example item \(item\)/);
+  assert.equal(f.rt.metadata.read().threads[f.cell.id][message.threadId].beadId, 'item');
+  assert.deepEqual(f.rt.snapshots.graph, before);
+  await publish(f.rt, f.actor, { text: 'Checked it.', reply_to: first.messageId });
+  assert.equal((await ask()).created, true);
+});
+
+for (const mode of ['closed', 'external', 'snapshot', 'retired', 'disabled', 'outside']) test(`item close requests reject ${mode}`, async t => {
+  const f = await fixture(t);
+  f.cell.rootBeadId = 'root';
+  f.rt.snapshots.hierarchyCurrent = true;
+  f.rt.snapshots.graph.beads = { root: { id: 'root', kind: 'goal' }, item: { id: 'item', parentId: 'root', kind: 'work', status: 'open', title: 'Example item' } };
+  const item = f.rt.snapshots.graph.beads.item;
+  if (mode === 'closed') item.status = 'closed';
+  else if (mode === 'external') item.kind = 'external';
+  else if (mode === 'outside') item.parentId = 'elsewhere';
+  else f.rt.metadata.mutate(d => { if (mode === 'disabled') d.cells[f.cell.id].enabled = false; else d.cells[f.cell.id][mode] = mode === 'snapshot' ? {} : true; });
+  const result = await humanAction(f, 'hive-bead-suggest-completion', { beadId: 'item' });
+  assert.equal(result.ok, false);
+  assert.equal((f.list() || []).length, 0);
+});
+
+test('cluster and item close actions share their pending suggestion', async t => {
+  const f = await fixture(t);
+  f.cell.rootBeadId = 'root';
+  f.rt.snapshots.hierarchyCurrent = true;
+  f.rt.snapshots.graph.beads = { root: { id: 'root', kind: 'goal' }, stream: { id: 'stream', parentId: 'root', kind: 'workstream', status: 'open', title: 'Example work' } };
+  const deliveries = [];
+  const host = { tasks: { get: () => ({ name: 'Fixture task' }) }, deliver: async (...args) => { deliveries.push(args); return { state: 'delivered' }; } };
+  const first = await humanAction(f, 'hive-ws-suggest-completion', { headId: 'stream' }, host);
+  const repeat = await humanAction(f, 'hive-bead-suggest-completion', { beadId: 'stream' }, host);
+  assert.equal(first.ok, true);
+  assert.equal(repeat.ok, true);
+  assert.equal(repeat.created, false);
+  assert.equal(first.messageId, repeat.messageId);
+  assert.equal(deliveries.length, 1);
+});

@@ -31,7 +31,7 @@ class Element {
   replaceChildren(...ns) { this.children.forEach(n => n.parentNode = null); this.children = []; this.append(...ns); }
   get textContent() { return this.text ?? this.children.map(n => n.textContent).join(''); }
   set textContent(v) { this.replaceChildren(); this.text = String(v); }
-  matches(selector) { return selector.split(',').some(part => { const s = part.trim(); if (s.startsWith('.')) return s.slice(1).split('.').every(c => this.classList.contains(c)); const a = s.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/); return a ? this.getAttribute(a[1]) !== null && (a[2] === undefined || this.getAttribute(a[1]) === a[2]) : this.tagName === s; }); }
+  matches(selector) { return selector.split(',').some(part => { const s = part.trim(); const descendant = s.match(/^(\.[\w-]+) (.+)$/); if (descendant) return this.matches(descendant[2]) && Boolean(this.parentNode?.closest(descendant[1])); if (s.startsWith('.')) return s.slice(1).split('.').every(c => this.classList.contains(c)); const a = s.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/); return a ? this.getAttribute(a[1]) !== null && (a[2] === undefined || this.getAttribute(a[1]) === a[2]) : this.tagName === s; }); }
   closest(s) { for (let el = this; el; el = el.parentNode) if (el.matches(s)) return el; return null; }
   querySelectorAll(s) { return this.children.flatMap(n => [...(n.matches(s) ? [n] : []), ...n.querySelectorAll(s)]); }
   querySelector(s) { return this.querySelectorAll(s)[0] || null; }
@@ -742,6 +742,7 @@ test('workstream menu suggests completion without opening a completion form or m
   f.top.querySelector('[data-focus-key="wsmenu:suggest"]').fire('click');
   assert.deepEqual(sent[0][0], { type: 'hive-ws-suggest-completion', cellId: 'cell', headId: 'ws' });
   assert.ok(!f.ui.form('wscomplete:cell'));
+  assert.ok(menu.querySelector('[data-focus-key="wsmenu:close-request"]'));
   sent[0][1].onReply({ ok: true, created: true, delivery: { state: 'delivered' } });
   assert.equal(notices[0][0], 'Completion suggested to the queen.');
   sent[0][1].onReply({ ok: true, created: false });
@@ -900,4 +901,43 @@ test('slow wheel drift never accumulates into deliberate intent', async t => {
     el.fire('wheel', { deltaX: 0.25, deltaY: 0, timeStamp });
   }
   assert.deepEqual(el.hiveCaptureView(), before);
+});
+
+for (const [event, props] of [['contextmenu', { button: 2, clientX: 50, clientY: 60 }], ['keydown', { key: 'ContextMenu' }], ['keydown', { key: 'F10', shiftKey: true }]]) test(`open item close request menu supports ${event} ${props.key || ''}`, t => {
+  const f = fixture(t);
+  const sent = [], notices = [];
+  f.ctx.send = (message, options) => sent.push([message, options]);
+  f.ctx.notice = (...args) => notices.push(args);
+  f.tile('title').fire(event, props); f.draw();
+  const action = f.top.querySelector('[data-focus-key="wsmenu:close-request"]');
+  assert.ok(action, 'ordinary items offer a close request');
+  assert.equal(f.top.querySelector('[data-focus-key="wsmenu:suggest"]'), null);
+  f.top.querySelector('.hive-wsmenu').fire('keydown', { key: 'Escape' });
+  assert.equal(document.activeElement, f.tile('title'));
+  f.draw();
+  f.tile('title').fire(event, props); f.draw();
+  f.top.querySelector('[data-focus-key="wsmenu:close-request"]').fire('click');
+  assert.deepEqual(sent[0][0], { type: 'hive-bead-suggest-completion', cellId: 'cell', beadId: 'title' });
+  sent[0][1].onReply({ ok: true, created: false });
+  assert.match(notices.at(-1)[0], /already has/);
+  for (const state of ['failed', 'uncertain', 'no-queen']) {
+    sent[0][1].onReply({ ok: true, created: true, delivery: { state } });
+    assert.match(notices.at(-1)[0], /Delivery to the queen needs attention/);
+    assert.equal(notices.at(-1)[1].severity, 'error');
+  }
+  assert.equal(f.beads.title.status, 'open');
+});
+
+for (const mode of ['closed', 'external', 'snapshot', 'retired', 'disabled']) test(`close request unavailable for ${mode} items`, t => {
+  const f = fixture(t);
+  const cell = f.ctx.hive.cells.cell;
+  if (mode === 'closed') f.beads.title.status = 'closed';
+  else if (mode === 'external') f.beads.title.kind = 'external';
+  else if (mode === 'disabled') cell.enabled = false;
+  else cell[mode] = mode === 'snapshot' ? {} : true;
+  f.draw();
+  f.canvas()?.querySelector('[data-tile-id="title"]')?.fire('keydown', { key: 'ContextMenu' }); f.draw();
+  assert.equal(f.top.querySelector('[data-focus-key="wsmenu:close-request"]'), null);
+  f.ui.setForm('wsMenu', { cellId: 'cell', headId: 'title', at: { x: 0, y: 0 } }); f.draw();
+  assert.equal(f.top.querySelector('[data-focus-key="wsmenu:close-request"]'), null);
 });

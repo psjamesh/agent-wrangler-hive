@@ -748,11 +748,11 @@ function humanCell(rt, cellId) {
 export const recordHumanInput = (rt, args) => messageWrite(rt, args.cellId, () => recordHumanMessage(rt, args));
 export const recordHumanSettingsInput = (rt, args) => messageWrite(rt, args.cellId, () => recordHumanMessage(rt, args, true));
 
-export const recordCompletionSuggestion = (rt, { cellId, beadId, title }) => messageWrite(rt, cellId, async () => {
+export const recordCompletionSuggestion = (rt, { cellId, beadId, title, includeId = false }) => messageWrite(rt, cellId, async () => {
   humanCell(rt, cellId);
   const pending = messagesOf(rt.metadata.read(), cellId).find(m => m.completionSuggestion && m.beadId === beadId && awaitingQueen(m));
   if (pending) return { ...pending, created: false };
-  const saved = await recordHumanMessage(rt, { cellId, beadId, text: `Is ${title} ready to close?`, newThread: { beadId }, completionSuggestion: true });
+  const saved = await recordHumanMessage(rt, { cellId, beadId, text: `Is ${title}${includeId ? ` (${beadId})` : ''} ready to close?`, newThread: { beadId }, completionSuggestion: true });
   return { ...saved, created: true };
 });
 

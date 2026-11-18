@@ -11,7 +11,7 @@ import { searchInbox } from './inbox-search.js';
 import * as ops from './ops.js';
 import { checkRetire, retireCell, reopenCell } from './retire.js';
 import { launchQueen, reconcileLaunch, sendActivationBrief, validateHandoverSource } from './sessions.js';
-import { checkWorkstream, completeWorkstream, suggestWorkstreamCompletion, archiveWorkstream, showWorkstream, reopenWorkstream, dismissRestoreNotice } from './workstreams.js';
+import { checkWorkstream, completeWorkstream, suggestWorkstreamCompletion, suggestBeadCompletion, archiveWorkstream, showWorkstream, reopenWorkstream, dismissRestoreNotice } from './workstreams.js';
 import { recordHumanInput, recordHumanReaction, deliver, markReceived, renameThread, resolveDeepLink, threadHistory, threadList, topicRelations, inboxPage, acknowledgeMessage, autoReadMessages, undoAcknowledge, withdrawMessage, undoWithdraw, humanConversationDoc } from './conversation.js';
 
 export class HumanError extends Error {}
@@ -272,14 +272,16 @@ const image = humanHandler('hive-image', async ({ msg, rt }) => {
 
 const wsArgs = (msg) => ({ cellId: str(msg.cellId, 80), headId: str(msg.headId, 80) });
 const wsCheck = humanHandler('hive-ws-check', ({ msg, rt }) => checkWorkstream(rt, wsArgs(msg)));
-const wsSuggest = humanHandler('hive-ws-suggest-completion', async ({ msg, host, rt }) => {
-  const saved = await suggestWorkstreamCompletion(rt, wsArgs(msg));
+const completionSuggestion = (suggest, args) => async ({ msg, host, rt }) => {
+  const saved = await suggest(rt, args(msg));
   rt.changed();
   const delivery = saved.created
     ? await deliver(rt, host, { cellId: str(msg.cellId, 80), messageId: saved.id }).catch(err => ({ state: 'failed', error: err.message }))
     : saved.delivery;
   return { messageId: saved.id, threadId: saved.threadId, created: saved.created, delivery };
-});
+};
+const wsSuggest = humanHandler('hive-ws-suggest-completion', completionSuggestion(suggestWorkstreamCompletion, wsArgs));
+const beadSuggest = humanHandler('hive-bead-suggest-completion', completionSuggestion(suggestBeadCompletion, msg => ({ cellId: str(msg.cellId, 80), beadId: str(msg.beadId, 80) })));
 const wsComplete = humanHandler('hive-ws-complete', ({ msg, rt }) => completeWorkstream(rt, {
   ...wsArgs(msg), outcome: str(msg.outcome, 20), summary: msg.summary, evidence: msg.evidence, archive: msg.archive === true,
 }));
@@ -326,4 +328,4 @@ const actionDiagnostic = {
   },
 };
 
-export const configHandlers = [actionDiagnostic, workerProfileH, pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, renameCellH, cellGoalH, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsSuggest, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];
+export const configHandlers = [actionDiagnostic, workerProfileH, pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, renameCellH, cellGoalH, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsSuggest, beadSuggest, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];
