@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createUi } from './client.js';
 import { revealMessage, cancelMessageReveal } from './deep-links.js';
 
 function layout(t) {
@@ -73,7 +74,7 @@ for (const path of ['waiting menu', 'request section', 'global inbox', 'notifica
     const f = layout(t);
     const request = { id: 'r', cellId: 'c', threadId: 'topic', messageId: 'request', beadId: 'b', audience: 'human', state: 'open', title: 'Choose', body: 'Pick one', routeRevision: 1, revision: 1 };
     const cell = { id: 'c', rootBeadId: 'b', enabled: true, requests: { r: request }, threads: [], messages: [], bindings: [] };
-    const ctx = { hive: { cells: { c: cell }, beads: { b: { id: 'b', title: 'Work' } } }, graph: { sessions: [] }, ui: {} };
+    const ctx = { hive: { cells: { c: cell }, beads: { b: { id: 'b', title: 'Work' } } }, graph: { sessions: [] }, ui: createUi() };
     let href;
     if (path === 'waiting menu' || path === 'request section') {
       let section;
