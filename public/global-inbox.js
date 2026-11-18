@@ -27,10 +27,11 @@ export function needsRows(ctx, cells) {
       needsCount: 1, count: 0, scanSessionReferences: false, sessionLinks: sessionNode(graph, cell.queenSessionId)?.archived ? [] : [{ sessionId: cell.queenSessionId, label: 'Open session' }],
       link: stopped && !suspended ? hiveLink(cell.id) : `#session=${encodeURIComponent(cell.queenSessionId)}`,
     });
+    const titles = topicTitles(cell, ctx.hive, ctx.ui);
     for (const r of Object.values(cell.requests || {})) {
       if (!needsHuman(r)) continue;
       rows.push({
-        key: `request:${r.id}`, cellId: cell.id, hive: cellName(graph, cell), title: r.title, at: r.createdAt, blocking: Boolean(r.blocking),
+        key: `request:${r.id}`, cellId: cell.id, hive: cellName(graph, cell), title: titles.get(r.threadId) || r.title, at: r.createdAt, blocking: Boolean(r.blocking),
         author: requestAuthor(graph, r), preview: oneLine(r.body, 200), texts: [r.body, r.title].filter(Boolean), beadIds: [r.beadId].filter(Boolean), repair: r.state === 'answered' ? (['failed', 'uncertain'].includes(r.delivery?.state) ? 'Answer needs delivery repair' : 'Answer being delivered') : null,
         threadId: r.threadId, firstId: r.messageId, needsCount: 1, count: 0, sessionLinks: [r.sessionLink, r.requesterSessionLink || (r.requesterSessionId ? { sessionId: r.requesterSessionId, label: 'Open requester session' } : null)].filter(Boolean),
         link: hiveLink(cell.id, r.threadId, r.messageId),

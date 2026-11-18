@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { queenResponseState } from '../server/projection.js';
 import { queenNeedsAttention, queenNotResponding } from '../public/model.js';
+import { createUi } from '../public/client.js';
 import { needsRows } from '../public/global-inbox.js';
 import { cellWaitingItems } from '../public/waiting-model.js';
 
@@ -65,7 +66,7 @@ test('terminal attention wording takes priority over overdue unanswered input', 
   const { cell, doc, graph } = fixture();
   doc.conversation.cell.push({ author: 'human', at: old, response: { required: true } });
   cell.queenResponse = queenResponseState(doc, cell);
-  const ctx = { graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
+  const ctx = { ui: createUi(), graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
   for (const status of ['needs-input', 'needs-you']) {
     Object.assign(graph.sessions[0], { status, waitingReason: 'Approve the command' });
     assert.equal(needsRows(ctx, [cell])[0].title, 'Queen needs attention');
@@ -82,7 +83,7 @@ test('Needs you row, session link and waiting marker agree without leaking priva
   const { cell, doc, graph } = fixture();
   doc.requests.secret = { cellId: 'cell', audience: 'queen', state: 'open', createdAt: old, title: 'Private title' };
   cell.queenResponse = queenResponseState(doc, cell);
-  const ctx = { graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
+  const ctx = { ui: createUi(), graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
   const rows = needsRows(ctx, [cell]);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].title, 'Queen not responding');
@@ -108,7 +109,7 @@ for (const state of [{ status: 'idle', exitOutput: 'Process exited' }, { status:
     else doc.requests.secret = { cellId: 'cell', audience: 'queen', state: 'open', createdAt: now, title: 'Private title' };
     cell.queenResponse = queenResponseState(doc, cell);
     Object.assign(graph.sessions[0], state);
-    const ctx = { graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
+    const ctx = { ui: createUi(), graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
     assert.equal(queenNeedsAttention(graph, cell), true);
     assert.equal(queenNotResponding(graph, cell), false);
     const rows = needsRows(ctx, [cell]);
@@ -139,7 +140,7 @@ for (const input of ['human', 'request']) test(`dormant queen grace and failed $
   else doc.requests.secret = pending;
   Object.assign(graph.sessions[0], { status: 'idle', managed: false, dormant: true });
   cell.queenResponse = queenResponseState(doc, cell);
-  const ctx = { graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
+  const ctx = { ui: createUi(), graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
   assert.deepEqual(needsRows(ctx, [cell]), []);
   clock = now + 119999;
   assert.deepEqual(needsRows(ctx, [cell]), []);
@@ -165,7 +166,7 @@ test('unresolved idle-ready watchdog attention reaches Needs you if queen stays 
   cell.watchdogFlags = { ready: { kind: 'idle_ready_work', episodeAt: old, bead_id: 'work', since: old - 15 * 60000 } };
   cell.queenResponse = queenResponseState(doc, cell);
   assert.equal(queenNotResponding(graph, cell, now), true);
-  const ctx = { graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
+  const ctx = { ui: createUi(), graph, hive: { beads: { root: { id: 'root' } }, edges: [] } };
   assert.equal(needsRows(ctx, [cell])[0].title, 'Queen not responding');
   delete cell.watchdogFlags.ready;
   cell.queenResponse = queenResponseState(doc, cell);

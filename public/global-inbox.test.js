@@ -187,3 +187,31 @@ test('queen attention is live only and leaves working and idle queens out', () =
   c.graph.sessions = [];
   assert.deepEqual(needsRows(c, [a]), []);
 });
+
+test('request-only Inbox rows keep the conversation topic title as unread messages are cleared', () => {
+  const a = cell('a', {
+    threads: [{ id: 'handover', title: 'Project handover' }, { id: 'other', title: 'Other topic' }],
+    messages: [{ id: 'update', threadId: 'handover', at: 5, author: 'session', text: 'Latest update', ack: { required: true, state: null, rev: 1 } }],
+    requests: { approval: request('approval', { threadId: 'handover', title: 'Approve the summary?', body: 'Review the draft' }) },
+    inbox: { human: { ids: ['update'], count: 1 }, queen: { ids: [], count: 0 } },
+  });
+  const c = ctx([a]);
+  const before = inboxRows(c, [a], 'human')[0];
+  a.messages[0].ack.state = { emoji: '👍' };
+  a.inbox.human = { ids: [], count: 0 };
+  const after = inboxRows(c, [a], 'human')[0];
+  assert.deepEqual([before.title, after.title], ['Project handover', 'Project handover']);
+  assert.equal(after.needsCount, 1);
+  assert.equal(parseHiveLink(after.link).threadId, 'handover');
+  for (const remoteState of [undefined, { remote: { topics: [], human: [], queen: [] } }]) {
+    const found = searchedInbox(c, [a], 'Approve the summary', remoteState).lists.human;
+    assert.deepEqual(found.map(r => [r.title, r.threadId, r.needsCount]), [['Project handover', 'handover', 1]]);
+  }
+});
+
+test('request-only rows use cached topic titles and retain a request title when no topic is kept', () => {
+  const a = cell('a', { requests: { r1: request('r1', { threadId: 'older' }), r2: request('r2') } });
+  const c = ctx([a]);
+  c.ui.openedTopic = () => ({ id: 'older', title: 'Earlier topic' });
+  assert.deepEqual(needsRows(c, [a]).map(r => r.title), ['Earlier topic', 'Request r2']);
+});
