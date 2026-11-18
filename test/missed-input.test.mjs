@@ -133,17 +133,41 @@ test('disabled and snapshot hives send no recovery; worker context does not reve
   assert.equal(context.attention.missed_input, undefined);
 });
 
-for (const outcome of [{ mode: 'error', outcome: 'unknown' }, null]) test(`unconfirmed recovery summary leaves the original untouched and recovers at a later event: ${JSON.stringify(outcome)}`, async t => {
+for (const outcome of ['unknown', 'throw']) test(`uncertain summary is sent once across sweeps until a later confirmed delivery: ${outcome}`, async t => {
   const f = fixture(t), m = await f.input('x'.repeat(400)); await f.failDelivery(m);
-  f.host.deliver = async () => outcome;
+  let summaries = 0, recovered = false;
+  f.host.deliver = async (_id, text) => {
+    if (!text.includes('Recover human input')) return { mode: 'live' };
+    summaries++;
+    assert.ok(!text.includes('x'.repeat(161)));
+    if (recovered) return { mode: 'live' };
+    if (outcome === 'throw') throw new Error('Delivery may have started');
+    return { mode: 'error', outcome: 'unknown' };
+  };
   await f.sweep();
-  assert.equal(f.rt.metadata.read().conversation.cell[0].delivery.attempts.length, 1);
-  f.host.deliver = async (id, text) => { f.sent.push({ id, text }); return { mode: 'live' }; };
+  f.rt.metadata = new MetadataStore({ file: f.file });
+  for (let i = 0; i < 4; i++) await f.sweep();
+  assert.equal(summaries, 1);
+  const next = await f.input('Later confirmed delivery');
+  await deliver(f.rt, f.host, { cellId: 'cell', messageId: next.id });
+  await notifyMissedInput(f.rt, f.host, queen);
+  assert.equal(summaries, 2);
+  for (let i = 0; i < 4; i++) await f.sweep();
+  assert.equal(summaries, 2);
+  recovered = true;
+  const last = await f.input('Another confirmed delivery');
+  await deliver(f.rt, f.host, { cellId: 'cell', messageId: last.id });
+  await notifyMissedInput(f.rt, f.host, queen);
+  for (let i = 0; i < 4; i++) await f.sweep();
+  assert.equal(summaries, 3);
+  assert.equal(f.rt.metadata.read().conversation.cell.find(x => x.id === m.id).delivery.attempts.length, 1);
+});
+
+test('watchdog does not send through an unknown live status', async t => {
+  const f = fixture(t), m = await f.input(); await f.failDelivery(m);
+  f.members.get(queen).status = null;
   await f.sweep();
-  assert.equal(f.sent.length, 1);
-  assert.ok(!f.sent[0].text.includes('x'.repeat(161)));
-  await f.sweep();
-  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent.length, 0);
 });
 
 test('successor summary includes predecessor queen answers and excludes worker answers', async t => {
@@ -262,4 +286,39 @@ test('successful request answer returns while its recovery summary is still pend
   assert.equal(typeof release, 'function');
   release();
   await f.sweep();
+});
+
+test('an interrupted summary remains in attention and is not repeated by passive sweeps', async t => {
+  const f = fixture(t), m = await f.input(); await f.failDelivery(m);
+  f.rt.metadata.mutate(d => { d.conversation.cell[0].delivery.recoveryNotices = { [`${queen}:1`]: { state: 'pending', at: 1 } }; });
+  for (let i = 0; i < 3; i++) await f.sweep();
+  assert.equal(f.sent.length, 0);
+  const items = (await buildContext(f.rt, f.host, f.actor)).attention.missed_input;
+  assert.equal(items[0].notice.state, 'pending');
+  const next = await f.input('Confirmed reachable');
+  await deliver(f.rt, f.host, { cellId: 'cell', messageId: next.id });
+  await notifyMissedInput(f.rt, f.host, queen);
+  assert.equal(f.sent.length, 2);
+});
+
+test('a confirmed delivery during a passive summary preserves its recovery trigger', async t => {
+  const f = fixture(t), m = await f.input(); await f.failDelivery(m);
+  let summaries = 0, release, started;
+  const ready = new Promise(resolve => { started = resolve; });
+  f.host.deliver = async (_id, text) => {
+    if (!text.includes('Recover human input')) return { mode: 'live' };
+    summaries++;
+    if (summaries === 1) { started(); await new Promise(resolve => { release = resolve; }); return { mode: 'error', outcome: 'unknown' }; }
+    return { mode: 'live' };
+  };
+  const sweep = f.sweep();
+  await ready;
+  const next = await f.input('Confirmed reachable during summary');
+  await deliver(f.rt, f.host, { cellId: 'cell', messageId: next.id });
+  release();
+  await sweep;
+  await notifyMissedInput(f.rt, f.host, queen);
+  assert.equal(summaries, 2);
+  await f.sweep();
+  assert.equal(summaries, 2);
 });

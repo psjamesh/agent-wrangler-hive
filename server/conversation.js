@@ -1180,7 +1180,7 @@ export async function deliver(rt, host, { cellId, messageId, force = false }) {
       const latest = m.delivery.attempts.at(-1);
       if (latest?.id === attemptId) m.delivery = { ...m.delivery, state: outcome.state, error: outcome.error, sessionId: target };
     });
-    if (outcome.state === 'delivered') void notifyMissedInput(rt, host, target);
+    if (outcome.state === 'delivered') void notifyMissedInput(rt, host, target, { confirmedDelivery: true });
     return { message_id: messageId, state: outcome.state, error: outcome.error };
   } finally {
     inFlight.delete(key);

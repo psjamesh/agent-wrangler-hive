@@ -45,24 +45,27 @@ function deliveryFor(doc, cellId, item) {
   return item.request_id ? doc.requests?.[item.request_id]?.delivery : doc.conversation?.[cellId]?.find(m => m.id === item.message_id)?.delivery;
 }
 
-export function notifyMissedInput(rt, host, sessionId) {
+export function notifyMissedInput(rt, host, sessionId, { confirmedDelivery = false } = {}) {
   if (!rt?.metadata || rt.metadata.error || !isCurrent(rt, host)) return Promise.resolve();
   const runtime = runtimeKey(rt);
   if (!active.has(runtime)) active.set(runtime, new Map());
   const sending = active.get(runtime);
-  if (sending.has(sessionId)) return sending.get(sessionId);
-  const pending = Promise.resolve().then(() => sendMissedInput(rt, host, sessionId))
+  if (sending.has(sessionId)) {
+    const pending = sending.get(sessionId);
+    return confirmedDelivery ? pending.then(() => notifyMissedInput(rt, host, sessionId, { confirmedDelivery: true })) : pending;
+  }
+  const pending = Promise.resolve().then(() => sendMissedInput(rt, host, sessionId, confirmedDelivery))
     .catch(err => { rt.log?.(`hive: missed input recovery failed: ${err.message}`); })
     .finally(() => { sending.delete(sessionId); });
   sending.set(sessionId, pending);
   return pending;
 }
 
-async function sendMissedInput(rt, host, sessionId) {
+async function sendMissedInput(rt, host, sessionId, confirmedDelivery) {
   if (!isCurrent(rt, host)) return;
   const doc = rt.metadata.read();
   const cells = Object.values(doc.cells || {}).filter(c => c.enabled && !c.snapshot && c.queenSessionId === sessionId);
-  const items = cells.flatMap(cell => missedInput(doc, cell).filter(item => item.notice?.state !== 'delivered').map(item => ({ ...item, cellId: cell.id, key: noticeKey(cell) })));
+  const items = cells.flatMap(cell => missedInput(doc, cell).filter(item => item.notice?.state !== 'delivered' && (confirmedDelivery || !['uncertain', 'pending'].includes(item.notice?.state))).map(item => ({ ...item, cellId: cell.id, key: noticeKey(cell) })));
   if (!items.length) return;
   const recipient = host.sessions?.get?.(sessionId);
   if (!recipient || recipient.archived || typeof host.deliver !== 'function') return;
@@ -98,7 +101,7 @@ export async function notifyReachableQueens(rt, host) {
     if (!isCurrent(rt, host)) return;
     try {
       const session = host.sessions?.get?.(queen);
-      if (session && !session.archived && !session.dormant && !['exited', 'error'].includes(session.status)) await notifyMissedInput(rt, host, queen);
+      if (session && !session.archived && !session.dormant && ['idle', 'working', 'busy'].includes(session.status)) await notifyMissedInput(rt, host, queen);
     } catch (err) {
       rt.log?.(`hive: missed input availability check failed: ${err.message}`);
     }
