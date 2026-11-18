@@ -476,3 +476,103 @@ test('global label backoff defers terminal records without spending their final 
   assert.equal(labelReads, 2);
   assert.equal(f.doc.prLabels[OTHER].status, 'labelled');
 });
+
+function evidenceFixture() {
+  const f = fixture();
+  f.links = [];
+  f.runtime.metadata.cells = () => Object.values(f.doc.cells);
+  f.runtime.snapshots = { graph: { beads: {
+    'hive-root': { id: 'hive-root' },
+    'hive-evidence': { id: 'hive-evidence', parentId: 'hive-root', evidence: [{ kind: 'merge', url: 'https://GitHub.com/Example/Repo/pull/42/files#diff' }] },
+  } } };
+  return f;
+}
+
+test('evidence backfill tracks a canonical PR, projects live state, and never labels it', async () => {
+  const { waitingProjection } = await import('../server/waiting.js');
+  const { beadPullRequests } = await import('../public/pr-view.js');
+  const f = evidenceFixture();
+  await f.sweep.run();
+  const record = f.doc.prLabels[PR];
+  assert.equal(record?.source, 'bead-evidence');
+  assert.equal(record.state, 'OPEN');
+  assert.deepEqual(record.beadIds, ['hive-evidence']);
+  assert.deepEqual(f.additions, []);
+  assert.equal(f.views.length, 1);
+  const cell = f.doc.cells.cell;
+  const projection = waitingProjection(f.runtime, cell, new Set(['hive-evidence']));
+  const prs = beadPullRequests({ hive: { cells: { cell: { ...cell, ...projection } } } }, f.runtime.snapshots.graph.beads['hive-evidence']);
+  assert.equal(prs.length, 1);
+  assert.equal(prs[0].state, 'OPEN');
+  f.time = 60000;
+  f.states.set(PR, 'MERGED');
+  await f.sweep.run();
+  f.time = 120000;
+  await f.sweep.run();
+  assert.equal(f.views.length, 2);
+  assert.deepEqual(f.additions, []);
+});
+
+for (const state of ['OPEN', 'MERGED', 'CLOSED']) {
+  test(`evidence association preserves a known ${state} PR without extra reads`, async () => {
+    const f = evidenceFixture();
+    const existing = { url: PR, source: 'label-search', status: 'labelled', labelledAt: 5, state, stateCheckedAt: 123, firstSeenAt: 0, nodeId: `node:${PR}`, associations: [{ cellId: 'cell', beadId: 'hive-root', kind: 'cell-root' }] };
+    f.doc.prLabels[PR] = structuredClone(existing);
+    f.states.set(PR, state);
+    await f.sweep.run();
+    assert.equal(f.views.length, state === 'OPEN' ? 1 : 0);
+    assert.equal(f.doc.prLabels[PR].source, existing.source);
+    assert.equal(f.doc.prLabels[PR].labelledAt, 5);
+    assert.equal(f.doc.prLabels[PR].stateCheckedAt, state === 'OPEN' ? 0 : 123);
+    assert.equal(f.doc.prLabels[PR].associations.length, 2);
+    assert.deepEqual(f.additions, []);
+    await f.sweep.run();
+    assert.equal(f.doc.prLabels[PR].associations.length, 2);
+  });
+}
+
+test('recording evidence only adds associations and leaves known observations untouched', async () => {
+  const { trackEvidencePrs } = await import('../server/pr-evidence.js');
+  const f = evidenceFixture();
+  const original = { url: PR, source: 'session-link', state: 'MERGED', stateCheckedAt: 123, status: 'labelled', labelledAt: 100, verifiedLinkKey: 'original', nodeId: 'node42' };
+  f.doc.prLabels[PR] = structuredClone(original);
+  trackEvidencePrs(f.runtime, f.doc.cells.cell, f.runtime.snapshots.graph.beads['hive-evidence'], 999);
+  const { associations, beadIds, cellIds, ...unchanged } = f.doc.prLabels[PR];
+  assert.deepEqual(unchanged, original);
+  assert.deepEqual(associations, [{ cellId: 'cell', beadId: 'hive-evidence', kind: 'bead-evidence' }]);
+  assert.deepEqual(f.views, []);
+  assert.deepEqual(f.additions, []);
+});
+
+for (const state of ['MERGED', 'CLOSED']) {
+  test(`evidence does not recheck a known ${state} PR without a stored node identity`, async () => {
+    const f = evidenceFixture();
+    f.doc.prLabels[PR] = { url: PR, source: 'label-search', state, stateCheckedAt: 123 };
+    await f.sweep.run();
+    assert.deepEqual(f.views, []);
+    assert.equal(f.doc.prLabels[PR].stateCheckedAt, 123);
+    assert.deepEqual(f.doc.prLabels[PR].beadIds, ['hive-evidence']);
+  });
+}
+
+test('an evidence-only repository does not trigger label searches or import unrelated PRs', async () => {
+  const f = evidenceFixture();
+  f.searchResults = [OTHER];
+  await f.sweep.run();
+  assert.deepEqual(f.searches, []);
+  assert.equal(f.doc.prLabels[OTHER], undefined);
+  assert.equal(f.views.length, 1);
+});
+
+test('session promotion keeps other beads evidence-only', async () => {
+  const { waitingProjection } = await import('../server/waiting.js');
+  const f = evidenceFixture();
+  await f.sweep.run();
+  f.links = [PR];
+  f.doc.bindings.cell = [{ active: true, sessionId: SID, beadId: 'hive-root' }];
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR].source, 'session-link');
+  const rows = waitingProjection(f.runtime, f.doc.cells.cell, new Set(['hive-root', 'hive-evidence'])).pullRequests;
+  assert.deepEqual(rows.find(row => row.evidenceOnly)?.beadIds, ['hive-evidence']);
+  assert.deepEqual(rows.find(row => !row.evidenceOnly)?.beadIds, ['hive-root']);
+});

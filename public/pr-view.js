@@ -1,14 +1,9 @@
 import { h } from './dom.js';
+import { canonicalPrUrl } from './pr-url.js';
 import { prState } from './waiting-model.js';
 
 export { prState } from './waiting-model.js';
 const submittedRequests = new WeakMap();
-
-function canonicalPrUrl(value) {
-  if (typeof value !== 'string') return null;
-  const match = value.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/([1-9][0-9]*)(?:[/?#].*)?$/i);
-  return match ? `https://github.com/${match[1].toLowerCase()}/${match[2].toLowerCase()}/pull/${match[3]}` : null;
-}
 
 export function beadPullRequests(ctx, bead, evidence = bead.evidence || []) {
   const tracked = Object.values(ctx.hive.cells).flatMap(cell => cell.pullRequests || []);
@@ -21,14 +16,16 @@ export function beadPullRequests(ctx, bead, evidence = bead.evidence || []) {
     const url = canonicalPrUrl(entry.url);
     if (!url || prs.has(url)) continue;
     const observed = tracked.find(pr => canonicalPrUrl(pr.url) === url);
-    prs.set(url, { ...observed, url, number: url.split('/').at(-1), evidenceOnly: true });
+    prs.set(url, { ...observed, url, number: url.split('/').at(-1), evidenceOnly: true, humanAttention: null });
   }
   return [...prs.values()];
 }
 
 export function prSummary(prs) {
-  const open = [...new Map(prs.map(pr => [pr.url, pr])).values()].filter(pr => !['merged', 'closed'].includes(prState(pr)));
-  const needs = open.filter(pr => ['ready', 'stuck'].includes(prState(pr))).length;
+  const byUrl = new Map();
+  for (const pr of prs) if (!byUrl.has(pr.url) || !pr.evidenceOnly) byUrl.set(pr.url, pr);
+  const open = [...byUrl.values()].filter(pr => !['merged', 'closed'].includes(prState(pr)));
+  const needs = open.filter(pr => !pr.evidenceOnly && ['ready', 'stuck'].includes(prState(pr))).length;
   return open.length ? `${open.length} open PR${open.length === 1 ? '' : 's'}, ${needs} waiting for you` : '';
 }
 

@@ -1,3 +1,4 @@
+import { backfillEvidencePrs } from './pr-evidence.js';
 import { participation } from './access.js';
 import { isCurrent } from './lifetime.js';
 import { createPrLabeler, prRepository } from './pr-labels.js';
@@ -30,6 +31,7 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
       if (running || !active() || !canReadLinks(host)) return;
       running = true;
       try {
+        backfillEvidencePrs(runtime, now());
         const discovered = new Map();
         for (const session of host.sessions.list()) {
           try {
@@ -65,7 +67,7 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
           }
         });
         const searchHits = new Map();
-        const repos = [...new Set(Object.values(runtime.metadata.read().prLabels || {}).map(record => prRepository(record?.url)).filter(Boolean))];
+        const repos = [...new Set(Object.values(runtime.metadata.read().prLabels || {}).filter(record => record?.source !== 'bead-evidence').map(record => prRepository(record?.url)).filter(Boolean))];
         for (const repo of repos) {
           if (!active()) break;
           const found = await tracker.search(repo);
@@ -83,8 +85,9 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
           const linked = discovered.get(record.url);
           const linkKey = associationKey(linked);
           const terminal = ['MERGED', 'CLOSED'].includes(record.state);
+          const evidenceTracked = record.associations?.some(a => a.kind === 'bead-evidence');
           const newerCoreObservation = linked?.coreCheckedAt > (record.stateCheckedAt ?? 0);
-          if (terminal && record.nodeId && !searchHits.has(record.url) && !newerCoreObservation && (!linked || record.verifiedLinkKey === linkKey)) continue;
+          if (terminal && (record.nodeId || evidenceTracked) && !searchHits.has(record.url) && !newerCoreObservation && (!linked || record.verifiedLinkKey === linkKey)) continue;
           const observed = await tracker.state(record.url);
           if (!active()) return;
           if (observed) observations.push({ url: record.url, ...observed, verifiedLinkKey: linkKey });
