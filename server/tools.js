@@ -5,10 +5,9 @@ import { setPickup, pickupState } from './pickup.js';
 import { collectWatchdog, watchdogSettings, archiveSuggestions } from './watchdog.js';
 import { reviewPolicy } from './review-policy.js';
 import { attachmentsFor, deriveActivity } from './bead-sessions.js';
-import { optionsSchema } from './request-options.js';
+import { optionsSchema as buildOptionsSchema } from './request-options.js';
 import * as requests from './requests.js';
 import { reportPrWait, waitingProjection } from './waiting.js';
-import { z } from 'zod';
 import { capacity, RESERVED_LAUNCH_STATES } from './admission.js';
 import { isUntracked, sleepingReason } from './tracking.js';
 import { OPEN_REVIEW_STATES, reviewFields } from './review-state.js';
@@ -41,62 +40,93 @@ function error(message) {
   return { content: [{ type: 'text', text: message }], isError: true };
 }
 
-const imageAttachments = z.array(strictObject({ file: z.string().min(1).max(100), alt: z.string().max(500).optional() })).max(4).optional();
-
-const hiveIdArg = z.string().min(1).max(80).optional().describe('Hive id. Optional when you take part in exactly one enabled hive.');
-const cellIdArg = hiveIdArg.describe('Legacy alias for hive_id. If both are supplied they must agree.');
-
-function hiveInput(shape) {
-  return withHostJsonSchema(strictObject({ hive_id: hiveIdArg, cell_id: cellIdArg, ...shape }).refine(
-    args => !args.hive_id || !args.cell_id || args.hive_id === args.cell_id,
-    { message: 'hive_id and cell_id must agree.', path: ['hive_id'] },
-  ));
-}
-
 function resolveHiveId(args) {
   if (args.hive_id && args.cell_id && args.hive_id !== args.cell_id) return false;
   args.cell_id = args.hive_id ?? args.cell_id;
   return true;
 }
-const beadId = z.string().min(1).max(80);
 
-function withHostJsonSchema(schema) {
-  // Custom conversion skips parent traversal; newer host converters still try to finalize parents.
-  schema = schema.clone(schema.def);
-  let building = false;
-  schema._zod.toJSONSchema = () => {
-    if (building) return undefined;
-    building = true;
-    try {
-      const { $schema, ...json } = z.toJSONSchema(schema, { io: 'input', reused: 'inline', unrepresentable: 'any' });
-      return json;
-    } finally {
-      building = false;
-    }
+function schemaContext(z) {
+  const imageAttachments = z.array(strictObject({ file: z.string().min(1).max(100), alt: z.string().max(500).optional() })).max(4).optional();
+
+  const hiveIdArg = z.string().min(1).max(80).optional().describe('Hive id. Optional when you take part in exactly one enabled hive.');
+  const cellIdArg = hiveIdArg.describe('Legacy alias for hive_id. If both are supplied they must agree.');
+
+  function hiveInput(shape) {
+    return strictObject({ hive_id: hiveIdArg, cell_id: cellIdArg, ...shape }).refine(
+      args => !args.hive_id || !args.cell_id || args.hive_id === args.cell_id,
+      { message: 'hive_id and cell_id must agree.', path: ['hive_id'] },
+    );
+  }
+
+  const beadId = z.string().min(1).max(80);
+
+  function strictObject(shape) {
+    return z.object(shape, {
+      error(issue) {
+        if (issue.code !== 'unrecognized_keys') return undefined;
+        const aliases = { parent_id: ['parent'], parent_key: ['parent'], key: ['ref'], description: ['summary', 'goal'] };
+        return issue.keys.map((key) => {
+          const suggestion = (Object.hasOwn(aliases, key) ? aliases[key] : []).filter((field) => Object.hasOwn(shape, field)).join(' or ');
+          return `Unknown field "${key}"${suggestion ? `; use ${suggestion}` : ''}`;
+        }).join('. ');
+      },
+    }).strict();
+  }
+
+  const evidenceSchema = strictObject({
+    label: z.string().min(1).max(200).describe('Short label, e.g. "PR #12 merged" or "Failing test output". Labels beginning with "Review " are reserved for managed verdict receipts.'),
+    url: z.string().max(2000).optional().describe('http(s) link, if any.'),
+    detail: z.string().max(2000).optional().describe('Optional Markdown detail.'),
+    kind: z.string().max(40).optional().describe('e.g. note, test, review, merge, pr, decision. Merge evidence requires the PR URL; Hive merges require merged_head matching the latest approved review.'),
+    merged_head: z.string().regex(/^[a-fA-F0-9]{40}$/).optional().describe('Full merged PR head SHA (not the merge commit). Required for Hive merge evidence; must equal the latest approved review commit.'),
+  });
+
+  const sessionLinkArgs = {
+    session_id: z.string().uuid().optional().describe('Board session the human should act on. Adds an in-app Open session link; sends nothing to it. Pass this when asking the human to approve a command or act in a specific session.'),
+    session_label: z.string().min(1).max(200).optional().describe('Optional link label, defaults to Open session. Requires session_id.'),
   };
-  return schema;
-}
 
-function strictObject(shape) {
-  return withHostJsonSchema(z.object(shape, {
-    error(issue) {
-      if (issue.code !== 'unrecognized_keys') return undefined;
-      const aliases = { parent_id: ['parent'], parent_key: ['parent'], key: ['ref'], description: ['summary', 'goal'] };
-      return issue.keys.map((key) => {
-        const suggestion = (Object.hasOwn(aliases, key) ? aliases[key] : []).filter((field) => Object.hasOwn(shape, field)).join(' or ');
-        return `Unknown field "${key}"${suggestion ? `; use ${suggestion}` : ''}`;
-      }).join('. ');
-    },
-  }).strict());
+  const workerArgs = {
+    bead_id: beadId,
+    intent: z.string().min(1).max(20000).describe('Bounded brief for the worker or reviewer.'),
+    cwd: z.string().max(2000).optional(),
+    agent: z.string().max(80).optional(),
+    model: z.string().max(200).optional(),
+    effort: z.string().max(80).optional(),
+    auto_compact_tokens: z.number().int().positive().optional(),
+    codex_approval: z.enum(['on-request', 'never']).optional().describe('Codex approval policy when the hive uses Use my Codex config; omitted leaves core defaults unchanged. An explicit hive Codex approvals setting takes precedence. Valid values are ignored for other agents. Cannot change a retained reviewer\'s configuration.'),
+    worktree: strictObject({ branch: z.string().optional(), folderName: z.string().optional(), auto: z.boolean().optional(), base: z.string().optional() }).optional(),
+  };
+
+  const reviewArgs = {
+    reviewer_session_id: z.string().min(1).max(200).optional().describe('Retained reviewer already bound to this cell. With a new commit after approved or changes_requested, opens a fresh round and mails that session without launching another. Cannot be combined with agent, model, effort, override_reason or codex_approval.'),
+    commit: z.string().min(1).max(80).optional().describe('SHA to review (role review).'),
+    override_reason: z.string().min(1).max(1000).optional().describe('Queen/coordinator only: required to use an agent, model or effort other than the hive review policy for a review. Recorded on the review.'),
+  };
+
+  const requestIdArg = z.string().regex(/^hreq_[0-9a-f]{12}$/);
+
+  const requestRevisionArgs = {
+    request_id: requestIdArg,
+    revision: z.number().int().positive().describe('Current request revision from Hive.'),
+    route_revision: z.number().int().positive().describe('Current route revision from Hive.'),
+  };
+
+  const optionsSchema = buildOptionsSchema(z);
+  return { z, strictObject, hiveInput, imageAttachments, hiveIdArg, cellIdArg, beadId, evidenceSchema, sessionLinkArgs, workerArgs, reviewArgs, requestIdArg, requestRevisionArgs, optionsSchema };
 }
 
 export function hiveTool(spec, run) {
-  const inputSchema = hiveInput(spec.inputSchema);
+  const inputSchema = ({ host }) => {
+    const context = schemaContext(host.schema.z);
+    return context.hiveInput(typeof spec.inputSchema === 'function' ? spec.inputSchema(context) : spec.inputSchema);
+  };
   return {
     ...spec,
     inputSchema,
     async handler({ host, caller }, args = {}) {
-      const parsed = inputSchema.safeParse(args);
+      const parsed = inputSchema({ host }).safeParse(args);
       if (!parsed.success) return error(`Hive: invalid input: ${parsed.error.message}`);
       args = parsed.data;
       if (!resolveHiveId(args)) return error('Hive: hive_id and cell_id must agree.');
@@ -294,37 +324,30 @@ export async function buildContext(rt, host, actor, { include_closed = false, be
   });
 }
 
-const evidenceSchema = strictObject({
-  label: z.string().min(1).max(200).describe('Short label, e.g. "PR #12 merged" or "Failing test output". Labels beginning with "Review " are reserved for managed verdict receipts.'),
-  url: z.string().max(2000).optional().describe('http(s) link, if any.'),
-  detail: z.string().max(2000).optional().describe('Optional Markdown detail.'),
-  kind: z.string().max(40).optional().describe('e.g. note, test, review, merge, pr, decision. Merge evidence requires the PR URL; Hive merges require merged_head matching the latest approved review.'),
-  merged_head: z.string().regex(/^[a-fA-F0-9]{40}$/).optional().describe('Full merged PR head SHA (not the merge commit). Required for Hive merge evidence; must equal the latest approved review commit.'),
-});
 
 export const contextTool = hiveTool({
   name: 'hive_context',
   description: 'Read your Hive: its goal and acceptance, the human\'s queen instructions (how the queen should work), your role, every open cell with goal, acceptance, status, owner, waiting links and evidence, recent closed cells, links, the sessions involved and their AW status, operations that need reconciliation and recent conversation (plus, for the queen, human input not yet taken on board, human messages still awaiting your answer under awaiting_response, messages the human withdrew under withdrawn_by_human (do not answer those), and how many of your messages the human has not yet read, reacted to or replied to). Call it first when you start or resume. Workers and reviewers: use scope: \'bead\' with your bead_id for only that cell, its parent chain, direct links, visible topics, requests and reviews, and your own claims/bindings. Omit scope for the full hive (the queen default).',
-  inputSchema: {
+  inputSchema: ({ z, beadId }) => ({
     scope: z.enum(['cell', 'bead']).optional().describe('Scope cell (default) returns the full hive. Workers use scope bead for a bounded cell read; bead_id defaults to your single claimed or bound cell, otherwise it is required.'),
     include_closed: z.boolean().optional().describe('Hive scope only: include every closed cell, not just the 20 most recent.'),
     bead_id: beadId.optional().describe('Cell to focus on. With scope bead, restrict the read to this cell; otherwise also return it in full as focus.'),
-  },
+  }),
 }, ({ rt, host, actor, args }) => buildContext(rt, host, actor, args));
 
 export const readyTool = hiveTool({
   name: 'hive_ready',
   description: 'List work in your hive that is ready to claim: open, unclaimed, with no open children and no unfinished blocking prerequisites.',
-  inputSchema: {
+  inputSchema: ({ z, beadId }) => ({
     under_bead_id: beadId.optional().describe('Limit to this cell\'s subtree, e.g. a cluster.'),
     limit: z.number().int().min(1).max(100).optional(),
-  },
+  }),
 }, ({ rt, actor, args }) => ops.readyBeads(rt, actor, args));
 
 export const createBeadsTool = hiveTool({
   name: 'hive_create_beads',
   description: 'Create one or more cells (work items, clusters, investigations, decisions...) in your hive in one atomic step, with optional links. Give new cells a ref so later entries in the same call can use it as parent or link end. New scoped work waits at least two minutes and until a later pickup pass before default launch: include prerequisites and children in this same batch, or set hold: true until setup is complete. Worker-created follow-ups are held for queen review. Cells without a parent go under the hive goal. Links say what depends on what; they are not created by position in the view.',
-  inputSchema: {
+  inputSchema: ({ z, strictObject }) => ({
     beads: z.array(strictObject({
       ref: z.string().max(40).optional().describe('Temporary name for this call, e.g. "api".'),
       parent: z.string().max(80).optional().describe('Parent cell id or a ref from this call. Defaults to the hive goal.'),
@@ -342,13 +365,13 @@ export const createBeadsTool = hiveTool({
       prerequisite: z.string().max(80).describe('Cell id or ref it depends on.'),
       type: z.enum(LINK_TYPES).optional().describe('blocks (default) makes the dependent wait; related/tracks/... only associate.'),
     })).max(50).optional(),
-  },
+  }),
 }, ({ rt, actor, args }) => ops.createBeads(rt, actor, args));
 
 export const updateBeadTool = hiveTool({
   name: 'hive_update_bead',
   description: 'Update a cell in your hive: title, kind, goal, acceptance, summary (replace it, do not append a log), next action, waiting reason, status (open, in_progress, deferred) or parent, and add or remove evidence. Omitted fields are unchanged; an empty string clears a text field. Deferred requires an open blocks prerequisite or resume_after_bead/resume_review_at. Use hive_finish_bead to close work.',
-  inputSchema: {
+  inputSchema: ({ z, beadId, evidenceSchema }) => ({
     bead_id: beadId,
     title: z.string().max(200).optional().describe('Short, self-contained action or outcome in plain words. Clarify, never change scope.'),
     kind: z.string().max(40).optional(),
@@ -364,72 +387,68 @@ export const updateBeadTool = hiveTool({
     expected_updated_at: z.string().max(80).optional().describe('Optional guard: the cell\'s updated_at as hive_context showed it. The update is refused if the cell has changed since. Omit to overwrite as before.'),
     add_evidence: z.array(evidenceSchema).max(20).optional(),
     remove_evidence_labels: z.array(z.string().max(200)).max(50).optional(),
-  },
+  }),
 }, ({ rt, actor, args }) => ops.updateBead(rt, actor, args));
 
 export const linkBeadsTool = hiveTool({
   name: 'hive_link_beads',
   description: 'Add or remove typed links between cells, atomically. Linking cells in two different hives requires you to take part in both.',
-  inputSchema: {
+  inputSchema: ({ z, strictObject, beadId }) => ({
     links: z.array(strictObject({
       dependent: beadId,
       prerequisite: beadId,
       type: z.enum(LINK_TYPES).optional(),
       remove: z.boolean().optional(),
     })).min(1).max(50),
-  },
+  }),
 }, ({ rt, actor, args }) => ops.linkBeads(rt, actor, args));
 
 export const claimBeadTool = hiveTool({
   name: 'hive_claim_bead',
   description: 'Claim a cell for yourself (it becomes in_progress, assigned to your session) and bind your session to it. Refused if another session holds it. Claiming twice is harmless.',
-  inputSchema: { bead_id: beadId },
+  inputSchema: ({ beadId }) => ({ bead_id: beadId }),
 }, ({ rt, actor, args }) => ops.claimBead(rt, actor, args));
 
 export const releaseBeadTool = hiveTool({
   name: 'hive_release_bead',
   description: 'Release your claim on a cell, keeping its status unless you pass status. A queen or coordinator may release another session\'s claim with force: true and a reason, after checking with the holder; it never happens automatically.',
-  inputSchema: {
+  inputSchema: ({ z, beadId }) => ({
     bead_id: beadId,
     reason: z.string().max(2000).optional(),
     force: z.boolean().optional(),
     status: z.enum(SETTABLE_STATUSES, { error: BLOCKED_STATUS_HELP }).optional().describe('Status after release. Omit to keep the current status.'),
-  },
+  }),
 }, ({ rt, actor, args }) => ops.releaseBead(rt, actor, args));
 
 export const bindSessionTool = hiveTool({
   name: 'hive_bind_session',
   description: 'Associate a session with your hive, optionally with one cell and a role: work, review, helper (or the older worker, reviewer, investigator) or coordinator. Use it to join a session that was started some other way (plain spawn_session, adversarial-pr-review) to a cell so Hive tracks it. Joining as review needs a cell and records a review that session can give a verdict on (policy cannot be enforced; its actual agent is recorded). Bind yourself, or, as queen or coordinator, a session in this task or one you launched; the holder of a cell may also join review/helper sessions to it. The cell\'s holder cannot join itself as its reviewer. Only the queen can grant coordinator. unbind: true removes the association. Bindings record who worked on what; they do not complete anything.',
-  inputSchema: {
+  inputSchema: ({ z, beadId }) => ({
     bead_id: beadId.optional(),
     session_id: z.string().max(128).optional().describe('Defaults to you.'),
     role: z.string().max(40).optional(),
     note: z.string().max(2000).optional(),
     unbind: z.boolean().optional(),
-  },
+  }),
 }, ({ rt, host, actor, args }) => ops.bindSession(rt, host, actor, args));
 
 export const finishBeadTool = hiveTool({
   name: 'hive_finish_bead',
   description: 'Close a cell with an explicit outcome (done, dropped, superseded, duplicate), a summary of what was achieved or why it stopped, and evidence. Done requires evidence and refuses PR evidence without merge evidence or an observed merged/closed state. Only a queen/coordinator may bypass that evidence guard with a recorded override_reason. For outcome done, close only when the whole goal of the cell is done, not after one step of several; use dropped, superseded or duplicate to retire work that will not ship. Evidence records what happened; closing a cell does not claim a review took place unless your evidence says so. Refused while anything under it is still open; a heading with work under it is also refused while it waits on an open prerequisite, another session holds it, or a Hive write about any of it is unsettled.',
-  inputSchema: {
+  inputSchema: ({ z, beadId, evidenceSchema }) => ({
     bead_id: beadId,
     outcome: z.enum(OUTCOMES),
     summary: z.string().min(1).max(20000),
     evidence: z.array(evidenceSchema).max(20).optional(),
     override_reason: z.string().trim().min(1).max(2000).optional().describe('Queen/coordinator only: explicit reason to bypass the done evidence guard; recorded on the cell.'),
-  },
+  }),
 }, ({ rt, actor, args }) => ops.finishBead(rt, actor, args));
 
-const sessionLinkArgs = {
-  session_id: z.string().uuid().optional().describe('Board session the human should act on. Adds an in-app Open session link; sends nothing to it. Pass this when asking the human to approve a command or act in a specific session.'),
-  session_label: z.string().min(1).max(200).optional().describe('Optional link label, defaults to Open session. Requires session_id.'),
-};
 
 export const publishTool = hiveTool({
   name: 'hive_publish',
   description: 'Returns a relative hash link to the posted message. Pass session_id (and optionally session_label) when the human should act in a specific board session. Publish a deliberate message to the human in your hive\'s conversation: an informational answer, trade-off, concern, meaningful milestone or result, a significant change of approach, scope or timing, or a material blocker. It is shown as coming from your session. If any part of an answer asks the human to decide, approve or act, send the whole answer as one hive_request_input with reply_to, findings in its body and choices in options. A hive_publish never ends with a question or a “needs from you” ask. Keep follow-up decisions in the existing request’s thread_id. When nothing is being asked, answer here with reply_to set to its id, or list the human messages this answers in answers: text in your terminal is not shown in Hive. Every human message waits for a visible answer from the queen; only such an answer settles it, and it also acknowledges receipt. The human marks queen messages read, reacts to them or replies; that arrives as state in hive_context, not as messages. Inform the human even when they need not act. Leave routine bookkeeping, unchanged status and worker chatter on the cells, and do not post timed status updates. Messages are grouped into topics: a reply joins its message\'s topic, thread_id posts into a topic, and otherwise a new topic starts, named thread_title or the message\'s first line.',
-  inputSchema: {
+  inputSchema: ({ z, imageAttachments, beadId, sessionLinkArgs }) => ({
     ...sessionLinkArgs,
     text: z.string().min(1).max(20000).describe('Markdown. Self-contained: enough context to respond without opening a terminal.'),
     bead_id: beadId.optional().describe('The cell this is about, if any. A new topic is anchored to it.'),
@@ -438,68 +457,52 @@ export const publishTool = hiveTool({
     thread_title: z.string().min(1).max(120).optional().describe('Name for the new topic this message starts. Only without reply_to and thread_id.'),
     attachments: imageAttachments.describe('Queen only. PNG, JPEG, GIF or WebP files saved in attachments_inbox from hive_context. Bare names only, never paths. Up to 4, each at most 5 MB. The inbox belongs to your session in this hive; only files staged there can be attached. Other sessions may use the same filenames independently.'),
     answers: z.array(z.string().min(1).max(80)).max(20).optional().describe('Queen only. Ids of human messages in this hive that this message answers, besides reply_to.'),
-  },
+  }),
 }, ({ rt, host, actor, args }) => publish(rt, actor, args, host));
 
 export const updateThreadTool = hiveTool({
   name: 'hive_update_thread',
   description: 'Queen or coordinator only. Rename a conversation topic, or move it to the item it is now about (bead_id), so it shows when the human selects that item. A topic the human named keeps its name. Only the queen can change a hive-wide topic or make one hive-wide (bead_id: "").',
-  inputSchema: {
+  inputSchema: ({ z, beadId }) => ({
     thread_id: z.string().min(1).max(80),
     title: z.string().min(1).max(120).optional(),
     bead_id: z.union([beadId, z.literal('')]).optional().describe('The item the topic is about; "" makes it hive-wide.'),
-  },
+  }),
 }, ({ rt, actor, args }) => updateThread(rt, actor, args));
 
 export const acknowledgeInputTool = hiveTool({
   name: 'hive_acknowledge_input',
   description: 'Queen only. Confirm receipt of human messages under unacknowledged_input or human answers under attention.missed_input. For request answers pass request_id or request_message_id in message_ids; this records receipt by the current queen, including successor queens. Acknowledging a conversation message sends no reply; each still waits under awaiting_response until you answer it with hive_publish, or hive_request_input with reply_to.',
-  inputSchema: { message_ids: z.array(z.string().min(1).max(80)).min(1).max(100) },
+  inputSchema: ({ z }) => ({ message_ids: z.array(z.string().min(1).max(80)).min(1).max(100) }),
 }, ({ rt, actor, args }) => acknowledgeInput(rt, actor, args));
 
 export const reconcileOperationTool = hiveTool({
   name: 'hive_reconcile_operation',
   description: 'Queen or coordinator only. Settle one of your hive\'s unfinished operations (listed under attention.operations_to_reconcile in hive_context). Hive first reads the store and settles it itself when the requested final state is there. If it cannot confirm that, call again with a verdict and a note saying what you verified. It never repeats or forces a write, and hive setup operations stay with the human.',
-  inputSchema: {
+  inputSchema: ({ z }) => ({
     op_id: z.string().min(1).max(80),
     verdict: z.enum(ops.VERDICTS).optional().describe('Only after verifying: applied (the requested state is there), not-applied (it did not happen and is not needed as recorded), superseded (later work replaced it).'),
     note: z.string().max(500).optional().describe('Required with a verdict: what you checked and found.'),
-  },
+  }),
 }, ({ rt, actor, args }) => ops.reconcileForAgent(rt, actor, args));
 
 export const deleteBeadsTool = hiveTool({
   name: 'hive_delete_beads',
   description: 'Queen only. Permanently delete items from your hive that should not exist at all, such as mistakes or accidental copies. To stop, drop or replace real work, use hive_finish_bead instead: it keeps the record. Without execute this only previews: it lists the items and anything that stops the deletion. Name every item, including all children; nothing is deleted on its own. Refused for the hive goal, items in other hives, claimed items, unnamed children, links between a deleted item and one that stays, and items with unsettled operations. To delete, call again with the same bead_ids, execute: true and the preview\'s confirm_token.',
-  inputSchema: {
+  inputSchema: ({ z, beadId }) => ({
     bead_ids: z.array(beadId).min(1).max(20),
     reason: z.string().min(1).max(2000).describe('Why these items should not exist. Kept with the operation record.'),
     execute: z.boolean().optional().describe('Only after a clean preview. Deleting cannot be undone from Hive.'),
     confirm_token: z.string().max(80).optional().describe('From the preview of exactly these items.'),
-  },
+  }),
 }, ({ rt, actor, args }) => ops.deleteBeads(rt, actor, args));
 
-const workerArgs = {
-  bead_id: beadId,
-  intent: z.string().min(1).max(20000).describe('Bounded brief for the worker or reviewer.'),
-  cwd: z.string().max(2000).optional(),
-  agent: z.string().max(80).optional(),
-  model: z.string().max(200).optional(),
-  effort: z.string().max(80).optional(),
-  auto_compact_tokens: z.number().int().positive().optional(),
-  codex_approval: z.enum(['on-request', 'never']).optional().describe('Codex approval policy when the hive uses Use my Codex config; omitted leaves core defaults unchanged. An explicit hive Codex approvals setting takes precedence. Valid values are ignored for other agents. Cannot change a retained reviewer\'s configuration.'),
-  worktree: strictObject({ branch: z.string().optional(), folderName: z.string().optional(), auto: z.boolean().optional(), base: z.string().optional() }).optional(),
-};
 
-const reviewArgs = {
-  reviewer_session_id: z.string().min(1).max(200).optional().describe('Retained reviewer already bound to this cell. With a new commit after approved or changes_requested, opens a fresh round and mails that session without launching another. Cannot be combined with agent, model, effort, override_reason or codex_approval.'),
-  commit: z.string().min(1).max(80).optional().describe('SHA to review (role review).'),
-  override_reason: z.string().min(1).max(1000).optional().describe('Queen/coordinator only: required to use an agent, model or effort other than the hive review policy for a review. Recorded on the review.'),
-};
 
 export const spawnWorkerTool = hiveTool({
   name: 'hive_spawn_worker',
   description: 'Launch a tracked session attached to a cell, with a role: work (default), review or helper. Codex sessions use the hive Codex approvals setting; Use my Codex config leaves core defaults unchanged and permits a launch override; codex_approval accepts on-request or never and is ignored for other agents. It cannot be supplied with reviewer_session_id. The queen/coordinator may launch all three roles. The session holding the cell\'s claim may launch review or helper sessions for that cell only (never another work session). Helpers require a live holder, bind to the cell, keep its capacity slot until they end even if the holder releases, and cannot claim cells, launch sessions or give review verdicts. work reserves the cell and global capacity and launches a worker already claimed and bound. review launches a reviewer bound to the cell on the hive review policy (cell.review_policy: a primary and a secondary config, chosen so the reviewer\'s provider differs from the builder\'s, else the primary with sameProvider noted); agent/model/effort are ignored for a holder, and the queen/coordinator may differ only with override_reason, which is recorded. For a retained reviewer, pass reviewer_session_id and a new commit after approved or changes_requested: opens a new round, preserves earlier receipts and mails that reviewer without launching a session. Omit reviewer_session_id to launch a new reviewer. Review sessions share the cell\'s capacity slot. The queen is told when a review session starts. An uncertain launch keeps its reservation; reconcile it instead of launching again. Launch independent advisor or investigation work on its own cell here; sessions started with spawn_session, spawn_workflow, schedule_session or update_schedule are untracked.',
-  inputSchema: { ...workerArgs, ...reviewArgs, role: z.enum(['work', 'review', 'helper']).optional() },
+  inputSchema: ({ z, workerArgs, reviewArgs }) => ({ ...workerArgs, ...reviewArgs, role: z.enum(['work', 'review', 'helper']).optional() }),
 }, ({ rt, host, actor, args }) => {
   const { role = 'work', commit, override_reason, reviewer_session_id, ...rest } = args;
   if (role !== 'review' && (commit !== undefined || override_reason !== undefined || reviewer_session_id !== undefined)) throw new ops.HiveError('commit, override_reason and reviewer_session_id apply only to role review.');
@@ -510,35 +513,37 @@ export const spawnWorkerTool = hiveTool({
 export const reconcileWorkerTool = hiveTool({
   name: 'hive_reconcile_worker_launch',
   description: 'Queen/coordinator only. Confirm a reserved/uncertain worker launch from its live session and claim. To abandon one, verify no worker is starting, release any surviving claim, then pass abandon: true and a reason. Never launches again or takes a claim.',
-  inputSchema: { launch_id: z.string().min(1).max(80), abandon: z.boolean().optional(), reason: z.string().max(2000).optional() },
+  inputSchema: ({ z }) => ({ launch_id: z.string().min(1).max(80), abandon: z.boolean().optional(), reason: z.string().max(2000).optional() }),
 }, ({ rt, host, actor, args }) => reconcileWorkerLaunch(rt, host, actor, args));
 
 export const requestReviewTool = hiveTool({
   name: 'hive_request_review',
   description: 'Alias of hive_spawn_worker with role review, kept for existing callers. Launches a reviewer on this cell on the hive review policy; pass reviewer_session_id and a new commit after approved or changes_requested to reopen a round with its retained reviewer and notify it by mail without spawning. Earlier rounds and receipts remain intact; archived, foreign-cell and builder sessions are refused. With reviewer_session_id, agent/model/effort/override_reason/codex_approval are refused. See hive_spawn_worker. The claim holder or the queen/coordinator may call it; override_reason is required to depart from the policy.',
-  inputSchema: { ...workerArgs, ...reviewArgs },
+  inputSchema: ({ workerArgs, reviewArgs }) => ({ ...workerArgs, ...reviewArgs }),
 }, ({ rt, host, actor, args }) => requestReview(rt, host, actor, args));
 
 export const reviewVerdictTool = hiveTool({
   name: 'hive_review_verdict',
   description: 'Only the current bound reviewer may give a verdict on this work cell. Records evidence and ends the review wait without closing the work or changing the builder\'s claim. changes_requested returns findings to the builder. Retry only the same verdict if its receipt was interrupted. After changes_requested, the same reviewer may record a new round with a different `commit` (the reviewed SHA); earlier rounds stay in history. While round 2 or later is in review, commit is required and must match that round’s commit. The same commit cannot take a conflicting verdict.',
-  inputSchema: { bead_id: beadId, verdict: z.enum(['approved', 'changes_requested']), summary: z.string().min(1).max(20000), commit: z.string().min(1).max(80).optional() },
+  inputSchema: ({ z, beadId }) => ({ bead_id: beadId, verdict: z.enum(['approved', 'changes_requested']), summary: z.string().min(1).max(20000), commit: z.string().min(1).max(80).optional() }),
 }, ({ rt, host, actor, args }) => reviewVerdict(rt, host, actor, args));
 
 export const cancelReviewTool = hiveTool({
   name: 'hive_cancel_review',
   description: 'Queen/coordinator only. Explicitly cancel the open review on this work cell with a reason. Clears the review wait without a verdict and fences its reviewer. Does not close work or change the builder\'s claim.',
-  inputSchema: { bead_id: beadId, reason: z.string().min(1).max(2000) },
+  inputSchema: ({ z, beadId }) => ({ bead_id: beadId, reason: z.string().min(1).max(2000) }),
 }, ({ rt, host, actor, args }) => cancelReview(rt, host, actor, args));
 
 
-
 function requestTool(name, description, inputShape, run) {
-  const inputSchema = hiveInput(inputShape);
+  const inputSchema = ({ host }) => {
+    const context = schemaContext(host.schema.z);
+    return context.hiveInput(inputShape(context));
+  };
   return {
     name, description, inputSchema,
     async handler({ host, caller }, args = {}) {
-      const parsed = inputSchema.safeParse(args);
+      const parsed = inputSchema({ host }).safeParse(args);
       if (!parsed.success) return error(`Hive: invalid input: ${parsed.error.message}`);
       args = parsed.data;
       if (!resolveHiveId(args)) return error('Hive: hive_id and cell_id must agree.');
@@ -556,14 +561,9 @@ function requestTool(name, description, inputShape, run) {
   };
 }
 
-const requestIdArg = z.string().regex(/^hreq_[0-9a-f]{12}$/);
-const requestRevisionArgs = {
-  request_id: requestIdArg,
-  revision: z.number().int().positive().describe('Current request revision from Hive.'),
-  route_revision: z.number().int().positive().describe('Current route revision from Hive.'),
-};
+
 const requestTools = [
-  requestTool('hive_request_input', 'Ask for a decision or action inside your active Hive. Pass reply_to when a request answers a human message: it joins the topic of that message, inherits its cell, and a queen request counts as an answer. With thread_id alone, the cell comes from the topic. With bead_id alone, reuse its topic when exactly one is available in the hive; otherwise start a new topic. Pass session_id (and optionally session_label) when the human should act in a specific board session. Forwarding automatically links the requester too. Attach screenshots with attachments; images stay with the request when forwarded. Worker/reviewer/helper requests go to its queen, who answers or forwards the same request to the human. Queens ask the human directly. Do not also call request_human_input. Outside Hive use that standard tool instead. Offer 2-4 options where there is a choice, recommended first with (Recommended) in its label, and explain your recommendation in the body. Caller identity comes from MCP, never arguments.', {
+  requestTool('hive_request_input', 'Ask for a decision or action inside your active Hive. Pass reply_to when a request answers a human message: it joins the topic of that message, inherits its cell, and a queen request counts as an answer. With thread_id alone, the cell comes from the topic. With bead_id alone, reuse its topic when exactly one is available in the hive; otherwise start a new topic. Pass session_id (and optionally session_label) when the human should act in a specific board session. Forwarding automatically links the requester too. Attach screenshots with attachments; images stay with the request when forwarded. Worker/reviewer/helper requests go to its queen, who answers or forwards the same request to the human. Queens ask the human directly. Do not also call request_human_input. Outside Hive use that standard tool instead. Offer 2-4 options where there is a choice, recommended first with (Recommended) in its label, and explain your recommendation in the body. Caller identity comes from MCP, never arguments.', ({ z, strictObject, imageAttachments, cellIdArg, beadId, sessionLinkArgs, optionsSchema }) => ({
     cell_id: cellIdArg,
     ...sessionLinkArgs,
     attachments: imageAttachments.describe('PNG, JPEG, GIF or WebP files saved in attachments_inbox from hive_context. Bare names only, never paths. Up to 4, each at most 5 MB. The inbox belongs to your session in this hive; only files staged there can be attached. Other sessions may use the same filenames independently. All requesters may attach; forwarding keeps the images. Dedupe updates retain images; use a new request to change them.'),
@@ -575,29 +575,29 @@ const requestTools = [
     reply_to: z.string().max(80).optional().describe('Message id this request replies to. Pass when answering a human message. Conflicting thread_id is rejected.'),
     bead_id: beadId.optional(), thread_id: z.string().max(80).optional(), blocking: z.boolean().optional(),
     dedupe_key: z.string().max(120).optional(), expires_at: z.number().int().positive().optional().describe('Optional future Unix timestamp in milliseconds.'),
-  }, requests.createRequest),
-  requestTool('hive_observe_request_subject', 'Requester or current queen: report the current revision of a document pinned on a native approval request. Retains the original pin and answer; changed revisions show a warning and notify the queen. PR pins use shared core observations instead. This does not grant, revoke or require approval.', { request_id: requestIdArg, revision: z.string().min(1).max(200) }, requests.observeRequestSubject),
-  requestTool('hive_list_my_requests', 'Recover your own native requests, audience, answers and delivery state. Remains available after leaving a hive. Human and queen answers are explicitly attributed. Does not read the Needs You extension.', { cell_id: cellIdArg }, (rt, host, caller, args) => ({ requests: requests.listMine(rt, host, caller, args.cell_id) })),
-  requestTool('hive_withdraw_request', 'Withdraw only your own native request, including when an answer arrived in chat. Remains available after leaving a hive. Never withdraw a legacy ibx request here.', { request_id: requestIdArg, reason: z.string().max(2000).optional() }, requests.withdrawRequest),
-  requestTool('hive_answer_request', 'Current queen only: answer a request still routed to you, within your own authority. It is attributed as a queen answer, never a human answer. Use current revisions from hive_context.', { ...requestRevisionArgs, option_id: z.string().max(32).optional().describe('Stable id from the current options.'), text: z.string().max(20000).optional().describe('Standalone answer or optional note with an option (up to 4000 characters for requests with options).') }, requests.answerRequest),
-  requestTool('hive_forward_request', 'Current queen only: forward your queued native request to the human with an optional recommendation. Preserves the original request and requester. Do not create a second standard request.', { ...requestRevisionArgs, recommendation: z.string().max(4000).optional() }, requests.forwardRequest),
+  }), requests.createRequest),
+  requestTool('hive_observe_request_subject', 'Requester or current queen: report the current revision of a document pinned on a native approval request. Retains the original pin and answer; changed revisions show a warning and notify the queen. PR pins use shared core observations instead. This does not grant, revoke or require approval.', ({ z, requestIdArg }) => ({ request_id: requestIdArg, revision: z.string().min(1).max(200) }), requests.observeRequestSubject),
+  requestTool('hive_list_my_requests', 'Recover your own native requests, audience, answers and delivery state. Remains available after leaving a hive. Human and queen answers are explicitly attributed. Does not read the Needs You extension.', ({ cellIdArg }) => ({ cell_id: cellIdArg }), (rt, host, caller, args) => ({ requests: requests.listMine(rt, host, caller, args.cell_id) })),
+  requestTool('hive_withdraw_request', 'Withdraw only your own native request, including when an answer arrived in chat. Remains available after leaving a hive. Never withdraw a legacy ibx request here.', ({ z, requestIdArg }) => ({ request_id: requestIdArg, reason: z.string().max(2000).optional() }), requests.withdrawRequest),
+  requestTool('hive_answer_request', 'Current queen only: answer a request still routed to you, within your own authority. It is attributed as a queen answer, never a human answer. Use current revisions from hive_context.', ({ z, requestRevisionArgs }) => ({ ...requestRevisionArgs, option_id: z.string().max(32).optional().describe('Stable id from the current options.'), text: z.string().max(20000).optional().describe('Standalone answer or optional note with an option (up to 4000 characters for requests with options).') }), requests.answerRequest),
+  requestTool('hive_forward_request', 'Current queen only: forward your queued native request to the human with an optional recommendation. Preserves the original request and requester. Do not create a second standard request.', ({ z, requestRevisionArgs }) => ({ ...requestRevisionArgs, recommendation: z.string().max(4000).optional() }), requests.forwardRequest),
 ];
 export const handoffQueenTool = hiveTool({
   name: 'hive_handoff_queen',
   description: 'Current queen only. Hand this hive to one successor queen launched by Hive (never with spawn_session). The successor is a top-level session in the hive\'s task with your summary and a mandatory hive_context first action. One handoff may be in flight at a time and it is fenced to your queen generation: if the queen changes meanwhile, the successor is refused before it acts. Existing workers keep their claims and reviews; claims you hold personally are not transferred. You lose queen authority once the successor is installed. The human can recover or replace the queen at any time.',
-  inputSchema: {
+  inputSchema: ({ z }) => ({
     summary: z.string().min(1).max(20000).describe('What the successor must know: state of the work, open decisions, what you were about to do.'),
     cwd: z.string().max(2000).optional(),
     agent: z.string().max(80).optional(),
     model: z.string().max(200).optional(),
     effort: z.string().max(80).optional(),
-  },
+  }),
 }, ({ rt, host, actor, args }) => handoffQueen(rt, host, actor, args));
 
 export const reportPrWaitTool = hiveTool({
   name: 'hive_report_pr_wait',
   description: 'Report a human PR wait (ready/cannot-fix/clear), or register a durable CI wait with state wait, purpose in reason, expected head, target, desired_outcome and deadline. Targets are checks, unique check name, mergeable or merge; run/attempt/workflow identity is unsupported. Core must observe a linked PR. Read current state immediately; wake on terminal outcome and retain it until acknowledge with wait_id. retry-wake explicitly retries failed/uncertain delivery; cancel-wait cancels a pending wait. Never merges, deploys or closes work.',
-  inputSchema: {
+  inputSchema: ({ z, beadId }) => ({
     bead_id: beadId,
     url: z.string().max(2000).optional(),
     head_sha: z.string().regex(/^[a-f0-9]{40}$/i).optional(),
@@ -608,14 +608,14 @@ export const reportPrWaitTool = hiveTool({
     desired_outcome: z.enum(['success', 'completed']).optional(),
     deadline: z.string().max(80).optional(),
     wait_id: z.string().max(80).optional(),
-  },
+  }),
 }, ({ rt, host, actor, args }) => ['wait', 'acknowledge', 'retry-wake', 'cancel-wait'].includes(args.state)
   ? reportCiWait(rt, host, actor, args) : reportPrWait(rt, actor, args));
 
 export const pickupTool = hiveTool({
   name: 'hive_set_pickup',
   description: 'Queen only: mark bounded work ready for one automatic worker launch. Pickup is default behavior; max claimed work controls concurrency. Eligible new scoped work inherits its nearest cluster worker profile and brief template; existing work remains held until opted in; explicit marks supply an override (agent, model, effort, cwd, optional worktree and intent). Supply hold: true or false on its own to hold/unhold work. Returns current pickup state, eligibility and every hold reason, including blocking session ids. Dependencies may still be pending. Rearming a consumed or held mark requires expected_token and a reason. Failed or uncertain starts never retry automatically.',
-  inputSchema: {
+  inputSchema: ({ z, beadId }) => ({
     bead_id: beadId,
     ready: z.boolean().optional(),
     hold: z.boolean().optional(),
@@ -623,7 +623,7 @@ export const pickupTool = hiveTool({
     rearm: z.boolean().optional(),
     expected_token: z.string().max(80).optional(),
     reason: z.string().max(2000).optional(),
-  },
+  }),
 }, ({ rt, host, actor, args }) => setPickup(rt, host, actor, args));
 
 export const workTools = [pickupTool,

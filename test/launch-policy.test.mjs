@@ -8,7 +8,7 @@ import { handoffQueen } from '../server/queen-handoff.js';
 import { createManifest } from '../server/manifest.js';
 import { capacity } from '../server/admission.js';
 import { resolveCaller } from '../server/access.js';
-import { spawnRestriction, workTools } from '../server/tools.js';
+import { spawnRestriction, workTools } from './helpers/tools.mjs';
 import { ungovernedDescendants } from '../server/tracking.js';
 import { reconcileLaunch } from '../server/sessions.js';
 

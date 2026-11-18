@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { pickupFixture } from './helpers/pickup.mjs';
 import { createBeads, updateBead, releaseBead, settleOne } from '../server/ops.js';
-import { createBeadsTool, updateBeadTool, releaseBeadTool } from '../server/tools.js';
+import { createBeadsTool, updateBeadTool, releaseBeadTool } from './helpers/tools.mjs';
 import { createWatchdog, collectWatchdog } from '../server/watchdog.js';
 import { resolveLinkWaits } from '../server/link-waits.js';
 import { cellCounts, workCounts, childrenMap, waitingOn } from '../public/model.js';

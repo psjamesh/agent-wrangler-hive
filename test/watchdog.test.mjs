@@ -244,7 +244,7 @@ test('settings handler persists validated thresholds and refuses snapshots', asy
 });
 
 test('hive_context exposes current flags with the per-hive thresholds', async t => {
-  const { buildContext } = await import('../server/tools.js');
+  const { buildContext } = await import('./helpers/tools.mjs');
   const f = fixture(t), queen = '11111111-1111-4111-8111-111111111111';
   f.sessions[queen] = { sessionId: queen, taskId: 'task' };
   f.host.tasks = { get: () => ({ name: 'Synthetic task' }), forSession: () => ({ taskId: 'task' }) };

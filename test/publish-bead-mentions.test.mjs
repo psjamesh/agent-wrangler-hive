@@ -1,3 +1,4 @@
+import { schema } from './helpers/host-schema.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -19,7 +20,7 @@ function fixture(t) {
     ['hive-abc', null], ['hive-demo2', 'hive-abc'], ['hive-123', 'hive-abc'],
     ['hive-demo2.1', 'hive-demo2'], ['hive-xyz', null], ['hive-9zzz', 'hive-xyz'],
   ].map(([id, parentId]) => [id, { id, parentId, title: id }]));
-  const rt = { metadata, paths: { root }, host: { tasks: { forSession: () => null } }, pendingParticipants: new Map(), changed() {}, snapshots: { graph: { beads } } };
+  const rt = { metadata, paths: { root }, host: { schema, tasks: { forSession: () => null } }, pendingParticipants: new Map(), changed() {}, snapshots: { graph: { beads } } };
   const actor = { cell, role: 'queen', sessionId: 'queen' };
   const list = () => metadata.read().conversation[cell.id] || [];
   const relations = tid => {

@@ -92,7 +92,7 @@ test('unsupported selectors, unassociated PRs and nonclaimants are refused befor
 });
 
 test('existing wait tool registers structured targets and rejects unsupported identity fields', async () => {
-  const { reportPrWaitTool } = await import('../server/tools.js');
+  const { reportPrWaitTool } = await import('./helpers/tools.mjs');
   assert.equal(reportPrWaitTool.inputSchema.safeParse(args()).success, true);
   assert.equal(reportPrWaitTool.inputSchema.safeParse({ ...args(), run_id: 1 }).success, false);
   assert.equal(reportPrWaitTool.inputSchema.safeParse({ bead_id: 'a', state: 'acknowledge', wait_id: 'ciwait_123' }).success, true);
@@ -187,7 +187,7 @@ test('definite delivery failure can be retried explicitly; delayed acknowledgeme
 });
 
 test('real wait tool enforces caller identity and exposes the persisted outcome in bead context', async t => {
-  const { reportPrWaitTool, contextTool } = await import('../server/tools.js');
+  const { reportPrWaitTool, contextTool } = await import('./helpers/tools.mjs');
   const f = fixture();
   const sid = '22222222-2222-4222-8222-222222222222';
   f.board.set(sid, { sessionId: sid, taskId: 'task', status: 'idle' });
@@ -201,7 +201,7 @@ test('real wait tool enforces caller identity and exposes the persisted outcome 
   const refusal = await reportPrWaitTool.handler({ host: f.host, caller: '33333333-3333-4333-8333-333333333333' }, args());
   assert.equal(refusal.isError, true); assert.equal(f.doc().ciWaits, undefined);
   const accepted = await reportPrWaitTool.handler({ host: f.host, caller: sid }, args());
-  assert.equal(accepted.isError, undefined); assert.equal(accepted.structuredContent.outcome, 'success');
+  assert.equal(accepted.isError, undefined); assert.equal(accepted.structuredContent.outcome, 'success', JSON.stringify(accepted));
   const context = await contextTool.handler({ host: f.host, caller: sid }, { scope: 'bead', bead_id: 'a' });
   assert.equal(context.isError, undefined, JSON.stringify(context));
   assert.equal(context.structuredContent.focus.ci_wait.id, accepted.structuredContent.id);

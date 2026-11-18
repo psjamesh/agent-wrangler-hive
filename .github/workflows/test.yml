@@ -25,21 +25,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: psjamesh/agent-wrangler
-          ref: 3d5fa8dddeab64b0aad80ba035ef4a3c52fc917a
+          ref: d566152cbf40cf7f8e873c06a1819984e9a68c2f
           path: .core
           persist-credentials: false
 
       - run: npm ci --ignore-scripts --prefix .core
 
-      - run: npm install --no-save --ignore-scripts --prefix .core zod@3.25.76
-
       - run: npm ci
-
-      - run: npm test
-        env:
-          HIVE_TEST_CORE: ${{ github.workspace }}/.core
-
-      - run: npm install --no-save --ignore-scripts --prefix .core zod@4.6.7
 
       - run: npm test
         env:
@@ -57,7 +49,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: psjamesh/agent-wrangler
-          ref: 3d5fa8dddeab64b0aad80ba035ef4a3c52fc917a
+          ref: d566152cbf40cf7f8e873c06a1819984e9a68c2f
           path: .core
           persist-credentials: false
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { z } from 'zod';
-import { workTools } from '../server/tools.js';
+import { z } from './helpers/host-schema.mjs';
+import { workTools } from './helpers/tools.mjs';
 
 const valid = {
   hive_set_pickup: { bead_id: 'a', ready: true, profile: { agent: 'claude', model: 'sonnet', effort: 'medium', cwd: '/tmp/fake-repo' } },

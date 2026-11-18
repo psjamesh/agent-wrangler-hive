@@ -1,16 +1,17 @@
-import { z } from 'zod';
 import { HiveError } from './ops.js';
 
-export const optionSchema = z.object({
-  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/).optional().describe('Stable lowercase slug. Derived from the label when omitted.'),
-  label: z.string().min(1).max(80).describe('Short choice label. Put the recommended option first and suffix its label with (Recommended).'),
-  description: z.string().max(300).optional(),
-}).strict();
-export const optionsSchema = z.array(optionSchema).max(6);
+export function optionsSchema(z) {
+  const optionSchema = z.object({
+    id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/).optional().describe('Stable lowercase slug. Derived from the label when omitted.'),
+    label: z.string().min(1).max(80).describe('Short choice label. Put the recommended option first and suffix its label with (Recommended).'),
+    description: z.string().max(300).optional(),
+  }).strict();
+  return z.array(optionSchema).max(6);
+}
 const singleLine = s => s.replace(/\s+/g, ' ').trim();
 
-export function requestOptions(raw = []) {
-  const parsed = optionsSchema.safeParse(raw);
+export function requestOptions(raw = [], z) {
+  const parsed = optionsSchema(z).safeParse(raw);
   if (!parsed.success) throw new HiveError(`Invalid options: ${parsed.error.message}`, 'invalid');
   const explicit = new Set(raw.map(o => o.id).filter(Boolean)), ids = new Set();
   return raw.map((o, i) => {
