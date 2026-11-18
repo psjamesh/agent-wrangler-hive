@@ -276,7 +276,7 @@ async function sendOnce(rt, host, id, field, target, body) {
   ready(rt);
   if ((field !== 'subjectNotification' && get(rt, id).routeRevision !== routeRevision) || get(rt, id)[field]?.attempts?.at(-1)?.id !== attemptId) return get(rt, id);
   const saved = update(rt, id, x => { x[field] = { ...x[field], ...outcome }; });
-  if (outcome.state === 'delivered') await notifyMissedInput(rt, host, target);
+  if (outcome.state === 'delivered') void notifyMissedInput(rt, host, target);
   return saved;
 }
 export async function notifyQueen(rt, host, id) {

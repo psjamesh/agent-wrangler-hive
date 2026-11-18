@@ -453,7 +453,7 @@ export const updateThreadTool = hiveTool({
 
 export const acknowledgeInputTool = hiveTool({
   name: 'hive_acknowledge_input',
-  description: 'Queen only. Confirm receipt: you have taken on board human messages listed under unacknowledged_input in hive_context, so Hive stops retrying them. It does not send anything and does not answer them; each still waits under awaiting_response until you answer it with hive_publish, or hive_request_input with reply_to.',
+  description: 'Queen only. Confirm receipt of human messages under unacknowledged_input or human answers under attention.missed_input. For request answers pass request_id or request_message_id in message_ids; this records receipt by the current queen, including successor queens. Acknowledging a conversation message sends no reply; each still waits under awaiting_response until you answer it with hive_publish, or hive_request_input with reply_to.',
   inputSchema: { message_ids: z.array(z.string().min(1).max(80)).min(1).max(100) },
 }, ({ rt, actor, args }) => acknowledgeInput(rt, actor, args));
 
