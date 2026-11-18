@@ -4,8 +4,26 @@ import { prState } from './waiting-model.js';
 export { prState } from './waiting-model.js';
 const submittedRequests = new WeakMap();
 
-export function beadPullRequests(ctx, bead) {
-  return Object.values(ctx.hive.cells).flatMap(cell => cell.pullRequests || []).filter(pr => pr.beadIds.includes(bead.id));
+function canonicalPrUrl(value) {
+  if (typeof value !== 'string') return null;
+  const match = value.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/([1-9][0-9]*)(?:[/?#].*)?$/i);
+  return match ? `https://github.com/${match[1].toLowerCase()}/${match[2].toLowerCase()}/pull/${match[3]}` : null;
+}
+
+export function beadPullRequests(ctx, bead, evidence = bead.evidence || []) {
+  const tracked = Object.values(ctx.hive.cells).flatMap(cell => cell.pullRequests || []);
+  const prs = new Map();
+  for (const pr of tracked.filter(pr => pr.beadIds.includes(bead.id))) {
+    const url = canonicalPrUrl(pr.url) || pr.url;
+    if (!prs.has(url)) prs.set(url, pr);
+  }
+  for (const entry of evidence) {
+    const url = canonicalPrUrl(entry.url);
+    if (!url || prs.has(url)) continue;
+    const observed = tracked.find(pr => canonicalPrUrl(pr.url) === url);
+    prs.set(url, { ...observed, url, number: url.split('/').at(-1), evidenceOnly: true });
+  }
+  return [...prs.values()];
 }
 
 export function prSummary(prs) {
@@ -15,6 +33,10 @@ export function prSummary(prs) {
 }
 
 export function pullRequestRow(ctx, bead, pr) {
+  if (pr.evidenceOnly) return h('article', { class: 'hive-pr' },
+    h('div', { class: 'hive-pr-heading' }, h('strong', {}, `#${pr.number}${pr.title ? ` ${pr.title}` : ''}`),
+      h('span', { class: 'hive-pr-state' }, { OPEN: 'Open', MERGED: 'Merged', CLOSED: 'Closed' }[pr.state] || 'Unknown')),
+    h('a', { class: 'hive-link-btn', href: pr.url, target: '_blank', rel: 'noopener noreferrer' }, 'Open on GitHub'));
   const state = prState(pr);
   const cell = ctx.hive.cells[pr.cellId];
   if (!submittedRequests.has(ctx.ui)) submittedRequests.set(ctx.ui, new Set());
@@ -52,12 +74,13 @@ export function pullRequestRow(ctx, bead, pr) {
       state === 'stuck' && cell?.enabled && !cell.snapshot ? [ask, sent] : null));
 }
 
-export function pullRequestsSection(ctx, bead) {
-  const prs = beadPullRequests(ctx, bead);
+export function pullRequestsSection(ctx, bead, evidence = bead.evidence || []) {
+  const prs = beadPullRequests(ctx, bead, evidence);
   if (!prs.length) return null;
   const history = prs.filter(pr => ['merged', 'closed'].includes(prState(pr)));
   const open = prs.filter(pr => !history.includes(pr));
+  const hasOpen = prs.some(pr => pr.state === 'OPEN');
   return h('section', { class: 'hive-prs', 'aria-label': 'Pull requests' }, h('h4', {}, 'Pull requests'),
     open.map(pr => pullRequestRow(ctx, bead, pr)),
-    history.length ? h('details', { class: 'hive-pr-history' }, h('summary', {}, `History (${history.length})`), history.map(pr => pullRequestRow(ctx, bead, pr))) : null);
+    history.length ? (hasOpen ? h('details', { class: 'hive-pr-history' }, h('summary', {}, `History (${history.length})`), history.map(pr => pullRequestRow(ctx, bead, pr))) : history.map(pr => pullRequestRow(ctx, bead, pr))) : null);
 }
