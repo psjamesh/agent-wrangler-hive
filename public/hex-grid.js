@@ -9,6 +9,9 @@ const DRAG_THRESHOLD = 6;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.5;
 const FIT_PAD = 40;
+const WHEEL_INTENT_MS = 160;
+const WHEEL_PAN_THRESHOLD = 12;
+const WHEEL_ZOOM_THRESHOLD = 2;
 const views = new Map();
 const TWEEN_MS = 320;
 let uid = 0;
@@ -372,7 +375,8 @@ export function renderHexMap({
   const ghostLayer = h('svg:g', { class: 'hive-comb', 'aria-hidden': 'true' });
   world.append(ghostLayer);
 
-  const savedView = views.get(viewKey) || readMapView(viewKey);
+  const storedView = readMapView(viewKey);
+  const savedView = views.get(viewKey) || (storedView && { ...storedView, auto: true });
   const view = savedView || { k: 1, tx: 0, ty: 0, auto: true };
   views.set(viewKey, view);
   const status = relations ? h('p', { class: 'hive-sr-only', 'aria-live': 'polite' }) : null;
@@ -479,6 +483,7 @@ export function renderHexMap({
   const zoomAt = (factor, cx, cy) => {
     cancelAnimationFrame(tween);
     const k = clampZoom(view.k * factor);
+    if (k === view.k) return;
     view.tx = cx - ((cx - view.tx) * k) / view.k;
     view.ty = cy - ((cy - view.ty) * k) / view.k;
     view.k = k;
@@ -706,7 +711,7 @@ export function renderHexMap({
     if (r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom) return;
     view.tx += c.left + c.width / 2 - (r.left + r.width / 2);
     view.ty += c.top + c.height / 2 - (r.top + r.height / 2);
-    suspend();
+    cancelAnimationFrame(tween);
     apply();
   });
   el.addEventListener('keydown', (evt) => {
@@ -756,7 +761,8 @@ export function renderHexMap({
   el.hiveRestoreView = saved => {
     if (!saved) return;
     cancelAnimationFrame(tween);
-    Object.assign(view, saved);
+    const { k, tx, ty } = saved;
+    Object.assign(view, { k, tx, ty });
     autoFit.refresh();
     apply();
   };
@@ -767,7 +773,6 @@ export function renderHexMap({
     view.k = Math.max(view.k, 0.8);
     view.tx = el.clientWidth / 2 - item.x * view.k;
     view.ty = el.clientHeight / 2 - item.y * view.k;
-    suspend();
     apply();
   };
   el.hiveTileRect = (tileId) => el.querySelector(`[data-tile-id="${CSS.escape(tileId)}"]`)?.getBoundingClientRect() || null;
@@ -817,16 +822,35 @@ function wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, z
     onBackground?.({ x: evt.clientX - r.left, y: evt.clientY - r.top });
   });
   svg.addEventListener('pointercancel', finish);
+  let wheelGesture = null;
   el.addEventListener('wheel', (evt) => {
     evt.preventDefault();
     const unit = evt.deltaMode === 1 ? 16 : evt.deltaMode === 2 ? el.clientHeight : 1;
-    if (evt.ctrlKey || evt.metaKey) {
+    const zoom = Boolean(evt.ctrlKey || evt.metaKey);
+    const x = (evt.deltaX || 0) * unit;
+    const y = (evt.deltaY || 0) * unit;
+    if (zoom ? !y : !x && !y) return;
+    const now = evt.timeStamp ?? performance.now();
+    if (!wheelGesture || wheelGesture.zoom !== zoom || (wheelGesture.active && view.auto)
+      || now - wheelGesture.time > WHEEL_INTENT_MS || (!wheelGesture.active && now - wheelGesture.started > WHEEL_INTENT_MS)) {
+      wheelGesture = { zoom, started: now, time: now, x: 0, y: 0, active: false };
+    }
+    wheelGesture.time = now;
+    wheelGesture.x += x;
+    wheelGesture.y += y;
+    const distance = zoom ? Math.abs(wheelGesture.y) : Math.hypot(wheelGesture.x, wheelGesture.y);
+    if (!wheelGesture.active && distance < (zoom ? WHEEL_ZOOM_THRESHOLD : WHEEL_PAN_THRESHOLD)) return;
+    wheelGesture.active = true;
+    const dx = wheelGesture.x, dy = wheelGesture.y;
+    wheelGesture.x = 0;
+    wheelGesture.y = 0;
+    if (zoom) {
       const r = el.getBoundingClientRect();
-      zoomAt(Math.exp(-evt.deltaY * unit * 0.008), evt.clientX - r.left, evt.clientY - r.top);
+      zoomAt(Math.exp(-dy * 0.008), evt.clientX - r.left, evt.clientY - r.top);
       return;
     }
-    view.tx -= evt.deltaX * unit;
-    view.ty -= evt.deltaY * unit;
+    view.tx -= dx;
+    view.ty -= dy;
     suspend();
     apply();
   }, { passive: false });
