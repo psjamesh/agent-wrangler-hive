@@ -1,3 +1,4 @@
+import { trackEvidencePrs } from './pr-evidence.js';
 import { activeWorkerRestores } from './worker-restores.js';
 import { settleClosedBeadWait } from './ci-waits.js';
 import { requireStructuredWait, waitStatus } from './link-waits.js';
@@ -1099,6 +1100,7 @@ export async function updateBead(rt, actor, input) {
         if (startsWork) return { assignee: current.assignee, status: current.status };
       } : undefined);
       phase.applied = true;
+      if (patch.evidence) trackEvidencePrs(rt, cell, { id, evidence: patch.evidence });
       if (refreshToken && (patch.summary !== undefined || patch.nextAction !== undefined)) {
         rt.metadata.mutate(d => {
           if (d.workstreamRefresh?.[id]?.token === refreshToken) delete d.workstreamRefresh[id];
@@ -1463,6 +1465,7 @@ export async function finishBead(rt, actor, input) {
     const next = [...evidence, ...add].slice(-LIMITS.evidence);
     await rt.beads.update(id, { summary, evidence: next }, who);
     phase.applied = true;
+    trackEvidencePrs(rt, cell, { id, evidence: next });
     try {
       await rt.beads.close(id, `${outcome}: ${summary.split('\n')[0].slice(0, 300)}`, who);
     } catch (err) {
@@ -1559,6 +1562,7 @@ export function finishGroup(rt, { cell, id, outcome, summary, add = [], who, ove
         ? `The summary was recorded, but closing ${id} ${err.code === 'uncertain' ? 'has an unknown outcome' : 'was refused'}: ${err.message}`
         : `${id} is closed, but recording its outcome ${err.code === 'uncertain' ? 'has an unknown outcome' : 'failed'}: ${err.message}`);
     }
+    trackEvidencePrs(rt, cell, { id, evidence });
     workstreamRefresh ||= markWorkstreamRefresh(rt, cell, normalizeIssue(fresh), opId);
     return { workstreamRefresh, journal: { outcome } };
   }));

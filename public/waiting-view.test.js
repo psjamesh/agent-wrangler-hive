@@ -263,3 +263,20 @@ test('evidence PRs reuse observations without borrowing another item’s fix act
   assert.match(text(section), /#12 Known PR.*Closed/);
   assert.equal(all(section).some(n => n.tag === 'button'), false);
 });
+
+for (const [state, label] of [['OPEN', 'Open'], ['MERGED', 'Merged'], ['CLOSED', 'Closed']]) {
+  test(`Details renders the tracked evidence PR's live ${state} state`, async t => {
+    const { waitingProjection } = await import('../server/waiting.js');
+    const f = setup(t), bead = f.ctx.hive.beads.a;
+    const url = 'https://github.com/example/repo/pull/12';
+    bead.evidence = [{ kind: 'note', label: 'Implementation', url: url + '/files' }];
+    const record = { url, source: 'bead-evidence', state, associations: [{ cellId: 'c', beadId: 'a' }] };
+    const rt = { metadata: { read: () => ({ prLabels: { [url]: record } }) } };
+    Object.assign(f.cell, waitingProjection(rt, f.cell, new Set(['a'])));
+    const section = prv.pullRequestsSection(f.ctx, bead);
+    assert.match(text(section), new RegExp(`#12.*${label}`));
+    assert.doesNotMatch(text(section), /Unknown/);
+    assert.equal(all(section).filter(n => n.tag === 'article').length, 1);
+    assert.equal(all(section).some(n => n.tag === 'button'), false);
+  });
+}

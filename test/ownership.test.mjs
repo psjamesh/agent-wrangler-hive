@@ -2714,3 +2714,15 @@ test('create validation errors preserve beads array field paths', async () => {
     });
   }
 });
+
+test('updating and finishing evidence immediately enrolls PRs without a GitHub lookup', async () => {
+  const f = mergeFixture();
+  const url = 'https://github.com/example/repo/pull/42';
+  await updateBead(f.rt, f.actor(), { bead_id: 'a', add_evidence: [{ kind: 'pr', label: 'Implementation', url: url + '/files' }] });
+  assert.equal(f.doc().prLabels[url].source, 'bead-evidence');
+  assert.equal(f.doc().prLabels[url].stateCheckedAt, null);
+  assert.deepEqual(f.doc().prLabels[url].beadIds, ['a']);
+  await finishBead(f.rt, f.actor(), { bead_id: 'b', outcome: 'dropped', summary: 'No longer needed', evidence: [{ kind: 'note', label: 'Related PR', url }] });
+  assert.deepEqual(f.doc().prLabels[url].beadIds, ['a', 'b']);
+  assert.equal(f.doc().prLabels[url].stateCheckedAt, null);
+});
