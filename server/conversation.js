@@ -1,3 +1,4 @@
+import { notifyMissedInput } from './missed-input.js';
 import { sessionReference } from './session-links.js';
 import { beadReferences } from '../public/bead-references.js';
 import { hiveLink } from '../public/deep-links.js';
@@ -1177,6 +1178,7 @@ export async function deliver(rt, host, { cellId, messageId, force = false }) {
       const latest = m.delivery.attempts.at(-1);
       if (latest?.id === attemptId) m.delivery = { ...m.delivery, state: outcome.state, error: outcome.error, sessionId: target };
     });
+    if (outcome.state === 'delivered') await notifyMissedInput(rt, host, target);
     return { message_id: messageId, state: outcome.state, error: outcome.error };
   } finally {
     inFlight.delete(key);

@@ -1,4 +1,5 @@
-import { onResume } from './worker-restores.js';
+import { onResume as workerResumed } from './worker-restores.js';
+import { notifyMissedInput } from './missed-input.js';
 import { agentCatalogForGraph } from './agent-catalog.js';
 import { codexPolicy } from './codex-policy.js';
 import { beforeSpawn, spawned } from './spawn-hooks.js';
@@ -103,7 +104,10 @@ export function createManifest({ dir }) {
     skillsFor,
     hideTool,
     codexPolicy,
-    session: { onBeforeDispatch, onArchive, onResume },
+    session: { onBeforeDispatch, onArchive, async onResume(args) {
+      workerResumed(args);
+      await notifyMissedInput(args.host?.stores?.hive, args.host, args.sessionId);
+    } },
     hooks: { 'session.beforeSpawn': beforeSpawn, 'session.spawned': spawned, 'session.prepare': prepareSession, 'session.launchContext': async (args) => (await workerLaunchContext(args)) ?? queenLaunchContext(args) },
     graph: ({ host }) => ({ hive: { ...host.stores.hive.projection(), ...agentCatalogForGraph(host.stores.hive, host), handoverSources: handoverSources(host) } }),
     sweeps: [{

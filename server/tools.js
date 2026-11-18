@@ -1,3 +1,4 @@
+import { missedInput } from './missed-input.js';
 import { reportCiWait } from './ci-waits.js';
 import { hasBlockingPrerequisite } from './human-wait.js';
 import { setPickup, pickupState } from './pickup.js';
@@ -270,6 +271,7 @@ export async function buildContext(rt, host, actor, { include_closed = false, be
       sessions,
       capacity: capacity(rt),
       attention: {
+        ...(actor.role === 'queen' ? { missed_input: missedInput(doc, cell) } : {}),
         watchdog: collectWatchdog(rt, host, cell),
         workstreams_needing_refresh: Object.values(doc.workstreamRefresh || {}).filter(entry => entry.cellId === cell.id && ids.has(entry.bead_id) && beads[entry.bead_id]?.kind === 'workstream' && beads[entry.bead_id].status !== 'closed'),
         waiting_beads: open.filter((b) => hasBlockingPrerequisite(rt.snapshots.graph, b.id)).map((b) => ({ bead_id: b.id, title: b.title, status: b.status, owner_session_id: b.ownerSessionId, waiting_for: b.waitingFor })),

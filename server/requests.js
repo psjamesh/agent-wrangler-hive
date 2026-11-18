@@ -1,3 +1,4 @@
+import { notifyMissedInput } from './missed-input.js';
 import { needsHuman, requestSubjectText } from '../public/request-state.js';
 import { isCurrent, runtimeKey } from './lifetime.js';
 import { prRepository } from './pr-labels.js';
@@ -274,7 +275,9 @@ async function sendOnce(rt, host, id, field, target, body) {
   if (field === 'subjectNotification' && !rt.metadata.read().requests?.[id]) return r;
   ready(rt);
   if ((field !== 'subjectNotification' && get(rt, id).routeRevision !== routeRevision) || get(rt, id)[field]?.attempts?.at(-1)?.id !== attemptId) return get(rt, id);
-  return update(rt, id, x => { x[field] = { ...x[field], ...outcome }; });
+  const saved = update(rt, id, x => { x[field] = { ...x[field], ...outcome }; });
+  if (outcome.state === 'delivered') await notifyMissedInput(rt, host, target);
+  return saved;
 }
 export async function notifyQueen(rt, host, id) {
   reconcileRequests(rt, host, { requestId: id });
