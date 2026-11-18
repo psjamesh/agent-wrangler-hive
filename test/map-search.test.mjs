@@ -750,3 +750,154 @@ test('workstream menu suggests completion without opening a completion form or m
   assert.deepEqual(notices[2], ['Unavailable', { severity: 'error' }]);
   assert.equal(f.beads.ws.status, 'open');
 });
+
+function autoFitMap(t, suffix = '') {
+  fixture(t);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const options = {
+    viewKey: `intent-${t.name}-${suffix}`, size: 60,
+    items: [{ id: 'edge', x: 900, y: 0, local: { q: 1, r: 0 }, titleText: 'Edge' }],
+    bounds: { x: -60, y: -60, w: 1020, h: 120 },
+  };
+  return import('../public/hex-grid.js').then(({ renderHexMap }) => {
+    const el = renderHexMap(options).el;
+    document.body.replaceChildren(el);
+    return { el, options, renderHexMap };
+  });
+}
+
+test('edge focus and tile focus restoration reveal without pausing auto-fit', async t => {
+  const { el, options, renderHexMap } = await autoFitMap(t);
+  const tile = el.querySelector('[data-tile-id="edge"]');
+  const outside = () => ({ left: 950, right: 1050, top: 0, bottom: 100, width: 100, height: 100 });
+  tile.getBoundingClientRect = outside;
+  const before = el.hiveCaptureView();
+  tile.fire('focusin');
+  assert.notEqual(el.hiveCaptureView().tx, before.tx);
+  assert.equal(el.hiveCaptureView().auto, true);
+  tile.focus();
+  const captured = captureFocus(el);
+  assert.equal(captured.tileId, 'edge');
+  const next = renderHexMap(options).el;
+  document.body.replaceChildren(next);
+  const replacement = next.querySelector('[data-tile-id="edge"]');
+  replacement.getBoundingClientRect = outside;
+  replacement.focus = () => { document.activeElement = replacement; replacement.fire('focusin'); };
+  restoreFocus(next, captured);
+  assert.equal(document.activeElement, replacement);
+  assert.equal(next.hiveCaptureView().auto, true);
+});
+
+test('programmatic pan and search restore cannot introduce a paused view', async t => {
+  const { el } = await autoFitMap(t);
+  const before = el.hiveCaptureView();
+  el.hivePanTo('edge');
+  assert.notEqual(el.hiveCaptureView().tx, before.tx);
+  assert.equal(el.hiveCaptureView().auto, true);
+  el.hiveRestoreView({ k: 1.2, tx: 50, ty: 70, auto: false });
+  assert.deepEqual(el.hiveCaptureView(), { k: 1.2, tx: 50, ty: 70, auto: true });
+  el.fire('wheel', { deltaX: 40, deltaY: 0 });
+  el.hiveRestoreView({ ...before, auto: true });
+  assert.equal(el.hiveCaptureView().auto, false, 'restore also preserves a deliberate pause');
+});
+
+test('search navigation and clearing keep auto-fit active', t => {
+  const f = fixture(t);
+  f.canvas().fire('keydown', { key: '0' });
+  const input = f.search('needle');
+  input.fire('keydown', { key: 'Enter' });
+  assert.equal(f.canvas().hiveCaptureView().auto, true);
+  input.fire('keydown', { key: 'Escape' });
+  assert.equal(f.canvas().hiveCaptureView().auto, true);
+});
+
+for (const zoom of [false, true]) {
+  test(`${zoom ? 'pinch zoom' : 'wheel pan'} ignores zero and small isolated movement, accepts a deliberate burst`, async t => {
+    const { el } = await autoFitMap(t);
+    const wheel = (delta, timeStamp) => el.fire('wheel', { deltaX: zoom ? 0 : delta, deltaY: zoom ? delta : 0, ctrlKey: zoom, timeStamp, clientX: 500, clientY: 350 });
+    const before = el.hiveCaptureView();
+    wheel(0, 0);
+    wheel(zoom ? 0.25 : 3, 10);
+    assert.deepEqual(el.hiveCaptureView(), before);
+    wheel(zoom ? 0.25 : 3, 300);
+    assert.deepEqual(el.hiveCaptureView(), before, 'separate tiny gestures do not accumulate');
+    for (let i = 1; i <= 4; i++) wheel(zoom ? 0.5 : 3, 300 + i * 10);
+    assert.equal(el.hiveCaptureView().auto, false);
+    assert.notDeepEqual(el.hiveCaptureView(), before);
+  });
+}
+
+test('wheel units, pointer threshold, zoom buttons and shortcuts still pause deliberately', async t => {
+  const { el } = await autoFitMap(t);
+  const resume = () => el.fire('keydown', { key: '0' });
+  for (const deltaMode of [1, 2]) {
+    resume();
+    el.fire('wheel', { deltaMode, deltaX: 0, deltaY: 1 });
+    assert.equal(el.hiveCaptureView().auto, false);
+  }
+  resume();
+  const svg = el.querySelector('svg');
+  svg.fire('pointerdown', { button: 0, clientX: 0, clientY: 0 });
+  svg.fire('pointermove', { clientX: 1, clientY: 1 });
+  assert.equal(el.hiveCaptureView().auto, true);
+  svg.fire('pointermove', { clientX: 10, clientY: 0 });
+  assert.equal(el.hiveCaptureView().auto, false);
+  svg.fire('pointerup');
+  for (const button of el.querySelectorAll('button').filter(b => ['Zoom in', 'Zoom out'].includes(b.getAttribute('aria-label')))) {
+    resume(); button.fire('click'); assert.equal(el.hiveCaptureView().auto, false);
+  }
+  for (const key of ['+', '-']) {
+    resume(); el.fire('keydown', { key }); assert.equal(el.hiveCaptureView().auto, false);
+  }
+});
+
+test('session-restored transforms start active instead of reviving a stale pause', async t => {
+  const { renderHexMap, options } = await autoFitMap(t);
+  const saved = { k: 1, tx: 80, ty: 90, auto: false };
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+  Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: { getItem: () => JSON.stringify(saved), setItem() {} } });
+  t.after(() => descriptor ? Object.defineProperty(globalThis, 'sessionStorage', descriptor) : delete globalThis.sessionStorage);
+  const next = renderHexMap({ ...options, viewKey: `${options.viewKey}-session` }).el;
+  assert.deepEqual(next.hiveCaptureView(), { ...saved, auto: true });
+});
+
+test('restoring map and control focus by data-focus-key keeps auto-fit active', async t => {
+  const { el } = await autoFitMap(t);
+  el.setAttribute('data-focus-key', 'map:test');
+  for (const target of [el, el.querySelector('.hive-map-menu-toggle')]) {
+    target.focus();
+    const focus = captureFocus(document.body);
+    assert.ok(focus.focusKey);
+    document.activeElement = document.body;
+    restoreFocus(document.body, focus);
+    assert.equal(document.activeElement, target);
+    assert.equal(el.hiveCaptureView().auto, true);
+  }
+});
+
+test('resuming auto-fit requires fresh wheel intent even during the previous burst', async t => {
+  const { el } = await autoFitMap(t);
+  el.fire('wheel', { deltaX: 40, deltaY: 0, timeStamp: 0 });
+  assert.equal(el.hiveCaptureView().auto, false);
+  el.fire('keydown', { key: '0' });
+  const before = el.hiveCaptureView();
+  el.fire('wheel', { deltaX: 1, deltaY: 0, timeStamp: 10 });
+  assert.deepEqual(el.hiveCaptureView(), before);
+});
+
+test('zoom at its limit does not pause an unchanged view', async t => {
+  const { el } = await autoFitMap(t);
+  el.hiveRestoreView({ k: 2.5, tx: 50, ty: 50 });
+  const before = el.hiveCaptureView();
+  el.fire('keydown', { key: '+' });
+  assert.deepEqual(el.hiveCaptureView(), before);
+});
+
+test('slow wheel drift never accumulates into deliberate intent', async t => {
+  const { el } = await autoFitMap(t);
+  const before = el.hiveCaptureView();
+  for (let timeStamp = 0; timeStamp < 2000; timeStamp += 20) {
+    el.fire('wheel', { deltaX: 0.25, deltaY: 0, timeStamp });
+  }
+  assert.deepEqual(el.hiveCaptureView(), before);
+});
