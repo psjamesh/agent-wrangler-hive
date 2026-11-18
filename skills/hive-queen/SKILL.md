@@ -173,6 +173,12 @@ The builder records `kind: "merge"` evidence with the PR `url` and `merged_head`
 
 Core extension auto-update installs Hive from main after a merge; workers never hand-install and the queen does not run per-PR install scripts. The installed generation loads at the next core restart. Core restarts automatically once nothing is working, waiting for in-flight requests and writes first. Busy sessions can delay activation; if it remains pending well after installation, you may trigger a core restart. Installation proves disk state, not the running revision: verify the loaded SHA and active extension when the cell requires runtime acceptance. For ordinary work, record delegation to configured core auto-update and any pending activation obligation; docs-only work needs no install wait. See the [delivery recipe](../../docs/design/delivery-policy.md#auto-update-prerequisites-and-limits) for prerequisites and limits.
 
+## Fixed PR review threads
+
+When a worker reports pushed fixes for PR review comments, collect its thread links, fix commit, verification and short draft replies. Ask the human with one `hive_request_input` per PR batch, using `bead_id` and the existing topic's `reply_to` or `thread_id`, following “Answer once, in the same topic”. If no topic exists, use a short `thread_title` with `bead_id`. Include the PR, addressed threads, fix evidence and exact proposed replies in the request body; use options `post-resolve` (“Post and resolve (Recommended)”), `edit` (“Edit”) and `leave` (“Leave it”). Do not also publish the findings or ask once per thread.
+
+The queen posts the approved replies and resolves only the approved threads after explicit human approval; workers own drafting and reporting. Fixing code, permission to push or merge, and a queen answer do not authorize either action. This applies to every repository, including ones outside the human's organization. Edit requests revised wording and does not authorize posting: obtain approval of the revised batch in the same topic. Leave it leaves GitHub untouched. Record the outcome on the cell so resuming does not repeat a settled batch's ask.
+
 ## Attach images
 
 - `hive_context` returns `attachments_inbox`, your session’s inbox folder in this hive. Save the images you want to show there, then use `hive_publish` with `attachments: [{file: "before.png", alt: "Settings before the change"}]` and a self-contained text message.

@@ -96,6 +96,10 @@ If you are a bound reviewer, give the verdict with `hive_review_verdict(bead_id,
 
 After GitHub confirms an authorized merge, record evidence through `hive_update_bead.add_evidence` or `hive_finish_bead.evidence` with `kind: "merge"`, the PR `url`, and `merged_head` containing GitHub’s actual full merged PR head SHA, **not** the merge commit SHA. Put the merge commit and check verification in `detail`. Observe the actual merged head rather than copying the expected SHA into evidence. Keep responsibility through the repository’s delivery boundary, then finish your own cell. Where another owner must merge or install, record the obligation and use the delivery handoff above.
 
+## Fixed PR review threads
+
+After fixes for PR review comments are pushed, record one PR batch with `hive_update_bead.add_evidence` and notify the queen by `send_message`: include the bead id, PR and thread links, fix commit, verification and a short draft reply for each addressed thread. The queen asks the human once; after explicit human approval, the queen posts the approved replies and resolves only the approved threads. Workers own drafting and reporting; the queen owns GitHub follow-through. Do not post replies or resolve threads without explicit human approval; fixing code or getting queen approval alone does not authorize either action. This applies to every repository, including ones outside the human's organization.
+
 ## Coordinators
 
 If the queen bound you as `coordinator` for a cluster, you may also delegate within that cluster's goal. Follow the hive-queen skill for your scope.
