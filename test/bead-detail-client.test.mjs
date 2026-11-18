@@ -68,7 +68,10 @@ test('a failed load keeps the old copy, is not retried until Retry or a change, 
   b.updatedAt = 't3';
   f.ui.beadDetail(b);
   await f.flush();
-  assert.equal(f.sent.length, 4);
+  assert.equal(f.sent.length, 5);
+  assert.equal(f.sent[3].type, 'hive-action-diagnostic');
+  assert.equal(f.sent[3].event, 'client-timeout');
+  assert.equal(f.sent[4].type, 'hive-bead-detail');
 });
 
 test('a reply for an entry that has been replaced is dropped', async t => {
