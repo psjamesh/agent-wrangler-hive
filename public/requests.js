@@ -79,7 +79,9 @@ export function requestCard(r, { cell, graph, api, ui, ctx }) {
   }
   if (r.state === 'answered' && r.delivery?.state !== 'delivered') {
     out.append(h('p', { class: 'hive-warning' }, 'The answer is saved. Check whether the requester received it before sending again.'),
-      h('button', { type: 'button', class: 'hive-btn', disabled: busy, 'data-focus-key': `request-retry:${r.id}`, dataset: focusFallback, onclick: () => submit('hive-request-retry', { confirm_uncertain: true }) }, 'Send answer again'));
+      h('div', { class: 'hive-request-actions' },
+        h('button', { type: 'button', class: 'hive-btn', disabled: busy, 'data-focus-key': `request-retry:${r.id}`, dataset: focusFallback, onclick: () => submit('hive-request-retry', { confirm_uncertain: true }) }, 'Send answer again'),
+        h('button', { type: 'button', class: 'hive-quiet-btn', disabled: busy, 'data-focus-key': `request-dismiss:${r.id}`, dataset: focusFallback, onclick: () => submit('hive-request-dismiss') }, 'Dismiss')));
   }
   return out;
 }

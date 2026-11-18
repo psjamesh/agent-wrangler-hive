@@ -1929,6 +1929,7 @@ for (const [name, patch, waiting] of [
   ['answered and delivered', { state: 'answered', delivery: { state: 'delivered' } }, false],
   ['answer delivery failed', { state: 'answered', delivery: { state: 'failed' } }, true],
   ['answer delivery pending', { state: 'answered', delivery: { state: 'pending' } }, true],
+  ['dismissed answer delivery', { state: 'resolved', answer: { author: 'human', text: 'Saved' }, delivery: { state: 'failed' }, resolution: { reason: 'dismissed', by: 'human', at: 1 } }, false],
   ['withdrawn', { state: 'withdrawn' }, false],
   ['resolved', { state: 'resolved' }, false],
 ]) test(`topic badge follows human request routing: ${name}`, t => {
@@ -2440,4 +2441,31 @@ for (const kind of ['focus', 'selection']) test(`retained ${kind} stays on its m
   restoreFocus(root, focus);
   if (kind === 'focus') assert.equal(document.activeElement, retained);
   else assert.equal(selection.anchorNode, retained);
+});
+
+for (const state of ['failed', 'uncertain', 'pending']) test(`dismiss control accompanies ${state} answer retry and preserves answer in history`, t => {
+  const f = fixture(t);
+  const r = { id: 'hreq_dismiss', title: 'Decision', body: 'Choose', audience: 'human', state: 'answered', revision: 4, routeRevision: 2, answer: { author: 'human', text: 'Saved decision' }, delivery: { state } };
+  f.cell.requests = { [r.id]: r };
+  const sent = [], replies = [];
+  const ctx = { busy: () => false, notice() {}, send: (frame, callbacks) => { sent.push(frame); replies.push(callbacks.onReply); } };
+  const draw = () => requestCard(r, { cell: f.cell, ui: f.ui, ctx });
+  const card = draw(), actions = card.querySelector('.hive-request-actions');
+  assert.deepEqual(actions.querySelectorAll('button').map(b => b.textContent), ['Send answer again', 'Dismiss']);
+  const dismiss = actions.querySelectorAll('button')[1];
+  assert.equal(dismiss.dataset.focusFallback, `request-card:${r.id}`);
+  dismiss.fire('click'); dismiss.fire('click');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].type, 'hive-request-dismiss');
+  assert.equal(sent[0].revision, 4);
+  assert.equal(sent[0].route_revision, 2);
+  assert.ok(sent[0].receipt);
+  assert.ok(draw().querySelector('.hive-request-actions').querySelectorAll('button').every(b => Object.hasOwn(b.attributes, 'disabled')));
+  Object.assign(r, { state: 'resolved', resolution: { reason: 'dismissed', by: 'human', at: Date.now() } });
+  replies[0]({ ok: true });
+  assert.match(draw().textContent, /Saved decision/);
+  assert.match(draw().textContent, /dismissed by human/);
+  assert.equal(draw().querySelectorAll('button').length, 0);
+  const list = requestList({ cell: f.cell, kind: 'needs', ui: f.ui, ctx });
+  assert.equal(list.querySelectorAll('article').length, 0);
 });

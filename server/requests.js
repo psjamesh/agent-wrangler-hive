@@ -96,8 +96,8 @@ function update(rt, id, fn) {
   rt.changed();
   return out;
 }
-function expected(r, args) {
-  if (r.state !== 'open') fail('This request is already answered or closed.', 'conflict');
+function expected(r, args, allowUndeliveredAnswer = false) {
+  if (r.state !== 'open' && !(allowUndeliveredAnswer && r.state === 'answered' && r.delivery?.state !== 'delivered')) fail('This request is already answered or closed.', 'conflict');
   if (args.revision !== r.revision || args.route_revision !== r.routeRevision) fail('The request or route changed; review its current revision before submitting.', 'conflict');
 }
 function queenRoute(host, cell) {
@@ -349,9 +349,13 @@ export async function dismissRequest(rt, host, args) {
   bounded(args.receipt, 'receipt', 80, true);
   const old = humanGet(rt, host, args.request_id);
   if (old.receipt === args.receipt && old.resolution?.reason === 'dismissed') return old;
-  const r = humanRequest(rt, host, args);
-  update(rt, r.id, x => { x.state = 'resolved'; x.closedAt = Date.now(); x.receipt = args.receipt; x.resolution = { reason: 'dismissed', by: 'human', at: Date.now() }; x.resolutionDelivery = { state: 'pending', attempts: [] }; });
-  return notifyResolution(rt, host, r.id);
+  expected(old, args, true);
+  const resolved = update(rt, old.id, x => {
+    x.state = 'resolved'; x.closedAt = Date.now(); x.receipt = args.receipt;
+    x.resolution = { reason: 'dismissed', by: 'human', at: Date.now() };
+    if (!x.answer) x.resolutionDelivery = { state: 'pending', attempts: [] };
+  });
+  return resolved.answer ? resolved : notifyResolution(rt, host, old.id);
 }
 export function listMine(rt, host, id, cellId) {
   caller(rt, host, id); reconcileRequests(rt, host);
