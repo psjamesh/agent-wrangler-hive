@@ -1428,7 +1428,7 @@ export async function finishBead(rt, actor, input) {
   if (openReview(rt, id)) throw new HiveError('An open review must end with hive_review_verdict or a coordinator using hive_cancel_review before this work can finish.');
   const { cell, bead, role } = requireBeadAccess(rt, actor, id);
   if (bead.status === 'closed') throw new HiveError(`Cell ${id} is already closed.`);
-  if (bead.system === 'schedules' && Object.values(rt.snapshots.graph.beads).some(b => b.parentId === id)) throw new HiveError('The Schedules cluster can close only when empty.');
+  if (bead.system === 'schedules' && Object.values(rt.snapshots.graph.beads).some(b => b.parentId === id && b.status !== 'closed')) throw new HiveError('The Schedules cluster can close only when no routine is open.');
   if (cell.rootBeadId === id) requireQueen({ role }, `close the goal of cell ${cell.id}`);
   const outcome = input.outcome;
   if (!OUTCOMES.includes(outcome)) throw new HiveError(`outcome must be one of ${OUTCOMES.join(', ')}.`);
@@ -1530,7 +1530,7 @@ export function assessCompletion(rt, cell, id, { beads, edges, errors = [] }, wh
   if (head.status === 'closed') problems.push(`${id} is already closed.`);
   if (!cell.rootBeadId || !descendantIds(beads, cell.rootBeadId).has(id) || id === cell.rootBeadId) problems.push(`${id} is not a cluster in this hive.`);
   const ids = [...descendantIds(beads, id)];
-  if (head.system === 'schedules' && ids.length > 1) problems.push('The Schedules cluster can close only when empty.');
+  if (head.system === 'schedules' && ids.some(d => d !== id && beads[d].status !== 'closed')) problems.push('The Schedules cluster can close only when no routine is open.');
   const reviews = ids.filter((d) => openReview(rt, d));
   if (reviews.length) problems.push(`Open reviews still wait on ${reviews.join(', ')}; record their verdicts or explicitly cancel them first.`);
   const open = ids.filter((d) => d !== id && !isScheduleItem(beads[d]) && beads[d].status !== 'closed');

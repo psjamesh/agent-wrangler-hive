@@ -191,7 +191,7 @@ test('routines and their cluster cannot be claimed, picked up, moved or converte
   assert.deepEqual(collectWatchdog(f.rt, f.host, f.cell, Date.now() + 30 * 86400000).filter(flag => [bead_id, cluster_id].includes(flag.bead_id)), []);
   await assert.rejects(createBeads(f.rt, f.actor, { beads: [{ kind: 'routine', title: 'Bypass' }] }), /hive_set_routine/);
   await assert.rejects(createBeads(f.rt, f.actor, { beads: [{ title: 'Wrong child', parent: cluster_id }] }), /only contains routines/);
-  assert.ok(assessCompletion(f.rt, f.cell, cluster_id, graph, 'aw:human').problems.some(s => /only when empty/.test(s)));
+  assert.ok(assessCompletion(f.rt, f.cell, cluster_id, graph, 'aw:human').problems.some(s => /no routine is open/.test(s)));
   reconcileColours(f.rt.metadata, graph.beads);
   assert.equal(workstreamColour(cluster_id, f.rt.metadata.read().workstreamColours[f.cell.id]), SCHEDULE_COLOUR);
   for (let i = 0; i < 50; i++) assert.notEqual(workstreamColour(`ordinary-${i}`), SCHEDULE_COLOUR);
@@ -209,4 +209,70 @@ test('renaming or editing a message keeps the due occurrence, and pause/resume a
   assert.equal(routineState(f.rt, f.rt.snapshots.graph.beads[bead_id]).nextRunAt, due);
   await runRoutines(f.rt, f.host, Date.parse('2026-11-18T12:00:00Z'));
   assert.match(f.sent[0].text, /Scheduled: Renamed\n\nNew prompt/);
+});
+
+test('one failed fire does not starve other routines or hives in the same tick', async t => {
+  const f = fixture(t);
+  const first = await f.create();
+  const second = await f.create({ name: 'Second' });
+  const due = Date.parse('2026-11-18T09:00:00Z');
+  for (const id of [first.bead_id, second.bead_id]) {
+    f.raws[id].metadata.hive_schedule = encodeMeta({ ...config, enabled: true, revision: id, nextRunAt: due });
+  }
+  f.rt.metadata.mutate(d => { d.cells.other = { ...f.cell, id: 'other', rootBeadId: 'other-root' }; });
+  f.raws['other-root'] = { id: 'other-root', title: 'Other', status: 'open', metadata: { hive_kind: 'goal' } };
+  f.raws['other-schedule'] = { ...structuredClone(f.raws[second.bead_id]), id: 'other-schedule', dependencies: [{ issue_id: 'other-schedule', depends_on_id: 'other-root', type: 'parent-child' }] };
+  const show = f.rt.beads.show;
+  f.rt.beads.show = async id => {
+    if (id === first.bead_id) throw new Error('Temporary read failure.');
+    return show(id);
+  };
+  await f.rt.snapshots.refresh();
+  await runRoutines(f.rt, f.host, due);
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.errors.length, 1);
+  assert.match(f.errors[0], /Temporary read failure/);
+  assert.equal(f.rt.metadata.read().conversation[f.cell.id].length, 1);
+  assert.equal(f.rt.metadata.read().conversation.other.length, 1);
+});
+
+
+test('the Schedules cluster can close with ended routine history, while open routines prevent closure', async t => {
+  const f = fixture(t);
+  const { bead_id, cluster_id } = await f.create();
+  let graph = f.rt.snapshots.graph;
+  assert.ok(assessCompletion(f.rt, f.cell, cluster_id, graph, 'aw:human').problems.some(s => /no routine is open/.test(s)));
+  await setRoutine(f.rt, f.host, f.actor, { bead_id, action: 'end' });
+  graph = f.rt.snapshots.graph;
+  assert.deepEqual(assessCompletion(f.rt, f.cell, cluster_id, graph, 'aw:human').problems, []);
+  assert.equal(graph.beads[bead_id].status, 'closed');
+  assert.equal(graph.beads[bead_id].parentId, cluster_id);
+});
+
+test('one failed queued-message recovery leaves it retryable and still recovers the next message', async t => {
+  const f = fixture(t);
+  const { bead_id } = await f.create();
+  f.rt.metadata.mutate(d => { d.cells[f.cell.id].queenSessionId = null; });
+  await setRoutine(f.rt, f.host, f.actor, { bead_id, action: 'run-now' });
+  await setRoutine(f.rt, f.host, f.actor, { bead_id, action: 'run-now' });
+  const firstId = f.rt.metadata.read().conversation[f.cell.id][0].id;
+  f.rt.metadata.mutate(d => { d.cells[f.cell.id].queenSessionId = 'later'; });
+  const mutate = f.rt.metadata.mutate.bind(f.rt.metadata);
+  let failOnce = true;
+  f.rt.metadata.mutate = fn => mutate(d => {
+    const out = fn(d);
+    if (failOnce && d.conversation[f.cell.id].find(m => m.id === firstId).delivery.attempts.length) {
+      failOnce = false;
+      throw new Error('Temporary receipt failure.');
+    }
+    return out;
+  });
+  await runRoutines(f.rt, f.host, 0);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.errors.length, 1);
+  assert.match(f.errors[0], /Temporary receipt failure/);
+  assert.equal(f.rt.metadata.read().conversation[f.cell.id][0].delivery.attempts.length, 0);
+  await runRoutines(f.rt, f.host, 0);
+  assert.equal(f.sent.length, 2);
+  assert.ok(f.rt.metadata.read().conversation[f.cell.id].every(m => m.delivery.state === 'delivered'));
 });

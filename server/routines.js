@@ -139,20 +139,28 @@ export function runRoutines(rt, host, now = Date.now()) {
       for (const id of scope) {
         const bead = rt.snapshots.graph.beads[id];
         if (bead?.kind !== 'routine' || bead.status === 'closed') continue;
-        const state = routineState(rt, bead);
-        if (state?.enabled && state.nextRunAt <= now) await withLocks([`routines:${cell.id}`, `bead:${id}`], () => fireRoutine(rt, host, cell.id, id, { now }));
+        try {
+          const state = routineState(rt, bead);
+          if (state?.enabled && state.nextRunAt <= now) await withLocks([`routines:${cell.id}`, `bead:${id}`], () => fireRoutine(rt, host, cell.id, id, { now }));
+        } catch (err) {
+          rt.log(`hive: routine ${id} could not fire: ${err.message}`);
+        }
       }
       await withLocks([`routines:${cell.id}`], async () => {
         for (const m of rt.metadata.read().conversation[cell.id] || []) {
           if (!m.scheduled || m.acknowledgedAt || m.response?.answers?.length || m.response?.withdrawn) continue;
-          if (m.delivery?.state === 'pending' && m.delivery.attempts?.length) {
-            if (m.delivery.attempts.at(-1).runtimeEpoch === rt.metadata.epoch) continue;
-            rt.metadata.mutate(d => {
-              const cur = d.conversation[cell.id].find(x => x.id === m.id);
-              cur.delivery = { ...cur.delivery, state: 'uncertain', error: 'Hive stopped before recording the scheduled message delivery outcome.' };
-            });
-          } else if (['pending', 'no-queen'].includes(m.delivery?.state) && rt.metadata.cell(cell.id)?.queenSessionId) {
-            await deliverQueued(rt, host, cell.id, m.id);
+          try {
+            if (m.delivery?.state === 'pending' && m.delivery.attempts?.length) {
+              if (m.delivery.attempts.at(-1).runtimeEpoch === rt.metadata.epoch) continue;
+              rt.metadata.mutate(d => {
+                const cur = d.conversation[cell.id].find(x => x.id === m.id);
+                cur.delivery = { ...cur.delivery, state: 'uncertain', error: 'Hive stopped before recording the scheduled message delivery outcome.' };
+              });
+            } else if (['pending', 'no-queen'].includes(m.delivery?.state) && rt.metadata.cell(cell.id)?.queenSessionId) {
+              await deliverQueued(rt, host, cell.id, m.id);
+            }
+          } catch (err) {
+            rt.log(`hive: scheduled message ${m.id} could not be recovered: ${err.message}`);
           }
         }
       });
