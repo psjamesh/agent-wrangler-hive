@@ -66,7 +66,7 @@ function deliveryControls(m, cell, ctx) {
 
 
 function authorName(graph, cell, m) {
-  return m.author === 'human' ? 'You' : `${sessionName(graph, m.sessionId)}${m.sessionId === cell.queenSessionId ? ' (queen)' : m.role ? ` (${m.role})` : ''}`;
+  return m.scheduled ? 'Schedule' : m.author === 'human' ? 'You' : `${sessionName(graph, m.sessionId)}${m.sessionId === cell.queenSessionId ? ' (queen)' : m.role ? ` (${m.role})` : ''}`;
 }
 
 // Whether the queen has answered one of the human's messages. A copy loaded
@@ -693,7 +693,7 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selec
         h('span', { class: 'hive-muted hive-topic-time' }, relativeTime(t.lastAt))),
       h('span', { class: 'hive-topic-line' },
         h('span', { class: 'hive-chip hive-topic-context' }, contextLabel(t, cell, beads)),
-        p ? h('span', { class: 'hive-muted hive-topic-preview' }, `${p.author === 'human' ? 'You' : sessionName(graph, p.sessionId)}: ${p.text}`) : h('span', { class: 'hive-muted hive-topic-preview' }, 'Earlier messages were removed.')))));
+        p ? h('span', { class: 'hive-muted hive-topic-preview' }, `${p.scheduled ? 'Schedule' : p.author === 'human' ? 'You' : sessionName(graph, p.sessionId)}: ${p.text}`) : h('span', { class: 'hive-muted hive-topic-preview' }, 'Earlier messages were removed.')))));
   }
   if (!shown.length) list.append(h('li', { class: 'hive-muted' }, topics.length ? 'No topics about this yet.' : 'No messages yet. The queen and workers publish decisions and questions here; what you send goes to the queen.'));
   const older = ui.olderCursor(cell.id, epoch);

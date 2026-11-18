@@ -6,7 +6,7 @@ import { workTools, publishTool } from './helpers/tools.mjs';
 const catalog = Object.fromEntries(workTools.map((t) => [t.name, z.toJSONSchema(t.inputSchema, { io: 'input', unrepresentable: 'any' })]));
 
 test('every tool publishes a self-contained JSON Schema through host Zod', () => {
-  assert.equal(workTools.length, 28);
+  assert.equal(workTools.length, 29);
   for (const [name, schema] of Object.entries(catalog)) {
     assert.equal(schema.type, 'object', name);
     assert.equal(schema.additionalProperties, false, name);

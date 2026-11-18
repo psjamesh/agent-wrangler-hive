@@ -158,7 +158,7 @@ test('removing the root cleans read listeners from the old conversation before h
     closedButton: () => null,
     panelViews: new WeakMap(), h, hasPanels: (_cell, root) => Boolean(root),
     renderConversation: () => ({ list: h(), scrollKey: 'messages:cell', onReadInteraction() {} }),
-    syncChildren: el => el, beadDetails: h, cellHeader: h, workstreamDrawer: () => null, retireDrawer: () => null, isRetired: () => false, paneTabs: h,
+    syncChildren: el => el, beadDetails: h, cellHeader: h, workstreamDrawer: () => null, routineDrawer: () => null, retireDrawer: () => null, isRetired: () => false, paneTabs: h,
   });
   const ui = { inspecting: () => null };
   const cell = { id: 'cell', rootBeadId: 'root', enabled: true };
@@ -229,7 +229,7 @@ test('history remains in Details when an enabled hive cannot show a map', () => 
     panelViews: new WeakMap(), h, hasPanels: () => false, renderConversation: () => null,
     syncChildren: (el, children) => { el.children = children; return el; }, beadDetails: h,
     cellHeader: h, closedButton: () => history, workstreamDrawer: () => null,
-    retireDrawer: () => null, isRetired: () => false, paneTabs: h,
+    routineDrawer: () => null, retireDrawer: () => null, isRetired: () => false, paneTabs: h,
   });
   const ctx = { ui: { inspecting: () => null }, hive: { beads: {} } };
   const panels = render(ctx, { id: 'cell', rootBeadId: 'root', enabled: true });

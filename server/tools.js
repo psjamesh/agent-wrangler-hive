@@ -1,3 +1,4 @@
+import { setRoutine, routineState } from './routines.js';
 import { missedInput } from './missed-input.js';
 import { reportCiWait } from './ci-waits.js';
 import { hasBlockingPrerequisite } from './human-wait.js';
@@ -156,6 +157,7 @@ function compactBead(rt, b, { full, cell }) {
     parent_id: b.parentId,
     title: b.title,
     kind: b.kind,
+    ...(b.kind === 'routine' ? { schedule: routineState(rt, b) } : {}),
     status: b.status,
     untracked: isUntracked(rt.host, rt.snapshots.graph, b),
     owner_session_id: b.ownerSessionId,
@@ -334,6 +336,16 @@ export const contextTool = hiveTool({
     bead_id: beadId.optional().describe('Cell to focus on. With scope bead, restrict the read to this cell; otherwise also return it in full as focus.'),
   }),
 }, ({ rt, host, actor, args }) => buildContext(rt, host, actor, args));
+
+export const routineTool = hiveTool({
+  name: 'hive_set_routine',
+  description: 'Queen only: create or edit a scheduled routine in the reserved Schedules cluster. Actions create, update, pause, resume, end and run-now. Days are 0=Sunday through 6=Saturday, time is local HH:MM, timeZone is an IANA zone. Missing DST times skip that date; repeated times fire at the first occurrence. Missed runs catch up once. Fires send visible scheduled messages to the current queen through the human-input path. Paused routines can run now without resuming.',
+  inputSchema: ({ z, beadId, strictObject }) => ({
+    bead_id: beadId.optional(),
+    action: z.enum(['create', 'update', 'pause', 'resume', 'end', 'run-now']).optional(),
+    schedule: strictObject({ name: z.string().max(200).optional(), days: z.array(z.number().int().min(0).max(6)).max(7).optional(), time: z.string().max(5).optional(), timeZone: z.string().max(100).optional(), message: z.string().max(19780).optional(), enabled: z.boolean().optional() }).optional(),
+  }),
+}, ({ rt, host, actor, args }) => setRoutine(rt, host, actor, args));
 
 export const readyTool = hiveTool({
   name: 'hive_ready',
@@ -627,4 +639,4 @@ export const pickupTool = hiveTool({
 }, ({ rt, host, actor, args }) => setPickup(rt, host, actor, args));
 
 export const workTools = [pickupTool,
-  ...requestTools, handoffQueenTool, reportPrWaitTool, spawnWorkerTool, reconcileWorkerTool, requestReviewTool, reviewVerdictTool, cancelReviewTool, contextTool, readyTool, createBeadsTool, updateBeadTool, linkBeadsTool, claimBeadTool, releaseBeadTool, bindSessionTool, finishBeadTool, deleteBeadsTool, publishTool, acknowledgeInputTool, reconcileOperationTool, updateThreadTool];
+  routineTool, ...requestTools, handoffQueenTool, reportPrWaitTool, spawnWorkerTool, reconcileWorkerTool, requestReviewTool, reviewVerdictTool, cancelReviewTool, contextTool, readyTool, createBeadsTool, updateBeadTool, linkBeadsTool, claimBeadTool, releaseBeadTool, bindSessionTool, finishBeadTool, deleteBeadsTool, publishTool, acknowledgeInputTool, reconcileOperationTool, updateThreadTool];

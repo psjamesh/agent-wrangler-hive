@@ -307,7 +307,7 @@ function pruneThreads(d, cellId) {
   const ids = Object.keys(threads);
   if (ids.length <= CELL_THREAD_CAP) return;
   const live = new Set((d.conversation[cellId] || []).map((m) => m.threadId));
-  const empty = ids.filter((id) => !live.has(id)).sort((a, b) => (threads[a]?.lastAt || 0) - (threads[b]?.lastAt || 0));
+  const empty = ids.filter((id) => !live.has(id) && threads[id]?.origin !== 'routine').sort((a, b) => (threads[a]?.lastAt || 0) - (threads[b]?.lastAt || 0));
   for (const id of empty.slice(0, ids.length - CELL_THREAD_CAP)) delete threads[id];
 }
 
@@ -670,6 +670,30 @@ async function publishMessage(rt, host, actor, { text: body, bead_id, reply_to, 
   return result;
 }
 
+export function appendScheduledInput(rt, d, cell, bead, schedule, at, removed = []) {
+  threadCell(d, cell.id);
+  inboxCell(d, cell.id);
+  const t = ownThreads(threadsOf(d, cell.id)).find(t => t.origin === 'routine' && t.beadId === bead.id)
+    || makeThread(d, cell.id, { title: clip(`Scheduled: ${schedule.name}`, THREAD_TITLE_MAX), titleBy: 'hive', beadId: bead.id, by: 'hive', origin: 'routine', at });
+  if (t.titleBy === 'hive') t.title = clip(`Scheduled: ${schedule.name}`, THREAD_TITLE_MAX);
+  const m = humanMessage(cell, { id: newId('msg'), text: `Scheduled: ${schedule.name}\n\n${schedule.message}`, beadId: bead.id, threadId: t.id, at, context: contextFor(rt, bead.id) });
+  m.scheduled = { routineId: bead.id, name: schedule.name };
+  messagesOf(d, cell.id).push(m);
+  touch(t, m);
+  bumpInbox(d, cell.id);
+  prune(d, cell.id, messagesOf(d, cell.id), removed);
+  pruneThreads(d, cell.id);
+  return m;
+}
+
+function humanMessage(cell, { id, text, attachments = [], beadId = null, replyTo = null, threadId, at, context }) {
+  return {
+    id, cellId: cell.id, author: 'human', requestScopeId: null, sessionId: null, text, attachments, beadId, replyTo, threadId, at,
+    delivery: { state: cell.queenSessionId ? 'pending' : 'no-queen', sessionId: cell.queenSessionId || null, attempts: [] },
+    acknowledgedAt: null, acknowledgedBy: null, response: { required: true, answers: [] }, context,
+  };
+}
+
 export function acknowledgeInput(rt, actor, { message_ids }) {
   if (rt.metadata.error) throw new HiveError(rt.metadata.error, 'metadata-unavailable');
   requireQueen(actor, 'acknowledge human input');
@@ -813,12 +837,7 @@ async function recordHumanMessage(rt, { cellId, text: body, beadId, replyTo, thr
         if (!currentAck(target, ackRev, 'reaction')) throw new HiveError('This message changed since you saw it. Look again, then try once more.', 'stale');
       }
       const m = {
-        id, cellId, author: 'human', requestScopeId: null, sessionId: null, text: clean, attachments: kept, beadId: bead, replyTo: reply, threadId: t.id, at,
-        delivery: { state: cell.queenSessionId ? 'pending' : 'no-queen', sessionId: cell.queenSessionId || null, attempts: [] },
-        acknowledgedAt: null,
-        acknowledgedBy: null,
-        response: { required: true, answers: [] },
-        context: contextAt(rt, bead, target, t),
+        ...humanMessage(cell, { id, text: clean, attachments: kept, beadId: bead, replyTo: reply, threadId: t.id, at, context: contextAt(rt, bead, target, t) }),
         ...(reaction ? { reaction } : {}),
         ...(completionSuggestion ? { completionSuggestion: true } : {}),
       };
@@ -1124,7 +1143,10 @@ export function updateThread(rt, actor, { thread_id, title, bead_id }) {
         cur.titleScopeRevision = scope?.contentRevision || null;
       }
     }
-    if (anchor !== undefined) cur.beadId = anchor;
+    if (anchor !== undefined) {
+      if (cur.origin === 'routine' && anchor !== cur.beadId) throw new HiveError('A schedule topic stays anchored to its routine.');
+      cur.beadId = anchor;
+    }
     out = { thread_id: cur.id, title: audienceConversationDoc(d, cell.id, actor).threads[cell.id][id].title, bead_id: cur.beadId };
   });
   rt.changed();
@@ -1163,7 +1185,7 @@ export async function deliver(rt, host, { cellId, messageId, force = false }) {
     rt.metadata.mutate((d) => {
       const m = messagesOf(d, cellId).find((x) => x.id === messageId);
       m.delivery = { ...m.delivery, state: 'pending', sessionId: target };
-      m.delivery.attempts = [...(m.delivery.attempts || []), { id: attemptId, sessionId: target, at: Date.now(), state: 'pending' }].slice(-10);
+      m.delivery.attempts = [...(m.delivery.attempts || []), { id: attemptId, sessionId: target, at: Date.now(), state: 'pending', ...(m.scheduled ? { runtimeEpoch: rt.metadata.epoch } : {}) }].slice(-10);
     });
     rt.changed();
     const taskName = host.tasks.get(cell.taskId)?.name || cell.taskId;
@@ -1211,7 +1233,8 @@ export async function cellContextConversation(rt, host, actor, { recent = 20, be
   const shape = (m) => ({
     message_id: m.id,
     link: hiveLink(actor.cell.id, m.threadId, m.id),
-    from: m.author === 'human' ? 'human' : m.sessionId,
+    from: m.scheduled ? 'schedule' : m.author === 'human' ? 'human' : m.sessionId,
+    scheduled: m.scheduled || undefined,
     role: m.role,
     text: m.text,
     reaction: m.reaction || undefined,

@@ -226,7 +226,7 @@ test('per-hive thresholds are validated, persisted and affect only that hive', t
 test('runtime sweep checks watchdog without any queen schedule', async () => {
   const { createManifest } = await import('../server/manifest.js');
   const calls = [];
-  const rt = { snapshots: { maybeRefresh() { calls.push('refresh'); } }, async recover() { calls.push('recover'); }, watchdog: { async run() { calls.push('watchdog'); } } };
+  const rt = { metadata: { error: null, read: () => ({ cells: {} }) }, beads: { status: { state: 'ready' } }, snapshots: { hierarchyCurrent: false, maybeRefresh() { calls.push('refresh'); } }, async recover() { calls.push('recover'); }, watchdog: { async run() { calls.push('watchdog'); } } };
   await createManifest({ dir: '.' }).sweeps.find(s => s.id === 'refresh').run({ host: { stores: { hive: rt } } });
   assert.ok(calls.includes('watchdog'));
 });

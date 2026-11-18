@@ -1,3 +1,4 @@
+import { runRoutines } from './routines.js';
 import { onResume } from './worker-restores.js';
 import { notifyReachableQueens } from './missed-input.js';
 import { agentCatalogForGraph } from './agent-catalog.js';
@@ -114,6 +115,7 @@ export function createManifest({ dir }) {
         const rt = host.stores.hive;
         rt.snapshots.maybeRefresh();
         await rt.recover();
+        await runRoutines(rt, host);
         await rt.watchdog?.run();
         await notifyReachableQueens(rt, host);
       },

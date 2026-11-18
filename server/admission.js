@@ -1,3 +1,4 @@
+import { isScheduleItem } from '../public/schedule.js';
 import { activeWorkerRestores } from './worker-restores.js';
 import { buildGraph, descendantIds, GROUP_KINDS } from './bead-model.js';
 import { HiveError } from './ops.js';
@@ -19,7 +20,7 @@ export function hiveWorkIds(rt, graph) {
   for (const cell of rt.metadata.cells()) {
     if (cell.snapshot || !cell.rootBeadId) continue;
     for (const id of descendantIds(graph.beads, cell.rootBeadId)) {
-      if (id !== cell.rootBeadId && graph.beads[id] && graph.beads[id].kind !== 'external' && !GROUP_KINDS.has(graph.beads[id].kind)) ids.add(id);
+      if (id !== cell.rootBeadId && graph.beads[id] && graph.beads[id].kind !== 'external' && !isScheduleItem(graph.beads[id]) && !GROUP_KINDS.has(graph.beads[id].kind)) ids.add(id);
     }
   }
   return ids;
@@ -30,7 +31,7 @@ export function hiveWorkIds(rt, graph) {
 export function helperSlots(rt, graph = rt.snapshots.graph, now = Date.now()) {
   const slots = new Map();
   const liveCells = new Set(rt.metadata.cells().filter(c => c.enabled && !c.snapshot).map(c => c.id));
-  const eligible = (cellId, beadId) => liveCells.has(cellId) && graph.beads[beadId] && graph.beads[beadId].status !== 'closed';
+  const eligible = (cellId, beadId) => liveCells.has(cellId) && graph.beads[beadId] && graph.beads[beadId].status !== 'closed' && !isScheduleItem(graph.beads[beadId]);
   for (const [id, admission] of rt.spawnAdmissions || []) {
     if (now - admission.at >= 10 * 60 * 1000) rt.spawnAdmissions.delete(id);
     else if (eligible(admission.cellId, admission.beadId)) slots.set(admission.beadId, admission);
@@ -54,7 +55,7 @@ export function capacitySlots(rt, graph, reserve = []) {
   };
   const claimed = new Set([...scope].filter((id) => graph.beads[id].status === 'in_progress' && graph.beads[id].assignee && (!graph.beads[id].ownerSessionId || !rt.host?.sessions?.get || liveClaimant(rt.host, graph.beads[id].ownerSessionId))).map(charge));
   const roots = new Set(rt.metadata.cells().map((c) => c.rootBeadId));
-  const counts = (id) => typeof id === 'string' && !roots.has(id) && graph.beads[id]?.kind !== 'external' && !GROUP_KINDS.has(graph.beads[id]?.kind);
+  const counts = (id) => typeof id === 'string' && !roots.has(id) && graph.beads[id]?.kind !== 'external' && !isScheduleItem(graph.beads[id]) && !GROUP_KINDS.has(graph.beads[id]?.kind);
   const reserved = new Set(Object.values(rt.metadata.read().workerLaunches || {})
     .filter((l) => RESERVED_LAUNCH_STATES.has(l.state) && reservationActive(l.sessionId) && counts(l.beadId)).map((l) => charge(l.beadId)));
   for (const op of Object.values(rt.metadata.read().operations)) {
@@ -90,6 +91,7 @@ export function exportedGraph({ issues, errors }) {
 export function checkAdmission(rt, graph, beadId, { sessionId, launchId = null, ownOperationId = null, review = false, revalidateCapacity = false } = {}) {
   const bead = graph.beads[beadId];
   if (!bead || bead.status === 'closed') throw new HiveError(`Bead ${beadId} is missing or closed.`, 'conflict');
+  if (isScheduleItem(bead)) throw new HiveError('Schedules are never claimable work.', 'refused');
   if (bead.kind === 'external') throw new HiveError(`External prerequisite ${beadId} is never claimable work. Close it when the outside prerequisite is met.`, 'refused');
   for (const launch of Object.values(rt.metadata.read().workerLaunches || {})) {
     if (launch.beadId === beadId && RESERVED_LAUNCH_STATES.has(launch.state) && launch.id !== launchId) throw new HiveError(`Bead ${beadId} is reserved by launch ${launch.id}. Reconcile that launch first.`, 'conflict');

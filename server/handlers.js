@@ -1,3 +1,4 @@
+import { setRoutine } from './routines.js';
 import { actionMetadata, errorRedactor, identifierPath } from '../public/action-diagnostics.js';
 import { renameCell, saveCellGoal } from './cell-settings.js';
 import { setCodexApprovals } from './codex-policy.js';
@@ -328,4 +329,7 @@ const actionDiagnostic = {
   },
 };
 
-export const configHandlers = [actionDiagnostic, workerProfileH, pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, renameCellH, cellGoalH, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsSuggest, beadSuggest, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];
+
+const routineH = humanHandler('hive-routine', ({ msg, rt, host }) => setRoutine(rt, host, { role: 'human', sessionId: null, cell: rt.metadata.cell(msg.cellId) }, { bead_id: msg.beadId, action: msg.action, schedule: msg.schedule }));
+
+export const configHandlers = [actionDiagnostic, routineH, workerProfileH, pickupH,requestAnswer, requestDismiss, requestRetry, detail, search, inboxSearch, deepLink, image, sendMessage, resend, received, inbox, ack, ackUndo, withdraw, withdrawUndo, autoRead, renameTopic, relations, topicHistory, topicList, createCell, adoptTask, retryRoot, enableCell, disableCell, retireCheck, retire, reopen, moveCell, moveBeads, nominate, brief, launch, renameCellH, cellGoalH, setInstructions, watchdogSettings, reviewPolicyH, codexApprovalsH, reconcileLaunchH, reconcileOp, resolveOp, releaseBead, wsCheck, wsSuggest, beadSuggest, wsComplete, wsArchive, wsShow, wsReopen, wsNoticeDismiss];

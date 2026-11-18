@@ -22,6 +22,7 @@ function emptyDoc() {
   return {
     schema: METADATA_SCHEMA,
     cells: {},
+    routines: {},
     defaultPickupSpent: {},
     defaultPickupProblems: {},
     launches: {},

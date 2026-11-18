@@ -1,3 +1,4 @@
+import { routineState } from './routines.js';
 import { createHash } from 'node:crypto';
 import { beadHistory } from './bead-history.js';
 import { pickupState, pickupCell } from './pickup.js';
@@ -9,7 +10,7 @@ import { rankBeads } from '../public/bead-rank.js';
 
 export const SEARCH_LIMIT = 1000;
 
-const SLIM_FIELDS = ['id', 'parentId', 'title', 'kind', 'status', 'outcome', 'closeReason', 'waitingFor', 'assignee', 'ownerSessionId', 'createdAt', 'updatedAt', 'closedAt'];
+const SLIM_FIELDS = ['id', 'parentId', 'system', 'title', 'kind', 'status', 'outcome', 'closeReason', 'waitingFor', 'assignee', 'ownerSessionId', 'createdAt', 'updatedAt', 'closedAt'];
 
 function firstLine(text) {
   return String(text || '').split('\n').find((l) => l.trim())?.trim().slice(0, 300) || '';
@@ -24,7 +25,7 @@ function slimReview(review) {
 
 export function fullBead(runtime, graph, id) {
   const bead = { ...graph.beads[id], ...reviewFields(runtime, id) };
-  return { ...bead, pickup: pickupState(runtime, runtime.host, pickupCell(runtime, graph, id), bead, graph), untracked: isUntracked(runtime.host, graph, bead) };
+  return { ...bead, ...(bead.kind === 'routine' ? { schedule: routineState(runtime, bead) } : {}), pickup: pickupState(runtime, runtime.host, pickupCell(runtime, graph, id), bead, graph), untracked: isUntracked(runtime.host, graph, bead) };
 }
 
 // The fields the map, lists, badges and the waiting views read for every bead.
@@ -37,7 +38,7 @@ export function slimBead(runtime, graph, id, { root = false, historyRecords = ru
   for (const key of ['reviewState', 'reviewWorking']) if (key in full) out[key] = full[key];
   if (full.review) out.review = slimReview(full.review);
   out.untracked = full.untracked;
-  out.historyVersion = createHash('sha256').update(JSON.stringify(beadHistory(historyRecords, full))).digest('hex').slice(0, 16);
+  out.historyVersion = createHash('sha256').update(JSON.stringify(full.kind === 'routine' ? [beadHistory(historyRecords, full), full.schedule] : beadHistory(historyRecords, full))).digest('hex').slice(0, 16);
   if (full.pickup.armed || full.pickup.armToken) {
     const { profile, ...pickup } = full.pickup;
     out.pickup = pickup;

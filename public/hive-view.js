@@ -1,3 +1,5 @@
+import { openNewRoutine } from './routine-view.js';
+import { isScheduleItem } from './schedule.js';
 import { cellMetrics } from './cell-metrics.js';
 import { renderRelatedBeads } from './conversation.js';
 import { confirmHive } from './confirm-dialog.js';
@@ -224,7 +226,7 @@ function revealWarning(plan, allClosed) {
   return `${verb} will move this cluster ${plural(plan.shift, 'hex', 'hexes')} to make room for ${things(plan.crowded)}. Some ${allClosed ? 'closed items' : 'items'} may also be placed in new spots within the cluster.`;
 }
 
-function workstreamMenu({ title, at, arranging, fitLabel, confirm, onFit, onConfirm, onSuggest, onCloseRequest, onArchive, archiveLabel, onClose, onDismiss }) {
+function workstreamMenu({ title, at, arranging, fitLabel, confirm, onFit, onConfirm, onSuggest, onCloseRequest, onArchive, archiveLabel, onNewSchedule, onClose, onDismiss }) {
   const extra = (key, label, fn) => (fn ? h('button', {
     type: 'button',
     role: 'menuitem',
@@ -261,6 +263,7 @@ function workstreamMenu({ title, at, arranging, fitLabel, confirm, onFit, onConf
       'data-focus-key': 'wsmenu:fit',
       onclick: () => { if (!arranging) onFit(); },
     }, fitLabel) : null,
+    extra('new-schedule', 'New schedule…', onNewSchedule),
     extra('suggest', 'Suggest completion', onSuggest),
     extra('close-request', 'Ask queen to close', onCloseRequest),
     extra('archive', archiveLabel, onArchive),
@@ -466,7 +469,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
   const writable = cell.enabled && !cell.snapshot;
   const menuOpen = menuHead && hive.beads[menuHead]?.status !== 'closed';
   const menuClosed = menuHead && !menuOpen && hive.beads[menuHead]?.parentId === cell.rootBeadId && groupClosed(hive, menuHead);
-  const canRequestClose = writable && !readOnly && menuOpen && hive.beads[menuHead]?.kind !== 'external';
+  const canRequestClose = writable && !readOnly && menuOpen && hive.beads[menuHead]?.kind !== 'external' && !isScheduleItem(hive.beads[menuHead]);
   const suggestCompletion = (item = false) => {
     ui.setForm('wsMenu', null);
     send(item ? { type: 'hive-bead-suggest-completion', cellId: cell.id, beadId: menuHead } : { type: 'hive-ws-suggest-completion', cellId: cell.id, headId: menuHead }, {
@@ -522,7 +525,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
   const openMenu = (headId, at) => {
     const current = ui.form('wsMenu');
     if (current?.cellId === cell.id && current.headId === headId) return;
-    ui.setForm('wsMenu', { cellId: cell.id, headId, at });
+    ui.setForm('wsMenu', { cellId: cell.id, headId, blankMenu: !headId, at });
     document.querySelector('.hive-wsmenu [role="menuitem"]')?.focus();
   };
   const keyOpen = Boolean(ui.form('key'));
@@ -565,6 +568,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
       }
     },
     onContextMenu: openMenu,
+    onBackgroundMenu: writable && !readOnly ? at => openMenu(null, at) : null,
     onMove: (id, pos) => {
       if (readOnly) return;
       const check = preview(id, pos);
@@ -585,7 +589,7 @@ function cellMap(ctx, cell, related = null, previous = null) {
     },
     onDragState: (on) => ui.setDragging(on),
     claimDrag: api?.claimDrag ? (el) => api.claimDrag(el) : null,
-    actions: cell.snapshot ? [] : [h('button', {
+    actions: cell.snapshot ? [] : [writable && !readOnly ? h('button', { type: 'button', class: 'hive-zoom-btn', 'data-focus-key': `new-schedule:${cell.id}`, onclick: () => openNewRoutine(ctx, cell) }, 'New schedule…') : null, h('button', {
       type: 'button', class: 'hive-zoom-btn', onclick: arrange,
       disabled: readOnly || arranging || !layout.order.length,
       'data-focus-key': `arrange:${cell.id}`,
@@ -607,13 +611,19 @@ function cellMap(ctx, cell, related = null, previous = null) {
     ],
     overlay: [
       keyOpen ? h('div', { class: 'hive-key is-open', onwheel: (e) => e.stopPropagation() }, legend(Boolean(cell.snapshot))) : null,
+      menuForm?.cellId === cell.id && menuForm.blankMenu ? workstreamMenu({
+        title: 'Hive map', at: menuForm.at,
+        onNewSchedule: writable && !readOnly ? () => { ui.setForm('wsMenu', null); openNewRoutine(ctx, cell); } : null,
+        onClose: closeMenu, onDismiss: dismissMenu,
+      }) : null,
       menuHead ? workstreamMenu({
         title: hive.beads[menuHead]?.title || menuHead,
         at: menuForm.at || { x: 0, y: 0 },
         arranging,
         fitLabel,
         confirm,
-        onSuggest: writable && heads.has(menuHead) && menuOpen ? () => suggestCompletion() : null,
+        onNewSchedule: writable && !readOnly && hive.beads[menuHead]?.system === 'schedules' ? () => { ui.setForm('wsMenu', null); openNewRoutine(ctx, cell); } : null,
+        onSuggest: writable && !isScheduleItem(hive.beads[menuHead]) && heads.has(menuHead) && menuOpen ? () => suggestCompletion() : null,
         onCloseRequest: canRequestClose ? () => suggestCompletion(true) : null,
         onArchive: writable && heads.has(menuHead) && menuClosed ? archiveGroup : null,
         archiveLabel: cell.archived?.[menuHead]?.shown ? 'Hide again' : 'Archive cluster',

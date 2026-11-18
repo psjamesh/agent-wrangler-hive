@@ -1,3 +1,4 @@
+import { isScheduleItem } from '../public/schedule.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 import { GROUP_KINDS } from './bead-model.js';
 
@@ -13,7 +14,7 @@ export function sleepingReason(session) {
 }
 
 export function isUntracked(host, graph, bead) {
-  return bead.status === 'in_progress' && bead.kind !== 'external' && !GROUP_KINDS.has(bead.kind)
+  return bead.status === 'in_progress' && bead.kind !== 'external' && !isScheduleItem(bead) && !GROUP_KINDS.has(bead.kind)
     && !liveClaimant(host, bead.ownerSessionId) && !OPEN_REVIEW_STATES.has(bead.reviewState)
     && !graph.edges.some((e) => e.blocking && e.dependent === bead.id && graph.beads[e.prerequisite] && graph.beads[e.prerequisite].status !== 'closed');
 }
