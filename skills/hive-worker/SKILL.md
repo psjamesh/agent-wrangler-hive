@@ -98,7 +98,7 @@ After GitHub confirms an authorized merge, record evidence through `hive_update_
 
 ## Fixed PR review threads
 
-After fixes for PR review comments are pushed, report one PR batch to the queen with the bead id, PR and thread links, fix commit, verification and a short draft reply for each addressed thread. The queen asks the human once whether to post the replies and resolve those threads. Do not post replies or resolve threads without explicit human approval; fixing code or getting queen approval alone does not authorize either action. External and non-`portswigger-` repositories always require explicit human permission too.
+After fixes for PR review comments are pushed, record one PR batch with `hive_update_bead.add_evidence` and notify the queen by `send_message`: include the bead id, PR and thread links, fix commit, verification and a short draft reply for each addressed thread. The queen asks the human once; after explicit human approval, the queen posts the approved replies and resolves only the approved threads. Workers own drafting and reporting; the queen owns GitHub follow-through. Do not post replies or resolve threads without explicit human approval; fixing code or getting queen approval alone does not authorize either action. This applies to every repository, including ones outside the human's organization.
 
 ## Coordinators
 
