@@ -15,11 +15,11 @@ const parsed = logs => logs.map(line => {
 for (const outcome of ['ok', 'error', 'transport']) {
   test(`client timeout and late ${outcome} reach the server logger without content`, async t => {
     t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 100000 });
-    const logs = [], replies = [], reports = [];
+    const logs = [], replies = [], reports = [], notices = [];
     const rt = { log: line => logs.push(line), changed() {} };
     const diagnostic = configHandlers.find(h => h.type === 'hive-action-diagnostic');
     let resolve, reject;
-    client.register({ api: { act(type, data) {
+    client.register({ api: { ui: { toast: notice => { notices.push(notice); return true; } }, act(type, data) {
       if (type === 'hive-action-diagnostic') {
         reports.push(data);
         assert.ok(diagnostic, 'diagnostic action is registered');
@@ -51,6 +51,11 @@ for (const outcome of ['ok', 'error', 'transport']) {
     assert.equal(events[1].outcome, outcome === 'ok' ? 'ok' : 'error');
     if (outcome !== 'ok') assert.match(events[1].error, /\[redacted\]/);
     assert.equal(replies.length, 1, 'late reply must not repeat the callback');
+    assert.equal(notices.length, outcome === 'ok' ? 0 : 1);
+    if (outcome !== 'ok') {
+      assert.equal(notices[0].severity, 'error');
+      assert.equal(notices[0].text, `${outcome === 'transport' ? 'Failed' : 'Refused'}: ${secret}`);
+    }
     assert.ok(!JSON.stringify(reports).includes(secret));
   });
 }
@@ -133,4 +138,27 @@ test('promise replies remain correlated after the bounded notification cache evi
   await new Promise(queueMicrotask);
   assert.equal(reports.at(-1).event, 'late-reply');
   assert.equal(reports.at(-1).requestId, first);
+});
+
+test('a late pushed reply is logged and shown without repeating the original callback', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 400000 });
+  const reports = [], notices = [], replies = [];
+  let deliver;
+  client.register({ api: {
+    ui: { toast: notice => { notices.push(notice); return true; } },
+    act(type, args) {
+      if (type === 'hive-action-diagnostic') { reports.push(args); return Promise.resolve({ ok: true }); }
+      return new Promise(() => {});
+    },
+  }, register() {}, onMessage: callback => { deliver = callback; } });
+  const requestId = send({ type: 'hive-example', cellId: 'cell_demo' }, { quiet: true, onReply: reply => replies.push(reply) });
+  t.mock.timers.tick(30000);
+  t.mock.timers.tick(1000);
+  deliver({ op: 'hive-example', requestId, ok: false, error: 'The action was refused.' });
+  assert.deepEqual(reports.map(report => report.event), ['client-timeout', 'late-reply']);
+  assert.equal(reports[1].ids.cellId, 'cell_demo');
+  assert.equal(reports[1].elapsedMs, 31000);
+  assert.deepEqual(notices, [{ severity: 'error', text: 'The action was refused.' }]);
+  assert.equal(replies.length, 1);
+  assert.equal(replies[0].timeout, true);
 });

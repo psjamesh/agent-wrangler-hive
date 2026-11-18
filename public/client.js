@@ -760,7 +760,6 @@ function onFrame(frame, tracking = null) {
       outcome: frame.ok ? 'ok' : 'error',
       ...(!frame.ok ? { error: late.redactError(frame.error) } : {}),
     });
-    return;
   }
   const p = frame.requestId ? state.pending.get(frame.requestId) : null;
   if (p) {
