@@ -1,3 +1,5 @@
+import { isScheduleItem } from './schedule.js';
+import { routineDetails, openNewRoutine, routineDrawer } from './routine-view.js';
 import { cellMetrics } from './cell-metrics.js';
 import { workerProfileForm } from './worker-profile.js';
 import { workstreamProfileSettings } from './worker-profile.js';
@@ -38,6 +40,7 @@ const TITLE_PX = 9.5;
 // states come only from live AW sessions; captured sessions pass none, so a
 // snapshot never shows current activity or a request for input.
 export function primaryKind(bead, waits, agentDots, humanWaits = 0, ownerDot = null) {
+  if (isScheduleItem(bead)) return 'clock';
   if (humanWaits || agentDots.includes('needs')) return 'person';
   if (bead.status === 'closed') return bead.outcome === 'done' ? 'done' : 'closed';
   if (['requested', 'in_review'].includes(bead.reviewState)) return bead.reviewWorking ? 'review-working' : 'review-pending';
@@ -53,6 +56,7 @@ export function primaryKind(bead, waits, agentDots, humanWaits = 0, ownerDot = n
 }
 
 const MARK_WORDS = {
+  clock: 'Schedule',
   person: 'An agent is waiting for input',
   pickup: 'Ready for pickup; awaiting automatic worker start',
   'review-working': 'In review: reviewer working',
@@ -111,7 +115,7 @@ export function beadTile(ctx, bead, tile, kids) {
   let countText = '';
   const patchHead = layout.halo[bead.id] != null ? layout.patchHeads?.[layout.halo[bead.id]] : null;
   const colour = patchHead ? workstreamClasses(patchHead, cell?.workstreamColours, layout.regionParents, cell?.workstreamShades) : null;
-  if (isHead) {
+  if (isHead && !isScheduleItem(bead)) {
     const counts = workCounts(hive, kids, bead.id);
     countText = counts.total ? countsSentence(counts) : 'no work items yet';
     if (counts.total) progress = { done: counts.closed, total: counts.total };
@@ -159,7 +163,7 @@ export function beadTile(ctx, bead, tile, kids) {
     marks,
     onMark: waiting.length ? anchor => openWaitingMenu(ctx, waiting, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true }) : null,
     menu,
-    classes: `hive-bead hive-status-${displayStatus(bead)}${isDone(bead) ? ' hive-done' : ''}${isHead ? ' is-head' : ''}${isHead && colour != null ? ` has-ws ${colour}${bead.parentId === layout.rootId ? ' is-top' : ''}` : ''} hive-kind-${bead.kind}`,
+    classes: `${isScheduleItem(bead) ? 'hive-schedule hive-ws-cschedule ' : ''}hive-bead hive-status-${displayStatus(bead)}${isDone(bead) ? ' hive-done' : ''}${isHead ? ' is-head' : ''}${isHead && colour != null ? ` has-ws ${colour}${bead.parentId === layout.rootId ? ' is-top' : ''}` : ''} hive-kind-${bead.kind}`,
     ariaLabel: `${isHead ? 'Cluster ' : bead.kind === 'external' ? 'External prerequisite ' : ''}${bead.title}. ${groupName ? `In ${groupName}. ` : ''}${kind ? `${attention || (kind === 'waiting' && designWait ? 'Waiting on design' : markWords(kind, bead))}. ` : ''}${detail}${prs ? ` ${prs}.` : ''}${owner ? ` Claimed by ${sessionLabel(graph, owner)}.` : ''} Enter ${waiting.length ? 'opens the waiting-for-you dialog' : 'shows its details'}; Shift and an arrow key moves ${isHead ? 'this cluster and its descendants' : 'it'}.${menu ? ' Shift+F10 shows its actions.' : ''}`,
     title: `${bead.title}${externalWait ? '\nWaiting on something outside this hive' : ''}${groupName ? `\nIn ${groupName}` : ''}${marks.length ? `\n${marks.map(m => m.title).join('\n')}` : ''}\n${isHead ? `Cluster: ${countText}; ${own}` : `${bead.kind === 'external' ? 'External prerequisite' : kindLabel(bead.kind)}, ${own}`}\n${agentText}${prs ? `\n${prs}` : ''}${waitReasons.length ? `\nWaiting: ${waitReasons.join('; ')}` : ''}`,
   };
@@ -271,8 +275,10 @@ function beadDetails(ctx, cell) {
       h('h3', {}, bead.title),
       h('button', { type: 'button', class: 'hive-quiet-btn', onclick: () => ui.selectBead(null), title: 'Show the hive goal' }, 'Hive goal')),
     waitingSection(ctx, bead),
-    !cell.snapshot && !cell.retired && bead.status !== 'closed' && bead.kind === 'workstream' && detail.bead ? workerProfileForm(ctx, cell, detail.bead) : null,
-    cell.snapshot ? null : pickupDetails(ctx, cell, { ...bead, pickup: detail.bead?.pickup || bead.pickup }),
+    bead.kind === 'routine' && detail.bead?.schedule ? routineDetails(ctx, cell, detail.bead) : null,
+    bead.system === 'schedules' && cell.enabled && !cell.snapshot && !cell.retired ? h('button', { type: 'button', class: 'hive-btn', onclick: () => openNewRoutine(ctx, cell) }, 'New schedule…') : null,
+    !cell.snapshot && !cell.retired && bead.status !== 'closed' && bead.kind === 'workstream' && !isScheduleItem(bead) && detail.bead ? workerProfileForm(ctx, cell, detail.bead) : null,
+    cell.snapshot || isScheduleItem(bead) ? null : pickupDetails(ctx, cell, { ...bead, pickup: detail.bead?.pickup || bead.pickup }),
     h('p', { class: 'hive-meta' },
       h('span', { class: `hive-status-pill hive-status-${displayStatus(bead)}` }, STATUS_LABEL[displayStatus(bead)] || bead.status),
       h('span', {}, kindLabel(bead.kind)),
@@ -301,7 +307,7 @@ function beadDetails(ctx, cell) {
     full.nextAction ? h('div', { class: 'hive-row' }, h('strong', {}, 'Next: '), full.nextAction) : null,
     dependents.length ? h('div', { class: 'hive-row' }, h('strong', {}, 'Needed by: '), dependents.map(link)) : null,
     related.length ? h('div', { class: 'hive-row' }, h('strong', {}, 'Other links: '), related.map((e) => h('span', { class: 'hive-other-link' }, link(e.dependent === bead.id ? e.prerequisite : e.dependent), ` (${e.type})`))) : null,
-    kids.length || bead.kind === 'workstream' ? workstreamProgress(workCounts(hive, childrenMap(hive.beads), bead.id)) : null,
+    !isScheduleItem(bead) && (kids.length || bead.kind === 'workstream') ? workstreamProgress(workCounts(hive, childrenMap(hive.beads), bead.id)) : null,
     kids.length ? h('div', { class: 'hive-row' }, h('strong', {}, 'Contains: '), kids.map((k) => link(k.id))) : null,
     pullRequestsSection(ctx, bead, full.evidence),
     detailStatus(ctx, bead, detail),
@@ -626,7 +632,7 @@ export function cellPanels(ctx, cell) {
   const dock = hasPanels(cell, root) || history ? syncChildren(cached.dock, [conversation, details], ctx.beforeReplace) : null;
   return {
     header: cellHeader(ctx, cell, root),
-    drawer: retireDrawer(ctx, cell) || workstreamDrawer(ctx, cell),
+    drawer: routineDrawer(ctx, cell) || retireDrawer(ctx, cell) || workstreamDrawer(ctx, cell),
     tabs: dock ? paneTabs(ui) : null,
     inspectbar,
     dock,

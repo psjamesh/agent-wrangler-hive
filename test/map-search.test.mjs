@@ -468,7 +468,7 @@ test('map controls group zoom, stable view toggles and actions with explicit sta
   assert.deepEqual(buttons().filter(b => !b.closest('.hive-map-menu') && !b.hidden).map(b => b.textContent), ['Search', '☰']);
   const menu = f.canvas().querySelector('.hive-map-menu');
   assert.equal(menu.hidden, true);
-  assert.deepEqual(menu.querySelectorAll('button').map(b => b.textContent), ['−', '+', 'Auto-fit', 'Show done', 'Key', 'Arrange']);
+  assert.deepEqual(menu.querySelectorAll('button').map(b => b.textContent), ['−', '+', 'Auto-fit', 'Show done', 'Key', 'New schedule…', 'Arrange']);
   const done = () => buttons().find(b => b.textContent === 'Show done');
   assert.equal(done().getAttribute('aria-checked'), 'true');
   assert.equal(done().getAttribute('aria-pressed'), null);

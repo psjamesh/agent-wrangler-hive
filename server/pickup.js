@@ -1,3 +1,4 @@
+import { isScheduleItem } from '../public/schedule.js';
 import { assertAllowedModel } from './review-policy.js';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -120,7 +121,7 @@ export function structuralPickupReasons(rt, graph, bead, { launchId = null, ownO
   const reasons = [];
   if (bead.status !== 'open') reasons.push(`Work is ${bead.status}`);
   if (bead.assignee) reasons.push('Work is already assigned');
-  if (GROUP_KINDS.has(bead.kind) || ['external', 'decision'].includes(bead.kind)) reasons.push('Only bounded work items can be picked up');
+  if (GROUP_KINDS.has(bead.kind) || isScheduleItem(bead) || ['external', 'decision'].includes(bead.kind)) reasons.push('Only bounded work items can be picked up');
   if (requireBrief && (!bead.goal?.trim() || !bead.acceptance?.trim())) reasons.push('Work needs a goal and acceptance criteria');
   if (bead.waitingFor || bead.isBlocked) reasons.push(bead.waitingFor || 'Native blocked state needs reconciliation');
   if (openDescendants(graph.beads, bead.id).length) reasons.push('Work has open descendants');
@@ -176,7 +177,7 @@ export function defaultPickupCandidate(rt, cell, bead, graph = rt.snapshots.grap
   if (!cell || !bead || bead.id === cell.rootBeadId || pickupCell(rt, graph, bead.id)?.id !== cell.id) return false;
   if (bead.pickup?.armToken || bead.pickup?.held || bead.pickup?.armed === false) return false;
   if (replacementPickupReason(rt, bead)) return false;
-  if (['investigation', 'decision', 'external', 'idea'].includes(bead.kind)) return false;
+  if (isScheduleItem(bead) || ['investigation', 'decision', 'external', 'idea'].includes(bead.kind)) return false;
   if (!bead.pickup?.automatic && !inheritedWorkerProfile(graph, bead).auto) return false;
   return !structuralPickupReasons(rt, graph, bead).length && !defaultOnlyReasons(rt, cell, bead, requested, now).length;
 }
@@ -188,7 +189,7 @@ export function idleReadyAvailable(rt, host, cell, graph = rt.snapshots.graph) {
 
 export function idleReadyProblem(rt, host, cell, bead, graph = rt.snapshots.graph, now = Date.now(), available = null) {
   if (!cell || !bead || bead.status !== 'open' || bead.assignee || bead.id === cell.rootBeadId || pickupCell(rt, graph, bead.id)?.id !== cell.id) return null;
-  if (['decision', 'external', 'idea'].includes(bead.kind)) return null;
+  if (isScheduleItem(bead) || ['decision', 'external', 'idea'].includes(bead.kind)) return null;
   if (structuralPickupReasons(rt, graph, bead).length || defaultOnlyReasons(rt, cell, bead, null, now).length) return null;
   if (!(available ?? idleReadyAvailable(rt, host, cell, graph))) return null;
   const mark = bead.pickup || {};
@@ -276,7 +277,7 @@ export function pickupState(rt, host, cell, bead, graph = rt.snapshots.graph, { 
   const mark = bead?.pickup;
   const unmarked = { ...mark, armed: false, eligible: false, state: 'unmarked', reason: 'Not marked ready for pickup' };
   if (!mark?.armToken) {
-    const legacyHeld = bead && !GROUP_KINDS.has(bead.kind) && !['investigation', 'decision', 'external', 'idea'].includes(bead.kind) && !mark?.automatic && !inheritedWorkerProfile(graph, bead).auto;
+    const legacyHeld = bead && !GROUP_KINDS.has(bead.kind) && !isScheduleItem(bead) && !['investigation', 'decision', 'external', 'idea'].includes(bead.kind) && !mark?.automatic && !inheritedWorkerProfile(graph, bead).auto;
     return { ...unmarked, held: Boolean(mark?.held || legacyHeld), reason: mark?.held ? 'Automatic pickup is held' : replacementPickupReason(rt, bead) || (legacyHeld ? 'Existing work is held until unheld or its cluster enables auto' : defaultPickupProblem(rt, host, cell, bead, graph, null, now) || (defaultPickupCandidate(rt, cell, bead, graph, null, now) ? 'Scoped work uses its nearest cluster worker profile' : unmarked.reason)) };
   }
   const attempt = pickupConsumed(rt.metadata.read(), bead);
@@ -356,7 +357,7 @@ export async function setPickup(rt, host, actor, input, { automatic = false, now
       const launch = old?.launchId && rt.metadata.read().workerLaunches[old.launchId];
       if (bead.assignee || launch && (RESERVED_LAUNCH_STATES.has(launch.state) || launch.sessionId && host.sessions.get(launch.sessionId) && !host.sessions.get(launch.sessionId).archived)) throw new HiveError('Reconcile the previous launch/session and claim before rearming.', 'conflict');
     }
-    if (input.ready && (GROUP_KINDS.has(bead.kind) || ['external', 'decision'].includes(bead.kind) || !bead.goal.trim() || !bead.acceptance.trim() || bead.status === 'closed')) throw new HiveError('Readiness needs an open bounded work item with goal and acceptance.');
+    if (input.ready && (GROUP_KINDS.has(bead.kind) || isScheduleItem(bead) || ['external', 'decision'].includes(bead.kind) || !bead.goal.trim() || !bead.acceptance.trim() || bead.status === 'closed')) throw new HiveError('Readiness needs an open bounded work item with goal and acceptance.');
     const selected = profile || previous?.profile;
     if (input.ready && !selected) throw new HiveError('A readiness mark needs a valid launch profile.');
     const mark = input.ready ? { armed: true, source: automatic ? 'default' : 'explicit', armToken: newId('arm'), armedBy: automatic ? 'hive:default' : actorFor(actor.sessionId), armedAt: Date.now(), cellId: cell.id, profileRevision: newId('profile'), profile: selected, briefDigest: briefDigest(bead, cell.id) } : { ...previous, armed: false, held: true };

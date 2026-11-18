@@ -17,7 +17,7 @@ function fixture() {
   return { ui, sent, api, busy: () => false, send: (m) => sent.push(m), graph: { tasks: { tasks: [{ id: 'task', name: 'Task' }] } }, hive: { cells: {} } };
 }
 const widgetScope = { h };
-const model = fs.readFileSync(new URL('../public/model.js', import.meta.url), 'utf8').replace(/export /g, '');
+const model = fs.readFileSync(new URL('../public/model.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace(/export /g, '');
 vm.runInNewContext(model + '\nthis.sources = eligibleHandoverSources;', widgetScope);
 const handoverCode = fs.readFileSync(new URL('../public/handover-fields.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace(/export /g, '');
 vm.runInNewContext(handoverCode + '\nthis.handoverFields = handoverFields; this.handoverError = handoverError;', Object.assign(widgetScope, { eligibleHandoverSources: widgetScope.sources }));

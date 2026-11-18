@@ -12,6 +12,7 @@ const valid = {
   hive_answer_request: { request_id: 'hreq_123456789abc', revision: 1, route_revision: 1, text: 'Proceed' },
   hive_forward_request: { request_id: 'hreq_123456789abc', revision: 1, route_revision: 1, recommendation: 'Proceed' },
   hive_report_pr_wait: { bead_id: 'a', url: 'https://github.com/example/repo/pull/1', head_sha: 'a'.repeat(40), state: 'ready', reason: 'Reviewed this head' },
+  hive_set_routine: { action: 'create', schedule: { name: 'Check-in', days: [1], time: '09:00', timeZone: 'UTC', message: 'Review priorities.' } },
   hive_context: {}, hive_ready: { limit: 10 },
   hive_create_beads: { beads: [{ ref: 'api', title: 'API', parent: 'root', goal: 'Build API', summary: 'Ready' }, { ref: 'test', title: 'Test', parent: 'api' }], links: [{ dependent: 'test', prerequisite: 'api' }] },
   hive_update_bead: { bead_id: 'a', parent_id: 'root', add_evidence: [{ label: 'Tests', kind: 'test', detail: 'Passed', url: 'https://example.com' }] },

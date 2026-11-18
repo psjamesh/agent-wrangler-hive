@@ -1,3 +1,4 @@
+import { isScheduleItem } from '../public/schedule.js';
 import {
   HiveError, LIMITS, text, beadIdArg, ensureWritable, refuseSnapshot, withLocks, journaled, assessCompletion, finishGroup, evidenceInput, CATCHING_UP,
 } from './ops.js';
@@ -72,6 +73,7 @@ export async function suggestBeadCompletion(rt, { cellId, beadId }) {
   const { cell, id, beads } = workstream(rt, { cellId, headId: beadId });
   if (cell.retired) throw new HiveError('This hive is retired. Reopen it to ask its queen to close an item.');
   if (beads[id].status === 'closed') throw new HiveError('This item is already closed.');
+  if (isScheduleItem(beads[id])) throw new HiveError('Manage schedules with hive_set_routine.');
   if (beads[id].kind === 'external') throw new HiveError('External items cannot be suggested for closure.');
   return recordCompletionSuggestion(rt, { cellId: cell.id, beadId: id, title: beads[id].title || id, includeId: true });
 }
@@ -390,7 +392,7 @@ const failedAt = new Map();
 function closedOverUnfinished(beads, rootId) {
   const found = new Map();
   for (const b of descendantIds(beads, rootId)) {
-    if (b === rootId || !OPEN_STATUSES.includes(beads[b]?.status)) continue;
+    if (b === rootId || isScheduleItem(beads[b]) || !OPEN_STATUSES.includes(beads[b]?.status)) continue;
     for (let p = beads[b].parentId; p && p !== rootId && beads[p]; p = beads[p].parentId) {
       if (beads[p].status !== 'closed') continue;
       if (!found.has(p)) found.set(p, []);
@@ -402,7 +404,7 @@ function closedOverUnfinished(beads, rootId) {
 }
 
 function unfinishedUnder(beads, id) {
-  return [...descendantIds(beads, id)].filter((b) => OPEN_STATUSES.includes(beads[b]?.status));
+  return [...descendantIds(beads, id)].filter((b) => !isScheduleItem(beads[b]) && OPEN_STATUSES.includes(beads[b]?.status));
 }
 
 // A restore recorded before a reopen that was not finished, because Hive

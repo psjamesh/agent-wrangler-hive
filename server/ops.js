@@ -1,4 +1,5 @@
 import { trackEvidencePrs } from './pr-evidence.js';
+import { isScheduleItem } from '../public/schedule.js';
 import { activeWorkerRestores } from './worker-restores.js';
 import { settleClosedBeadWait } from './ci-waits.js';
 import { requireStructuredWait, waitStatus } from './link-waits.js';
@@ -901,6 +902,7 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
     if (b.hold !== undefined && typeof b.hold !== 'boolean') throw new HiveError(`beads[${i}].hold must be true or false.`);
     if (b.hold === false && !['queen', 'human'].includes(actor.role)) throw new HiveError('Only the queen or human can create unheld work.', 'access');
     const kind = kindArg(b.kind) || 'work';
+    if (kind === 'routine') throw new HiveError('Use hive_set_routine to create schedules.');
     if (kind === 'goal') throw new HiveError('A hive has exactly one goal cell, its root. Use kind "workstream" for nested goals.');
     const status = b.status === undefined ? undefined : text(b.status, `beads[${i}].status`, 20);
     if (status === 'blocked') throw new HiveError(BLOCKED_STATUS_HELP, 'refused');
@@ -936,6 +938,7 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
       n.parentId = p;
     }
   }
+  for (const n of nodes) if (n.parentId && isScheduleItem(rt.snapshots.graph.beads[n.parentId])) throw new HiveError('The Schedules cluster only contains routines, managed with hive_set_routine.');
   const touchedCells = new Set([cell.id]);
   const edges = links.map((l, i) => {
     const type = l.type === undefined ? 'blocks' : l.type;
@@ -989,6 +992,9 @@ export async function updateBead(rt, actor, input) {
   const id = beadIdArg(input.bead_id, 'bead_id');
   const { bead, cell } = requireBeadAccess(rt, actor, id);
   const isRoot = cell.rootBeadId === id;
+  if (input.kind === 'routine' && bead.kind !== 'routine') throw new HiveError('Use hive_set_routine to create schedules.');
+  if (isScheduleItem(bead) && (input.parent_id !== undefined || input.kind !== undefined && input.kind !== bead.kind || input.title !== undefined)) throw new HiveError('Schedules keep their kind and cluster. Use hive_set_routine to edit a routine name.');
+  if (input.parent_id && isScheduleItem(rt.snapshots.graph.beads[input.parent_id])) throw new HiveError('The Schedules cluster only contains routines.');
   const patch = {
     title: text(input.title, 'title', LIMITS.title, { allowEmpty: false }),
     goal: text(input.goal, 'goal', LIMITS.long),
@@ -1379,6 +1385,7 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
 }
 
 function markWorkstreamRefresh(rt, cell, bead, token) {
+  if (isScheduleItem(bead)) return null;
   const beads = rt.snapshots.graph.beads;
   const seen = new Set([bead.id]);
   let parent = beads[bead.parentId];
@@ -1421,6 +1428,7 @@ export async function finishBead(rt, actor, input) {
   if (openReview(rt, id)) throw new HiveError('An open review must end with hive_review_verdict or a coordinator using hive_cancel_review before this work can finish.');
   const { cell, bead, role } = requireBeadAccess(rt, actor, id);
   if (bead.status === 'closed') throw new HiveError(`Cell ${id} is already closed.`);
+  if (bead.system === 'schedules' && Object.values(rt.snapshots.graph.beads).some(b => b.parentId === id && b.status !== 'closed')) throw new HiveError('The Schedules cluster can close only when no routine is open.');
   if (cell.rootBeadId === id) requireQueen({ role }, `close the goal of cell ${cell.id}`);
   const outcome = input.outcome;
   if (!OUTCOMES.includes(outcome)) throw new HiveError(`outcome must be one of ${OUTCOMES.join(', ')}.`);
@@ -1437,7 +1445,7 @@ export async function finishBead(rt, actor, input) {
     const out = await finishGroup(rt, { cell, id, outcome, summary, add, who, overrideReason, checkEvidence: true });
     return { op_id: out.opId, bead_id: id, outcome, closed: true, workstream_refresh: out.workstreamRefresh || undefined };
   }
-  const openChildren = Object.values(rt.snapshots.graph.beads).filter((b) => b.parentId === id && OPEN_STATUSES.includes(b.status));
+  const openChildren = Object.values(rt.snapshots.graph.beads).filter((b) => b.parentId === id && !isScheduleItem(b) && OPEN_STATUSES.includes(b.status));
   if (openChildren.length) {
     throw new HiveError(`Cell ${id} still has ${openChildren.length} open child cell(s) (${openChildren.slice(0, 5).map((b) => b.id).join(', ')}). Finish or re-parent them first.`);
   }
@@ -1502,11 +1510,11 @@ export function readyBeads(rt, actor, { under_bead_id, limit }) {
   const waiting = id => edges.some(e => e.dependent === id && e.blocking && beads[e.prerequisite]?.status !== 'closed');
   const ready = [...scope]
     .map((id) => beads[id])
-    .filter((b) => b && b.kind !== 'external' && b.id !== cell.rootBeadId && b.status === 'open' && !openReview(rt, b.id) && !b.assignee && !hasOpenChildren.has(b.id) && !waiting(b.id))
+    .filter((b) => b && !isScheduleItem(b) && b.kind !== 'external' && b.id !== cell.rootBeadId && b.status === 'open' && !openReview(rt, b.id) && !b.assignee && !hasOpenChildren.has(b.id) && !waiting(b.id))
     .sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || String(a.createdAt).localeCompare(String(b.createdAt)))
     .slice(0, Math.min(Math.max(Number(limit) || 20, 1), 100))
     .map((b) => ({ bead_id: b.id, title: b.title, kind: b.kind, parent_id: b.parentId, next_action: b.nextAction, acceptance: b.acceptance, pickup: pickupState(rt, rt.host, cell, b) }));
-  const pickup = [...scope].map(id => beads[id]).filter(b => b?.pickup?.armed).map(b => ({ bead_id: b.id, ...pickupState(rt, rt.host, cell, b) }));
+  const pickup = [...scope].map(id => beads[id]).filter(b => b?.pickup?.armed && !isScheduleItem(b)).map(b => ({ bead_id: b.id, ...pickupState(rt, rt.host, cell, b) }));
   return { cell_id: cell.id, ready, pickup, refreshed_at: rt.snapshots.current.loadedAt };
 }
 
@@ -1522,9 +1530,10 @@ export function assessCompletion(rt, cell, id, { beads, edges, errors = [] }, wh
   if (head.status === 'closed') problems.push(`${id} is already closed.`);
   if (!cell.rootBeadId || !descendantIds(beads, cell.rootBeadId).has(id) || id === cell.rootBeadId) problems.push(`${id} is not a cluster in this hive.`);
   const ids = [...descendantIds(beads, id)];
+  if (head.system === 'schedules' && ids.some(d => d !== id && beads[d].status !== 'closed')) problems.push('The Schedules cluster can close only when no routine is open.');
   const reviews = ids.filter((d) => openReview(rt, d));
   if (reviews.length) problems.push(`Open reviews still wait on ${reviews.join(', ')}; record their verdicts or explicitly cancel them first.`);
-  const open = ids.filter((d) => d !== id && beads[d].status !== 'closed');
+  const open = ids.filter((d) => d !== id && !isScheduleItem(beads[d]) && beads[d].status !== 'closed');
   if (open.length) problems.push(`${open.length} item(s) under it are not finished yet (${open.slice(0, 5).join(', ')}${open.length > 5 ? ', …' : ''}). Finish or move them first.`);
   if (head.assignee && head.assignee !== who) problems.push(`It is claimed by ${head.assignee}; that session finishes it, or the claim is released first.`);
   const waits = edges.filter((e) => e.dependent === id && e.blocking && beads[e.prerequisite] && beads[e.prerequisite].status !== 'closed').map((e) => e.prerequisite);

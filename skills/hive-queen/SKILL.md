@@ -251,3 +251,19 @@ Stored statuses are `open`, `in_progress`, `deferred` and `closed`. `blocked` is
 ## Hive repository versions
 
 Feature PRs must never bump Hive’s package version. Keep `package.json` and both root version fields in `package-lock.json` unchanged. Only a named release PR labelled `release` changes them, using `npm run release -- <version>`. See [the release guide](../../docs/releases.md).
+
+## Scheduled routines
+
+Create a recurring prompt inside the hive with `hive_set_routine`, rather than a core schedule pinned to your session. For example:
+
+```json
+{"action":"create","schedule":{"name":"Daily check-in","days":[1,2,3,4,5],"time":"09:00","timeZone":"Europe/London","message":"Review today's priorities and publish a short check-in."}}
+```
+
+Days are Sunday `0` through Saturday `6`. Supply an IANA time zone; the time is local `HH:MM`. The tool creates one routine hex under the hive's reserved **Schedules** cluster. The cluster and routines have clock marks and a reserved colour. They are never claimable work and do not use worker capacity or automatic pickup.
+
+Use `hive_set_routine` with `bead_id` and `action: "update"` plus the changed schedule fields to edit it. Actions `pause`, `resume`, `run-now` and `end` need only the routine's id. Run now also works while paused and keeps the normal cadence. End closes the routine permanently; create a new routine to start another schedule. The Schedules cluster can close when no routine is still open; ended routines remain beneath it as history. The human can create schedules from the map or cluster menu and edit them in Details, including Pause/Resume, Run now and End schedule.
+
+Each occurrence posts **Scheduled: <name>** in that routine's anchored topic and delivers it to whoever is queen then. It is a scheduled prompt, not a new human-authored message, and it follows the same receipt and awaiting-response path. Read the message, check whether its action is already complete, act using existing Hive tools and reply with `hive_publish(reply_to: <message id>)`. An acknowledgement alone records receipt and leaves the message awaiting your answer. Failed or uncertain delivery uses missed-input recovery; do not repeat completed actions. With no queen, Hive retains the prompt for the next queen.
+
+The schedule survives restarts and queen handoffs. A missed run catches up once, then resumes its normal cadence. Disabled, retired and captured hives never fire. Pausing skips runs until resumed. A local time skipped by daylight saving skips that date; a repeated local time fires at its first occurrence only. Details and `hive_context` show the next run, last run and last delivery outcome; a delivered outcome means the prompt reached the queen, not that the routine's requested action is complete.

@@ -249,6 +249,10 @@ const LUCIDE = {
   ],
 };
 const PRIMARY_SHAPES = {
+  clock: [
+    ['circle', { r: '4.6', class: 'hive-pm-line' }],
+    ['path', { d: 'M0,-3 V0 L2,1.3', class: 'hive-pm-line' }],
+  ],
   external: [
     ['path', { d: 'M-1.4,-2.8 L0,-4.2 A3,3 0 0,1 4.2,0 L2.8,1.4', class: 'hive-pm-line' }],
     ['path', { d: 'M1.4,2.8 L0,4.2 A3,3 0 0,1 -4.2,0 L-2.8,-1.4', class: 'hive-pm-line' }],
@@ -354,7 +358,7 @@ export function hexTile(radius) {
 export function renderHexMap({
   viewKey, size, items, occupied = new Set(), bounds, selectedId = null, ariaLabel, maxFit = 1.4,
   relations = null, describe = null,
-  onClick, onActivate, onSelect, onMove, onDrop = null, onDragStart = () => {}, onBackground,
+  onClick, onActivate, onSelect, onMove, onDrop = null, onDragStart = () => {}, onBackground, onBackgroundMenu,
   onDragState = () => {}, claimDrag = null, overlay = [], viewControls = [], actions = [], outlines = [],
   dragGroup = null, movePreview = null, onContextMenu = null,
   tile = null, className = '', previousPositions = null, storage = null,
@@ -366,6 +370,11 @@ export function renderHexMap({
   const snap = (p) => fromPixel(p, size);
   const shape = form.d;
   const svg = h('svg:svg', { class: `hive-hexmap${className ? ` ${className}` : ''}`, role: 'group', 'aria-label': ariaLabel });
+  if (onBackgroundMenu) svg.addEventListener('contextmenu', evt => {
+    if (evt.target.closest?.('[data-tile-id]')) return;
+    evt.preventDefault();
+    onBackgroundMenu({ x: evt.clientX, y: evt.clientY });
+  });
   const defs = h('svg:defs', {},
     h('svg:path', { id: `${id}-slot`, d: shape }),
     form.faces ? h('svg:clipPath', { id: `${id}-faces` }, h('svg:path', { d: shape })) : null);

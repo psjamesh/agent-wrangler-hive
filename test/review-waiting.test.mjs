@@ -1,3 +1,4 @@
+import { isScheduleItem } from '../public/schedule.js';
 import { progressBar } from '../public/progress-bar.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -70,7 +71,7 @@ function dom(t) {
 
 function views() {
   const source = fs.readFileSync(new URL('../public/cell-view.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?from .*;\n/gm, '').replaceAll('export ', '');
-  return vm.runInNewContext(`${source}\n({ beadDetails, workstreamProgress, headProgress, hasPanels })`, { ...model, h, progressBar, pickupDetails: () => null, waitingSection: () => null, pullRequestsSection: () => null, markdown: (api, text) => h('p', {}, text), safeHref: url => url || null, sessionLabel: () => '' });
+  return vm.runInNewContext(`${source}\n({ beadDetails, workstreamProgress, headProgress, hasPanels })`, { ...model, isScheduleItem, h, progressBar, pickupDetails: () => null, waitingSection: () => null, pullRequestsSection: () => null, markdown: (api, text) => h('p', {}, text), safeHref: url => url || null, sessionLabel: () => '' });
 }
 
 test('review and recorded waiting coexist with an agent mark and use circular badges and a bare blocked cross', t => {
