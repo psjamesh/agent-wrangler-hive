@@ -1323,3 +1323,49 @@ test('a failed shared subject pass is logged without rejecting an already commit
   assert.equal(logs.length, 1);
   assert.match(logs[0], /could not establish session availability/);
 });
+
+for (const state of ['failed', 'uncertain', 'pending']) test(`dismiss ${state} answer delivery preserves history and clears attention without sending`, async t => {
+  const f = await privacyFixture(t), r = await f.create(queen);
+  f.host.deliver = async () => ({ mode: 'error', outcome: 'unknown', error: 'Delivery unavailable' });
+  const answered = await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Saved decision', receipt: 'answer' });
+  f.rt.metadata.mutate(d => { d.requests[r.id].delivery.state = state; });
+  const before = f.rt.metadata.read().requests[r.id];
+  let sends = 0;
+  f.host.deliver = async () => { sends++; return { mode: 'live' }; };
+  assert.equal(f.projection().requestCount, 1);
+  const args = { request_id: r.id, ...rev(before), receipt: 'dismiss-answer' };
+  await assert.rejects(requests.dismissRequest(f.rt, f.host, { ...args, revision: before.revision - 1 }), /changed/);
+  await assert.rejects(requests.dismissRequest(f.rt, f.host, { ...args, route_revision: before.routeRevision - 1 }), /changed/);
+  const dismissed = await requests.dismissRequest(f.rt, f.host, args);
+  assert.equal(dismissed.state, 'resolved');
+  assert.equal(dismissed.resolution.reason, 'dismissed');
+  assert.equal(dismissed.resolution.by, 'human');
+  assert.ok(dismissed.resolution.at >= answered.answer.at);
+  assert.deepEqual(dismissed.answer, before.answer);
+  assert.deepEqual(dismissed.delivery, before.delivery);
+  const reopened = new MetadataStore({ file: f.rt.metadata.file });
+  assert.deepEqual(reopened.read().requests[r.id], dismissed);
+  assert.equal(requests.needsHuman(dismissed), false);
+  assert.deepEqual(await requests.dismissRequest(f.rt, f.host, args), dismissed);
+  await assert.rejects(requests.retryDelivery(f.rt, f.host, { request_id: r.id, ...rev(dismissed), confirm_uncertain: true }), /current answered request/);
+  await assert.rejects(requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Saved decision', receipt: 'answer' }), /already answered or closed/);
+  requests.reconcileRequests(f.rt, f.host, { startup: true });
+  await requests.notifyResolution(f.rt, f.host, r.id);
+  assert.equal(sends, 0);
+  assert.deepEqual(requests.listMine(f.rt, f.host, queen)[0].answer, before.answer);
+  const hive = f.projection(), cell = hive.cells.cell;
+  assert.equal(hive.requestCount, 0);
+  assert.equal(cell.requestCounts.human, 0);
+  const { inboxRows } = await import('../public/global-inbox.js');
+  const { cellWaitingItems } = await import('../public/waiting-model.js');
+  const { createUi } = await import('../public/client.js');
+  const ctx = { hive, graph: { sessions: [] }, ui: createUi() };
+  assert.equal(inboxRows(ctx, [cell], 'needs').length, 0);
+  assert.equal(cellWaitingItems(ctx, cell).length, 0);
+});
+
+test('delivered answers cannot be dismissed', async t => {
+  const f = fixture(t), r = await f.create(queen);
+  const answered = await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Received', receipt: 'answer' });
+  await assert.rejects(requests.dismissRequest(f.rt, f.host, { request_id: r.id, ...rev(answered), receipt: 'dismiss' }), /already answered or closed/);
+});
