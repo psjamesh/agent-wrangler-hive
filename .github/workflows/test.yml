@@ -31,7 +31,15 @@ jobs:
 
       - run: npm ci --ignore-scripts --prefix .core
 
+      - run: npm install --no-save --ignore-scripts --prefix .core zod@3.25.76
+
       - run: npm ci
+
+      - run: npm test
+        env:
+          HIVE_TEST_CORE: ${{ github.workspace }}/.core
+
+      - run: npm install --no-save --ignore-scripts --prefix .core zod@4.6.7
 
       - run: npm test
         env:

@@ -60,6 +60,8 @@ function resolveHiveId(args) {
 const beadId = z.string().min(1).max(80);
 
 function withHostJsonSchema(schema) {
+  // Custom conversion skips parent traversal; newer host converters still try to finalize parents.
+  schema = schema.clone(schema.def);
   let building = false;
   schema._zod.toJSONSchema = () => {
     if (building) return undefined;
