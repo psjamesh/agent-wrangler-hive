@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { pickupFixture } from './helpers/pickup.mjs';
 import { createSnapshotCache } from '../server/snapshots.js';
-import { createBeadsTool } from '../server/tools.js';
+import { createBeadsTool } from './helpers/tools.mjs';
 
 const flush = () => new Promise(setImmediate);
 const input = { beads: [{ ref: 'new', title: 'New work', kind: 'investigation' }] };

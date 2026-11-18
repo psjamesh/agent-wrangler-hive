@@ -6,8 +6,11 @@ import client, { send } from '../public/client.js';
 
 test('Hive declares paired deck and board API 2 halves', () => {
   const manifest = createManifest({ dir: '.' });
-  assert.equal(manifest.engines.wranglerApi, '^2.0.0');
-  assert.equal(pkg.wranglerExtension.engines.wranglerApi, '^2.0.0');
+  assert.equal(manifest.engines.wranglerApi, '^2.1.0');
+  assert.equal(pkg.wranglerExtension.engines.wranglerApi, '^2.1.0');
+  assert.ok(manifest.requires.includes('schema:zod'));
+  assert.ok(pkg.wranglerExtension.requires.includes('schema:zod'));
+  assert.equal(pkg.dependencies?.zod, undefined);
   assert.equal(manifest.boardApi, '^2.0.0');
   assert.deepEqual(manifest.board, { client: 'public/client.js', styles: 'public/styles.css' });
   assert.equal('client' in manifest, false);

@@ -49,9 +49,9 @@ export function createManifest({ dir }) {
     help: 'Adds a Hive view to the rail. Each opted-in task is a hive with a nominated queen; the hive\'s durable work lives in a private Beads store under the wrangler data directory, maintained through hive_* tools. Turning Hive off removes the view and tools; the store and Hive metadata are kept.',
     author: 'Agent Wrangler Hive contributors',
     defaultEnabled: false,
-    engines: { wranglerApi: '^2.0.0' },
+    engines: { wranglerApi: '^2.1.0' },
     boardApi: '^2.0.0',
-    requires: ['tasks:read', 'tasks:write', 'sessions:read', 'mail:read', 'sessions:spawn', 'sessions:archive', 'deliver', 'board:rebuild', 'links:read', 'events', 'agents:read'],
+    requires: ['schema:zod', 'tasks:read', 'tasks:write', 'sessions:read', 'mail:read', 'sessions:spawn', 'sessions:archive', 'deliver', 'board:rebuild', 'links:read', 'events', 'agents:read'],
     settings: [{
       key: BD_PATH_SETTING,
       hidden: true,

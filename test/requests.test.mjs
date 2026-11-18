@@ -1,3 +1,4 @@
+import { schema } from './helpers/host-schema.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -21,7 +22,7 @@ function fixture(t) {
   const members = new Map([[queen, { sessionId: queen, taskId: 'task', spawnedBy: other }], [worker, { sessionId: worker, taskId: 'task' }], [other, { sessionId: other, taskId: 'elsewhere', spawnedBy: worker }]]);
   const sent = [];
   const rt = { paths: { attachmentDir: dir, root: dir }, metadata, pendingParticipants: new Map(), changed() {}, snapshots: { graph: { beads: {} }, current: { error: 'Beads unavailable' } } };
-  const host = { stores: { hive: rt }, sessions: { get: id => members.get(id) }, tasks: { forSession: id => ({ taskId: members.get(id)?.taskId }) }, deliver: async (id, text) => { sent.push({ id, text }); return { mode: 'live' }; } };
+  const host = { schema, stores: { hive: rt }, sessions: { get: id => members.get(id) }, tasks: { forSession: id => ({ taskId: members.get(id)?.taskId }) }, deliver: async (id, text) => { sent.push({ id, text }); return { mode: 'live' }; } };
   rt.host = host;
   return { rt, host, members, sent, create: (caller = worker, args = {}) => requests.createRequest(rt, host, caller, { title: 'Approve API?', body: 'Preserve the old API?', ...args }) };
 }
@@ -155,7 +156,7 @@ test('projection retains open request messages beyond conversation caps and repo
 
 test('native tools enforce caller identity and expose own recovery after leaving a hive', async t => {
   const f = fixture(t);
-  const { workTools } = await import('../server/tools.js');
+  const { workTools } = await import('./helpers/tools.mjs');
   const { hideTool } = await import('../server/manifest.js');
   const ask = workTools.find(x => x.name === 'hive_request_input');
   assert.ok(ask);
@@ -398,7 +399,7 @@ test('peer worker contexts omit private request topics and discussions but prese
   await f.conv.publish(f.rt, f.actor, { text: 'SECRET QUEEN DISCUSSION', reply_to: secret.messageId }, f.host);
   await f.conv.publish(f.rt, f.actor, { text: 'Shared public update' }, f.host);
   const own = await f.create(other, { title: 'Peer own request' });
-  const { buildContext } = await import('../server/tools.js');
+  const { buildContext } = await import('./helpers/tools.mjs');
   const peer = await buildContext(f.rt, f.host, { sessionId: other, role: 'worker', cell: f.actor.cell });
   assert.doesNotMatch(JSON.stringify(peer), /SECRET|"requesterSessionId":"22222222/);
   assert.match(JSON.stringify(peer), /Shared public update/);
@@ -669,7 +670,7 @@ test('option-only answers validate ids and retain revision guards across dedupe 
 });
 
 test('native request tools reject unknown fields including nested option fields', async t => {
-  const f = fixture(t), { workTools } = await import('../server/tools.js');
+  const f = fixture(t), { workTools } = await import('./helpers/tools.mjs');
   const ask = workTools.find(tool => tool.name === 'hive_request_input');
   for (const args of [{ title: 'Q', body: 'B', surprise: true }, { title: 'Q', body: 'B', options: [{ label: 'A', surprise: true }] }]) {
     const out = await ask.handler({ host: f.host, caller: worker }, args);
@@ -1195,7 +1196,7 @@ test('subject change delivery failures persist and a successor queen receives th
 });
 
 test('native request tools accept optional pins and document observation reports', async t => {
-  const f = fixture(t), { workTools } = await import('../server/tools.js');
+  const f = fixture(t), { workTools } = await import('./helpers/tools.mjs');
   const ask = workTools.find(x => x.name === 'hive_request_input');
   const result = await ask.handler({ host: f.host, caller: queen }, { title: 'Review design', body: 'Approve this revision?', kind: 'approval', subject_pin: docPin });
   assert.equal(result.isError, undefined);

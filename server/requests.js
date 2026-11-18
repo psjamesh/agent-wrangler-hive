@@ -147,7 +147,7 @@ export async function createRequest(rt, host, id, args) {
   const title = bounded(args.title, 'title', 200, true), body = bounded(args.body, 'body', 20000, true);
   const kind = args.kind || 'question';
   if (!['question', 'decision', 'approval', 'manual-action'].includes(kind)) fail('Unknown request kind.');
-  const options = requestOptions(args.options);
+  const options = requestOptions(args.options, host.schema.z);
   if (args.allow_free_text !== undefined && typeof args.allow_free_text !== 'boolean') fail('allow_free_text must be a boolean.');
   const key = bounded(args.dedupe_key, 'dedupe_key', 120);
   const old = key && values(rt).find(r => r.cellId === actor.cell.id && r.requesterSessionId === id && r.dedupeKey === key && r.state === 'open');

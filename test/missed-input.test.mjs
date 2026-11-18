@@ -1,3 +1,4 @@
+import { schema } from './helpers/host-schema.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,7 +8,7 @@ import { MetadataStore } from '../server/metadata-store.js';
 import { recordHumanInput, deliver, acknowledgeInput, publish } from '../server/conversation.js';
 import { notifyMissedInput } from '../server/missed-input.js';
 import { createManifest } from '../server/manifest.js';
-import { buildContext } from '../server/tools.js';
+import { buildContext } from './helpers/tools.mjs';
 import { buildGraph } from '../server/bead-model.js';
 import * as requests from '../server/requests.js';
 
@@ -22,7 +23,7 @@ function fixture(t) {
   const graph = buildGraph([{ id: 'root', title: 'Root', status: 'open' }]);
   const rt = { metadata, paths: { root, attachmentDir: root }, changed() {}, log() {}, recover: async () => {}, workerRestores: new Map(), pendingParticipants: new Map(), snapshots: { graph, current: { loadedAt: 1 }, refresh: async () => {}, maybeRefresh() {} }, beads: { status: { state: 'ready' } } };
   const sent = [], members = new Map([queen, worker].map(sessionId => [sessionId, { sessionId, taskId: 'task', status: 'idle' }]));
-  const host = { stores: { hive: rt }, sessions: { get: id => members.get(id), forTask: () => [...members.values()] }, tasks: { get: () => ({ name: 'Example' }), forSession: () => ({ taskId: 'task' }) }, deliver: async (id, text) => { sent.push({ id, text }); return { mode: 'live' }; } };
+  const host = { schema, stores: { hive: rt }, sessions: { get: id => members.get(id), forTask: () => [...members.values()] }, tasks: { get: () => ({ name: 'Example' }), forSession: () => ({ taskId: 'task' }) }, deliver: async (id, text) => { sent.push({ id, text }); return { mode: 'live' }; } };
   rt.host = host;
   const actor = { cell: metadata.cell('cell'), sessionId: queen, role: 'queen' };
   const sweep = () => createManifest({ dir: root }).sweeps.find(s => s.id === 'refresh').run({ host });

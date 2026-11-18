@@ -1,15 +1,16 @@
+import { z } from './helpers/host-schema.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { workTools, publishTool } from '../server/tools.js';
+import { workTools, publishTool } from './helpers/tools.mjs';
 
-const catalog = Object.fromEntries(workTools.map((t) => [t.name, t.inputSchema._zod.toJSONSchema()]));
+const catalog = Object.fromEntries(workTools.map((t) => [t.name, z.toJSONSchema(t.inputSchema, { io: 'input', unrepresentable: 'any' })]));
 
-test('every tool publishes a self-contained JSON Schema for hosts with an older Zod converter', () => {
+test('every tool publishes a self-contained JSON Schema through host Zod', () => {
   assert.equal(workTools.length, 28);
   for (const [name, schema] of Object.entries(catalog)) {
     assert.equal(schema.type, 'object', name);
     assert.equal(schema.additionalProperties, false, name);
-    assert.equal(schema.$schema, undefined, name);
+    assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema', name);
     if (schema.properties.cell_id) {
       assert.equal(schema.properties.cell_id.maxLength, 80, name);
       assert.equal(schema.properties.hive_id.maxLength, 80, name);
@@ -48,7 +49,7 @@ for (const tool of [publishTool, workTools.find(t => t.name === 'hive_request_in
 
 test('request images share publish schema limits and describe private forwarding', () => {
   const images = catalog.hive_request_input.properties.attachments;
-  const published = publishTool.inputSchema._zod.toJSONSchema().properties.attachments;
+  const published = z.toJSONSchema(publishTool.inputSchema, { io: 'input', unrepresentable: 'any' }).properties.attachments;
   assert.equal(images.maxItems, 4);
   assert.deepEqual(images.items, published.items);
   assert.match(images.description, /All requesters/);

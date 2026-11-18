@@ -214,7 +214,7 @@ test('abandon fences a late dispatch and releases only the reservation, never a 
 
 
 test('context exposes global capacity, drift and ordinary untracked sessions from current state', async t => {
-  const { buildContext } = await import('../server/tools.js');
+  const { buildContext } = await import('./helpers/tools.mjs');
   const f = withAttachmentStorage(t, fixture(2));
   f.live.a.assignee = 'aw:queen'; f.live.a.status = 'in_progress';
   f.live.c.assignee = 'aw:queen2'; f.live.c.status = 'in_progress';
@@ -229,7 +229,7 @@ test('context exposes global capacity, drift and ordinary untracked sessions fro
 });
 
 test('context lists dormant claim holders even when more than 60 sessions are bound', async t => {
-  const { buildContext } = await import('../server/tools.js');
+  const { buildContext } = await import('./helpers/tools.mjs');
   const f = withAttachmentStorage(t, fixture(2));
   f.live.a.assignee = 'aw:holder'; f.live.a.status = 'in_progress';
   f.board.set('holder', { sessionId: 'holder', taskId: 'task', status: 'idle', dormant: true });
@@ -743,7 +743,7 @@ test('a reviewer unbound at the final export cannot record a verdict', async () 
 });
 
 test('context and map project the review wait on the work bead and track reviewer activity without owner drift', async t => {
-  const { buildContext } = await import('../server/tools.js');
+  const { buildContext } = await import('./helpers/tools.mjs');
   const { projectForGraph } = await import('../server/projection.js');
   const { primaryKind, beadTile } = await import('../public/cell-view.js');
   const f = withAttachmentStorage(t, fixture(1)); reviewFixture(f); await dispatchFixture(f);
@@ -1146,7 +1146,7 @@ test('a pending claim publishes its reserved slot before the Beads write complet
 });
 
 import { resolveCaller } from '../server/access.js';
-import { buildContext } from '../server/tools.js';
+import { buildContext } from './helpers/tools.mjs';
 function statusFixture() {
   const f = fixture(0);
   f.board.set('worker', { sessionId: 'worker', taskId: 'task', status: 'working' });
@@ -1628,7 +1628,7 @@ test('queen overrides need an override_reason, recorded on the review; terra is 
 for (const launcher of ['builder', 'queen']) test(`${launcher} launches a bound helper sharing the holder slot`, async () => {
   const f = holderFixture('codex', 1); await launchRecording(f);
   const used = capacity(f.rt).used;
-  const { spawnWorkerTool } = await import('../server/tools.js');
+  const { spawnWorkerTool } = await import('./helpers/tools.mjs');
   const response = await spawnWorkerTool.handler({ host: f.host, caller: launcher }, { bead_id: 'a', intent: 'Check the feature', role: 'helper', agent: 'claude', model: 'opus' });
   assert.equal(response.isError, undefined, JSON.stringify(response));
   const launch = Object.values(f.doc().workerLaunches).find(l => l.role === 'investigator');
@@ -1846,7 +1846,7 @@ test('closed-bead refusal without PR links does not send; another held open clai
 });
 
 for (const verdict of ['changes_requested', 'approved']) for (const toolName of ['requestReviewTool', 'spawnWorkerTool']) test(`${toolName} lets the queen reopen a retained reviewer after ${verdict}, preserving receipts without spawning`, async () => {
-  const tool = (await import('../server/tools.js'))[toolName];
+  const tool = (await import('./helpers/tools.mjs'))[toolName];
   const { reviewFields } = await import('../server/review-state.js');
   const { cellCounts } = await import('../public/model.js');
   const f = fixture(1); reviewFixture(f); await dispatchFixture(f);
@@ -2351,7 +2351,7 @@ for (const holder of ['aw:worker-1', null]) test(`manual archived restore reclai
   });
   const { createManifest } = await import('../server/manifest.js');
   const manifest = createManifest({ dir: '.' });
-  assert.equal(manifest.engines.wranglerApi, '^2.0.0');
+  assert.equal(manifest.engines.wranglerApi, '^2.1.0');
   const result = await manifest.hooks['session.launchContext']({ sid: 'worker-1', task: { id: 'task' }, reason: 'restore', host: f.host });
   assert.equal(result?.refuse, undefined);
   assert.equal(f.live.a.assignee, 'aw:worker-1');

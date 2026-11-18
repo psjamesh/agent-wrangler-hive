@@ -320,7 +320,7 @@ test('deep links resolve retained history and fall back without changing read or
 });
 
 test('hive_publish returns the relative hash link for its posted message', async (t) => {
-  const { publishTool } = await import('./tools.js');
+  const { publishTool } = await import('../test/helpers/tools.mjs');
   const f = await fixture(t);
   const response = await publishTool.handler({ host: { ...f.rt.host, stores: { hive: f.rt } }, caller: f.actor.sessionId }, { text: 'Link me' });
   assert.equal(response.isError, undefined);
@@ -630,7 +630,7 @@ test('completion suggestion handler delivers once and retains uncertain delivery
 });
 
 test('publish warns about direct human asks without refusing or changing the message', async (t) => {
-  const { publishTool } = await import('./tools.js');
+  const { publishTool } = await import('../test/helpers/tools.mjs');
   const f = await fixture(t);
   const human = await recordHumanInput(f.rt, { cellId: f.cell.id, text: 'What did you find?' });
   for (const text of [

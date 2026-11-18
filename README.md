@@ -101,12 +101,12 @@ Enabled hives start ready-marked work automatically, bounded by the global work 
 
 ## Tests
 
-`npm test` runs the fast automated suites in `test/`, `public/` and `server/`. `npm run test:native` runs the native release suites in `test/native/`; run it for changes touching the Beads, `bd` or Dolt integration, or the release and install path. `npm run test:browser` runs the browser fixtures separately. Test data uses temporary directories and honours `TMPDIR`; to keep it inside the checkout, run:
+`npm test` requires `HIVE_TEST_CORE` to point to a core checkout at API 2.1 or later with dependencies installed. It uses core’s Zod for validation and verifies tool fingerprints through core’s MCP schema conversion. `npm test` runs the fast automated suites in `test/`, `public/` and `server/`. `npm run test:native` runs the native release suites in `test/native/`; run it for changes touching the Beads, `bd` or Dolt integration, or the release and install path. `npm run test:browser` runs the browser fixtures separately. Test data uses temporary directories and honours `TMPDIR`; to keep it inside the checkout, run:
 
 ```sh
 mkdir -p .scratch
 echo '{}' > .scratch/package.json
-TMPDIR="$PWD/.scratch" npm test
+HIVE_TEST_CORE=~/vcs/agent-wrangler TMPDIR="$PWD/.scratch" npm test
 TMPDIR="$PWD/.scratch" npm run test:native
 ```
 

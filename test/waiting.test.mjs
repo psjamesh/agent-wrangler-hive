@@ -73,7 +73,7 @@ test('a changed head permanently clears the old human report, including after re
 });
 
 test('the report tool is registered and refuses other-cell identities through the real tool boundary', async () => {
-  const { workTools } = await import('../server/tools.js');
+  const { workTools } = await import('./helpers/tools.mjs');
   const f = fixture();
   f.rt.pendingParticipants = new Map();
   f.rt.log = () => {};

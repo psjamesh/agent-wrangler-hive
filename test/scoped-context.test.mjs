@@ -1,10 +1,11 @@
+import { z } from './helpers/host-schema.mjs';
 import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { launchQueen, onBeforeDispatch } from '../server/sessions.js';
-import { buildContext, contextTool, hiveTool, workTools } from '../server/tools.js';
+import { buildContext, contextTool, hiveTool, workTools } from './helpers/tools.mjs';
 import { buildGraph } from '../server/bead-model.js';
 
 function fixture(t) {
@@ -167,7 +168,7 @@ test('cross-cell links include endpoints without exposing the other cell bead co
 });
 
 test('context tool publishes scope in its schema and validates values', () => {
-  const schema = contextTool.inputSchema._zod.toJSONSchema();
+  const schema = z.toJSONSchema(contextTool.inputSchema, { io: 'input', unrepresentable: 'any' });
   assert.deepEqual(schema.properties.scope.enum, ['cell', 'bead']);
   assert.equal(contextTool.inputSchema.safeParse({ scope: 'invalid' }).success, false);
 });

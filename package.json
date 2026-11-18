@@ -15,15 +15,13 @@
   "engines": {
     "node": ">=20"
   },
-  "dependencies": {
-    "zod": "4.6.7"
-  },
   "wranglerExtension": {
     "id": "hive",
     "label": "Hive",
     "description": "Opt tasks into Hives: a nominated queen and its workers keep a Beads work graph that the human can steer from a hexagonal view.",
     "author": "James Hargreaves",
     "requires": [
+      "schema:zod",
       "tasks:read",
       "tasks:write",
       "sessions:read",
@@ -37,7 +35,7 @@
       "agents:read"
     ],
     "engines": {
-      "wranglerApi": "^2.0.0"
+      "wranglerApi": "^2.1.0"
     }
   }
 }
