@@ -1370,3 +1370,120 @@ test('delivered answers cannot be dismissed', async t => {
   const answered = await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Received', receipt: 'answer' });
   await assert.rejects(requests.dismissRequest(f.rt, f.host, { request_id: r.id, ...rev(answered), receipt: 'dismiss' }), /already answered or closed/);
 });
+
+test('queen rewrite is human-facing while worker reads and answer delivery retain the original request', async t => {
+  const f = fixture(t), r = await f.create(worker, { dedupe_key: 'rewrite' });
+  const args = { request_id: r.id, ...rev(r), title: 'Keep existing integrations working?', body: 'Keeping compatibility avoids breaking existing integrations.', recommendation: 'Keep compatibility' };
+  const forwarded = await requests.forwardRequest(f.rt, f.host, queen, args);
+  assert.equal(forwarded.forwarded.title, args.title);
+  assert.equal(forwarded.forwarded.body, args.body);
+  assert.equal((await requests.forwardRequest(f.rt, f.host, queen, args)).revision, forwarded.revision);
+  await assert.rejects(requests.forwardRequest(f.rt, f.host, queen, { ...args, title: 'Different' }), /queen|changed/);
+  const visible = humanConversationDoc(f.rt.metadata.read(), 'cell');
+  assert.equal(visible.conversation.cell[0].text, args.title);
+  assert.equal(visible.threads.cell[r.threadId].title, args.title);
+  const own = requests.listMine(f.rt, f.host, worker)[0];
+  assert.equal(own.title, r.title);
+  assert.equal(own.body, r.body);
+  assert.equal(own.forwarded.body, args.body);
+  const answered = await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(forwarded), text: 'Yes', receipt: 'rewrite-answer' });
+  assert.equal(answered.delivery.state, 'delivered');
+  assert.equal(f.sent.at(-1).id, worker);
+  assert.ok(f.sent.at(-1).text.includes(r.title));
+  assert.ok(!f.sent.at(-1).text.includes(args.title));
+});
+
+for (const rewrite of [{ title: 'Plain title' }, { body: 'Plain body' }, {}]) test(`forward preserves choices, dedupe and revisions with ${JSON.stringify(rewrite)}`, async t => {
+  const f = fixture(t);
+  const options = [{ id: 'keep', label: 'Keep compatibility (Recommended)' }, { id: 'break', label: 'Remove compatibility' }];
+  const r = await f.create(worker, { dedupe_key: 'choices', kind: 'decision', options });
+  const forwarded = await requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(r), ...rewrite });
+  assert.deepEqual(forwarded.options, options);
+  assert.equal(forwarded.contentRevision, r.contentRevision);
+  assert.equal(forwarded.routeRevision, r.routeRevision + 1);
+  assert.equal(forwarded.requesterSessionLink.sessionId, worker);
+  const updated = await f.create(worker, { dedupe_key: 'choices', kind: 'decision', options, body: 'Updated compatibility context' });
+  assert.equal(updated.id, r.id);
+  assert.equal(updated.contentRevision, r.contentRevision + 1);
+  assert.equal(updated.forwarded.title, rewrite.title);
+  assert.equal(updated.forwarded.body, rewrite.body);
+  const answered = await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(updated), option_id: 'keep', text: 'Please keep it', receipt: 'choices-answer' });
+  assert.equal(answered.answer.optionId, 'keep');
+  assert.equal(f.sent.at(-1).id, worker);
+  assert.match(f.sent.at(-1).text, /Keep compatibility/);
+});
+
+for (const rewrite of [{ title: '' }, { body: ' ' }, { title: 'x'.repeat(201) }, { body: 'x'.repeat(20001) }, { title: null }]) test('invalid forwarding rewrite leaves the request queued', async t => {
+  const f = fixture(t), r = await f.create();
+  await assert.rejects(requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(r), ...rewrite }), /title|body/);
+  assert.equal(requests.listMine(f.rt, f.host, worker)[0].audience, 'queen');
+});
+
+test('a worker edit makes a forwarded rewrite stale in human conversation and topic titles', async t => {
+  const f = fixture(t), r = await f.create(worker, { dedupe_key: 'edited-forward' });
+  const forwarded = await requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(r), title: 'Earlier summary', body: 'Earlier explanation' });
+  assert.equal(forwarded.forwarded.contentRevision, r.contentRevision);
+  const edited = await f.create(worker, { dedupe_key: 'edited-forward', title: 'Current question', body: 'Current explanation' });
+  const visible = humanConversationDoc(f.rt.metadata.read(), 'cell');
+  assert.equal(visible.conversation.cell[0].text, edited.title);
+  assert.equal(visible.threads.cell[r.threadId].title, edited.title);
+  assert.equal(edited.audience, 'human');
+  assert.equal(edited.routeRevision, forwarded.routeRevision);
+  assert.equal(edited.forwarded.title, 'Earlier summary');
+});
+
+test('worker edits notify the queen to refresh a stale rewrite without rerouting the request', async t => {
+  const f = fixture(t), r = await f.create(worker, { dedupe_key: 'refresh-rewrite' });
+  const forwarded = await requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(r), title: 'Earlier summary', body: 'Earlier explanation' });
+  const before = f.sent.length;
+  await f.create(worker, { dedupe_key: 'refresh-rewrite', title: 'Current question', body: 'Current context' });
+  assert.equal(f.sent.length, before + 1);
+  assert.equal(f.sent.at(-1).id, queen);
+  assert.match(f.sent.at(-1).text, /rewrite.*earlier version|earlier version.*rewrite/i);
+  let current = requests.listMine(f.rt, f.host, worker)[0];
+  assert.equal(current.audience, 'human');
+  assert.equal(current.routeRevision, forwarded.routeRevision);
+  const actor = { role: 'queen', cell: f.rt.metadata.cell('cell'), sessionId: queen };
+  assert.ok(requests.requestContext(f.rt, actor).input_requests.some(x => x.id === r.id));
+  await requests.notifyQueen(f.rt, f.host, r.id);
+  assert.equal(f.sent.length, before + 1);
+  const beforeRefresh = humanConversationDoc(f.rt.metadata.read(), 'cell').conversationRevision;
+  const args = { request_id: r.id, ...rev(current), title: 'Updated plain question', body: 'Updated plain explanation' };
+  const refreshed = await requests.forwardRequest(f.rt, f.host, queen, args);
+  assert.equal(refreshed.forwarded.contentRevision, current.contentRevision);
+  assert.notEqual(humanConversationDoc(f.rt.metadata.read(), 'cell').conversationRevision, beforeRefresh);
+  assert.equal(refreshed.requesterSessionId, worker);
+  assert.equal(refreshed.audience, 'human');
+  assert.equal(humanConversationDoc(f.rt.metadata.read(), 'cell').conversation.cell[0].text, args.title);
+  assert.equal((await requests.forwardRequest(f.rt, f.host, queen, args)).revision, refreshed.revision);
+  assert.ok(!requests.requestContext(f.rt, actor).input_requests.some(x => x.id === r.id));
+  await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(refreshed), text: 'Yes', receipt: 'refreshed-answer' });
+  assert.equal(f.sent.at(-1).id, worker);
+});
+
+test('option-only edits notify again and only the current queen can refresh the rewrite', async t => {
+  const f = fixture(t);
+  const originalOptions = [{ id: 'keep', label: 'Keep' }, { id: 'remove', label: 'Remove' }];
+  const r = await f.create(worker, { dedupe_key: 'refresh-options', kind: 'decision', options: originalOptions });
+  await requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(r), title: 'Choose a behavior', body: 'Keep or remove it.' });
+  const options = [{ id: 'pause', label: 'Pause' }, { id: 'remove', label: 'Remove' }];
+  const edit = { dedupe_key: 'refresh-options', kind: 'decision', options };
+  await f.create(worker, edit);
+  const afterFirstEdit = f.sent.length;
+  await f.create(worker, edit);
+  assert.equal(f.sent.length, afterFirstEdit);
+  await f.create(worker, { ...edit, options: [{ id: 'pause', label: 'Pause temporarily' }, options[1]] });
+  assert.equal(f.sent.length, afterFirstEdit + 1);
+  f.members.get(other).taskId = 'task';
+  f.rt.metadata.mutate(d => { d.cells.cell.queenSessionId = other; d.cells.cell.queenGeneration++; });
+  let current = requests.listMine(f.rt, f.host, worker)[0];
+  const args = { request_id: r.id, ...rev(current), title: 'Pause or remove?', body: 'Pausing keeps it available for later.' };
+  await assert.rejects(requests.forwardRequest(f.rt, f.host, queen, args), /current queen/);
+  await assert.rejects(requests.forwardRequest(f.rt, f.host, worker, args), /current queen/);
+  const refreshed = await requests.forwardRequest(f.rt, f.host, other, args);
+  assert.equal(refreshed.id, r.id);
+  assert.equal(refreshed.contentRevision, current.contentRevision);
+  assert.equal(refreshed.requesterSessionId, worker);
+  assert.equal(refreshed.queenSessionId, other);
+  assert.deepEqual(refreshed.options.map(o => o.id), ['pause', 'remove']);
+});

@@ -11,3 +11,8 @@ export function requestSubjectText(r) {
   const current = r.subjectObservation?.revision;
   return `${prefix} ${pin.revision}${current && current !== pin.revision ? `, now ${current}` : ''}`;
 }
+
+export function requestDisplay(r) {
+  const rewritten = Boolean(r.forwarded?.title || r.forwarded?.body) && r.forwarded.contentRevision === r.contentRevision;
+  return { title: rewritten ? r.forwarded.title || r.title : r.title, body: rewritten ? r.forwarded.body || r.body : r.body, rewritten };
+}

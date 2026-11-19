@@ -10,7 +10,7 @@ const valid = {
   hive_observe_request_subject: { request_id: 'hreq_123456789abc', revision: 'revision-8' },
   hive_withdraw_request: { request_id: 'hreq_123456789abc', reason: 'Answered in chat' },
   hive_answer_request: { request_id: 'hreq_123456789abc', revision: 1, route_revision: 1, text: 'Proceed' },
-  hive_forward_request: { request_id: 'hreq_123456789abc', revision: 1, route_revision: 1, recommendation: 'Proceed' },
+  hive_forward_request: { request_id: 'hreq_123456789abc', revision: 1, route_revision: 1, title: 'Keep integrations working?', body: 'Preserve compatibility for existing users.', recommendation: 'Proceed' },
   hive_report_pr_wait: { bead_id: 'a', url: 'https://github.com/example/repo/pull/1', head_sha: 'a'.repeat(40), state: 'ready', reason: 'Reviewed this head' },
   hive_set_routine: { action: 'create', schedule: { name: 'Check-in', days: [1], time: '09:00', timeZone: 'UTC', message: 'Review priorities.' } },
   hive_context: {}, hive_ready: { limit: 10 },

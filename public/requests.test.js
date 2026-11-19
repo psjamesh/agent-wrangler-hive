@@ -83,3 +83,21 @@ for (const count of [0, 1, 2, 3, 6]) test(`pop-up with ${count} options respects
   assert.deepEqual(shown[0].actions.map(a => a.label), [...(count > 0 && count <= 2 ? options.map(o => o.label) : []), 'View request']);
   assert.ok(shown[0].actions.length <= 3);
 });
+
+test('rewritten notification uses the queen title and body', () => {
+  const shown = [];
+  const notify = createRequestNotifications({ ui: { notify: args => { shown.push(args); return new Promise(() => {}); } } });
+  notify(graph());
+  notify(graph(request('rewrite', { forwarded: { title: 'Plain title', body: 'Plain body' } })));
+  assert.equal(shown[0].title, 'Plain title');
+  assert.equal(shown[0].body, 'Plain body');
+});
+
+test('notification after a worker edit uses its current title rather than the stale rewrite', () => {
+  const shown = [];
+  const notify = createRequestNotifications({ ui: { notify: args => { shown.push(args); return new Promise(() => {}); } } });
+  notify(graph());
+  notify(graph(request('edited', { title: 'Current title', contentRevision: 2, forwarded: { title: 'Earlier title', body: 'Earlier body', contentRevision: 1 } })));
+  assert.equal(shown[0].title, 'Current title');
+  assert.notEqual(shown[0].body, 'Earlier body');
+});
