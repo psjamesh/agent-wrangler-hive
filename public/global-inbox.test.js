@@ -225,3 +225,12 @@ test('rewritten requests lead needs and merged inbox rows with the queen text', 
     assert.equal(row.preview, r.forwarded.body);
   }
 });
+
+test('a stale rewrite does not hide the current request in needs rows', () => {
+  const r = request('edited', { title: 'Current question', body: 'Current explanation', contentRevision: 2, forwarded: { title: 'Earlier question', body: 'Earlier explanation', contentRevision: 1 } });
+  const a = cell('a', { requests: { [r.id]: r } });
+  const row = needsRows(ctx([a]), [a])[0];
+  assert.equal(row.title, r.title);
+  assert.equal(row.preview, r.body);
+  assert.equal(row.rewritten, false);
+});

@@ -13,6 +13,6 @@ export function requestSubjectText(r) {
 }
 
 export function requestDisplay(r) {
-  const rewritten = Boolean(r.forwarded?.title || r.forwarded?.body);
-  return { title: r.forwarded?.title || r.title, body: r.forwarded?.body || r.body, rewritten };
+  const rewritten = Boolean(r.forwarded?.title || r.forwarded?.body) && r.forwarded.contentRevision === r.contentRevision;
+  return { title: rewritten ? r.forwarded.title || r.title : r.title, body: rewritten ? r.forwarded.body || r.body : r.body, rewritten };
 }

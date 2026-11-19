@@ -60,7 +60,7 @@ export function requestCard(r, { cell, graph, api, ui, ctx }) {
     r.warning ? h('p', { class: 'hive-warning' }, r.warning) : null,
     r.subjectPin ? h('p', { class: r.subjectObservation?.revision && r.subjectObservation.revision !== r.subjectPin.revision ? 'hive-warning' : 'hive-muted' }, r.subjectPin.url ? h('a', { href: r.subjectPin.url, target: '_blank', rel: 'noopener noreferrer' }, requestSubjectText(r)) : `${r.subjectPin.path} · ${requestSubjectText(r)}`) : null,
     md(display.body),
-    display.rewritten ? h('details', { class: 'hive-request-original' }, h('summary', {}, `Original request from ${author}`), h('h4', {}, r.title), md(r.body)) : null,
+    display.rewritten ? h('details', { class: 'hive-request-original' }, h('summary', {}, `Original request from ${author}`), h('h4', {}, r.title), r.forwarded.body ? md(r.body) : null) : null,
     messageImages({ id: r.messageId, attachments: r.attachments }, cell, ui, ctx),
     sessionLinks.length ? h('p', { class: 'hive-session-links' }, sessionLinks.map((link, i) => [i ? ' · ' : null, sessionReference(graph, link)])) : null,
     r.forwarded?.recommendation ? h('div', { class: 'hive-quote' }, 'Queen recommendation: ', md(r.forwarded.recommendation)) : null);

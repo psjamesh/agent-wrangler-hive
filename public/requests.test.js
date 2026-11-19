@@ -92,3 +92,12 @@ test('rewritten notification uses the queen title and body', () => {
   assert.equal(shown[0].title, 'Plain title');
   assert.equal(shown[0].body, 'Plain body');
 });
+
+test('notification after a worker edit uses its current title rather than the stale rewrite', () => {
+  const shown = [];
+  const notify = createRequestNotifications({ ui: { notify: args => { shown.push(args); return new Promise(() => {}); } } });
+  notify(graph());
+  notify(graph(request('edited', { title: 'Current title', contentRevision: 2, forwarded: { title: 'Earlier title', body: 'Earlier body', contentRevision: 1 } })));
+  assert.equal(shown[0].title, 'Current title');
+  assert.notEqual(shown[0].body, 'Earlier body');
+});

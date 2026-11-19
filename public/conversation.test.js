@@ -2527,3 +2527,24 @@ test('forwarded rewrite leads the request card with a collapsed worker original'
   assert.equal(legacy.querySelector('h4').textContent, r.title);
   assert.equal(legacy.querySelector('details'), null);
 });
+
+test('a stale queen rewrite gives way to the current worker question and options', t => {
+  const f = fixture(t);
+  const r = { id: 'stale-rewrite', title: 'Current title', body: 'Current body', state: 'open', audience: 'human', revision: 3, contentRevision: 2, routeRevision: 2, forwarded: { title: 'Earlier title', body: 'Earlier body', contentRevision: 1 }, options: [{ id: 'new', label: 'Current option' }] };
+  const card = requestCard(r, { cell: f.cell, ui: f.ui, ctx: f.ctx });
+  assert.equal(card.querySelector('h4').textContent, r.title);
+  assert.match(card.textContent, /Current body/);
+  assert.match(card.textContent, /Current option/);
+  assert.doesNotMatch(card.textContent, /Earlier/);
+  assert.equal(card.querySelector('details'), null);
+});
+
+test('a title-only rewrite keeps the worker body outside the original disclosure', t => {
+  const f = fixture(t);
+  const r = { id: 'title-only', title: 'Original title', body: 'Current body', state: 'open', audience: 'human', revision: 2, contentRevision: 1, routeRevision: 2, forwarded: { title: 'Plain title', contentRevision: 1 } };
+  const card = requestCard(r, { cell: f.cell, ui: f.ui, ctx: f.ctx });
+  assert.match(card.textContent, /Current body/);
+  const original = card.querySelector('details');
+  assert.match(original.textContent, /Original title/);
+  assert.doesNotMatch(original.textContent, /Current body/);
+});

@@ -303,7 +303,7 @@ export async function forwardRequest(rt, host, id, args) {
     if (actor.role === 'queen' && (actor.cell.queenGeneration || 0) === previous.queenGeneration) return previous;
   }
   const r = queenRequest(rt, host, id, args);
-  return update(rt, r.id, x => { x.audience = 'human'; x.requesterSessionLink = { sessionId: x.requesterSessionId, label: 'Open requester session' }; x.routeRevision++; x.forwarded = { by: id, at: Date.now(), recommendation: note, ...(title === undefined ? {} : { title }), ...(body === undefined ? {} : { body }), fromRevision: r.revision, fromRouteRevision: r.routeRevision }; });
+  return update(rt, r.id, x => { x.audience = 'human'; x.requesterSessionLink = { sessionId: x.requesterSessionId, label: 'Open requester session' }; x.routeRevision++; x.forwarded = { by: id, at: Date.now(), recommendation: note, contentRevision: r.contentRevision, ...(title === undefined ? {} : { title }), ...(body === undefined ? {} : { body }), fromRevision: r.revision, fromRouteRevision: r.routeRevision }; });
 }
 async function answer(rt, host, r, args, author, sessionId = null) {
   const optionId = args.option_id === undefined || args.option_id === null || args.option_id === '' ? null : args.option_id;

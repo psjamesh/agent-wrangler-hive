@@ -1418,3 +1418,16 @@ for (const rewrite of [{ title: '' }, { body: ' ' }, { title: 'x'.repeat(201) },
   await assert.rejects(requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(r), ...rewrite }), /title|body/);
   assert.equal(requests.listMine(f.rt, f.host, worker)[0].audience, 'queen');
 });
+
+test('a worker edit makes a forwarded rewrite stale in human conversation and topic titles', async t => {
+  const f = fixture(t), r = await f.create(worker, { dedupe_key: 'edited-forward' });
+  const forwarded = await requests.forwardRequest(f.rt, f.host, queen, { request_id: r.id, ...rev(r), title: 'Earlier summary', body: 'Earlier explanation' });
+  assert.equal(forwarded.forwarded.contentRevision, r.contentRevision);
+  const edited = await f.create(worker, { dedupe_key: 'edited-forward', title: 'Current question', body: 'Current explanation' });
+  const visible = humanConversationDoc(f.rt.metadata.read(), 'cell');
+  assert.equal(visible.conversation.cell[0].text, edited.title);
+  assert.equal(visible.threads.cell[r.threadId].title, edited.title);
+  assert.equal(edited.audience, 'human');
+  assert.equal(edited.routeRevision, forwarded.routeRevision);
+  assert.equal(edited.forwarded.title, 'Earlier summary');
+});
