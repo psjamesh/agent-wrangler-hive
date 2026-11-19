@@ -3,8 +3,6 @@ export const HUMAN_ACTOR = 'aw:human';
 
 export const HIVE_META = {
   kind: 'hive_kind',
-  system: 'hive_system',
-  schedule: 'hive_schedule',
   pickup: 'hive_pickup',
   nextAction: 'hive_next_action',
   waitingFor: 'hive_waiting_for',
@@ -101,8 +99,6 @@ export function normalizeIssue(raw) {
   const op = decodeMeta(metadata[HIVE_META.op]);
   return {
     id: raw.id,
-    system: decodeMeta(metadata[HIVE_META.system]) === 'schedules' ? 'schedules' : null,
-    schedule: decodeMeta(metadata[HIVE_META.schedule]),
     pickup: asObject(decodeMeta(metadata[HIVE_META.pickup])),
     parentId: parent ? parent.depends_on_id : null,
     title: text(raw.title),

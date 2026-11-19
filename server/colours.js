@@ -1,4 +1,4 @@
-import { assignShades, workstreamColour, SCHEDULE_COLOUR } from '../public/workstream-colours.js';
+import { assignShades, workstreamColour } from '../public/workstream-colours.js';
 
 // Palette slots are persisted per region; nested regions inherit their ancestor slot.
 export const WORKSTREAM_SLOTS = 6;
@@ -25,7 +25,7 @@ export function topWorkstreams(beads, rootId) {
 }
 
 function inheritedSlots(prev, heads, beads, rootId, parents) {
-  const roots = heads.filter(id => beads[id].parentId === rootId && beads[id].system !== 'schedules');
+  const roots = heads.filter(id => beads[id].parentId === rootId);
   const valid = slot => Number.isInteger(slot) && slot >= 0 && slot < WORKSTREAM_SLOTS;
   const next = { ...prev };
   const counts = Array(WORKSTREAM_SLOTS).fill(0);
@@ -35,10 +35,6 @@ function inheritedSlots(prev, heads, beads, rootId, parents) {
     const slot = counts.indexOf(Math.min(...counts));
     next[id] = slot;
     counts[slot] += 1;
-  }
-  for (const id of heads) {
-    if (beads[id].system === 'schedules') next[id] = SCHEDULE_COLOUR;
-    else if (next[id] === SCHEDULE_COLOUR) delete next[id];
   }
   for (const id of heads) next[id] = workstreamColour(id, next, parents);
   return next;

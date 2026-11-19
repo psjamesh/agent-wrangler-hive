@@ -1,4 +1,3 @@
-import { isScheduleItem } from '../public/schedule.js';
 import { ciWaitAttention, ciWaitSuppresses, reconcileCiWaits } from './ci-waits.js';
 import { explicitResume, linksResolved, resolveLinkWaits, structuredWait, waitStatus, STRUCTURED_WAIT_HELP } from './link-waits.js';
 import { pickupState, defaultPickupProblem, idleReadyProblem, idleReadyAvailable } from './pickup.js';
@@ -139,7 +138,6 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
   }
   const idleAvailable = open.some(bead => idleReadyCandidate(bead, cell)) && idleReadyAvailable(rt, host, cell);
   for (const bead of open) {
-    if (isScheduleItem(bead)) continue;
     const idleProblem = idleReadyProblem(rt, host, cell, bead, rt.snapshots.graph, now, idleAvailable);
     const idleAnchor = cell.idleReadyAnchors?.[bead.id];
     if (idleProblem && idleAnchor && now - idleAnchor.at >= settings.idleReadyMinutes * 60000) {
@@ -298,7 +296,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
 
 function idleReadyCandidate(bead, cell) {
   return bead.id !== cell.rootBeadId && bead.status === 'open' && !bead.assignee
-    && !GROUP_KINDS.has(bead.kind) && !isScheduleItem(bead) && !['decision', 'external', 'idea'].includes(bead.kind);
+    && !GROUP_KINDS.has(bead.kind) && !['decision', 'external', 'idea'].includes(bead.kind);
 }
 
 function syncIdleReadyAnchors(rt, host, now) {
