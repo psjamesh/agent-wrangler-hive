@@ -1824,7 +1824,7 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .hive-routine-form { display: grid; gap: 10px; }
 .hive-routine-form textarea { min-height: 110px; }
 
-.hive-schedules { display: grid; gap: 14px; padding: 12px; }
+.hive-schedules { display: grid; align-content: start; gap: 14px; padding: 12px; flex: 1 1 auto; min-height: 0; overflow: auto; }
 .hive-schedules-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .hive-schedule-card { border: 1px solid var(--border); border-radius: 6px; padding: 12px; overflow-wrap: anywhere; }
 .hive-schedule-card h4, .hive-schedules-head h3 { margin: 0; }

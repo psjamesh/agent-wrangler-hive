@@ -58,6 +58,41 @@ test('schedule, retire, reopen, complete-workstream and queen-instructions forms
     assert.equal(r.exceptionDetails, undefined, JSON.stringify(r.exceptionDetails));
     return r.result.value;
   };
+  const layouts = await run(`
+    await document.fonts.ready;
+    const root = document.getElementById('root');
+    const results = [];
+    for (const width of [320, 900]) for (const count of [0, 1, 30]) {
+      root.style.width = width + 'px';
+      const cell = { id: 'layout', enabled: true, schedules: Array.from({ length: count }, (_, i) => ({
+        id: 'schedule-' + i, name: 'Daily check-in ' + i, days: [1], time: '09:00', timeZone: 'UTC', message: 'Review priorities.', enabled: true,
+      })) };
+      const panel = document.createElement('section');
+      panel.className = 'hive-panel hive-conversation';
+      panel.style.height = '500px';
+      const view = t.schedulesView(t.ctx, cell);
+      panel.append(view);
+      t.mount(panel);
+      const head = view.querySelector('.hive-schedules-head');
+      const first = head.nextElementSibling;
+      const bounds = view.getBoundingClientRect();
+      const header = head.getBoundingClientRect();
+      const content = first.getBoundingClientRect();
+      view.scrollTop = view.scrollHeight;
+      results.push({ width, count, top: header.top - bounds.top, gap: content.top - header.bottom,
+        contained: bounds.bottom <= panel.getBoundingClientRect().bottom,
+        scrolls: view.scrollTop > 0, panelScroll: panel.scrollTop });
+    }
+    root.style.width = '1000px';
+    return results;
+  `);
+  for (const layout of layouts) {
+    assert.ok(Math.abs(layout.top - 12) <= 1, JSON.stringify(layout));
+    assert.ok(layout.gap >= 14 && layout.gap < 40, JSON.stringify(layout));
+    assert.ok(layout.contained, JSON.stringify(layout));
+    assert.equal(layout.scrolls, layout.count === 30, JSON.stringify(layout));
+    assert.equal(layout.panelScroll, 0, JSON.stringify(layout));
+  }
   const submit = `document.querySelector('form button[type="submit"]').click();`;
   const retire = await run(`
     const cell = { id: 'c1', enabled: true };
