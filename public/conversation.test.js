@@ -2512,3 +2512,18 @@ test('Schedules switches beside Topics and Inbox, suppresses the composer and op
   control(out.head, 'Topics').fire('click');
   assert.ok(f.draw().textarea);
 });
+
+test('forwarded rewrite leads the request card with a collapsed worker original', t => {
+  const f = fixture(t);
+  const r = { id: 'rewrite', title: 'Original title', body: 'Original body', state: 'open', audience: 'human', revision: 2, routeRevision: 2, requesterSessionId: 'worker', forwarded: { title: 'Plain title', body: 'Plain body' } };
+  const card = requestCard(r, { cell: f.cell, ui: f.ui, ctx: f.ctx, graph: { sessions: [{ sessionId: 'worker', name: 'Builder' }] } });
+  assert.equal(card.querySelector('h4').textContent, 'Plain title');
+  const original = card.querySelector('details');
+  assert.ok(original);
+  assert.equal(original.getAttribute('open'), null);
+  assert.equal(original.querySelector('summary').textContent, 'Original request from Builder');
+  assert.match(original.textContent, /Original titleOriginal body/);
+  const legacy = requestCard({ ...r, forwarded: { recommendation: 'Keep it' } }, { cell: f.cell, ui: f.ui, ctx: f.ctx });
+  assert.equal(legacy.querySelector('h4').textContent, r.title);
+  assert.equal(legacy.querySelector('details'), null);
+});

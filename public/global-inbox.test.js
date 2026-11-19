@@ -215,3 +215,13 @@ test('request-only rows use cached topic titles and retain a request title when 
   c.ui.openedTopic = () => ({ id: 'older', title: 'Earlier topic' });
   assert.deepEqual(needsRows(c, [a]).map(r => r.title), ['Earlier topic', 'Request r2']);
 });
+
+test('rewritten requests lead needs and merged inbox rows with the queen text', () => {
+  const r = request('rewrite', { forwarded: { title: 'Keep integrations working?', body: 'Keeping compatibility avoids disruption.' } });
+  const a = cell('a', { requests: { [r.id]: r }, threads: [{ id: r.threadId, title: 'Original topic' }], messages: [{ id: 'queen-message', threadId: r.threadId, author: 'session', sessionId: 's1', text: 'Other message', at: 9, ack: { required: true, rev: 1 } }], inbox: { human: { ids: ['queen-message'], count: 1 } } });
+  const c = ctx([a]);
+  for (const row of [needsRows(c, [a])[0], inboxRows(c, [a], 'human')[0]]) {
+    assert.equal(row.title, r.forwarded.title);
+    assert.equal(row.preview, r.forwarded.body);
+  }
+});

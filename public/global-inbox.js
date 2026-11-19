@@ -1,3 +1,4 @@
+import { requestDisplay } from './request-state.js';
 import { compareTopics } from './topic-order.js';
 import { h, relativeTime } from './dom.js';
 import { hiveLink } from './deep-links.js';
@@ -30,9 +31,11 @@ export function needsRows(ctx, cells) {
     const titles = topicTitles(cell, ctx.hive, ctx.ui);
     for (const r of Object.values(cell.requests || {})) {
       if (!needsHuman(r)) continue;
+      const display = requestDisplay(r);
       rows.push({
-        key: `request:${r.id}`, cellId: cell.id, hive: cellName(graph, cell), title: titles.get(r.threadId) || r.title, at: r.createdAt, blocking: Boolean(r.blocking),
-        author: requestAuthor(graph, r), preview: oneLine(r.body, 200), texts: [r.body, r.title].filter(Boolean), beadIds: [r.beadId].filter(Boolean), repair: r.state === 'answered' ? (['failed', 'uncertain'].includes(r.delivery?.state) ? 'Answer needs delivery repair' : 'Answer being delivered') : null,
+        rewritten: display.rewritten,
+        key: `request:${r.id}`, cellId: cell.id, hive: cellName(graph, cell), title: display.rewritten ? display.title : titles.get(r.threadId) || r.title, at: r.createdAt, blocking: Boolean(r.blocking),
+        author: requestAuthor(graph, r), preview: oneLine(display.body, 200), texts: [display.body, display.title].filter(Boolean), beadIds: [r.beadId].filter(Boolean), repair: r.state === 'answered' ? (['failed', 'uncertain'].includes(r.delivery?.state) ? 'Answer needs delivery repair' : 'Answer being delivered') : null,
         threadId: r.threadId, firstId: r.messageId, needsCount: 1, count: 0, sessionLinks: [r.sessionLink, r.requesterSessionLink || (r.requesterSessionId ? { sessionId: r.requesterSessionId, label: 'Open requester session' } : null)].filter(Boolean),
         link: hiveLink(cell.id, r.threadId, r.messageId),
       });
@@ -78,6 +81,7 @@ export function mergeRows(messages, requests) {
     const row = rows.get(key);
     if (!row) rows.set(key, { ...request });
     else {
+      if (request.rewritten) { row.title = request.title; row.preview = request.preview; row.snippet = null; }
       row.needsCount += 1;
       row.at = Math.min(row.at, request.at);
       row.texts = [...(row.texts || []), ...request.texts];

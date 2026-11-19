@@ -1,3 +1,4 @@
+import { requestDisplay } from '../public/request-state.js';
 import { notifyMissedInput, acknowledgeRecoveredAnswers } from './missed-input.js';
 import { sessionReference } from './session-links.js';
 import { beadReferences } from '../public/bead-references.js';
@@ -409,7 +410,7 @@ export function audienceConversationDoc(doc, cellId, viewer = { role: 'human' })
   const list = raw.filter(m => {
     const scope = scopeOf(m);
     return !hiddenTopics.has(m.threadId) && (!scope || maySeeRequest(doc.requests?.[scope], viewer));
-  }).map(m => ({ ...m, ...(m.requestId ? { text: requests[m.requestId].title } : {}) }));
+  }).map(m => ({ ...m, ...(m.requestId ? { text: viewer.role === 'human' ? requestDisplay(requests[m.requestId]).title : requests[m.requestId].title } : {}) }));
   const visibleIds = new Set(list.map(m => m.id));
   const numbers = new Map();
   for (const m of list) {
@@ -432,7 +433,7 @@ export function audienceConversationDoc(doc, cellId, viewer = { role: 'human' })
     const mine = mineBy.get(t.id) || [];
     const titleRequest = doc.requests?.[t.titleScopeId];
     const named = Object.hasOwn(t, 'titleScopeId') && (t.titleScopeId === null || (maySeeRequest(titleRequest, viewer) && titleRequest.contentRevision === t.titleScopeRevision));
-    return [t.id, { ...t, ...(t.origin === 'request' && t.titleBy !== 'human' && !named ? { title: first?.title || t.publicRequestTitle || 'Request', titleBy: first?.requesterSessionId || 'hive' } : {}), count: publicSequenceBase(doc, cellId, t, firsts) + mine.length, earlierRemoved: Boolean(t.earlierRemoved), createdAt: t.origin === 'request' ? mine[0]?.at || first?.createdAt || 0 : t.createdAt, lastAt: mine.at(-1)?.at || first?.createdAt || 0, lastMessageId: mine.at(-1)?.id || null }];
+    return [t.id, { ...t, ...(t.origin === 'request' && t.titleBy !== 'human' && !named ? { title: (first && (viewer.role === 'human' ? requestDisplay(first).title : first.title)) || t.publicRequestTitle || 'Request', titleBy: first?.requesterSessionId || 'hive' } : {}), count: publicSequenceBase(doc, cellId, t, firsts) + mine.length, earlierRemoved: Boolean(t.earlierRemoved), createdAt: t.origin === 'request' ? mine[0]?.at || first?.createdAt || 0 : t.createdAt, lastAt: mine.at(-1)?.at || first?.createdAt || 0, lastMessageId: mine.at(-1)?.id || null }];
   }));
   const revision = [Object.values(requests).map(r => [r.id, r.contentRevision]).sort(), Object.values(threads).map(t => [t.id, t.humanPruneRevision || 0]).sort()];
   const inboxRevision = list.filter(m => m.ack?.required || m.response?.required).map(m => [m.id, m.ack || null, m.response || null]);
@@ -448,7 +449,7 @@ export function preserveRequestAudience(doc, request) {
   topic.hasRequests = true;
   if (topic.origin === 'request' && !topic.requestId) topic.requestId = Object.values(doc.requests).find(r => r.cellId === request.cellId && r.threadId === topic.id)?.id;
   const publicRequest = maySeeRequest(request);
-  if (publicRequest) { topic.publicHistory = true; topic.publicRequestTitle = request.title; }
+  if (publicRequest) { topic.publicHistory = true; topic.publicRequestTitle = requestDisplay(request).title; }
   const scopeOf = requestScopes(doc, request.cellId);
   for (const m of doc.conversation[request.cellId] || []) if (!m.requestId && scopeOf(m) === request.id) m.requestScopeId = publicRequest ? null : request.id;
 }

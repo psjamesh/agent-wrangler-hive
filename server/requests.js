@@ -295,13 +295,15 @@ function queenRequest(rt, host, callerId, args) {
 }
 export async function forwardRequest(rt, host, id, args) {
   const note = bounded(args.recommendation, 'recommendation', 4000);
+  const title = args.title === undefined ? undefined : bounded(args.title, 'title', 200, true);
+  const body = args.body === undefined ? undefined : bounded(args.body, 'body', 20000, true);
   const previous = get(rt, args.request_id);
-  if (previous.state === 'open' && previous.audience === 'human' && previous.forwarded?.by === id && previous.forwarded.fromRevision === args.revision && previous.forwarded.fromRouteRevision === args.route_revision && previous.forwarded.recommendation === note) {
+  if (previous.state === 'open' && previous.audience === 'human' && previous.forwarded?.by === id && previous.forwarded.fromRevision === args.revision && previous.forwarded.fromRouteRevision === args.route_revision && previous.forwarded.recommendation === note && previous.forwarded.title === title && previous.forwarded.body === body) {
     const actor = member(rt, host, id, previous.cellId);
     if (actor.role === 'queen' && (actor.cell.queenGeneration || 0) === previous.queenGeneration) return previous;
   }
   const r = queenRequest(rt, host, id, args);
-  return update(rt, r.id, x => { x.audience = 'human'; x.requesterSessionLink = { sessionId: x.requesterSessionId, label: 'Open requester session' }; x.routeRevision++; x.forwarded = { by: id, at: Date.now(), recommendation: note, fromRevision: r.revision, fromRouteRevision: r.routeRevision }; });
+  return update(rt, r.id, x => { x.audience = 'human'; x.requesterSessionLink = { sessionId: x.requesterSessionId, label: 'Open requester session' }; x.routeRevision++; x.forwarded = { by: id, at: Date.now(), recommendation: note, ...(title === undefined ? {} : { title }), ...(body === undefined ? {} : { body }), fromRevision: r.revision, fromRouteRevision: r.routeRevision }; });
 }
 async function answer(rt, host, r, args, author, sessionId = null) {
   const optionId = args.option_id === undefined || args.option_id === null || args.option_id === '' ? null : args.option_id;

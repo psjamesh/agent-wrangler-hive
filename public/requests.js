@@ -1,4 +1,4 @@
-import { isHumanRequest as visibleToHuman, needsHuman, requestSubjectText } from './request-state.js';
+import { isHumanRequest as visibleToHuman, needsHuman, requestSubjectText, requestDisplay } from './request-state.js';
 import { h, markdown, relativeTime, sessionReference } from './dom.js';
 import { messageImages } from './attachments.js';
 import { hiveLink, openHiveLink } from './deep-links.js';
@@ -48,17 +48,19 @@ export function requestCard(r, { cell, graph, api, ui, ctx }) {
   const changed = sig !== form.signature;
   const busy = form.pending || ctx.busy('hive-request-answer') || ctx.busy('hive-request-dismiss') || ctx.busy('hive-request-retry');
   const author = requestAuthor(graph, r);
+  const display = requestDisplay(r);
   const md = text => markdown(api, text, { sessions: graph?.sessions || [] });
   const requesterLink = r.requesterSessionId && r.requesterSessionId !== cell.queenSessionId
     ? r.requesterSessionLink || { sessionId: r.requesterSessionId, label: 'Open requester session' } : null;
   const sessionLinks = [r.sessionLink, requesterLink].filter((link, i, all) => link && all.findIndex(other => other?.sessionId === link.sessionId) === i);
   const focusFallback = { focusFallback: `request-card:${r.id}`, focusFinal: `request-list:${cell.id}` };
-  const out = h('article', { class: 'hive-request', tabindex: -1, 'data-focus-key': `request-card:${r.id}`, dataset: { requestId: r.id, focusFinal: `request-list:${cell.id}` }, 'aria-label': `Request: ${r.title}` },
-    h('h4', {}, r.title),
+  const out = h('article', { class: 'hive-request', tabindex: -1, 'data-focus-key': `request-card:${r.id}`, dataset: { requestId: r.id, focusFinal: `request-list:${cell.id}` }, 'aria-label': `Request: ${display.title}` },
+    h('h4', {}, display.title),
     h('p', { class: 'hive-muted' }, `${author} · ${relativeTime(r.createdAt)} · ${r.state === 'open' ? r.audience === 'queen' ? 'Worker request · Waiting for queen' : 'Needs you' : r.state}`),
     r.warning ? h('p', { class: 'hive-warning' }, r.warning) : null,
     r.subjectPin ? h('p', { class: r.subjectObservation?.revision && r.subjectObservation.revision !== r.subjectPin.revision ? 'hive-warning' : 'hive-muted' }, r.subjectPin.url ? h('a', { href: r.subjectPin.url, target: '_blank', rel: 'noopener noreferrer' }, requestSubjectText(r)) : `${r.subjectPin.path} · ${requestSubjectText(r)}`) : null,
-    md(r.body),
+    md(display.body),
+    display.rewritten ? h('details', { class: 'hive-request-original' }, h('summary', {}, `Original request from ${author}`), h('h4', {}, r.title), md(r.body)) : null,
     messageImages({ id: r.messageId, attachments: r.attachments }, cell, ui, ctx),
     sessionLinks.length ? h('p', { class: 'hive-session-links' }, sessionLinks.map((link, i) => [i ? ' · ' : null, sessionReference(graph, link)])) : null,
     r.forwarded?.recommendation ? h('div', { class: 'hive-quote' }, 'Queen recommendation: ', md(r.forwarded.recommendation)) : null);
@@ -70,7 +72,7 @@ export function requestCard(r, { cell, graph, api, ui, ctx }) {
     const options = r.options || [];
     const sendText = () => { const text = ui.draftFor(key).trim(); if (text) submit('hive-request-answer', { text }); else ctx.notice('Write an answer first.'); };
     if (options.length) out.append(h('div', { class: 'hive-request-options', role: 'group', 'aria-label': 'Options' }, options.map((o, i) => h('button', { type: 'button', class: 'hive-request-option', disabled: busy || changed, 'data-focus-key': `request-option:${r.id}:${o.id}`, dataset: focusFallback, onclick: () => submit('hive-request-answer', { option_id: o.id, text: ui.draftFor(key).trim() }) }, h('span', { class: 'hive-request-option-num', 'aria-hidden': 'true' }, i + 1), h('span', { class: 'hive-request-option-text' }, h('span', { class: 'hive-request-option-label' }, o.label), o.description ? h('span', { class: 'hive-request-option-description' }, o.description) : null)))));
-    const textarea = h('textarea', { rows: 3, maxlength: options.length ? 4000 : 20000, disabled: busy, onkeydown: e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); if (!busy && !changed) sendText(); } }, 'aria-label': `Answer request ${r.title}`, 'data-focus-key': `request-answer:${r.id}`, dataset: focusFallback, value: ui.draftFor(key), oninput: e => ui.setDraftFor(key, e.target.value) });
+    const textarea = h('textarea', { rows: 3, maxlength: options.length ? 4000 : 20000, disabled: busy, onkeydown: e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); if (!busy && !changed) sendText(); } }, 'aria-label': `Answer request ${display.title}`, 'data-focus-key': `request-answer:${r.id}`, dataset: focusFallback, value: ui.draftFor(key), oninput: e => ui.setDraftFor(key, e.target.value) });
     out.append(h('label', {}, options.length ? 'Your answer, or a note with your choice' : 'Your answer', textarea));
     if (changed) out.append(h('p', { role: 'status', class: 'hive-warning' }, 'This request or route changed. Review the current question; your draft is kept.'), h('button', { type: 'button', class: 'hive-btn', onclick: () => { form.signature = sig; form.receipt = null; ui.setForm(`request-update:${r.id}`, Date.now()); } }, 'Review current request'));
     out.append(h('div', { class: 'hive-request-actions' },
@@ -116,8 +118,9 @@ export function createRequestNotifications(api, { read = () => null, write = () 
       seen.add(episode); shown.set(episode, token);
       const options = r.state === 'open' && answer && r.options?.length <= 2 ? r.options || [] : [];
       const actions = [...options.map(o => ({ id: `option:${o.id}`, label: o.label, primary: /\(Recommended\)/i.test(o.label) })), { id: 'open', label: 'View request', primary: !options.length }];
+      const display = requestDisplay(r);
       try {
-        Promise.resolve(api.ui?.notify?.({ id: `native:${episode}`, title: r.state === 'answered' ? 'Hive answer needs delivery repair' : r.title, body: r.warning || 'Hive request needs you', actions })).then(action => {
+        Promise.resolve(api.ui?.notify?.({ id: `native:${episode}`, title: r.state === 'answered' ? 'Hive answer needs delivery repair' : display.title, body: display.rewritten ? display.body : r.warning || 'Hive request needs you', actions })).then(action => {
           if (shown.get(episode) !== token || token.consumed || api.settings?.()?.requestNotifications === false) return;
           token.consumed = true;
           if (action === 'open') open(hiveLink(r.cellId, r.threadId, r.messageId));
