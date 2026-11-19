@@ -1,3 +1,4 @@
+import { hostApiAtLeast } from './host-api.js';
 import { backfillEvidencePrs } from './pr-evidence.js';
 import { participation } from './access.js';
 import { isCurrent } from './lifetime.js';
@@ -5,8 +6,7 @@ import { createPrLabeler, prRepository } from './pr-labels.js';
 import { createPrTracker } from './pr-tracking.js';
 
 function canReadLinks(host) {
-  const [major, minor] = String(host?.version || '').split('.').map(Number);
-  return major === 1 && minor >= 70 && typeof host?.links?.get === 'function';
+  return hostApiAtLeast(host, 1, 70) && typeof host?.links?.get === 'function';
 }
 
 function unassigned(url, at, labelled = false) {
@@ -17,9 +17,15 @@ function associationKey(record) {
   return record ? JSON.stringify([record.sessionId, record.associations]) : null;
 }
 
+function rotate(rows, after, key = row => row.url) {
+  const start = rows.findIndex(row => key(row) === after) + 1;
+  return [...rows.slice(start), ...rows.slice(0, start)];
+}
+
 export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(), tracker = createPrTracker(), now = Date.now }) {
   let running = false;
   let stopped = false;
+  let lastRepo, lastState, lastLabel;
   const active = () => !stopped && isCurrent(runtime, host);
   function eligible(prUrl) {
     const record = runtime.metadata.read().prLabels?.[prUrl];
@@ -68,8 +74,9 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
         });
         const searchHits = new Map();
         const repos = [...new Set(Object.values(runtime.metadata.read().prLabels || {}).filter(record => record?.source !== 'bead-evidence').map(record => prRepository(record?.url)).filter(Boolean))];
-        for (const repo of repos) {
+        for (const repo of rotate(repos, lastRepo, repo => repo).slice(0, 5)) {
           if (!active()) break;
+          lastRepo = repo;
           const found = await tracker.search(repo);
           if (!active()) return;
           for (const hit of found) searchHits.set(hit.url, hit);
@@ -79,7 +86,8 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
           });
         }
         const observations = [];
-        for (const record of Object.values(runtime.metadata.read().prLabels || {})) {
+        let stateAttempts = 0;
+        for (const record of rotate(Object.values(runtime.metadata.read().prLabels || {}).filter(Boolean), lastState)) {
           if (!active() || !canReadLinks(host)) break;
           if (!record) continue;
           const linked = discovered.get(record.url);
@@ -88,6 +96,8 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
           const evidenceTracked = record.associations?.some(a => a.kind === 'bead-evidence');
           const newerCoreObservation = linked?.coreCheckedAt > (record.stateCheckedAt ?? 0);
           if (terminal && (record.nodeId || evidenceTracked) && !searchHits.has(record.url) && !newerCoreObservation && (!linked || record.verifiedLinkKey === linkKey)) continue;
+          if (stateAttempts++ >= 20) break;
+          lastState = record.url;
           const observed = await tracker.state(record.url);
           if (!active()) return;
           if (observed) observations.push({ url: record.url, ...observed, verifiedLinkKey: linkKey });
@@ -115,7 +125,8 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
             }
           }
         });
-        for (const record of Object.values(runtime.metadata.read().prLabels || {})) {
+        let labelAttempts = 0;
+        for (const record of rotate(Object.values(runtime.metadata.read().prLabels || {}).filter(Boolean), lastLabel)) {
           if (!active() || !canReadLinks(host)) break;
           if (!record || !prRepository(record.url) || !eligible(record.url)) continue;
           const repo = prRepository(record.url).toLowerCase();
@@ -125,6 +136,8 @@ export function createPrLabelSweep({ runtime, host, labeler = createPrLabeler(),
             runtime.metadata.mutate(doc => { doc.prLabels[record.url].status = 'unlabelled'; });
             continue;
           }
+          if (labelAttempts++ >= 5) break;
+          lastLabel = record.url;
           if (terminal) runtime.metadata.mutate(doc => { doc.prLabels[record.url].terminalLabelAttempted = true; });
           let result;
           try { result = await labeler.apply(record.url, () => eligible(record.url)); } catch {}

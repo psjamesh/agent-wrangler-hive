@@ -1,3 +1,4 @@
+import { hostApiAtLeast } from './host-api.js';
 import { activeWorkerRestores } from './worker-restores.js';
 import { assertAllowedModel } from './review-policy.js';
 import { safeDeliver } from './sessions.js';
@@ -79,7 +80,7 @@ function gateAuthority(rt, host, launchId, { sid, task, ext, initial, restoring 
   if (task?.id !== launch.taskId || (ext?.beadId && ext.beadId !== launch.beadId)) throw new HiveError('This worker launch has a different task or cell.');
   if (host.sessions.get(sid)?.archived && !restoring) {
     const holder = rt.snapshots.graph.beads[launch.beadId]?.assignee || 'none';
-    throw new HiveError(`Archived Hive worker ${sid} cannot be restored safely. Manual restore requires Agent Wrangler host API ^1.95.0 and an explicit restore; scheduled resumes remain refused. Cell ${launch.beadId}; last known claim holder: ${holder}. The queen should check hive_context and, if the claim is stale, release it with hive_release_bead (bead_id: ${launch.beadId}, force: true, and a reason). Then launch a fresh worker with hive_spawn_worker on open, unclaimed work.`);
+    throw new HiveError(`Archived Hive worker ${sid} cannot be restored safely. Manual restore requires Agent Wrangler host API >=1.95.0 and an explicit restore; scheduled resumes remain refused. Cell ${launch.beadId}; last known claim holder: ${holder}. The queen should check hive_context and, if the claim is stale, release it with hive_release_bead (bead_id: ${launch.beadId}, force: true, and a reason). Then launch a fresh worker with hive_spawn_worker on open, unclaimed work.`);
   }
   const requester = initial ? coordinatorAuthority(rt, host, { sessionId: launch.requestedBy, cell: { id: launch.cellId } }, { attach: launch.role !== 'worker', beadId: launch.beadId }) : resolveCaller(rt, host, sid, launch.cellId);
   ensureStoreWritable(rt);
@@ -182,8 +183,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
     try {
       if (!rt) throw new HiveError('Hive is unavailable for this worker launch.');
       const initial = ['dispatch', 'spawn'].includes(reason);
-      const api = /^(\d+)\.(\d+)\.\d+(?:\+[\w.-]+)?$/.exec(host.version || '');
-      const restoring = reason === 'restore' && api?.[1] === '1' && Number(api[2]) >= 95 && rt.metadata.read().workerLaunches[launchId]?.role === 'worker';
+      const restoring = reason === 'restore' && hostApiAtLeast(host, 1, 95) && rt.metadata.read().workerLaunches[launchId]?.role === 'worker';
       let actor;
       let launch;
       await withLock(ADMISSION_LOCK, async () => {

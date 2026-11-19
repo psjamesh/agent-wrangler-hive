@@ -488,10 +488,11 @@ function evidenceFixture() {
   return f;
 }
 
-test('evidence backfill tracks a canonical PR, projects live state, and never labels it', async () => {
+for (const version of ['1.70.0', '2.2.0']) test(`evidence backfill tracks a canonical PR, projects live state, and never labels it (${version})`, async () => {
   const { waitingProjection } = await import('../server/waiting.js');
   const { beadPullRequests } = await import('../public/pr-view.js');
   const f = evidenceFixture();
+  f.host.version = version;
   await f.sweep.run();
   const record = f.doc.prLabels[PR];
   assert.equal(record?.source, 'bead-evidence');
@@ -575,4 +576,34 @@ test('session promotion keeps other beads evidence-only', async () => {
   const rows = waitingProjection(f.runtime, f.doc.cells.cell, new Set(['hive-root', 'hive-evidence'])).pullRequests;
   assert.deepEqual(rows.find(row => row.evidenceOnly)?.beadIds, ['hive-evidence']);
   assert.deepEqual(rows.find(row => !row.evidenceOnly)?.beadIds, ['hive-root']);
+});
+
+
+for (const version of ['1.70.0', '1.99.0', '2.0.0', '2.2.0', '3.0.0']) test(`PR sweep discovers, checks and labels on host ${version}`, async () => {
+  const f = fixture();
+  f.host.version = version;
+  f.time = 3 * 24 * 60 * 60000;
+  await f.sweep.run();
+  assert.equal(f.doc.prLabels[PR]?.state, 'OPEN');
+  assert.equal(f.doc.prLabels[PR]?.stateCheckedAt, f.time);
+  assert.equal(f.doc.prLabels[PR]?.status, 'labelled');
+  assert.deepEqual(f.additions, [PR]);
+});
+
+test('catch-up bounds each sweep and rotates past failed states and labels', async () => {
+  const f = fixture();
+  f.links = Array.from({ length: 45 }, (_, i) => `https://github.com/example/repo${i}/pull/1`);
+  const searches = [], states = [], labels = [];
+  f.sweep = createPrLabelSweep({ runtime: f.runtime, host: f.host, now: () => f.time,
+    tracker: { stop() {}, search: async repo => { searches.push(repo); return []; }, state: async url => { states.push(url); return null; } },
+    labeler: { stop() {}, apply: async url => { labels.push(url); return { status: 'deferred' }; } },
+  });
+  await f.sweep.run();
+  assert.equal(searches.length, 5);
+  assert.equal(states.length, 20);
+  assert.equal(labels.length, 5);
+  for (let i = 1; i < 9; i++) { f.time += 60000; await f.sweep.run(); }
+  assert.equal(new Set(searches).size, 45);
+  assert.equal(new Set(states).size, 45);
+  assert.equal(new Set(labels).size, 45);
 });
