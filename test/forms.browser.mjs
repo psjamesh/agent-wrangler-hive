@@ -8,7 +8,7 @@ import client, { createUi } from '/public/client.js';
 import { retireDrawer } from '/public/retire-view.js';
 import { workstreamDrawer, completeKey } from '/public/workstream-view.js';
 import { queenInstructions } from '/public/cell-view.js';
-import { openNewRoutine, routineDrawer, routineDetails, newRoutineKey } from '/public/routine-view.js';
+import { openNewRoutine, schedulesView, scheduleCard, newRoutineKey } from '/public/routine-view.js';
 const store = new Map();
 client.register({ api: { storage: { get: k => store.get(k), set: (k, v) => store.set(k, v), remove: k => store.delete(k) } }, register() {} });
 const ui = createUi();
@@ -17,7 +17,7 @@ const hive = { beads: { ws: { id: 'ws', title: 'Stream', parentId: 'root', statu
 const ctx = { ui, hive, api: {}, send: (m, o) => { sent.push(m); replies.push(o.onReply); }, notice: (...a) => notices.push(a) };
 const root = document.getElementById('root');
 const mount = (node) => { root.replaceChildren(node || ''); return root; };
-window.t = { openNewRoutine, routineDrawer, routineDetails, newRoutineKey, ui, ctx, sent, replies, notices, mount, retireDrawer, workstreamDrawer, completeKey, queenInstructions };
+window.t = { openNewRoutine, schedulesView, scheduleCard, newRoutineKey, ui, ctx, sent, replies, notices, mount, retireDrawer, workstreamDrawer, completeKey, queenInstructions };
 </script></body></html>`;
 
 test('schedule, retire, reopen, complete-workstream and queen-instructions forms validate, submit, fail and succeed in a real browser (isolated Chrome, synthetic data)', { skip: !process.env.HIVE_TEST_CHROME ? 'Set HIVE_TEST_CHROME to a Chrome binary' : !process.env.HIVE_TEST_CDP ? 'Set HIVE_TEST_CDP to an isolated Chrome port' : false }, async (t) => {
@@ -180,43 +180,49 @@ test('schedule, retire, reopen, complete-workstream and queen-instructions forms
   const routine = await run(`
     t.sent.length = 0;
     const cell = { id: 'c1', enabled: true };
-    t.openNewRoutine(t.ctx, cell);
+    t.mount(t.schedulesView(t.ctx, cell));
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'New schedule').click();
     const key = t.newRoutineKey(cell.id);
-    t.mount(t.routineDrawer(t.ctx, cell));
+    t.mount(t.schedulesView(t.ctx, cell));
     document.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    t.mount(t.routineDrawer(t.ctx, cell));
+    t.mount(t.schedulesView(t.ctx, cell));
     const validation = document.querySelector('.hive-dialog-error').textContent;
     const input = (suffix, value) => {
       const el = document.querySelector('[data-focus-key="routine:new:' + suffix + '"]');
       el.value = value; el.dispatchEvent(new Event('input', { bubbles: true }));
     };
     input('name', 'Daily check-in'); input('message', 'Review priorities.'); input('time', '10:15'); input('zone', 'Europe/London');
-    t.mount(t.routineDrawer(t.ctx, cell));
+    t.mount(t.schedulesView(t.ctx, cell));
     ${submit}
     const created = t.sent.at(-1);
     t.replies.at(-1)({ ok: false, error: 'Try again.' });
-    t.mount(t.routineDrawer(t.ctx, cell));
+    t.mount(t.schedulesView(t.ctx, cell));
     const failure = document.querySelector('.hive-dialog-error').textContent;
     ${submit}
-    t.replies.at(-1)({ ok: true, bead_id: 'routine' });
+    t.replies.at(-1)({ ok: true, schedule_id: 'sched_test' });
     const closed = t.ui.form(key) === null;
-    const bead = { id: 'routine', kind: 'routine', status: 'open', schedule: { ...created.schedule, nextRunAt: Date.now(), lastRunAt: Date.now()-86400000, lastOutcome: 'delivered' } };
-    t.mount(t.routineDetails(t.ctx, cell, bead));
+    const schedule = { id: 'sched_test', threadId: 'thr_test', ...created.schedule, nextRunAt: Date.now(), lastRunAt: Date.now()-86400000, lastOutcome: 'delivered' };
+    cell.schedules = [schedule];
+    t.mount(t.scheduleCard(t.ctx, cell, schedule));
     const details = document.body.textContent;
     [...document.querySelectorAll('button')].find(b => b.textContent === 'Edit schedule').click();
-    t.mount(t.routineDetails(t.ctx, cell, bead));
+    t.mount(t.scheduleCard(t.ctx, cell, schedule));
     const time = document.querySelector('input[type="time"]');
     time.value = '11:30'; time.dispatchEvent(new Event('input', { bubbles: true }));
     ${submit}
     const edited = t.sent.at(-1);
-    t.replies.at(-1)({ ok: true, bead_id: 'routine' });
+    t.replies.at(-1)({ ok: true, schedule_id: 'sched_test' });
     const actions = [];
-    for (const label of ['Pause', 'Run now', 'End schedule']) {
-      t.mount(t.routineDetails(t.ctx, cell, bead));
+    for (const label of ['Pause', 'Resume', 'Run now', 'Delete']) {
+      if (label === 'Resume') schedule.enabled = false;
+      t.mount(t.schedulesView(t.ctx, cell));
       [...document.querySelectorAll('button')].find(b => b.textContent === label).click();
       actions.push(t.sent.at(-1).action); t.replies.at(-1)({ ok: true });
     }
-    return { validation, failure, created, edited, closed, details, actions };
+    let opened = null;
+    t.mount(t.schedulesView(t.ctx, cell, record => { opened = record.threadId; }));
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Open topic').click();
+    return { validation, failure, created, edited, closed, details, actions, opened };
   `);
   assert.match(routine.validation, /Name/);
   assert.equal(routine.failure, 'Try again.');
@@ -228,6 +234,7 @@ test('schedule, retire, reopen, complete-workstream and queen-instructions forms
   assert.match(routine.details, /Last run:.*delivered/);
   assert.equal(routine.edited.action, 'update');
   assert.equal(routine.edited.schedule.time, '11:30');
-  assert.deepEqual(routine.actions, ['pause', 'run-now', 'end']);
+  assert.deepEqual(routine.actions, ['pause', 'resume', 'run-now', 'delete']);
+  assert.equal(routine.opened, 'thr_test');
 
 });

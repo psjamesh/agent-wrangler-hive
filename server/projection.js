@@ -1,3 +1,4 @@
+import { schedulesForCell } from './routines.js';
 import { liveClaimant } from './tracking.js';
 import { capacity, capacitySlots } from './admission.js';
 import { needsHuman } from './requests.js';
@@ -118,6 +119,7 @@ export function projectForGraph({ runtime, snapshot }) {
     cells[cell.id] = {
       ...cell,
       beadCount: ids.size,
+      schedules: schedulesForCell(runtime, cell.id),
       queenResponse: queenResponseState(doc, cell),
       ...waitingProjection(runtime, cell, ids),
       regionAttachments: geometry?.attachments || {},

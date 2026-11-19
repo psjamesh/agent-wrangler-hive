@@ -1,4 +1,3 @@
-import { isScheduleItem } from '../public/schedule.js';
 import { HiveError, LIMITS, text, UNSETTLED, isRunning } from './ops.js';
 import { OUTCOMES, HUMAN_ACTOR, descendantIds } from './bead-model.js';
 import { nearestFree, inRange } from '../public/hex-search.js';
@@ -30,7 +29,7 @@ export function checkRetire(rt, host, { cellId }) {
   const doc = rt.metadata.read();
   const beads = rt.snapshots.graph?.beads || {};
   const ids = cell.rootBeadId && beads[cell.rootBeadId] ? [...descendantIds(beads, cell.rootBeadId)].filter((id) => id !== cell.rootBeadId) : [];
-  const open = ids.filter((id) => beads[id].status !== 'closed' && !isScheduleItem(beads[id]));
+  const open = ids.filter((id) => beads[id].status !== 'closed');
   const claims = open.filter((id) => beads[id].assignee);
   const unsettled = Object.values(doc.operations).filter((op) => op.cellId === cell.id && (UNSETTLED.has(op.state) || isRunning(op.id)));
   const problems = [];

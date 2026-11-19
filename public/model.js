@@ -1,4 +1,3 @@
-import { isScheduleItem } from './schedule.js';
 export function overviewCells(graph, hive) {
   return Object.values(hive?.cells || {}).filter(c => c.occupiedCount > 0 || c.snapshot || (graph?.tasks?.tasks?.some(t => t.id === c.taskId && !t.archivedAt && !t.archived) ?? true));
 }
@@ -160,7 +159,6 @@ export function workCounts(hive, kids, beadId) {
     const b = stack.pop();
     if (seen.has(b.id)) continue;
     seen.add(b.id);
-    if (isScheduleItem(b)) { stack.push(...(kids.get(b.id) || [])); continue; }
     counts.total += 1;
     if (b.status === 'closed') counts.closed += 1;
     else if (displayStatus(b) === 'in_review') counts.in_review += 1;

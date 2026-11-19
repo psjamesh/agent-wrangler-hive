@@ -1819,9 +1819,13 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .hive-history-list strong, .hive-history-reason { display: block; }
 .hive-history-reason { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.hive-ws-cschedule { --ws-base: color-mix(in srgb, #d6a339 80%, var(--fg)); --ws: var(--ws-base); }
-.hive-schedule .hive-hex-rim { stroke: var(--ws); }
 .hive-routine-days { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
 .hive-routine-days label { display: inline-flex; gap: 4px; align-items: center; }
 .hive-routine-form { display: grid; gap: 10px; }
 .hive-routine-form textarea { min-height: 110px; }
+
+.hive-schedules { display: grid; gap: 14px; padding: 12px; }
+.hive-schedules-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hive-schedule-card { border: 1px solid var(--border); border-radius: 6px; padding: 12px; overflow-wrap: anywhere; }
+.hive-schedule-card h4, .hive-schedules-head h3 { margin: 0; }
+.hive-routine-message { white-space: pre-wrap; }

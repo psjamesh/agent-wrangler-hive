@@ -2486,3 +2486,29 @@ test('Details uses fetched evidence for closed items in retired hives', t => {
   assert.match(prs.textContent, /#12.*Unknown/);
   assert.equal(prs.querySelector('a').attributes.href, 'https://github.com/example/repo/pull/12');
 });
+
+test('Schedules switches beside Topics and Inbox, suppresses the composer and opens a dedicated topic', t => {
+  const f = fixture(t);
+  f.cell.inbox = { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } };
+  const schedule = { id: 'sched_test', threadId: 'thr_schedule', name: 'Check-in', days: [1], time: '09:00', timeZone: 'UTC', message: 'Review priorities.', enabled: true };
+  f.cell.schedules = [schedule];
+  const topic = { id: schedule.threadId, title: 'Scheduled: Check-in', scheduleId: schedule.id, beadId: null, count: 0, retained: 0 };
+  f.cell.threads = [topic];
+  const control = (node, name) => descendants(node).find(el => el.tagName === 'button' && el.textContent === name);
+  control(f.draw().head, 'Schedules').fire('click');
+  assert.equal(f.ui.inboxView(f.cell.id), 'schedules');
+  let out = f.draw();
+  assert.equal(out.textarea, null);
+  assert.equal(out.composer, null);
+  assert.match(out.list.textContent, /Check-in/);
+  assert.ok(control(out.head, 'Topics'));
+  control(out.list, 'Open topic').fire('click');
+  assert.equal(f.ui.openThread(f.cell.id), topic.id);
+  assert.equal(f.ui.inboxView(f.cell.id), null);
+  assert.match(f.draw().head.textContent, /About: Schedule/);
+  f.ui.closeThread(f.cell.id);
+  f.ui.setInboxView(f.cell.id, 'schedules');
+  out = f.draw();
+  control(out.head, 'Topics').fire('click');
+  assert.ok(f.draw().textarea);
+});

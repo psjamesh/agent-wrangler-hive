@@ -1,4 +1,4 @@
-import { setRoutine, routineState } from './routines.js';
+import { setRoutine, schedulesForCell } from './routines.js';
 import { missedInput } from './missed-input.js';
 import { reportCiWait } from './ci-waits.js';
 import { hasBlockingPrerequisite } from './human-wait.js';
@@ -157,7 +157,6 @@ function compactBead(rt, b, { full, cell }) {
     parent_id: b.parentId,
     title: b.title,
     kind: b.kind,
-    ...(b.kind === 'routine' ? { schedule: routineState(rt, b) } : {}),
     status: b.status,
     untracked: isUntracked(rt.host, rt.snapshots.graph, b),
     owner_session_id: b.ownerSessionId,
@@ -319,6 +318,7 @@ export async function buildContext(rt, host, actor, { include_closed = false, be
         archive_suggestions: archiveSuggestions(rt, host, cell),
         note: stale.length ? 'A session that stopped, went idle or was archived has not finished its work. Check its last state before releasing or reassigning a claim; never close a bead just because its session stopped.' : undefined,
       },
+      schedules: schedulesForCell(rt, cell.id),
       ...conversation,
       ...requests.requestContext(rt, actor),
       snapshot: { loaded_at: rt.snapshots.current.loadedAt, error: rt.snapshots.current.error, backend: rt.beads.status.state },
@@ -339,10 +339,10 @@ export const contextTool = hiveTool({
 
 export const routineTool = hiveTool({
   name: 'hive_set_routine',
-  description: 'Queen only: create or edit a scheduled routine in the reserved Schedules cluster. Actions create, update, pause, resume, end and run-now. Days are 0=Sunday through 6=Saturday, time is local HH:MM, timeZone is an IANA zone. Missing DST times skip that date; repeated times fire at the first occurrence. Missed runs catch up once. Fires send visible scheduled messages to the current queen through the human-input path. Paused routines can run now without resuming.',
-  inputSchema: ({ z, beadId, strictObject }) => ({
-    bead_id: beadId.optional(),
-    action: z.enum(['create', 'update', 'pause', 'resume', 'end', 'run-now']).optional(),
+  description: 'Queen only: create or edit a scheduled routine in the conversation panel Schedules view. Schedules are records with their own topic, outside the work graph. Use schedule_id to update, pause, resume, delete or run-now; omit it to create. Days are 0=Sunday through 6=Saturday, time is local HH:MM, timeZone is an IANA zone. Missing DST times skip that date; repeated times fire at the first occurrence. Missed runs catch up once. Fires send visible scheduled messages to the current queen through the human-input path. Paused routines can run now without resuming.',
+  inputSchema: ({ z, strictObject }) => ({
+    schedule_id: z.string().max(100).optional(),
+    action: z.enum(['create', 'update', 'pause', 'resume', 'delete', 'run-now']).optional(),
     schedule: strictObject({ name: z.string().max(200).optional(), days: z.array(z.number().int().min(0).max(6)).max(7).optional(), time: z.string().max(5).optional(), timeZone: z.string().max(100).optional(), message: z.string().max(19780).optional(), enabled: z.boolean().optional() }).optional(),
   }),
 }, ({ rt, host, actor, args }) => setRoutine(rt, host, actor, args));

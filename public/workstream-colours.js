@@ -1,5 +1,4 @@
 export const WORKSTREAM_COLOURS = 6;
-export const SCHEDULE_COLOUR = 'schedule';
 
 function colourRoot(id, parents) {
   const seen = new Set([id]);
@@ -19,7 +18,6 @@ function colourHash(id) {
 export function workstreamColour(id, assigned = null, parents = null) {
   id = colourRoot(id, parents);
   const slot = assigned?.[id];
-  if (slot === SCHEDULE_COLOUR) return SCHEDULE_COLOUR;
   if (Number.isInteger(slot) && slot >= 0 && slot < WORKSTREAM_COLOURS) return slot;
   return colourHash(id) % WORKSTREAM_COLOURS;
 }

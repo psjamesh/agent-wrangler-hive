@@ -1,3 +1,4 @@
+import { schedulesView } from './routine-view.js';
 import { inboxRows, needsRows, mergeRows, inboxRow, inboxFilters, inboxTotals, searchedInbox, searchStatus, marked, orderInboxTopics } from './global-inbox.js';
 import { searchTerms, topicMatches } from './inbox-search.js';
 import { beadReferences } from './bead-references.js';
@@ -252,6 +253,7 @@ function messageContextLabel(m, cell, beads, members) {
 }
 
 function contextLabel(t, cell, beads) {
+  if (t.scheduleId) return 'Schedule';
   if (!t.beadId) return 'Hive-wide';
   return beads[t.beadId]?.title || (cell.enabled ? 'removed item' : 'an item');
 }
@@ -449,6 +451,16 @@ function renderTopics({ cell, hive, graph, api, ui, ctx }) {
   const beads = hive.beads;
   const epoch = conversationEpoch(hive.metaEpoch, cell.conversationRevision);
   ui.syncConversation(cell.id, epoch);
+  if (ui.inboxView(cell.id) === 'schedules') return {
+    head: inboxHead(cell, hive, graph, ui),
+    list: schedulesView({ ...ctx, ui }, cell, schedule => {
+      const topic = topicIndex(cell, hive, ui).get(schedule.threadId) || { id: schedule.threadId, title: `Scheduled: ${schedule.name}`, scheduleId: schedule.id, retained: 1 };
+      ui.setInboxView(cell.id, null);
+      ui.setAllTopics(cell.id, true);
+      openTopic(ui, ctx, cell, topic, cell.threads.some(t => t.id === topic.id), epoch);
+    }),
+    composer: null, textarea: null, scrollKey: `schedules:${cell.id}`, follow: false,
+  };
   const selected = ui.selectedBeadId();
   const scope = selectionScope(hive, cell, selected);
   const all = ui.allTopics(cell.id);
@@ -555,6 +567,8 @@ function inboxHead(cell, hive, graph, ui) {
     human: inboxRows(context, [cell], 'human').length,
     queen: inboxMessageCount(cell, hive, ui, 'queen'),
   }, kind => ui.setInboxView(cell.id, view === kind ? null : kind), `inbox:${cell.id}`);
+  filters.insertBefore(h('button', { type: 'button', class: 'hive-link-btn', 'aria-pressed': String(!view), onclick: () => ui.setInboxView(cell.id, null) }, 'Topics'), filters.firstChild);
+  filters.append(h('button', { type: 'button', class: 'hive-link-btn', 'aria-pressed': String(view === 'schedules'), onclick: () => ui.setInboxView(cell.id, 'schedules') }, 'Schedules'));
   if (view) filters.append(h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setInboxView(cell.id, null) }, 'Show topics'));
   if (cell.inbox.backlog) filters.append(h('span', { class: 'hive-muted hive-inbox-backlog', role: 'note' }, 'More than 100 messages are unread or awaiting an answer. Older ones stay until they are answered or acknowledged.'));
   return filters;

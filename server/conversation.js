@@ -307,7 +307,7 @@ function pruneThreads(d, cellId) {
   const ids = Object.keys(threads);
   if (ids.length <= CELL_THREAD_CAP) return;
   const live = new Set((d.conversation[cellId] || []).map((m) => m.threadId));
-  const empty = ids.filter((id) => !live.has(id) && threads[id]?.origin !== 'routine').sort((a, b) => (threads[a]?.lastAt || 0) - (threads[b]?.lastAt || 0));
+  const empty = ids.filter((id) => !live.has(id) && !Object.values(d.routines || {}).some(r => r?.cellId === cellId && r.threadId === id)).sort((a, b) => (threads[a]?.lastAt || 0) - (threads[b]?.lastAt || 0));
   for (const id of empty.slice(0, ids.length - CELL_THREAD_CAP)) delete threads[id];
 }
 
@@ -495,6 +495,7 @@ export function threadSummary(t, e) {
     titleBy: t.titleBy,
     ...threadRelations(t, e),
     origin: t.origin,
+    ...(t.scheduleId ? { scheduleId: t.scheduleId } : {}),
     createdAt: t.createdAt,
     lastAt: t.lastAt,
     count: t.count || 0,
@@ -502,7 +503,7 @@ export function threadSummary(t, e) {
     earlierRemoved: Boolean(t.earlierRemoved) || (e?.retained || 0) < (t.count || 0),
     waitingFrom: e?.waiting ? { id: e.waiting.id, n: e.waiting.n ?? null, rev: e.waiting.ack.rev } : null,
     awaiting: Object.fromEntries(['human', 'queen'].map((k) => [k, e?.awaiting[k] ? { count: e.awaiting[k].count, newest: { id: e.awaiting[k].newest.id, n: e.awaiting[k].newest.n ?? null } } : null])),
-    preview: last ? { id: last.id, ack: last.ack || null, author: last.author, sessionId: last.sessionId || null, text: clip(oneLine(last.text), PREVIEW), at: last.at } : null,
+    preview: last ? { id: last.id, ack: last.ack || null, author: last.author, sessionId: last.sessionId || null, text: clip(oneLine(last.text), PREVIEW), at: last.at, ...(last.scheduled ? { scheduled: last.scheduled } : {}) } : null,
   };
 }
 
@@ -670,14 +671,20 @@ async function publishMessage(rt, host, actor, { text: body, bead_id, reply_to, 
   return result;
 }
 
-export function appendScheduledInput(rt, d, cell, bead, schedule, at, removed = []) {
-  threadCell(d, cell.id);
-  inboxCell(d, cell.id);
-  const t = ownThreads(threadsOf(d, cell.id)).find(t => t.origin === 'routine' && t.beadId === bead.id)
-    || makeThread(d, cell.id, { title: clip(`Scheduled: ${schedule.name}`, THREAD_TITLE_MAX), titleBy: 'hive', beadId: bead.id, by: 'hive', origin: 'routine', at });
+export function scheduleTopic(d, cellId, schedule, at) {
+  threadCell(d, cellId);
+  const t = threadsOf(d, cellId)[schedule.threadId]
+    || makeThread(d, cellId, { title: clip(`Scheduled: ${schedule.name}`, THREAD_TITLE_MAX), titleBy: 'hive', by: 'hive', origin: 'schedule', at });
+  t.scheduleId = schedule.id;
   if (t.titleBy === 'hive') t.title = clip(`Scheduled: ${schedule.name}`, THREAD_TITLE_MAX);
-  const m = humanMessage(cell, { id: newId('msg'), text: `Scheduled: ${schedule.name}\n\n${schedule.message}`, beadId: bead.id, threadId: t.id, at, context: contextFor(rt, bead.id) });
-  m.scheduled = { routineId: bead.id, name: schedule.name };
+  return t;
+}
+
+export function appendScheduledInput(rt, d, cell, schedule, at, removed = []) {
+  const t = scheduleTopic(d, cell.id, schedule, at);
+  inboxCell(d, cell.id);
+  const m = humanMessage(cell, { id: newId('msg'), text: `Scheduled: ${schedule.name}\n\n${schedule.message}`, threadId: t.id, at, context: contextFor(rt, null) });
+  m.scheduled = { scheduleId: schedule.id, name: schedule.name };
   messagesOf(d, cell.id).push(m);
   touch(t, m);
   bumpInbox(d, cell.id);
@@ -1144,7 +1151,7 @@ export function updateThread(rt, actor, { thread_id, title, bead_id }) {
       }
     }
     if (anchor !== undefined) {
-      if (cur.origin === 'routine' && anchor !== cur.beadId) throw new HiveError('A schedule topic stays anchored to its routine.');
+      if (cur.scheduleId && anchor) throw new HiveError('A schedule topic belongs to its schedule.');
       cur.beadId = anchor;
     }
     out = { thread_id: cur.id, title: audienceConversationDoc(d, cell.id, actor).threads[cell.id][id].title, bead_id: cur.beadId };

@@ -1,4 +1,3 @@
-export const isScheduleItem = bead => bead?.kind === 'routine' || bead?.system === 'schedules';
 export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function validateSchedule(input) {

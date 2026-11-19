@@ -1,5 +1,3 @@
-import { isScheduleItem } from '../public/schedule.js';
-import { openNewRoutine } from '../public/routine-view.js';
 import { subtreeMembers } from '../public/region-attachments.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -53,12 +51,11 @@ function mapFixture({contact=false,enclosed=false,hiveHidingStart=true,related=n
       hideDoneForHive: () => hiveHiding, setHideDoneForHive: (cellId, on) => { hiveHiding = on; },
       detachedRegions: () => detached, setDetachedRegions: (cellId, ids) => { detached = new Set(ids); },
       placements: () => [], selectedBeadId: () => null,
-      form: (name) => name === 'wsMenu' ? Object.keys(form).length ? form : null : routineForms[name] || null,
-      setForm: (name, next) => { if (name === 'wsMenu') { for (const k of Object.keys(form)) delete form[k]; if (next) Object.assign(form, next); } else routineForms[name] = next; },
+      form: (name) => name === 'wsMenu' && Object.keys(form).length ? form : null,
+      setForm: (name, next) => { if (name === 'wsMenu') { for (const k of Object.keys(form)) delete form[k]; if (next) Object.assign(form, next); } },
       sendPlacement: (msg,placement,options) => {sent.push(msg);callbacks.push(options?.onSaved);},
     },
   };
-  const routineForms = {};
   let options, menu;
   let mapRenders = 0;
   let tileNodes = [];
@@ -75,7 +72,6 @@ function mapFixture({contact=false,enclosed=false,hiveHidingStart=true,related=n
     ctx, cell, related, BEAD_SIZE: 60, layoutCell, groupOutlines, workstreamClasses,
     archiveHidden, activeKids, membersOf, subtreeMembers, previewMove, planMove, planReveal, createDragPlanner, planHide, planHiveReveal,
     layoutBase, stackable, hiddenWork, toPixel, pixelBounds, key, normalAspect,
-    isScheduleItem, openNewRoutine,
     beadTile: (ctx, bead, tile) => ({ id: bead.id, ...tile }), relationsFor, describeRelations,
     h: (...args) => Object.assign(args, { querySelector: () => element }), renderHexMap: (o) => {
       mapRenders++;
@@ -96,7 +92,7 @@ function mapFixture({contact=false,enclosed=false,hiveHidingStart=true,related=n
   const call = cached ? 'renderHive(ctx);' : 'cellMap(ctx, cell, related);';
   vm.runInNewContext(`${code}\n${renderCode}\n${call}`, sandbox);
   const hiveToggle = () => options.viewControls.flat(Infinity).find((item) => item?.['data-focus-key'] === 'hide-done:cell');
-  return { routineForms, element, hiveToggle, saved, beads, cell, ctx, located, tileNodes: () => tileNodes, mapRenders: () => mapRenders, detached: () => detached, options: () => options, menu: () => menu, form, sent, callbacks, render: () => vm.runInNewContext(call, sandbox) };
+  return { element, hiveToggle, saved, beads, cell, ctx, located, tileNodes: () => tileNodes, mapRenders: () => mapRenders, detached: () => detached, options: () => options, menu: () => menu, form, sent, callbacks, render: () => vm.runInNewContext(call, sandbox) };
 }
 
 test('map relations ignore hidden done prerequisites and dependents and restore them on Show done', () => {
@@ -508,18 +504,11 @@ test('closed workstream drawer visibility invalidates the retained cell map', ()
   assert.equal(f.mapRenders(), initialRenders + 2);
 });
 
-test('empty-map and Schedules-cluster menus create a schedule without offering work completion', () => {
+test('map controls and context menus offer no schedule creation', () => {
   const f = mapFixture();
-  f.options().onBackgroundMenu({ x: 50, y: 60 });
-  f.render();
-  assert.equal(typeof f.menu().onNewSchedule, 'function');
-  assert.equal(f.menu().onSuggest, undefined);
-  f.menu().onNewSchedule();
-  assert.ok(f.routineForms['new-routine:cell']);
-  f.beads.parent.system = 'schedules';
+  assert.equal(f.options().onBackgroundMenu, undefined);
+  assert.ok(f.options().actions.every(action => !action?.textContent?.includes('schedule')));
   f.options().onContextMenu('parent', { x: 50, y: 60 });
   f.render();
-  assert.equal(typeof f.menu().onNewSchedule, 'function');
-  assert.equal(f.menu().onSuggest, null);
-  assert.equal(f.menu().onCloseRequest, null);
+  assert.equal(f.menu().onNewSchedule, undefined);
 });
