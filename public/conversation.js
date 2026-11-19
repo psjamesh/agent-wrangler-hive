@@ -452,7 +452,7 @@ function renderTopics({ cell, hive, graph, api, ui, ctx }) {
   const epoch = conversationEpoch(hive.metaEpoch, cell.conversationRevision);
   ui.syncConversation(cell.id, epoch);
   if (ui.inboxView(cell.id) === 'schedules') return {
-    head: inboxHead(cell, hive, graph, ui),
+    head: h('div', { class: 'hive-topics-head' }, inboxHead(cell, hive, graph, ui)),
     list: schedulesView({ ...ctx, ui }, cell, schedule => {
       const topic = topicIndex(cell, hive, ui).get(schedule.threadId) || { id: schedule.threadId, title: `Scheduled: ${schedule.name}`, scheduleId: schedule.id, retained: 1 };
       ui.setInboxView(cell.id, null);

@@ -60,6 +60,17 @@ function openInboxRow(f, row = f.draw().list.querySelector('.hive-topic-btn')) {
   f.ui.openDeepLink({ ...target, thread: f.cell.threads.find(t => t.id === target.threadId), messages: f.cell.messages, more: false, anchorN: Math.max(...f.cell.messages.map(m => m.n || 0)) + 1 }, f.hive.metaEpoch);
 }
 
+test('Schedules keeps navigation in the same row header as Topics', t => {
+  const f = fixture(t);
+  f.cell.inbox = { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } };
+  const topics = f.draw();
+  f.ui.setInboxView(f.cell.id, 'schedules');
+  const schedules = f.draw();
+  assert.equal(schedules.head.getAttribute('class'), topics.head.getAttribute('class'));
+  assert.equal(schedules.head.querySelector('.hive-inbox-filters').parentElement, schedules.head);
+  assert.equal(schedules.list.getAttribute('class'), 'hive-schedules');
+});
+
 test('new topics carry the selected bead as the selection and draft text change', (t) => {
   const f = fixture(t);
   let out = f.draw();
