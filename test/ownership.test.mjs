@@ -2339,9 +2339,9 @@ test('group completion also checks evidence before its fenced writes', async () 
 });
 
 
-for (const holder of ['aw:worker-1', null]) test(`manual archived restore reclaims and rebinds available work (${holder})`, async () => {
+for (const version of ['1.95.0', '2.0.0', '2.2.0', '3.0.0']) for (const holder of ['aw:worker-1', null]) test(`manual archived restore reclaims and rebinds available work (${version}, ${holder})`, async () => {
   const f = fixture(2);
-  f.host.version = '1.95.0';
+  f.host.version = version;
   const launch = await dormantWorker(f);
   f.board.get('worker-1').archived = true;
   f.live.a.assignee = holder;
@@ -2359,9 +2359,9 @@ for (const holder of ['aw:worker-1', null]) test(`manual archived restore reclai
   assert(f.doc().bindings.cell.some(b => b.sessionId === 'worker-1' && b.beadId === 'a' && b.active));
 });
 
-for (const change of ['owner', 'closed', 'capacity', 'retained-capacity', 'disabled', 'task']) test(`manual archived restore revalidates ${change}`, async () => {
+for (const version of ['1.95.0', '2.2.0']) for (const change of ['owner', 'closed', 'capacity', 'retained-capacity', 'disabled', 'task']) test(`manual archived restore revalidates ${change} (${version})`, async () => {
   const f = fixture(1);
-  f.host.version = '1.95.0';
+  f.host.version = version;
   await dormantWorker(f);
   f.board.get('worker-1').archived = true;
   if (change !== 'retained-capacity') f.live.a.assignee = null;
@@ -2375,14 +2375,14 @@ for (const change of ['owner', 'closed', 'capacity', 'retained-capacity', 'disab
 });
 
 
-for (const version of ['1.94.0', undefined, '2.0.0', '1.95.0-beta.1']) for (const reason of ['resume', 'restore']) test(`archived restore fails safely on unsupported API ${version} (${reason})`, async () => {
+for (const version of ['1.94.0', undefined, '1.95.0-beta.1']) for (const reason of ['resume', 'restore']) test(`archived restore fails safely on unsupported API ${version} (${reason})`, async () => {
   const f = fixture(2);
   f.host.version = version;
   await dormantWorker(f);
   f.board.get('worker-1').archived = true;
   const before = structuredClone(f.doc());
   const result = await workers.workerLaunchContext({ sid: 'worker-1', task: { id: 'task' }, reason, host: f.host });
-  assert.match(result?.refuse || '', /requires Agent Wrangler host API \^1\.95\.0/);
+  assert.match(result?.refuse || '', /requires Agent Wrangler host API >=1\.95\.0/);
   assert.deepEqual(f.doc(), before);
 });
 

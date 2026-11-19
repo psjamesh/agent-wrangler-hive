@@ -1,6 +1,7 @@
+import { hostApiAtLeast } from './host-api.js';
+
 export async function readReviewerFront(host, { timeoutMs = 5000, agents, builderAgent } = {}) {
-  const version = /^(\d+)\.(\d+)\.(\d+)(?:\+.*)?$/.exec(host?.version || '');
-  const restricted = version && (+version[1] > 1 || (+version[1] === 1 && +version[2] >= 94));
+  const restricted = hostApiAtLeast(host, 1, 94);
   if (restricted && Array.isArray(agents) && builderAgent === undefined) {
     const entries = await Promise.all(agents.filter(a => a.available === true).map(async a => [a.id, await readReviewerFront(host, { timeoutMs, agents, builderAgent: a.id })]));
     return { byBuilder: Object.fromEntries(entries), scope: 'eligible-front' };
