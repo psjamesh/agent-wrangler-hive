@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 
 const page = `<!doctype html><html><head><link rel="stylesheet" href="/public/styles.css"></head><body><div class="hive-root" id="root" style="width:1000px;height:700px"></div><script type="module">
 import client, { createUi } from '/public/client.js';
+import { renderConversation } from '/public/conversation.js';
 import { retireDrawer } from '/public/retire-view.js';
 import { workstreamDrawer, completeKey } from '/public/workstream-view.js';
 import { queenInstructions } from '/public/cell-view.js';
@@ -14,10 +15,10 @@ client.register({ api: { storage: { get: k => store.get(k), set: (k, v) => store
 const ui = createUi();
 const sent = [], replies = [], notices = [];
 const hive = { beads: { ws: { id: 'ws', title: 'Stream', parentId: 'root', status: 'closed' } } };
-const ctx = { ui, hive, api: {}, send: (m, o) => { sent.push(m); replies.push(o.onReply); }, notice: (...a) => notices.push(a) };
+const ctx = { ui, hive, api: {}, busy: () => false, send: (m, o) => { sent.push(m); replies.push(o.onReply); }, notice: (...a) => notices.push(a) };
 const root = document.getElementById('root');
 const mount = (node) => { root.replaceChildren(node || ''); return root; };
-window.t = { openNewRoutine, schedulesView, scheduleCard, newRoutineKey, ui, ctx, sent, replies, notices, mount, retireDrawer, workstreamDrawer, completeKey, queenInstructions };
+window.t = { renderConversation, openNewRoutine, schedulesView, scheduleCard, newRoutineKey, ui, ctx, sent, replies, notices, mount, retireDrawer, workstreamDrawer, completeKey, queenInstructions };
 </script></body></html>`;
 
 test('schedule, retire, reopen, complete-workstream and queen-instructions forms validate, submit, fail and succeed in a real browser (isolated Chrome, synthetic data)', { skip: !process.env.HIVE_TEST_CHROME ? 'Set HIVE_TEST_CHROME to a Chrome binary' : !process.env.HIVE_TEST_CDP ? 'Set HIVE_TEST_CDP to an isolated Chrome port' : false }, async (t) => {
@@ -58,6 +59,60 @@ test('schedule, retire, reopen, complete-workstream and queen-instructions forms
     assert.equal(r.exceptionDetails, undefined, JSON.stringify(r.exceptionDetails));
     return r.result.value;
   };
+  const layouts = await run(`
+    await document.fonts.ready;
+    const root = document.getElementById('root');
+    const results = [];
+    for (const width of [320, 900]) for (const count of [0, 1, 30]) {
+      root.style.width = width + 'px';
+      const cell = { id: 'layout', enabled: true, messages: [], threads: [], inbox: { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } }, schedules: Array.from({ length: count }, (_, i) => ({
+        id: 'schedule-' + i, name: 'Daily check-in ' + i, days: [1], time: '09:00', timeZone: 'UTC', message: 'Review priorities.', enabled: true,
+      })) };
+      const panel = document.createElement('section');
+      panel.className = 'hive-panel hive-conversation';
+      panel.style.height = '500px';
+      const draw = kind => {
+        t.ui.setInboxView(cell.id, kind);
+        const out = t.renderConversation({ cell, hive: { ...t.ctx.hive, cells: [cell] }, graph: { sessions: [] }, api: {}, ui: t.ui, ctx: t.ctx });
+        const title = document.createElement('h3');
+        title.textContent = 'Conversation';
+        panel.replaceChildren(title, out.head, out.list, ...(out.composer ? [out.composer] : []));
+        t.mount(panel);
+        const bar = panel.querySelector('.hive-inbox-filters').getBoundingClientRect();
+        return { top: bar.top - panel.getBoundingClientRect().top, height: bar.height };
+      };
+      const topics = draw(null);
+      draw('human');
+      const schedules = draw('schedules');
+      const view = panel.querySelector('.hive-schedules');
+      const filters = panel.querySelector('.hive-inbox-filters').getBoundingClientRect();
+      const head = view.querySelector('.hive-schedules-head');
+      const first = head.nextElementSibling;
+      const bounds = view.getBoundingClientRect();
+      const header = head.getBoundingClientRect();
+      const content = first.getBoundingClientRect();
+      view.scrollTop = view.scrollHeight;
+      results.push({ width, count, top: header.top - bounds.top, gap: content.top - header.bottom,
+        contained: bounds.bottom <= panel.getBoundingClientRect().bottom,
+        topics, schedules, headerTop: header.top - panel.getBoundingClientRect().top, belowFilters: header.top - filters.bottom,
+        scrolls: view.scrollTop > 0, panelScroll: panel.scrollTop });
+    }
+    root.style.width = '1000px';
+    t.sent.length = 0; t.replies.length = 0; t.notices.length = 0;
+    return results;
+  `);
+  for (const layout of layouts) {
+    assert.ok(Math.abs(layout.top - 12) <= 1, JSON.stringify(layout));
+    assert.ok(layout.gap >= 14 && layout.gap < 40, JSON.stringify(layout));
+    assert.ok(layout.contained, JSON.stringify(layout));
+    assert.ok(layout.headerTop < 150, JSON.stringify(layout));
+    assert.ok(layout.belowFilters >= 12 && layout.belowFilters < 35, JSON.stringify(layout));
+    assert.ok(layout.schedules.height < 80, JSON.stringify(layout));
+    assert.ok(Math.abs(layout.topics.top - layout.schedules.top) <= 1, JSON.stringify(layout));
+    assert.ok(layout.schedules.height <= layout.topics.height * 2 + 6, JSON.stringify(layout));
+    assert.equal(layout.scrolls, layout.count === 30, JSON.stringify(layout));
+    assert.equal(layout.panelScroll, 0, JSON.stringify(layout));
+  }
   const submit = `document.querySelector('form button[type="submit"]').click();`;
   const retire = await run(`
     const cell = { id: 'c1', enabled: true };
