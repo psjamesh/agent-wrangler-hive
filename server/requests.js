@@ -21,6 +21,7 @@ const HISTORY_CAP = 500;
 const deliveries = new WeakMap();
 const subjectPasses = new WeakMap();
 const values = rt => Object.values(rt.metadata.read().requests || {});
+const needsRewrite = r => r.state === 'open' && r.audience === 'human' && Boolean(r.forwarded?.title || r.forwarded?.body) && r.forwarded.contentRevision !== r.contentRevision;
 const fail = (message, code = 'invalid') => { throw new HiveError(message, code); };
 const bounded = (v, name, max, required = false) => {
   if (v === undefined && !required) return '';
@@ -181,7 +182,7 @@ export async function createRequest(rt, host, id, args) {
       x.title = title; x.body = body; x.kind = nextKind; x.expiresAt = expiresAt; x.options = options; x.allowFreeText = true;
       if (args.blocking !== undefined) x.blocking = args.blocking === true;
       x.contentRevision++;
-      if (x.audience === 'queen') x.queenNotification = { state: 'pending', attempts: [] };
+      if (x.audience === 'queen' || needsRewrite(x)) x.queenNotification = { state: 'pending', attempts: [] };
     });
     await notifyQueen(rt, host, old.id);
     return present(get(rt, old.id));
@@ -282,14 +283,18 @@ async function sendOnce(rt, host, id, field, target, body) {
 export async function notifyQueen(rt, host, id) {
   reconcileRequests(rt, host, { requestId: id });
   const r = get(rt, id);
-  if (r.state !== 'open' || r.audience !== 'queen' || r.queenNotification.state !== 'pending' || r.queenNotification.attempts.length) return r;
-  return send(rt, host, id, 'queenNotification', r.queenSessionId, `[Hive request ${r.id}] ${r.title}\n${r.body}${(r.options || []).map(o => `\n- ${o.id}: ${o.label}${o.description ? ` — ${o.description}` : ''}`).join('')}\n${r.subjectPin ? `${requestSubjectText(r)}\nSubject: ${r.subjectPin.url || r.subjectPin.path}\n` : ''}${link(r)}\nCall hive_context. Answer within your authority with hive_answer_request or forward this same id with hive_forward_request; do not create a second standard request.`);
+  const stale = needsRewrite(r);
+  if (r.state !== 'open' || (r.audience !== 'queen' && !stale) || r.queenNotification.state !== 'pending' || r.queenNotification.attempts.length) return r;
+  const target = stale ? queenRoute(host, rt.metadata.cell(r.cellId)) : r.queenSessionId;
+  if (!target) return r;
+  return send(rt, host, id, 'queenNotification', target, `[Hive request ${r.id}] ${stale ? 'Your rewrite describes an earlier version. The worker revised this request; refresh its plain-language title and body with hive_forward_request.\n' : ''}${r.title}\n${r.body}${(r.options || []).map(o => `\n- ${o.id}: ${o.label}${o.description ? ` — ${o.description}` : ''}`).join('')}\n${r.subjectPin ? `${requestSubjectText(r)}\nSubject: ${r.subjectPin.url || r.subjectPin.path}\n` : ''}${link(r)}\nCall hive_context. ${stale ? 'Refresh this same id with hive_forward_request and its current revisions.' : 'Answer within your authority with hive_answer_request or forward this same id with hive_forward_request; do not create a second standard request.'}`);
 }
-function queenRequest(rt, host, callerId, args) {
+function queenRequest(rt, host, callerId, args, allowRewriteRefresh = false) {
   caller(rt, host, callerId);
   reconcileRequests(rt, host);
   const r = get(rt, args.request_id), actor = member(rt, host, callerId, r.cellId);
-  if (actor.role !== 'queen' || r.audience !== 'queen' || r.queenSessionId !== callerId || (actor.cell.queenGeneration || 0) !== r.queenGeneration) fail('Only the current queen may answer or forward its queen-stage request.', 'access');
+  const refresh = allowRewriteRefresh && needsRewrite(r);
+  if (actor.role !== 'queen' || (!refresh && (r.audience !== 'queen' || r.queenSessionId !== callerId || (actor.cell.queenGeneration || 0) !== r.queenGeneration))) fail('Only the current queen may answer or forward its queen-stage request.', 'access');
   expected(r, args);
   return r;
 }
@@ -302,8 +307,8 @@ export async function forwardRequest(rt, host, id, args) {
     const actor = member(rt, host, id, previous.cellId);
     if (actor.role === 'queen' && (actor.cell.queenGeneration || 0) === previous.queenGeneration) return previous;
   }
-  const r = queenRequest(rt, host, id, args);
-  return update(rt, r.id, x => { x.audience = 'human'; x.requesterSessionLink = { sessionId: x.requesterSessionId, label: 'Open requester session' }; x.routeRevision++; x.forwarded = { by: id, at: Date.now(), recommendation: note, contentRevision: r.contentRevision, ...(title === undefined ? {} : { title }), ...(body === undefined ? {} : { body }), fromRevision: r.revision, fromRouteRevision: r.routeRevision }; });
+  const r = queenRequest(rt, host, id, args, title !== undefined || body !== undefined);
+  return update(rt, r.id, x => { x.audience = 'human'; x.queenSessionId = id; x.queenGeneration = rt.metadata.cell(r.cellId).queenGeneration || 0; x.requesterSessionLink = { sessionId: x.requesterSessionId, label: 'Open requester session' }; x.routeRevision++; x.forwarded = { by: id, at: Date.now(), recommendation: note, contentRevision: r.contentRevision, ...(title === undefined ? {} : { title }), ...(body === undefined ? {} : { body }), fromRevision: r.revision, fromRouteRevision: r.routeRevision }; });
 }
 async function answer(rt, host, r, args, author, sessionId = null) {
   const optionId = args.option_id === undefined || args.option_id === null || args.option_id === '' ? null : args.option_id;
@@ -383,13 +388,13 @@ export async function retryDelivery(rt, host, args) {
 }
 export function requestContext(rt, actor, { bead_id } = {}) {
   const all = values(rt).filter(r => r.cellId === actor.cell.id && (!bead_id || r.beadId === bead_id || rt.metadata.read().threads?.[actor.cell.id]?.[r.threadId]?.beadId === bead_id));
-  const queued = actor.role === 'queen' ? all.filter(r => r.state === 'open' && r.audience === 'queen') : [];
+  const queued = actor.role === 'queen' ? all.filter(r => r.state === 'open' && (r.audience === 'queen' || needsRewrite(r))) : [];
   const changed = all.filter(r => r.state !== 'resolved' && r.subjectPin && r.subjectObservation && r.subjectObservation.revision !== r.subjectPin.revision);
   return {
     my_requests: all.filter(r => r.requesterSessionId === actor.sessionId).slice(-50).map(r => ({ ...r, link: link(r) })),
     ...(actor.role === 'queen' ? {
       input_requests: queued.slice(0, 50).map(r => ({ ...r, link: link(r) })), input_requests_total: queued.length,
-      recent_input_requests: all.filter(r => r.state !== 'open' || r.audience !== 'queen').slice(-50).map(r => ({ ...r, link: link(r) })),
+      recent_input_requests: all.filter(r => !queued.includes(r)).slice(-50).map(r => ({ ...r, link: link(r) })),
       approval_subject_changes: changed.slice(-50).map(r => ({ request_id: r.id, bead_id: r.beadId, subject_pin: r.answer?.subjectPin || r.subjectPin, current: r.subjectObservation, notification: r.subjectNotification, text: requestSubjectText(r), link: link(r) })),
       approval_subject_changes_total: changed.length,
     } : {}),

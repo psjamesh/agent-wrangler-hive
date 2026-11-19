@@ -435,7 +435,7 @@ export function audienceConversationDoc(doc, cellId, viewer = { role: 'human' })
     const named = Object.hasOwn(t, 'titleScopeId') && (t.titleScopeId === null || (maySeeRequest(titleRequest, viewer) && titleRequest.contentRevision === t.titleScopeRevision));
     return [t.id, { ...t, ...(t.origin === 'request' && t.titleBy !== 'human' && !named ? { title: (first && (viewer.role === 'human' ? requestDisplay(first).title : first.title)) || t.publicRequestTitle || 'Request', titleBy: first?.requesterSessionId || 'hive' } : {}), count: publicSequenceBase(doc, cellId, t, firsts) + mine.length, earlierRemoved: Boolean(t.earlierRemoved), createdAt: t.origin === 'request' ? mine[0]?.at || first?.createdAt || 0 : t.createdAt, lastAt: mine.at(-1)?.at || first?.createdAt || 0, lastMessageId: mine.at(-1)?.id || null }];
   }));
-  const revision = [Object.values(requests).map(r => [r.id, r.contentRevision]).sort(), Object.values(threads).map(t => [t.id, t.humanPruneRevision || 0]).sort()];
+  const revision = [Object.values(requests).map(r => [r.id, r.contentRevision, r.routeRevision]).sort(), Object.values(threads).map(t => [t.id, t.humanPruneRevision || 0]).sort()];
   const inboxRevision = list.filter(m => m.ack?.required || m.response?.required).map(m => [m.id, m.ack || null, m.response || null]);
   const inbox = { enabledAt: list[0]?.at || null, rev: Number.parseInt(createHash('sha256').update(JSON.stringify(inboxRevision)).digest('hex').slice(0, 12), 16) };
   return { ...doc, requests, conversationRevision: createHash('sha256').update(JSON.stringify(revision)).digest('hex').slice(0, 20), conversation: { ...doc.conversation, [cellId]: list }, threads: { ...doc.threads, [cellId]: threads }, inbox: { ...doc.inbox, [cellId]: inbox } };
