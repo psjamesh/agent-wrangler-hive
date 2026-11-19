@@ -452,7 +452,7 @@ function renderTopics({ cell, hive, graph, api, ui, ctx }) {
   const epoch = conversationEpoch(hive.metaEpoch, cell.conversationRevision);
   ui.syncConversation(cell.id, epoch);
   if (ui.inboxView(cell.id) === 'schedules') return {
-    head: h('div', { class: 'hive-topics-head' }, inboxHead(cell, hive, graph, ui)),
+    head: h('div', { class: 'hive-topics-head' }, conversationTotals(cell, hive, graph, ui), inboxHead(cell, hive, graph, ui)),
     list: schedulesView({ ...ctx, ui }, cell, schedule => {
       const topic = topicIndex(cell, hive, ui).get(schedule.threadId) || { id: schedule.threadId, title: `Scheduled: ${schedule.name}`, scheduleId: schedule.id, retained: 1 };
       ui.setInboxView(cell.id, null);
@@ -557,6 +557,10 @@ export function messageAuthor(graph, cell, m) { return authorName(graph, cell, m
 function inboxSig(cell, kind) {
   const s = cell.inbox?.[kind];
   return s && Number.isInteger(s.rev) ? String(s.rev) : '';
+}
+
+function conversationTotals(cell, hive, graph, ui) {
+  return cell.inbox ? h('div', { class: 'hive-inbox-totals' }, inboxTotals({ needs: needsRows({ hive, graph, ui }, [cell]).length, human: inboxMessageCount(cell, hive, ui, 'human') })) : null;
 }
 
 function inboxHead(cell, hive, graph, ui) {
@@ -680,7 +684,7 @@ function listView({ cell, hive, beads, graph, ui, ctx, topics, scope, all, selec
   const inbox = cell.inbox ? ui.inboxView(cell.id) : null;
   const what = inbox ? (inbox === 'human' ? 'Inbox' : 'Waiting for the queen') : 'Topics';
   const head = h('div', { class: `hive-topics-head${inbox ? ' hive-inbox-head' : ''}` },
-    cell.inbox ? h('div', { class: 'hive-inbox-totals' }, inboxTotals({ needs: needsRows({ hive, graph, ui }, [cell]).length, human: inboxMessageCount(cell, hive, ui, 'human') })) : null,
+    conversationTotals(cell, hive, graph, ui),
     inbox ? h('div', { class: 'hive-inbox-toolbar' }, inboxHead(cell, hive, graph, ui)) : inboxHead(cell, hive, graph, ui),
     !inbox ? h('span', { class: 'hive-muted' }, all || !scope ? 'All topics in this hive' : [`${what} about `, h('strong', {}, scopeName), ' (and its items)']) : null,
     !inbox && found ? searchStatus(query, shown, found) : null,
