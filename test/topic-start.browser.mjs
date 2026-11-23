@@ -41,7 +41,7 @@ view.mount(root,null);view.update(root,null,graph);
 test('topic routes select unread messages or older decisions and preserve explicit links', { skip: !process.env.HIVE_TEST_CHROME || !process.env.HIVE_TEST_CDP ? 'CI-only isolated Chrome' : false }, async t => {
   const port = Number(process.env.HIVE_TEST_CDP);
   assert.ok(port > 0 && port !== 7777);
-  const oldLinks = new Map(['global-inbox.js', 'waiting-view.js', 'requests.js'].map(file => [file,
+  const oldLinks = new Map(['conversation.js', 'global-inbox.js', 'waiting-view.js', 'requests.js'].map(file => [file,
     execFileSync('git', ['show', `05967355dc49e7f4e0d3995558a5d00b364b31a0:public/${file}`], { encoding: 'utf8' }),
   ]));
   const server = http.createServer(async (req, res) => {
