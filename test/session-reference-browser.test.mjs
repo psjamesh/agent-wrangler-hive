@@ -57,7 +57,7 @@ const expectedLabel = ${JSON.stringify(mode === 'inbox-bare' ? 'Build worker' : 
 anchors.find(a=>a.textContent===expectedLabel)?.click();
 const rowLinksAbsent = !inboxMode || !node.querySelector('.hive-inbox-session-links');
 if (inboxMode) node.querySelector('.hive-topic-btn').click();
-const destinationCorrect = inboxMode ? location.hash.includes('hive=cell_fixture&topic=topic&message=m') : location.hash === '#session=${worker}';
+const destinationCorrect = inboxMode ? location.hash.includes('hive=cell_fixture&topic=topic') : location.hash === '#session=${worker}';
 const rowVisible = !inboxMode || (() => { const row = node.querySelector('.hive-inbox-item').getBoundingClientRect(); const dock = node.getBoundingClientRect(); return row.height > 0 && row.top >= dock.top && row.bottom <= dock.bottom; })();
 const badgesVisible = !inboxMode || (() => {
   const needs = node.querySelector('.hive-inbox-item .hive-needs-count');

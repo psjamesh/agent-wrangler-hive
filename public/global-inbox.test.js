@@ -15,7 +15,7 @@ test('needs rows span every live hive, open requests only, blocking first, with 
   const rows = needsRows(ctx([a, b, off]), [a, b, off]);
   assert.deepEqual(needsRows(ctx([a, b, off]), [a, b]).map(r => r.key), ['request:r3', 'request:r1']);
   assert.deepEqual(rows.map(r => r.key), ['request:r3', 'request:r5', 'request:r1']);
-  assert.deepEqual(parseHiveLink(rows[2].link), { cellId: 'a', threadId: 't_r1', messageId: 'm_r1' });
+  assert.deepEqual(parseHiveLink(rows[2].link), { cellId: 'a', threadId: 't_r1', messageId: null });
   assert.equal(rows[0].author, 'Worker');
   assert.equal(inboxRows(ctx([a]), [a], 'needs').length, 1);
 });
@@ -39,7 +39,7 @@ test('message rows group waiting messages by topic across hives', () => {
   const b = cell('b', { threads: [{ id: 't9', title: 'Other' }], messages: [msg('m9', 't9', 1, waiting)], inbox: { human: { ids: ['m9'], count: 1, rev: 1 }, queen: { ids: [], count: 0 } } });
   const rows = messageRows(ctx([a, b]), [a, b], 'human');
   assert.deepEqual(rows.map(r => [r.cellId, r.title, r.count]), [['b', 'Other', 1], ['a', 'First topic', 2]]);
-  assert.deepEqual(parseHiveLink(rows[1].link), { cellId: 'a', threadId: 't1', messageId: 'm1' });
+  assert.deepEqual(parseHiveLink(rows[1].link), { cellId: 'a', threadId: 't1', messageId: null });
   assert.deepEqual(messageRows(ctx([a, b]), [a, b], 'queen'), []);
 });
 
@@ -123,7 +123,7 @@ test('Inbox merges requests by thread with separate counts and needs first, olde
   });
   const rows = inboxRows(ctx([a]), [a], 'human');
   assert.deepEqual(rows.map(r => [r.threadId, r.count, r.needsCount]), [['t_r3', 0, 1], ['t1', 1, 2], ['t2', 1, 0]]);
-  assert.equal(parseHiveLink(rows[1].link).messageId, 'm1');
+  assert.equal(parseHiveLink(rows[1].link).messageId, null);
 });
 
 test('search by request body keeps its thread message and needs totals with remote search', async () => {
@@ -144,7 +144,7 @@ test('remote message matches retain all needs counts, priority and deep links', 
     { key: 'message:a:m1', cellId: 'a', threadId: 't1', firstId: 'm1', at: 20, count: 7, snippet: 'needle', last: {} },
   ], queen: [] } });
   assert.deepEqual(result.lists.human.map(r => [r.cellId, r.count, r.needsCount]), [['a', 7, 2], ['b', 5, 0]]);
-  assert.deepEqual(parseHiveLink(result.lists.human[0].link), { cellId: 'a', threadId: 't1', messageId: 'm1' });
+  assert.deepEqual(parseHiveLink(result.lists.human[0].link), { cellId: 'a', threadId: 't1', messageId: null });
   a.requests.r1.state = 'dismissed';
   a.requests.r2.state = 'dismissed';
   assert.equal(inboxRows(ctx([a]), [a], 'human').length, 0);

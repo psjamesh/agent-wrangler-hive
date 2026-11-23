@@ -15,7 +15,7 @@ test('notifications seed backlog, dedupe episodes, use host action promise and w
   assert.equal(shown.length, 1);
   assert.equal(shown[0].actions[0].id, 'open');
   action('open'); await Promise.resolve();
-  assert.match(opened[0], /message=message/);
+  assert.match(opened[0], /hive=cell&topic=topic$/);
   notify(graph({ ...r, state: 'answered', delivery: { state: 'delivered' } }));
   assert.equal(withdrawn.length, 1);
 });

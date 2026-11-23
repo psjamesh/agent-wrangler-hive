@@ -69,7 +69,7 @@ import { createRequestNotifications } from './requests.js';
 import { hiveLink, installHiveLinks } from './deep-links.js';
 
 for (const path of ['waiting menu', 'request section', 'global inbox', 'notification popup', 'pasted deep link']) {
-  test(`${path} opens the exact request through the shared reveal and survives late layout`, async t => {
+  test(`${path} preserves the appropriate topic or explicit message destination`, async t => {
     installDom(t);
     const f = layout(t);
     const request = { id: 'r', cellId: 'c', threadId: 'topic', messageId: 'request', beadId: 'b', audience: 'human', state: 'open', title: 'Choose', body: 'Pick one', routeRevision: 1, revision: 1 };
@@ -103,6 +103,10 @@ for (const path of ['waiting menu', 'request section', 'global inbox', 'notifica
       revealMessage(f.root, value.messageId);
     });
     t.after(() => bridge.dispose());
+    if (path !== 'pasted deep link') {
+      assert.deepEqual(target, { cellId: 'c', threadId: 'topic', messageId: null });
+      return;
+    }
     assert.deepEqual(target, { cellId: 'c', threadId: 'topic', messageId: 'request' });
     assert.equal(f.item.getBoundingClientRect().top, 100);
     f.shift(250);
