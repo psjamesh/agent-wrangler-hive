@@ -120,7 +120,7 @@ test('map renderer caches actual builds across conversation updates and rebuilds
   let builds = 0;
   const h = () => ({ querySelector: () => ({}) });
   const render = vm.runInNewContext(code + '; renderHive', {
-    hiveViews: new WeakMap(), mapInputs, overviewCells, h,
+    hiveViews: new WeakMap(), disposeHivePopover() {}, mapInputs, overviewCells, h,
     globalSearchBox: () => null, cellPanels: () => ({ header: h(), related: null, dock: h() }),
     cellMap: () => { builds++; return h(); },
     syncChildren: (el, children) => {

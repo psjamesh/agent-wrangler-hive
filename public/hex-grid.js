@@ -427,7 +427,12 @@ export function renderHexMap({
   let ghostFrame = 0;
   const apply = () => {
     saveMapView(viewKey, view);
-    if (hasInfo) el.classList.toggle('is-tiny', view.k < 0.45);
+    if (hasInfo) {
+      const tiny = view.k < 0.45;
+      if (tiny && el.contains(document.activeElement) && document.activeElement?.dataset.hiveInfo) el.focus();
+      el.classList.toggle('is-tiny', tiny);
+      for (const info of el.querySelectorAll('[data-hive-info]')) info.setAttribute('transform', `${info.dataset.position} scale(${Math.max(1, 1 / view.k)})`);
+    }
     world.setAttribute('transform', `translate(${view.tx.toFixed(1)} ${view.ty.toFixed(1)}) scale(${view.k.toFixed(4)})`);
     if (!ghostFrame) ghostFrame = requestAnimationFrame(() => { ghostFrame = 0; drawGhosts(); });
   };
@@ -584,6 +589,7 @@ export function renderHexMap({
         class: 'hive-tile-info', role: 'button', tabindex: '0',
         'aria-label': `Details for ${it.info.name}`, 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
         'data-focus-key': `hive-info:${it.id}`, 'data-hive-info': it.id,
+        'data-position': `translate(${it.x + size * 0.43} ${it.y - size * 0.43})`,
         transform: `translate(${it.x + size * 0.43} ${it.y - size * 0.43})`,
       }, h('svg:circle', { r: '12' }), h('svg:text', { y: '4.5', 'text-anchor': 'middle', 'aria-hidden': 'true' }, 'i'));
       for (const type of ['pointerdown', 'pointerup', 'dblclick', 'contextmenu']) info.addEventListener(type, event => {
@@ -592,8 +598,7 @@ export function renderHexMap({
       });
       info.addEventListener('click', event => { event.stopPropagation(); it.onInfo(info); });
       info.addEventListener('keydown', event => {
-        event.stopPropagation();
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); it.onInfo(info); }
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); it.onInfo(info); }
       });
       tiles.append(info);
     }
@@ -724,7 +729,7 @@ export function renderHexMap({
 
   wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, zoomAt, suspend });
   el.addEventListener('focusin', (evt) => {
-    const t = evt.target.closest?.('[data-tile-id]');
+    const t = evt.target.closest?.('[data-tile-id]') || tileEls.get(evt.target.closest?.('[data-hive-info]')?.dataset.hiveInfo)?.g;
     if (!t) return;
     const r = t.getBoundingClientRect();
     const c = el.getBoundingClientRect();

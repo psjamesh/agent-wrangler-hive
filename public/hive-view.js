@@ -1,4 +1,4 @@
-import { openHivePopover } from './hive-popover.js';
+import { openHivePopover, refreshHivePopover, disposeHivePopover } from './hive-popover.js';
 import { cellMetrics } from './cell-metrics.js';
 import { renderRelatedBeads } from './conversation.js';
 import { confirmHive } from './confirm-dialog.js';
@@ -299,10 +299,9 @@ function workstreamMenu({ title, at, arranging, fitLabel, confirm, onFit, onConf
 function overviewMap(ctx, shown, { retiredCount, showRetired } = {}) {
   const { hive, ui, api } = ctx;
   const cells = placedCells(shown, ui.placements());
-  let closeDetails = null;
   const items = cells.map((c) => {
     const item = cellTile(ctx, c);
-    item.onInfo = anchor => { closeDetails?.(); closeDetails = openHivePopover(item.info, anchor); };
+    item.onInfo = anchor => openHivePopover(item.info, anchor, ui);
     return item;
   });
   const box = pixelBounds(items.length ? items.map((i) => i.local) : [{ q: 0, r: 0 }], CELL_SIZE);
@@ -332,8 +331,6 @@ function overviewMap(ctx, shown, { retiredCount, showRetired } = {}) {
       !cells.length ? h('p', { class: 'hive-stage-empty' }, 'No hives yet. Create one, or add a task that is already on the board.') : null,
     ],
   });
-  const dispose = map.el.hiveDisposeView;
-  map.el.hiveDisposeView = () => { closeDetails?.(); dispose(); };
   bindMapSearch({ ctx, map, ids: cells.map(c => c.id), findMatches: (latest, query) => {
     if (!query.trim()) return [];
     return cells.filter(c => {
@@ -677,6 +674,7 @@ export function renderHive(ctx) {
   const showRetired = ui.showRetired?.() === true;
   const cells = showRetired ? allCells : allCells.filter((c) => !c.retired || c.occupiedCount > 0);
   const focusedId = ui.cellId();
+  if (focusedId) disposeHivePopover(ui);
   const cell = focusedId ? hive.cells[focusedId] : null;
   if (focusedId || cells.length === 0 || !ui.globalInboxOpen()) ui.cancelGlobalInboxSearch?.();
   if (focusedId && !cell && ui.pendingCell() === focusedId) {
@@ -755,6 +753,7 @@ export function renderHive(ctx) {
       attentionEl(ctx)),
     cached.map,
     cellDialog(ctx)], ctx.beforeReplace);
+  refreshHivePopover(ui, cells.map(cell => cellTile(ctx, cell)));
   const panelsOpen = cells.length > 0 && ui.globalInboxOpen();
   return {
     top,
@@ -767,6 +766,7 @@ export function renderHive(ctx) {
 function disposeMap(map) { map?.querySelector('.hive-canvas')?.hiveDisposeView?.(); }
 
 export function disposeHiveView(ui) {
+  disposeHivePopover(ui);
   disposeMap(hiveViews.get(ui)?.map);
   hiveViews.delete(ui);
 }

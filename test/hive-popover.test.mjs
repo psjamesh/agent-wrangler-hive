@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { installDom, Element, fire, press } from './helpers/dom.mjs';
 import { h } from '../public/dom.js';
-import { openHivePopover } from '../public/hive-popover.js';
+import { openHivePopover, disposeHivePopover } from '../public/hive-popover.js';
 
 function fixture(t) {
   installDom(t);
+  t.after(() => disposeHivePopover(undefined));
   const oldWindow = globalThis.window;
   const oldRect = Element.prototype.getBoundingClientRect;
   globalThis.window = { innerWidth: 800, innerHeight: 600 };
@@ -52,5 +53,16 @@ test('clicking within details or dragging out of it does not dismiss', t => {
   assert.equal(dialog.open, true);
   fire(dialog, 'click', { clientX: 5, clientY: 5 });
   assert.equal(dialog.open, true);
+  close();
+});
+
+
+test('empty goal and attention omit those paragraphs without placeholder text', t => {
+  const f = fixture(t);
+  f.details.goal = '';
+  f.details.owed = '';
+  const { dialog, close } = f.open();
+  assert.equal(dialog.querySelectorAll('p').length, 2);
+  assert.doesNotMatch(dialog.textContent, /null/);
   close();
 });

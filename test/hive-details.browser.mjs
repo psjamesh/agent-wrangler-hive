@@ -107,7 +107,10 @@ test('Hive tile details open independently and dismiss accessibly (isolated Chro
     await call('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...p });
     await call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...p });
   };
-  const press = key => call('Input.dispatchKeyEvent', { type: 'keyDown', key });
+  const press = async key => {
+    await call('Input.dispatchKeyEvent', { type: 'keyDown', key });
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key });
+  };
   await run(`await new Promise(r => setTimeout(r, 300));`);
   const point = await infoPoint();
   await click(point);
@@ -115,12 +118,18 @@ test('Hive tile details open independently and dismiss accessibly (isolated Chro
   const details = await run(`return document.querySelector('.hive-overview-popover').textContent;`);
   for (const text of ['Importer hive', 'A detailed description', 'With another line', 'Queen']) assert.ok(details.includes(text), text);
   await shot('tile-and-details-light');
+  assert.equal(await run(`
+    const dialog = document.querySelector('.hive-overview-popover');
+    t.graph.sessions[0].status = 'working';
+    t.redraw();
+    return document.querySelector('.hive-overview-popover') === dialog && dialog.open && dialog.textContent.includes('working');
+  `), true);
   await press('Escape');
   assert.equal(await run(`return document.querySelectorAll('.hive-overview-popover').length;`), 0);
   assert.equal(await run(`return document.activeElement.dataset.hiveInfo;`), 'alpha');
   for (const key of ['Enter', ' ']) {
     await press(key);
-    assert.equal(await run(`return !!document.querySelector('.hive-overview-popover[open]');`), true);
+    assert.equal(await run(`return !!document.querySelector('.hive-overview-popover[open]');`), true, `keyboard activation: ${key}`);
     await run(`document.querySelector('.hive-overview-popover button').click();`);
     assert.equal(await run(`return document.activeElement.dataset.hiveInfo;`), 'alpha');
   }
@@ -139,6 +148,16 @@ test('Hive tile details open independently and dismiss accessibly (isolated Chro
   await call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, x: start.x + 100, y: start.y + 100 });
   assert.equal(await run(`return document.querySelector('[data-tile-id="alpha"]').getAttribute('transform');`), placement);
   assert.equal(await run(`return !!document.querySelector('.hive-overview');`), true);
+  assert.equal(await run(`
+    const map = document.querySelector('.hive-canvas');
+    const info = document.querySelector('[data-hive-info="alpha"]');
+    map.focus();
+    map.hiveRestoreView({ k: 0.5, tx: -3000, ty: -3000 });
+    info.focus();
+    const r = info.getBoundingClientRect(), c = map.getBoundingClientRect();
+    return r.width >= 24 && r.height >= 24 && r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom;
+  `), true);
   await run(`document.querySelector('.hive-canvas').hiveRestoreView({ k: 0.1, tx: 500, ty: 350 });`);
+  assert.equal(await run(`return document.activeElement.classList.contains('hive-canvas');`), true);
   assert.equal(await run(`return getComputedStyle(document.querySelector('[data-hive-info="alpha"]')).visibility;`), 'hidden');
 });

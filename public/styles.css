@@ -1837,3 +1837,5 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .is-tiny .hive-tile-info { visibility: hidden; }
 .hive-overview-popover p { margin: 0; overflow-wrap: anywhere; }
 .hive-overview-goal { white-space: pre-wrap; }
+
+.hive-hex.is-dragging + .hive-tile-info, .hive-hex.is-travelling + .hive-tile-info { visibility: hidden; }

@@ -1,15 +1,39 @@
 import { h } from './dom.js';
 
-export function openHivePopover({ name, goal, detail, owed, queen }, anchor) {
-  const dialog = h('dialog', { class: 'hive-waiting-menu hive-cell-popover hive-overview-popover', 'aria-label': `Details for ${name}` });
+let active = null;
+
+export function disposeHivePopover(owner) {
+  if (active && active.owner === owner) active.dialog.close();
+}
+
+export function refreshHivePopover(owner, items) {
+  if (!active || active.owner !== owner) return;
+  const item = items.find(item => `hive-info:${item.id}` === active.key);
+  if (!item) { disposeHivePopover(owner); return; }
+  active.draw(item.info);
+  const anchor = [...document.querySelectorAll('[data-focus-key]')].find(el => el.dataset.focusKey === active.key);
+  anchor?.setAttribute('aria-expanded', 'true');
+}
+
+export function openHivePopover(details, anchor, owner) {
+  active?.dialog.close();
+  const key = anchor.dataset.focusKey;
+  const dialog = h('dialog', { class: 'hive-waiting-menu hive-cell-popover hive-overview-popover', 'aria-label': `Details for ${details.name}` });
   const close = () => { if (dialog.open) dialog.close(); };
-  dialog.append(
-    h('div', { class: 'hive-details-head' }, h('h3', {}, name), h('button', { type: 'button', class: 'hive-quiet-btn', onclick: close }, 'Close')),
-    h('div', { class: 'hive-cell-popover-body' },
+  const title = h('h3');
+  const body = h('div', { class: 'hive-cell-popover-body' });
+  const draw = ({ name, goal, detail, owed, queen }) => {
+    dialog.setAttribute('aria-label', `Details for ${name}`);
+    title.textContent = name;
+    body.replaceChildren(...[
       goal ? h('p', { class: 'hive-overview-goal' }, goal) : null,
       h('p', {}, detail),
       owed ? h('p', {}, `Attention: ${owed}`) : null,
-      h('p', {}, queen)));
+      h('p', {}, queen)].filter(Boolean));
+  };
+  dialog.append(h('div', { class: 'hive-details-head' }, title, h('button', { type: 'button', class: 'hive-quiet-btn', onclick: close }, 'Close')), body);
+  draw(details);
+  active = { owner, dialog, key, draw };
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
   dialog.addEventListener('keydown', event => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
@@ -22,8 +46,9 @@ export function openHivePopover({ name, goal, detail, owed, queen }, anchor) {
   dialog.addEventListener('pointerdown', event => { pressedOutside = outside(event); });
   dialog.addEventListener('click', event => { if (pressedOutside && outside(event)) close(); });
   dialog.addEventListener('close', () => {
+    if (active?.dialog === dialog) active = null;
     dialog.remove();
-    const target = anchor.isConnected ? anchor : [...document.querySelectorAll('[data-focus-key]')].find(el => el.dataset.focusKey === anchor.dataset.focusKey);
+    const target = anchor.isConnected ? anchor : [...document.querySelectorAll('[data-focus-key]')].find(el => el.dataset.focusKey === key);
     target?.setAttribute('aria-expanded', 'false');
     target?.focus();
   }, { once: true });
