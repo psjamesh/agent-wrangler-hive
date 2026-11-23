@@ -101,3 +101,13 @@ test('notification after a worker edit uses its current title rather than the st
   assert.equal(shown[0].title, 'Current title');
   assert.notEqual(shown[0].body, 'Earlier body');
 });
+
+test('delivery-repair notifications preserve their exact request card link', async () => {
+  let action, href;
+  const notify = createRequestNotifications({ ui: { notify: () => new Promise(resolve => { action = resolve; }) } }, { open: url => { href = url; } });
+  notify(graph());
+  notify(graph(request('repair', { state: 'answered', delivery: { state: 'failed' } })));
+  action('open');
+  await Promise.resolve();
+  assert.match(href, /hive=cell&topic=topic&message=message$/);
+});

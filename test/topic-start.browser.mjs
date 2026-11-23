@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 
 const page = `<!doctype html><html><head><link rel="stylesheet" href="/public/styles.css"><style>*{box-sizing:border-box}body{margin:0}.hive-message{min-height:180px}</style></head><body><div class="hive-root" id="root" style="width:100vw;height:100vh"></div><script type="module">
 import client from '/public/client.js';
@@ -40,10 +41,16 @@ view.mount(root,null);view.update(root,null,graph);
 test('topic routes select unread messages or older decisions and preserve explicit links', { skip: !process.env.HIVE_TEST_CHROME || !process.env.HIVE_TEST_CDP ? 'CI-only isolated Chrome' : false }, async t => {
   const port = Number(process.env.HIVE_TEST_CDP);
   assert.ok(port > 0 && port !== 7777);
+  const oldLinks = new Map(['global-inbox.js', 'waiting-view.js', 'requests.js'].map(file => [file,
+    execFileSync('git', ['show', `05967355dc49e7f4e0d3995558a5d00b364b31a0:public/${file}`], { encoding: 'utf8' }),
+  ]));
   const server = http.createServer(async (req, res) => {
-    if (req.url === '/') { res.setHeader('Content-Type', 'text/html'); res.end(page); return; }
-    if (!/^\/public\/[\w.-]+$/.test(req.url)) { res.writeHead(404).end(); return; }
-    try { res.setHeader('Content-Type', req.url.endsWith('.css') ? 'text/css' : 'text/javascript'); res.end(await readFile(new URL(`..${req.url}`, import.meta.url))); }
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/') { res.setHeader('Content-Type', 'text/html'); res.end(url.searchParams.has('old-links') ? page.replaceAll('/public/', '/old-links/public/') : page); return; }
+    const old = url.pathname.startsWith('/old-links/');
+    const file = old ? url.pathname.slice('/old-links'.length) : url.pathname;
+    if (!/^\/public\/[\w.-]+$/.test(file)) { res.writeHead(404).end(); return; }
+    try { res.setHeader('Content-Type', file.endsWith('.css') ? 'text/css' : 'text/javascript'); res.end(old && oldLinks.has(file.slice(8)) ? oldLinks.get(file.slice(8)) : await readFile(new URL(`..${file}`, import.meta.url))); }
     catch { res.writeHead(404).end(); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -60,12 +67,12 @@ test('topic routes select unread messages or older decisions and preserve explic
   const run = async expression => { const r=await call('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});assert.equal(r.exceptionDetails,undefined,JSON.stringify(r.exceptionDetails));return r.result.value; };
   await call('Emulation.setDeviceMetricsOverride',{width:1280,height:800,deviceScaleFactor:1,mobile:false});
   await call('Page.enable');
-  const boot = async () => {
+  const boot = async (oldLinks = false) => {
     const loaded = new Promise(resolve => socket.addEventListener('message', function onLoad(event) {
       if (JSON.parse(event.data).method !== 'Page.loadEventFired') return;
       socket.removeEventListener('message', onLoad); resolve();
     }));
-    await call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/`});
+    await call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/${oldLinks ? '?old-links' : ''}`});
     await loaded;
     await run(`(async()=>{for(let i=0;i<100&&!window.t;i++)await new Promise(r=>setTimeout(r,25));if(!window.t)throw Error('fixture did not load');})()`);
   };
@@ -77,6 +84,23 @@ test('topic routes select unread messages or older decisions and preserve explic
     assert.ok(result.history > 0, 'loaded history to resolve the opening position');
     assert.equal(result.first, 'm4', 'the older decision starts at the top, before unread m12');
     assert.ok(!result.read.includes('m12') && !result.read.includes('m55'), 'unseen messages below the decision stay unread');
+  });
+  for (const route of ['inbox', 'global', 'needs', 'notification']) await t.test(`${route}: unread before a newer decision discriminates old links`, async () => {
+    const observed = [];
+    for (const old of [true, false]) {
+      await boot(old);
+      await run(`delete t.messages[3].requestId;t.messages[53].requestId='decision';Object.assign(t.cell.requests.decision,{messageId:'m54',createdAt:54});t.redraw();t.route(${JSON.stringify(route)})`);
+      const result = await position();
+      observed.push(result.first);
+      if (old) assert.notEqual(result.first, 'm12', 'pre-fix links bypass the earlier unread target');
+      else assert.equal(result.first, 'm12', 'topic navigation chooses unread before the newer decision');
+    }
+    t.diagnostic(`${route}: pre-fix links opened ${observed[0]}; fixed links opened ${observed[1]}`);
+  });
+  for (const route of ['inbox', 'global', 'needs', 'notification']) await t.test(`${route}: delivery repair preserves its exact card`, async () => {
+    await boot();
+    await run(`Object.assign(t.cell.requests.decision,{messageId:'m54',createdAt:54,state:'answered',delivery:{state:'failed'}});delete t.messages[3].requestId;t.messages[53].requestId='decision';t.redraw();t.route(${JSON.stringify(route)})`);
+    assert.equal((await position()).first, 'm54', 'repair action opens the request card rather than an unread message');
   });
   await t.test('unread only, followed by a fresh reopen with nothing waiting', async () => {
     await boot();

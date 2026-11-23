@@ -19,7 +19,7 @@ export function waitingItems(ctx, bead) {
 function waitingList(ctx, items, labelled, close = () => {}, selectedBeadId = null) {
   return h('ul', { class: 'hive-waiting-list' }, items.map(item => {
     const bead = ctx.hive.beads[selectedBeadId && item.beadIds.includes(selectedBeadId) ? selectedBeadId : [...item.beadIds].sort()[0]];
-    const reply = item.threadId ? h('a', { class: 'hive-link-btn', href: hiveLink(item.cellId, item.threadId), dataset: { waitAction: 'reply' }, onclick: close }, item.kind === 'request' ? 'Open request' : 'Reply') : null;
+    const reply = item.threadId ? h('a', { class: 'hive-link-btn', href: hiveLink(item.cellId, item.threadId, item.repair ? item.messageId : null), dataset: { waitAction: 'reply' }, onclick: close }, item.kind === 'request' ? 'Open request' : 'Reply') : null;
     return h('li', { dataset: { waitId: item.id } }, labelled ? h('p', { class: 'hive-muted' }, item.beadIds.map(id => ctx.hive.beads[id]?.title || id).join(' · ')) : null,
       item.kind === 'pr' && !selectedBeadId && item.beadIds.length > 1 && item.pr.humanAttention?.state === 'cannot-fix' ? h('p', { class: 'hive-muted' }, `Queen help will be posted under “${bead.title}”.`) : null,
       item.kind === 'pr' ? pullRequestRow(ctx, bead, item.pr) : [

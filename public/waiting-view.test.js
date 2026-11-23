@@ -295,3 +295,10 @@ test('an evidence association to another bead’s session PR cannot borrow its f
   const ownerSection = prv.pullRequestsSection(f.ctx, f.ctx.hive.beads.b);
   assert.ok(all(ownerSection).some(n => n.tag === 'button' && text(n) === 'Ask the queen to fix'));
 });
+
+test('delivery-repair waiting items preserve the exact request card link', t => {
+  const f = setup(t);
+  f.cell.requests = { repair: { id: 'repair', cellId: 'c', audience: 'human', state: 'answered', delivery: { state: 'failed' }, title: 'Retry answer delivery', threadId: 'topic', messageId: 'repair-card' } };
+  const section = view.waitingSection(f.ctx, f.ctx.hive.beads.a);
+  assert.match(all(section).find(n => n.tag === 'a').attrs.href, /hive=c&topic=topic&message=repair-card$/);
+});

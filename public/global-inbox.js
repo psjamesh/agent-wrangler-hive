@@ -37,7 +37,7 @@ export function needsRows(ctx, cells) {
         key: `request:${r.id}`, cellId: cell.id, hive: cellName(graph, cell), title: display.rewritten ? display.title : titles.get(r.threadId) || r.title, at: r.createdAt, blocking: Boolean(r.blocking),
         author: requestAuthor(graph, r), preview: oneLine(display.body, 200), texts: [display.body, display.title].filter(Boolean), beadIds: [r.beadId].filter(Boolean), repair: r.state === 'answered' ? (['failed', 'uncertain'].includes(r.delivery?.state) ? 'Answer needs delivery repair' : 'Answer being delivered') : null,
         threadId: r.threadId, firstId: r.messageId, needsCount: 1, count: 0, sessionLinks: [r.sessionLink, r.requesterSessionLink || (r.requesterSessionId ? { sessionId: r.requesterSessionId, label: 'Open requester session' } : null)].filter(Boolean),
-        link: hiveLink(cell.id, r.threadId),
+        link: hiveLink(cell.id, r.threadId, r.state === 'answered' ? r.messageId : null),
       });
     }
   }
@@ -86,6 +86,7 @@ export function mergeRows(messages, requests) {
       row.at = Math.min(row.at, request.at);
       row.texts = [...(row.texts || []), ...request.texts];
       row.beadIds = [...(row.beadIds || []), ...request.beadIds];
+      if (request.repair && !row.repair) row.link = request.link;
       row.repair ||= request.repair;
       row.sessionLinks = [...(row.sessionLinks || []), ...request.sessionLinks];
     }

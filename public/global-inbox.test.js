@@ -234,3 +234,11 @@ test('a stale rewrite does not hide the current request in needs rows', () => {
   assert.equal(row.preview, r.body);
   assert.equal(row.rewritten, false);
 });
+
+test('delivery-repair Inbox rows retain the repair card even when merged with unread messages', () => {
+  const r = request('repair', { threadId: 'topic', messageId: 'repair-card', state: 'answered', delivery: { state: 'failed' } });
+  const a = cell('a', { requests: { repair: r }, threads: [{ id: 'topic', title: 'Repair' }], messages: [{ id: 'unread', threadId: 'topic', at: 20, author: 'session', text: 'Unread', ack: { required: true, rev: 0, state: null } }], inbox: { human: { ids: ['unread'], count: 1, rev: 1 }, queen: { ids: [], count: 0 } } });
+  const context = ctx([a]);
+  assert.equal(parseHiveLink(needsRows(context, [a])[0].link).messageId, 'repair-card');
+  assert.equal(parseHiveLink(inboxRows(context, [a], 'human')[0].link).messageId, 'repair-card');
+});

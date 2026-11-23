@@ -123,7 +123,7 @@ export function createRequestNotifications(api, { read = () => null, write = () 
         Promise.resolve(api.ui?.notify?.({ id: `native:${episode}`, title: r.state === 'answered' ? 'Hive answer needs delivery repair' : display.title, body: display.rewritten ? display.body : r.warning || 'Hive request needs you', actions })).then(action => {
           if (shown.get(episode) !== token || token.consumed || api.settings?.()?.requestNotifications === false) return;
           token.consumed = true;
-          if (action === 'open') open(hiveLink(r.cellId, r.threadId));
+          if (action === 'open') open(hiveLink(r.cellId, r.threadId, r.state === 'answered' ? r.messageId : null));
           else if (typeof action === 'string' && action.startsWith('option:') && options.some(o => o.id === action.slice(7))) answer(r, action.slice(7));
         }).catch(() => {});
       } catch { shown.delete(episode); }
