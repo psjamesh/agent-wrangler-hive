@@ -90,6 +90,16 @@ test('Hive tile details open independently and dismiss accessibly (isolated Chro
   await call('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` });
   await loaded;
   await viewport(1280, 800);
+  const dismissed = async () => {
+    const state = await run(`
+      const deadline = Date.now() + 2000;
+      while (document.querySelector('.hive-overview-popover') && Date.now() < deadline) await new Promise(r => setTimeout(r, 20));
+      const dialog = document.querySelector('.hive-overview-popover');
+      return { removed: !dialog, open: dialog?.open, focus: document.activeElement?.outerHTML?.slice(0, 400) };
+    `);
+    assert.equal(state.removed, true, JSON.stringify(state));
+    assert.equal(await run(`return document.activeElement.dataset.hiveInfo;`), 'alpha');
+  };
   const inspect = () => run(`
     const tile = document.querySelector('[data-tile-id="alpha"]');
     return { sub: [...tile.querySelectorAll('.hive-hex-sub')].map(e => e.textContent),
@@ -125,22 +135,21 @@ test('Hive tile details open independently and dismiss accessibly (isolated Chro
     return document.querySelector('.hive-overview-popover') === dialog && dialog.open && dialog.textContent.includes('working');
   `), true);
   await press('Escape');
-  assert.equal(await run(`return document.querySelectorAll('.hive-overview-popover').length;`), 0);
-  assert.equal(await run(`return document.activeElement.dataset.hiveInfo;`), 'alpha');
+  await dismissed();
   for (const key of ['Enter', ' ']) {
     await press(key);
     assert.equal(await run(`return !!document.querySelector('.hive-overview-popover[open]');`), true, `keyboard activation: ${key}`);
     await run(`document.querySelector('.hive-overview-popover button').click();`);
-    assert.equal(await run(`return document.activeElement.dataset.hiveInfo;`), 'alpha');
+    await dismissed();
   }
   await click(await infoPoint());
   await click({ x: 2, y: 2 });
-  assert.equal(await run(`return document.querySelectorAll('.hive-overview-popover').length;`), 0);
-  assert.equal(await run(`return document.activeElement.dataset.hiveInfo;`), 'alpha');
+  await dismissed();
   await run(`document.documentElement.style.cssText = ${JSON.stringify(darkTheme)};`);
   await click(await infoPoint());
   await shot('tile-and-details-dark');
   await press('Escape');
+  await dismissed();
   const placement = await run(`return document.querySelector('[data-tile-id="alpha"]').getAttribute('transform');`);
   const start = await infoPoint();
   await call('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...start });
