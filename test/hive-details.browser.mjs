@@ -77,7 +77,7 @@ test('Hive tile details open independently and dismiss accessibly (isolated Chro
     socket.send(JSON.stringify({ id, method, params }));
   });
   const run = async (expression) => {
-    const r = await call('Runtime.evaluate', { expression: `(async()=>{const deadline=Date.now()+5000;while(!window.t&&Date.now()<deadline)await new Promise(r=>setTimeout(r,25));${expression}})()`, awaitPromise: true, returnByValue: true });
+    const r = await call('Runtime.evaluate', { expression: `(async()=>{const readyDeadline=Date.now()+5000;while(!window.t&&Date.now()<readyDeadline)await new Promise(r=>setTimeout(r,25));${expression}})()`, awaitPromise: true, returnByValue: true });
     assert.equal(r.exceptionDetails, undefined, JSON.stringify(r.exceptionDetails));
     return r.result.value;
   };
