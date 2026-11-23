@@ -156,6 +156,7 @@ export function bindMapSearch({ ctx, cell = null, map, ids, hidden = new Set(), 
   map.el.addEventListener('keydown', e => {
     if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target.closest?.('input, textarea, select, button, [contenteditable], [role="textbox"], [role="menu"]')) return;
+    if (e.key === ' ' && e.target.closest?.('[data-hive-info]')) return;
     const query = latest.ui.searchQuery?.() || '';
     if (e.key === 'Escape' && state.open) { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (!query && (['+', '=', '-', '_', '0'].includes(e.key) || (e.key === ' ' && e.target.closest?.('[data-tile-id]')))) return;

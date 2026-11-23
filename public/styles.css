@@ -1829,3 +1829,19 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .hive-schedule-card { border: 1px solid var(--border); border-radius: 6px; padding: 12px; overflow-wrap: anywhere; }
 .hive-schedule-card h4, .hive-schedules-head h3 { margin: 0; }
 .hive-routine-message { white-space: pre-wrap; }
+
+.hive-tile-info { cursor: pointer; outline: none; color: var(--fg-muted, var(--fg)); }
+.hive-info-hit { fill: transparent; stroke: none; }
+.hive-info-glyph { fill: none; stroke: currentColor; stroke-width: 1; }
+.hive-tile-info text { fill: currentColor; font: 600 9px var(--font, sans-serif); pointer-events: none; }
+.hive-tile-info:hover, .hive-tile-info:focus-visible { color: var(--fg); }
+.hive-tile-info:focus-visible .hive-info-hit { stroke: var(--hive-honey); stroke-width: 1.5; }
+.is-tiny .hive-tile-info { visibility: hidden; }
+.hive-overview-popover { overflow: visible; }
+.hive-overview-popover p { margin: 0; overflow-wrap: anywhere; }
+.hive-overview-popover .hive-cell-popover-body { max-height: min(500px, calc(100vh - 130px)); overflow: auto; }
+.hive-overview-popover::before { content: ''; position: absolute; width: 10px; height: 10px; left: var(--hive-arrow-x); top: -6px; transform: translateX(-50%) rotate(45deg); background: var(--surface, #202124); border-top: 1px solid var(--border, #666); border-left: 1px solid var(--border, #666); pointer-events: none; }
+.hive-overview-popover[data-side="above"]::before { top: auto; bottom: -6px; transform: translateX(-50%) rotate(225deg); }
+.hive-details-close { font-size: 18px; line-height: 1; min-width: 24px; min-height: 24px; padding: 2px; }
+.hive-overview-goal { white-space: pre-wrap; }
+.hive-hex.is-dragging + .hive-tile-info, .hive-hex.is-travelling + .hive-tile-info { visibility: hidden; }

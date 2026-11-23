@@ -153,14 +153,14 @@ function halfWidth(y, r) {
 // by the relationship mark above and the status mark below. Each title row
 // is wrapped to the hexagon's width across that row's full glyph height, and
 // the block uses as many title lines as the title needs and the band allows.
-function tileText({ title = null, lines = [], sub = [], badge, counters, progress, size, lh = size * 0.21, half, bandTop, bandBottom }) {
+function tileText({ title = null, lines = [], sub = [], badge, counters, info = false, progress, size, lh = size * 0.21, half, bandTop, bandBottom }) {
   const barH = progress ? Math.max(4, size * 0.07) : 0;
   const px = title?.px || 12;
   const subPx = px * 0.85;
   const asc = px * ASCENT;
   const rowWidth = (base, p) => 2 * Math.min(half(base - p * ASCENT), half(base + p * DESCENT)) - TEXT_PAD * 2;
   const layout = (n) => {
-    const rows = n + sub.length + (badge ? 1 : 0) + (counters ? 1 : 0);
+    const rows = n + sub.length + (badge ? 1 : 0) + (counters || info ? 1 : 0);
     const height = asc + (rows - 1) * lh + px * DESCENT + (progress ? lh * 0.55 + barH : 0);
     const blockTop = (bandTop + bandBottom) / 2 - height / 2;
     const first = blockTop + asc;
@@ -196,18 +196,19 @@ function tileText({ title = null, lines = [], sub = [], badge, counters, progres
   for (const line of sub) { spans.push(h('svg:tspan', { x: '0', y: y.toFixed(1), class: 'hive-hex-sub' }, line)); y += lh; }
   const badgeEl = badge ? h('svg:tspan', { x: '0', y: y.toFixed(1), class: 'hive-hex-badge' }, badge) : null;
   if (badgeEl) { spans.push(badgeEl); y += lh; }
-  const row = counters ? tileCounters(counters, y - 3) : null;
-  if (counters) y += lh;
+  const row = counters || info ? tileCounters(counters || [], y - 3, info) : null;
+  const infoAt = row?.infoAt;
+  if (counters || info) y += lh;
   const label = h('svg:text', { class: 'hive-hex-text', 'text-anchor': 'middle' }, spans);
-  const text = counters ? h('svg:g', {}, label, row) : label;
-  if (!progress) return { text, badgeEl };
+  const text = row ? h('svg:g', {}, label, row.el) : label;
+  if (!progress) return { text, badgeEl, infoAt };
   const barY = y - lh + subPx * DESCENT + lh * 0.55;
   const w = Math.max(barH * 4, Math.min(size * 0.92, 2 * Math.min(half(barY), half(barY + barH)) - TEXT_PAD * 4));
   const done = progress.total ? Math.max(0, Math.min(1, progress.done / progress.total)) : 0;
   const bar = h('svg:g', { class: 'hive-progress', 'aria-hidden': 'true' },
     h('svg:rect', { class: 'hive-progress-track', x: (-w / 2).toFixed(1), y: barY.toFixed(1), width: w.toFixed(1), height: barH.toFixed(1), rx: (barH / 2).toFixed(1) }),
     done > 0 ? h('svg:rect', { class: 'hive-progress-fill', x: (-w / 2).toFixed(1), y: barY.toFixed(1), width: Math.max(barH, w * done).toFixed(1), height: barH.toFixed(1), rx: (barH / 2).toFixed(1) }) : null);
-  return { text: h('svg:g', {}, text, bar), badgeEl };
+  return { text: h('svg:g', {}, text, bar), badgeEl, infoAt };
 }
 
 // Node-local marks for the focused item's immediate links. They sit on the
@@ -278,15 +279,15 @@ const COUNTER_SHAPES = {
   progress: 'M-2.5,-3.5 L3.5,0 L-2.5,3.5 Z',
 };
 
-function tileCounters(counters, y) {
+function tileCounters(counters, y, info = false) {
   const visible = counters.filter(c => c.count > 0).map(c => {
     const value = c.count > 99 ? '99+' : String(c.count);
     return { ...c, value, width: 14 + textWidth(value, 9, 600) };
   });
   const gap = 10;
-  const width = visible.reduce((sum, c) => sum + c.width, 0) + Math.max(0, visible.length - 1) * gap;
+  const width = visible.reduce((sum, c) => sum + c.width, 0) + Math.max(0, visible.length - 1) * gap + (info ? 24 + (visible.length ? gap : 0) : 0);
   let left = -width / 2;
-  return h('svg:g', { class: 'hive-tile-counters', transform: `translate(0 ${y.toFixed(1)})` }, visible.map(c => {
+  const el = h('svg:g', { class: 'hive-tile-counters', transform: `translate(0 ${y.toFixed(1)})` }, visible.map(c => {
     const x = left + 5;
     left += c.width + gap;
     return h('svg:g', { class: `hive-counter hive-counter-${c.kind}`, dataset: { counter: c.kind }, transform: `translate(${x.toFixed(2)} 0)` },
@@ -294,6 +295,7 @@ function tileCounters(counters, y) {
       c.kind === 'needs' ? markShapes('person') : h('svg:path', { class: 'hive-counter-glyph', d: COUNTER_SHAPES[c.kind] }),
       h('svg:text', { x: '9', y: '3.5', class: 'hive-counter-value' }, c.value));
   }));
+  return { el, infoAt: info ? { x: width / 2 - 12, y } : null };
 }
 
 export function primaryMark(kind, title, x = 0, y = 0, scale = 1) {
@@ -359,6 +361,7 @@ export function renderHexMap({
   dragGroup = null, movePreview = null, onContextMenu = null,
   tile = null, className = '', previousPositions = null, storage = null,
 }) {
+  const hasInfo = items.some(it => it.onInfo);
   const id = `hive-map-${(uid += 1)}`;
   const radius = size * 0.92;
   const form = tile || hexTile(radius);
@@ -426,6 +429,12 @@ export function renderHexMap({
   let ghostFrame = 0;
   const apply = () => {
     saveMapView(viewKey, view);
+    if (hasInfo) {
+      const tiny = view.k < 0.45;
+      if (tiny && el.contains(document.activeElement) && document.activeElement?.dataset.hiveInfo) el.focus();
+      el.classList.toggle('is-tiny', tiny);
+      for (const info of el.querySelectorAll('[data-hive-info]')) info.querySelector('.hive-info-hit').setAttribute('r', String(12 / Math.min(1, view.k)));
+    }
     world.setAttribute('transform', `translate(${view.tx.toFixed(1)} ${view.ty.toFixed(1)}) scale(${view.k.toFixed(4)})`);
     if (!ghostFrame) ghostFrame = requestAnimationFrame(() => { ghostFrame = 0; drawGhosts(); });
   };
@@ -521,6 +530,7 @@ export function renderHexMap({
       sub: it.sub,
       badge: it.badge,
       counters: it.counters,
+      info: Boolean(it.onInfo),
       progress: it.progress,
       size,
       lh: it.lineHeight,
@@ -538,7 +548,7 @@ export function renderHexMap({
       'aria-haspopup': it.onMark ? 'dialog' : it.menu && onContextMenu ? 'menu' : null,
       dataset: { tileId: it.id },
     },
-    h('svg:title', {}, it.title || it.ariaLabel || ''),
+    it.title === false ? null : h('svg:title', {}, it.title || it.ariaLabel || ''),
     h('svg:path', { d: shape, class: 'hive-hex-shape' }),
     form.faces ? h('svg:g', { class: 'hive-faces', 'aria-hidden': 'true', 'clip-path': `url(#${id}-faces)` }, form.faces.map((f) => h('svg:path', { d: f.d, class: f.className }))) : null,
     h('svg:path', { d: shape, class: 'hive-hex-rim' }),
@@ -577,6 +587,24 @@ export function renderHexMap({
     g.addEventListener('blur', hideFocusTip);
     tileEls.set(it.id, { g, mark, it });
     tiles.append(g);
+    if (it.onInfo) {
+      const info = h('svg:g', {
+        class: 'hive-tile-info', role: 'button', tabindex: '0',
+        'aria-label': `Details for ${it.info.name}`, 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+        'data-focus-key': `hive-info:${it.id}`, 'data-hive-info': it.id,
+        'data-position': `translate(${it.x + label.infoAt.x} ${it.y + label.infoAt.y})`,
+        transform: `translate(${it.x + label.infoAt.x} ${it.y + label.infoAt.y})`,
+      }, h('svg:circle', { r: '12', class: 'hive-info-hit' }), h('svg:circle', { r: '4.5', class: 'hive-info-glyph', 'aria-hidden': 'true' }), h('svg:text', { y: '3.2', 'text-anchor': 'middle', 'aria-hidden': 'true' }, 'i'));
+      for (const type of ['pointerdown', 'pointerup', 'dblclick', 'contextmenu']) info.addEventListener(type, event => {
+        event.stopPropagation();
+        if (type === 'contextmenu') event.preventDefault();
+      });
+      info.addEventListener('click', event => { event.stopPropagation(); it.onInfo(info); });
+      info.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); it.onInfo(info); }
+      });
+      tiles.append(info);
+    }
     const prior = previousPositions?.get(it.id);
     if (prior && (prior.x !== it.x || prior.y !== it.y) && !reducedMotion()) {
       g.animate?.([
@@ -704,7 +732,7 @@ export function renderHexMap({
 
   wirePan({ el, svg, view, apply, onBackground, onDragState, claimDrag, zoomAt, suspend });
   el.addEventListener('focusin', (evt) => {
-    const t = evt.target.closest?.('[data-tile-id]');
+    const t = evt.target.closest?.('[data-tile-id]') || tileEls.get(evt.target.closest?.('[data-hive-info]')?.dataset.hiveInfo)?.g;
     if (!t) return;
     const r = t.getBoundingClientRect();
     const c = el.getBoundingClientRect();

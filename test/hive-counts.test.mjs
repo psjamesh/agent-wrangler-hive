@@ -29,6 +29,10 @@ class Element {
   querySelector(s) { return this.querySelectorAll(s)[0] || null; }
   contains(n) { return n === this || this.children.some(c => c.contains(n)); }
   focus() { document.activeElement = this; }
+  get isConnected() { for (let el = this; el; el = el.parentNode) if (el === document.body) return true; return false; }
+  remove() { this.parentNode?.removeChild(this); }
+  showModal() { this.open = true; }
+  close() { if (!this.open) return; this.open = false; this.fire('close'); }
   addEventListener(type, fn, capture = false) { (this.events[type] ||= []).push({ fn, capture: capture === true }); }
   removeEventListener(type, fn) { this.events[type] = (this.events[type] || []).filter(e => e.fn !== fn); }
   fire(type, props = {}) { const e = { type, target: this, key: '', preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...props }; const path = []; for (let el = this; el; el = el.parentNode) path.push(el); for (const capture of [true, false]) for (const el of capture ? [...path].reverse() : path) { for (const h of el.events[type] || []) if (h.capture === capture) h.fn(e); if (e.stopped) return e; } return e; }
@@ -37,8 +41,9 @@ class Element {
 }
 
 function fixture(t) {
-  const saved = Object.fromEntries(['Node', 'document', 'requestAnimationFrame', 'cancelAnimationFrame', 'CSS'].map(k => [k, globalThis[k]]));
+  const saved = Object.fromEntries(['Node', 'document', 'requestAnimationFrame', 'cancelAnimationFrame', 'CSS', 'window'].map(k => [k, globalThis[k]]));
   Object.assign(globalThis, { Node: Element, document: { createElement: t => new Element(t), createElementNS: (_, t) => new Element(t), createTextNode: t => Object.assign(new Element('#text'), { text: t }), body: new Element('body'), addEventListener() {}, removeEventListener() {} }, requestAnimationFrame: () => 1, cancelAnimationFrame() {}, CSS: { escape: s => s } });
+  document.querySelectorAll = s => document.body.querySelectorAll(s);
   t.after(() => Object.assign(globalThis, saved));
   let view;
   client.register({ api: { state: () => ({ hive: graph.hive || hive }), settings: () => ({ beeLevel: 0, showBees: false }), storage: { get() {}, set() {}, remove() {} } }, register(kind, value) { if (kind === 'view') view = value; } });
@@ -243,23 +248,23 @@ test('client clock refreshes overdue queen attention without a new snapshot and 
   try {
     f.view.update(root, null, f.graph);
     assert.equal(interval, 30000);
-    assert.doesNotMatch(root.textContent, /Queen queen: not responding/);
+    assert.doesNotMatch(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: not responding/);
     assert.equal(f.view.badge(f.graph), 1);
     clock = start + 30 * 60000;
     tick();
-    assert.match(root.textContent, /Queen queen: not responding/);
+    assert.match(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: not responding/);
     assert.equal(f.view.badge(f.graph), 2);
     clock += 30000;
     tick();
-    assert.match(root.textContent, /Queen queen: not responding/);
+    assert.match(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: not responding/);
     f.graph.sessions[0].status = 'needs-input';
     f.view.update(root, null, f.graph);
-    assert.match(root.textContent, /Queen queen: waiting for input/);
-    assert.doesNotMatch(root.textContent, /Queen queen: not responding/);
+    assert.match(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: waiting for input/);
+    assert.doesNotMatch(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: not responding/);
     assert.equal(f.view.badge(f.graph), 2);
     f.graph.sessions[0].status = 'working';
     f.view.update(root, null, f.graph);
-    assert.doesNotMatch(root.textContent, /Queen queen: waiting for input/);
+    assert.doesNotMatch(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: waiting for input/);
     assert.equal(f.view.badge(f.graph), 1);
     f.graph.hive = { ...f.hive, metadataError: 'unavailable' };
     assert.equal(f.view.badge(f.graph), 0);
@@ -391,4 +396,104 @@ test('navigation badge matches rendered tiles when a hive task is archived', t =
     assert.equal(count, archived ? 0 : 1);
     assert.equal(f.view.badge({ ...f.graph, hive: f.hive }), count);
   }
+});
+
+test('overview keeps goals in accessible details, with no tile tooltip or goal sub-lines', t => {
+  const f = fixture(t);
+  f.beads.root.goal = 'A description that belongs in the details';
+  const tile = f.draw();
+  assert.equal(tile.querySelectorAll('.hive-hex-sub').length, 0);
+  assert.equal(tile.children.some(el => el.tagName === 'title'), false);
+  assert.match(tile.getAttribute('aria-label'), /A description that belongs in the details/);
+  const info = f.top.querySelector('.hive-tile-info');
+  assert.ok(info);
+  assert.equal(info.getAttribute('aria-haspopup'), 'dialog');
+  assert.equal(info.getAttribute('tabindex'), '0');
+  assert.equal(tile.contains(info), false);
+  for (const event of ['pointerdown', 'pointerup', 'dblclick', 'contextmenu']) {
+    assert.equal(info.fire(event).stopped, true, event);
+  }
+});
+
+test('overview preserves the no-queen warning without goal sub-lines', t => {
+  const f = fixture(t);
+  f.cell.queenSessionId = null;
+  f.beads.root.goal = 'Hidden description';
+  assert.equal(f.draw().querySelector('.hive-hex-sub').textContent, 'No queen yet');
+});
+
+
+test('overview details stay open and refresh across live session updates', t => {
+  const f = fixture(t);
+  globalThis.window = { innerWidth: 1000, innerHeight: 700, location: { hash: '' }, addEventListener() {}, removeEventListener() {} };
+  f.graph.sessions.push({ sessionId: 'queen', name: 'Example queen', status: 'idle' });
+  f.draw();
+  f.graph.hive = { ...f.hive, backend: { ...f.hive.backend, state: 'ready', snapshotComplete: true } };
+  const root = new Element('div');
+  document.body.append(root);
+  f.view.mount(root);
+  try {
+    f.view.update(root, null, f.graph);
+    const info = root.querySelector('.hive-tile-info');
+    assert.ok(info, root.textContent);
+    info.fire('click');
+    const dialog = document.body.querySelector('dialog');
+    assert.equal(dialog.open, true);
+    assert.match(dialog.textContent, /idle/);
+    const close = dialog.querySelector('button');
+    f.graph.sessions[0].status = 'working';
+    f.view.update(root, null, f.graph);
+    assert.equal(document.body.querySelector('dialog'), dialog);
+    assert.equal(dialog.open, true);
+    assert.match(dialog.textContent, /working/);
+    assert.equal(document.activeElement, close);
+    assert.notEqual(root.querySelector('.hive-tile-info'), info);
+    close.fire('click');
+    assert.equal(document.activeElement, root.querySelector('.hive-tile-info'));
+  } finally { f.view.unmount(root); }
+});
+
+test('info activation calls no tile actions and preserves map shortcuts', t => {
+  fixture(t);
+  const actions = [], infoCalls = [];
+  const map = renderHexMap({ viewKey: 'info-events', size: 92, bounds: { x: -92, y: -92, w: 184, h: 184 },
+    items: [{ id: 'one', x: 0, y: 0, local: { q: 0, r: 0 }, info: { name: 'One' }, onInfo: el => infoCalls.push(el) }],
+    onClick: () => actions.push('click'), onActivate: () => actions.push('activate'), onSelect: () => actions.push('select'), onMove: () => actions.push('move') });
+  const info = map.el.querySelector('.hive-tile-info');
+  info.fire('pointerdown', { button: 0, clientX: 0, clientY: 0 });
+  info.fire('pointermove', { clientX: 100, clientY: 100 });
+  info.fire('pointerup', { button: 0, clientX: 100, clientY: 100 });
+  info.fire('click');
+  info.fire('keydown', { key: 'Enter' });
+  info.fire('keydown', { key: ' ' });
+  assert.equal(infoCalls.length, 3);
+  assert.deepEqual(actions, []);
+  assert.equal(info.fire('keydown', { key: '+' }).stopped, undefined);
+  map.el.hiveDisposeView();
+});
+
+test('Space on overview info opens details without starting map search', t => {
+  const f = fixture(t);
+  globalThis.window = { innerWidth: 1000, innerHeight: 700 };
+  f.draw();
+  document.body.append(f.top);
+  const info = f.top.querySelector('.hive-tile-info');
+  info.fire('keydown', { key: ' ' });
+  const dialog = document.body.querySelector('dialog');
+  assert.equal(dialog?.open, true);
+  assert.equal(f.ui.searchQuery(), '');
+  dialog.querySelector('button').fire('click');
+});
+
+test('small info glyph occupies the status row even with no counters', t => {
+  const f = fixture(t);
+  f.beads.work.status = 'closed';
+  const tile = f.draw();
+  const info = f.top.querySelector('.hive-tile-info');
+  assert.equal(tile.querySelectorAll('.hive-counter').length, 0);
+  assert.equal(info.querySelector('.hive-info-glyph').getAttribute('r'), '4.5');
+  assert.equal(info.querySelector('.hive-info-hit').getAttribute('r'), '12');
+  const row = tile.querySelector('.hive-tile-counters');
+  const y = el => Number(el.getAttribute('transform').match(/translate\([^ ]+ ([^)]+)/)[1]);
+  assert.ok(Math.abs(y(info) - y(row)) < 0.1);
 });
