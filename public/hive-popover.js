@@ -13,6 +13,7 @@ export function refreshHivePopover(owner, items) {
   active.draw(item.info);
   const anchor = [...document.querySelectorAll('[data-focus-key]')].find(el => el.dataset.focusKey === active.key);
   anchor?.setAttribute('aria-expanded', 'true');
+  if (anchor) active.place(anchor);
 }
 
 export function openHivePopover(details, anchor, owner) {
@@ -31,9 +32,21 @@ export function openHivePopover(details, anchor, owner) {
       owed ? h('p', {}, `Attention: ${owed}`) : null,
       h('p', {}, queen)].filter(Boolean));
   };
-  dialog.append(h('div', { class: 'hive-details-head' }, title, h('button', { type: 'button', class: 'hive-quiet-btn', onclick: close }, 'Close')), body);
+  dialog.append(h('div', { class: 'hive-details-head' }, title, h('button', { type: 'button', class: 'hive-quiet-btn hive-details-close', 'aria-label': 'Close details', onclick: close }, '×')), body);
   draw(details);
-  active = { owner, dialog, key, draw };
+  function place(target) {
+    const box = target.getBoundingClientRect();
+    dialog.style.margin = '0';
+    const centre = (box.left + box.right) / 2;
+    const left = Math.max(8, Math.min(centre - dialog.offsetWidth / 2, window.innerWidth - dialog.offsetWidth - 8));
+    const above = box.bottom + 12 + dialog.offsetHeight > window.innerHeight - 8 && box.top > window.innerHeight - box.bottom;
+    const top = above ? box.top - dialog.offsetHeight - 12 : box.bottom + 12;
+    dialog.style.left = `${left}px`;
+    dialog.style.top = `${Math.max(8, Math.min(top, window.innerHeight - dialog.offsetHeight - 8))}px`;
+    dialog.style.setProperty('--hive-arrow-x', `${Math.max(16, Math.min(centre - left, dialog.offsetWidth - 16))}px`);
+    dialog.setAttribute('data-side', above ? 'above' : 'below');
+  }
+  active = { owner, dialog, key, draw, place };
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
   dialog.addEventListener('keydown', event => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
@@ -55,10 +68,7 @@ export function openHivePopover(details, anchor, owner) {
   document.body.append(dialog);
   anchor.setAttribute('aria-expanded', 'true');
   dialog.showModal();
-  const box = anchor.getBoundingClientRect();
-  dialog.style.margin = '0';
-  dialog.style.left = `${Math.max(8, Math.min(box.left, window.innerWidth - dialog.offsetWidth - 8))}px`;
-  dialog.style.top = `${Math.max(8, Math.min(box.bottom + 8, window.innerHeight - dialog.offsetHeight - 8))}px`;
+  place(anchor);
   dialog.querySelector('button').focus();
   return close;
 }

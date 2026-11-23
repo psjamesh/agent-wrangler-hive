@@ -125,6 +125,12 @@ test('Hive tile details open independently and dismiss accessibly (isolated Chro
   const point = await infoPoint();
   await click(point);
   assert.equal(await run(`return !!document.querySelector('.hive-overview');`), true);
+  assert.equal(await run(`
+    const dialog = document.querySelector('.hive-overview-popover');
+    const close = dialog.querySelector('button');
+    const caret = getComputedStyle(dialog, '::before');
+    return close.textContent === '×' && close.getAttribute('aria-label') === 'Close details' && caret.content !== 'none' && ['above', 'below'].includes(dialog.dataset.side);
+  `), true);
   const details = await run(`return document.querySelector('.hive-overview-popover').textContent;`);
   for (const text of ['Importer hive', 'A detailed description', 'With another line', 'Queen']) assert.ok(details.includes(text), text);
   await shot('tile-and-details-light');

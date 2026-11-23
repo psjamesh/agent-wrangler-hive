@@ -7,6 +7,13 @@ import { openHivePopover, disposeHivePopover } from '../public/hive-popover.js';
 function fixture(t) {
   installDom(t);
   t.after(() => disposeHivePopover(undefined));
+  const create = document.createElement;
+  document.createElement = tag => {
+    const el = create(tag);
+    el.style.setProperty = (key, value) => { el.style[key] = value; };
+    if (tag === 'dialog') { el.offsetWidth = 300; el.offsetHeight = 200; }
+    return el;
+  };
   const oldWindow = globalThis.window;
   const oldRect = Element.prototype.getBoundingClientRect;
   globalThis.window = { innerWidth: 800, innerHeight: 600 };
@@ -26,6 +33,8 @@ test('hive details show the full goal, counts, attention and queen as text', t =
   for (const text of Object.values(f.details)) assert.ok(dialog.textContent.includes(text), text);
   assert.equal(dialog.querySelector('script'), null);
   assert.equal(document.activeElement, dialog.querySelector('button'));
+  assert.equal(dialog.querySelector('button').textContent, '×');
+  assert.equal(dialog.querySelector('button').getAttribute('aria-label'), 'Close details');
   assert.equal(f.anchor.getAttribute('aria-expanded'), 'true');
   close();
   assert.equal(document.querySelector('dialog'), null);
@@ -64,5 +73,17 @@ test('empty goal and attention omit those paragraphs without placeholder text', 
   const { dialog, close } = f.open();
   assert.equal(dialog.querySelectorAll('p').length, 2);
   assert.doesNotMatch(dialog.textContent, /null/);
+  close();
+});
+
+
+test('popover caret flips above a low anchor and clamps inside the viewport', t => {
+  const f = fixture(t);
+  f.anchor.getBoundingClientRect = () => ({ left: 776, right: 800, top: 550, bottom: 574 });
+  const { dialog, close } = f.open();
+  assert.equal(dialog.getAttribute('data-side'), 'above');
+  assert.equal(dialog.style.left, '492px');
+  assert.equal(dialog.style.top, '338px');
+  assert.equal(dialog.style['--hive-arrow-x'], '284px');
   close();
 });
