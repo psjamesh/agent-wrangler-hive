@@ -1829,3 +1829,11 @@ a.hive-topic-btn { text-decoration: none; box-sizing: border-box; }
 .hive-schedule-card { border: 1px solid var(--border); border-radius: 6px; padding: 12px; overflow-wrap: anywhere; }
 .hive-schedule-card h4, .hive-schedules-head h3 { margin: 0; }
 .hive-routine-message { white-space: pre-wrap; }
+
+.hive-tile-info { cursor: pointer; outline: none; }
+.hive-tile-info circle { fill: var(--hive-tile); stroke: var(--hive-ink); stroke-width: 1.5; }
+.hive-tile-info text { fill: var(--fg); font: bold 15px Georgia, serif; pointer-events: none; }
+.hive-tile-info:hover circle, .hive-tile-info:focus-visible circle { fill: var(--hive-cap); stroke: var(--hive-honey); stroke-width: 3; }
+.is-tiny .hive-tile-info { visibility: hidden; }
+.hive-overview-popover p { margin: 0; overflow-wrap: anywhere; }
+.hive-overview-goal { white-space: pre-wrap; }

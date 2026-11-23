@@ -359,6 +359,7 @@ export function renderHexMap({
   dragGroup = null, movePreview = null, onContextMenu = null,
   tile = null, className = '', previousPositions = null, storage = null,
 }) {
+  const hasInfo = items.some(it => it.onInfo);
   const id = `hive-map-${(uid += 1)}`;
   const radius = size * 0.92;
   const form = tile || hexTile(radius);
@@ -426,6 +427,7 @@ export function renderHexMap({
   let ghostFrame = 0;
   const apply = () => {
     saveMapView(viewKey, view);
+    if (hasInfo) el.classList.toggle('is-tiny', view.k < 0.45);
     world.setAttribute('transform', `translate(${view.tx.toFixed(1)} ${view.ty.toFixed(1)}) scale(${view.k.toFixed(4)})`);
     if (!ghostFrame) ghostFrame = requestAnimationFrame(() => { ghostFrame = 0; drawGhosts(); });
   };
@@ -538,7 +540,7 @@ export function renderHexMap({
       'aria-haspopup': it.onMark ? 'dialog' : it.menu && onContextMenu ? 'menu' : null,
       dataset: { tileId: it.id },
     },
-    h('svg:title', {}, it.title || it.ariaLabel || ''),
+    it.title === false ? null : h('svg:title', {}, it.title || it.ariaLabel || ''),
     h('svg:path', { d: shape, class: 'hive-hex-shape' }),
     form.faces ? h('svg:g', { class: 'hive-faces', 'aria-hidden': 'true', 'clip-path': `url(#${id}-faces)` }, form.faces.map((f) => h('svg:path', { d: f.d, class: f.className }))) : null,
     h('svg:path', { d: shape, class: 'hive-hex-rim' }),
@@ -577,6 +579,24 @@ export function renderHexMap({
     g.addEventListener('blur', hideFocusTip);
     tileEls.set(it.id, { g, mark, it });
     tiles.append(g);
+    if (it.onInfo) {
+      const info = h('svg:g', {
+        class: 'hive-tile-info', role: 'button', tabindex: '0',
+        'aria-label': `Details for ${it.info.name}`, 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+        'data-focus-key': `hive-info:${it.id}`, 'data-hive-info': it.id,
+        transform: `translate(${it.x + size * 0.43} ${it.y - size * 0.43})`,
+      }, h('svg:circle', { r: '12' }), h('svg:text', { y: '4.5', 'text-anchor': 'middle', 'aria-hidden': 'true' }, 'i'));
+      for (const type of ['pointerdown', 'pointerup', 'dblclick', 'contextmenu']) info.addEventListener(type, event => {
+        event.stopPropagation();
+        if (type === 'contextmenu') event.preventDefault();
+      });
+      info.addEventListener('click', event => { event.stopPropagation(); it.onInfo(info); });
+      info.addEventListener('keydown', event => {
+        event.stopPropagation();
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); it.onInfo(info); }
+      });
+      tiles.append(info);
+    }
     const prior = previousPositions?.get(it.id);
     if (prior && (prior.x !== it.x || prior.y !== it.y) && !reducedMotion()) {
       g.animate?.([

@@ -1,3 +1,4 @@
+import { openHivePopover } from './hive-popover.js';
 import { cellMetrics } from './cell-metrics.js';
 import { renderRelatedBeads } from './conversation.js';
 import { confirmHive } from './confirm-dialog.js';
@@ -8,7 +9,7 @@ import { hiddenWork } from './region-visibility.js';
 import { bindMapSearch, searchReveals, rankBeads } from './map-search.js';
 import { mapInputs } from './view-inputs.js';
 import { h, syncChildren } from './dom.js';
-import { renderHexMap, fitLines } from './hex-grid.js';
+import { renderHexMap } from './hex-grid.js';
 import { toPixel, pixelBounds, key } from './hex-layout.js';
 import { layoutCell, groupOutlines, workstreamClasses } from './cell-layout.js';
 import { normalAspect } from './hex-layout.js';
@@ -31,16 +32,12 @@ import {
 const BEAD_SIZE = 60;
 const CELL_SIZE = 92;
 
-function firstLine(text) {
-  return String(text || '').split('\n').find((l) => l.trim())?.trim() || '';
-}
-
 function cellTile(ctx, cell) {
   const { hive, graph } = ctx;
   const name = cellName(graph, cell);
   const root = cell.rootBeadId ? hive.beads[cell.rootBeadId] : null;
   const { work: counts, needs, occupied, toRead, toAnswer } = cellMetrics(ctx, cell);
-  const goal = firstLine(root?.goal);
+  const goal = String(root?.goal || '').trim();
   const launch = launchState(hive, cell);
   let queen;
   let warn = false;
@@ -75,7 +72,7 @@ function cellTile(ctx, cell) {
     titleText: name,
     titleLines: 3,
     titlePx: 13,
-    sub: warn ? ['No queen yet'] : (goal ? fitLines(goal, { width: CELL_SIZE * 1.4, maxLines: 2, px: 10.5, weight: 400 }) : (cell.snapshot ? ['Captured snapshot'] : [])),
+    sub: warn ? ['No queen yet'] : [],
     counters,
     badge: !cell.enabled || !counts.total ? work : null,
     progress: cell.enabled && counts.total ? { done: counts.closed, total: counts.total } : null,
@@ -83,7 +80,8 @@ function cellTile(ctx, cell) {
     classes: `hive-cell${cell.retired ? ' is-retired' : (cell.enabled ? '' : ' is-off')}${warn ? ' needs-queen' : ''}${cell.snapshot ? ' is-snapshot' : ''}`,
     mark: cell.retired ? outcomeMark(cell.retired) : null,
     ariaLabel: `${name}. ${goal ? `Goal: ${goal}. ` : ''}${detail}. ${owed ? `Attention: ${owed}. ` : ''}${queen}. Enter opens the hive; Shift and an arrow key moves it.`,
-    title: `${name}${goal ? `\n${goal}` : ''}\n${detail}${owed ? `\nAttention: ${owed}` : ''}\n${queen}`,
+    title: false,
+    info: { name, goal, detail, owed, queen },
   };
 }
 
@@ -301,7 +299,12 @@ function workstreamMenu({ title, at, arranging, fitLabel, confirm, onFit, onConf
 function overviewMap(ctx, shown, { retiredCount, showRetired } = {}) {
   const { hive, ui, api } = ctx;
   const cells = placedCells(shown, ui.placements());
-  const items = cells.map((c) => cellTile(ctx, c));
+  let closeDetails = null;
+  const items = cells.map((c) => {
+    const item = cellTile(ctx, c);
+    item.onInfo = anchor => { closeDetails?.(); closeDetails = openHivePopover(item.info, anchor); };
+    return item;
+  });
   const box = pixelBounds(items.length ? items.map((i) => i.local) : [{ q: 0, r: 0 }], CELL_SIZE);
   let map = null;
   const enter = (id) => ui.openCell(id, map?.el.hiveTileRect(id) || null);
@@ -329,6 +332,8 @@ function overviewMap(ctx, shown, { retiredCount, showRetired } = {}) {
       !cells.length ? h('p', { class: 'hive-stage-empty' }, 'No hives yet. Create one, or add a task that is already on the board.') : null,
     ],
   });
+  const dispose = map.el.hiveDisposeView;
+  map.el.hiveDisposeView = () => { closeDetails?.(); dispose(); };
   bindMapSearch({ ctx, map, ids: cells.map(c => c.id), findMatches: (latest, query) => {
     if (!query.trim()) return [];
     return cells.filter(c => {

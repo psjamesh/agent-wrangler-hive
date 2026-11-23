@@ -243,23 +243,23 @@ test('client clock refreshes overdue queen attention without a new snapshot and 
   try {
     f.view.update(root, null, f.graph);
     assert.equal(interval, 30000);
-    assert.doesNotMatch(root.textContent, /Queen queen: not responding/);
+    assert.doesNotMatch(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: not responding/);
     assert.equal(f.view.badge(f.graph), 1);
     clock = start + 30 * 60000;
     tick();
-    assert.match(root.textContent, /Queen queen: not responding/);
+    assert.match(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: not responding/);
     assert.equal(f.view.badge(f.graph), 2);
     clock += 30000;
     tick();
-    assert.match(root.textContent, /Queen queen: not responding/);
+    assert.match(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: not responding/);
     f.graph.sessions[0].status = 'needs-input';
     f.view.update(root, null, f.graph);
-    assert.match(root.textContent, /Queen queen: waiting for input/);
-    assert.doesNotMatch(root.textContent, /Queen queen: not responding/);
+    assert.match(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: waiting for input/);
+    assert.doesNotMatch(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: not responding/);
     assert.equal(f.view.badge(f.graph), 2);
     f.graph.sessions[0].status = 'working';
     f.view.update(root, null, f.graph);
-    assert.doesNotMatch(root.textContent, /Queen queen: waiting for input/);
+    assert.doesNotMatch(root.querySelector('[data-tile-id="cell_test"]').getAttribute('aria-label'), /Queen queen: waiting for input/);
     assert.equal(f.view.badge(f.graph), 1);
     f.graph.hive = { ...f.hive, metadataError: 'unavailable' };
     assert.equal(f.view.badge(f.graph), 0);
@@ -391,4 +391,29 @@ test('navigation badge matches rendered tiles when a hive task is archived', t =
     assert.equal(count, archived ? 0 : 1);
     assert.equal(f.view.badge({ ...f.graph, hive: f.hive }), count);
   }
+});
+
+test('overview keeps goals in accessible details, with no tile tooltip or goal sub-lines', t => {
+  const f = fixture(t);
+  f.beads.root.goal = 'A description that belongs in the details';
+  const tile = f.draw();
+  assert.equal(tile.querySelectorAll('.hive-hex-sub').length, 0);
+  assert.equal(tile.children.some(el => el.tagName === 'title'), false);
+  assert.match(tile.getAttribute('aria-label'), /A description that belongs in the details/);
+  const info = f.top.querySelector('.hive-tile-info');
+  assert.ok(info);
+  assert.equal(info.getAttribute('aria-haspopup'), 'dialog');
+  assert.equal(info.getAttribute('tabindex'), '0');
+  assert.equal(tile.contains(info), false);
+  for (const event of ['pointerdown', 'pointerup', 'click', 'contextmenu']) {
+    if (event === 'click') continue;
+    assert.equal(info.fire(event).stopped, true, event);
+  }
+});
+
+test('overview preserves the no-queen warning without goal sub-lines', t => {
+  const f = fixture(t);
+  f.cell.queenSessionId = null;
+  f.beads.root.goal = 'Hidden description';
+  assert.equal(f.draw().querySelector('.hive-hex-sub').textContent, 'No queen yet');
 });
