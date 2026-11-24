@@ -999,11 +999,18 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
     .filter(r => r.threadId === t.id && r.state === 'open' && needsHuman(r))
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   const decision = decisions[0];
-  const hint = h('div', { class: 'hive-topic-decision-hint hive-warning', role: 'status', 'aria-live': 'polite' });
-  const updateHint = () => { hint.hidden = !decision || !textarea.value.trim(); };
+  const saved = composers.get(ui);
+  const status = saved.decisionStatus ||= h('span', { class: 'hive-topic-decision-status hive-sr-only', role: 'status', 'aria-live': 'polite' });
+  const hint = h('div', { class: 'hive-topic-decision-hint hive-warning' });
+  const warning = decision ? `This topic has an open decision: "${requestDisplay(decision).title}"${decisions.length > 1 ? ` (+${decisions.length - 1} more)` : ''}. Text here is sent as a message, not an answer.` : '';
+  const updateHint = () => {
+    hint.hidden = !decision || !textarea.value.trim();
+    const text = hint.hidden ? '' : warning;
+    if (status.textContent !== text) status.textContent = text;
+  };
   const moveAnswer = () => {
     const raw = textarea.value;
-    if (!raw.trim()) return;
+    if (!raw.trim() || ctx.busy('hive-send')) return;
     const answerKey = `request:${decision.id}`;
     const existing = ui.draftFor(answerKey);
     ui.setDraftFor(answerKey, existing ? `${existing}\n\n${raw}` : raw);
@@ -1011,7 +1018,6 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
     textarea.value = '';
     guard.update();
     updateHint();
-    ui.setSearchQuery('');
     const focus = () => {
       const input = document.querySelector(`[data-focus-key="${CSS.escape(`request-answer:${decision.id}`)}"]`);
       if (!input || input.disabled) return false;
@@ -1020,6 +1026,9 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
       input.focus({ preventScroll: true });
       return true;
     };
+    if (images.snapshot().length || replyTarget) ctx.notice('Only the text was moved. Attachments and the reply target remain in the message composer.');
+    if (focus()) return;
+    ui.setSearchQuery('');
     if (focus()) return;
     ctx.send({ type: 'hive-deep-link', cellId: cell.id, threadId: t.id, messageId: decision.messageId }, {
       quiet: true,
@@ -1027,14 +1036,14 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
         if (ui.openThread(cell.id) !== t.id) return;
         if (!frame.ok) { ctx.notice(frame.error || 'Could not open the decision. Your answer draft is kept.'); return; }
         ui.openDeepLink(frame, hive.metaEpoch);
-        requestAnimationFrame(focus);
+        requestAnimationFrame(() => { if (!focus()) ctx.notice("Your text was moved to the decision's answer draft. Open the decision to continue."); });
       },
     });
   };
   if (decision) hint.append(
-    h('span', {}, `This topic has an open decision: "${requestDisplay(decision).title}"${decisions.length > 1 ? ` (+${decisions.length - 1} more)` : ''}. Text here is sent as a message, not an answer.`),
+    h('span', {}, warning),
     h('div', { class: 'hive-request-actions' },
-      h('button', { type: 'button', class: 'hive-link-btn', 'data-focus-key': `topic-answer:${key}`, onclick: moveAnswer }, 'Answer it'),
+      h('button', { type: 'button', class: 'hive-link-btn', 'data-focus-key': `topic-answer:${key}`, disabled: ctx.busy('hive-send'), onclick: moveAnswer }, 'Answer it'),
       h('button', { type: 'button', class: 'hive-link-btn', 'data-focus-key': `topic-message:${key}`, disabled: ctx.busy('hive-send'), onclick: submit }, 'Send as message')));
   const saveDraft = textarea.oninput;
   textarea.oninput = () => { saveDraft(); updateHint(); };
@@ -1046,6 +1055,7 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
     replyTarget ? h('div', { class: 'hive-quote' }, `Replying to: ${replyTarget.text.slice(0, 120)} `,
       h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setReplyFor(key, null) }, 'Cancel')) : null,
     textarea,
+    status,
     hint,
     guard.note,
     row);

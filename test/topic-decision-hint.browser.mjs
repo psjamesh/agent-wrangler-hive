@@ -20,7 +20,7 @@ const frames = [];
 function send(frame) {
   frames.push(frame);
   let reply;
-  if(frame.type==='hive-deep-link') reply={cellId:'alpha',thread,messageId:frame.messageId,messages:frame.messageId ? messages : messages.slice(40),more:!frame.messageId,anchorN:61};
+  if(frame.type==='hive-deep-link') reply={cellId:'alpha',thread,messageId:frame.messageId,messages:frame.messageId==='m4' ? messages : messages.slice(40),more:frame.messageId!=='m4',anchorN:61};
   if(frame.type==='hive-thread-history') { const end=frame.before ? messages.findIndex(m=>m.id===frame.before) : messages.length; const start=Math.max(0,end-(frame.limit||40)); reply={messages:messages.slice(start,end),more:start>0,anchorN:end+1}; }
   if(reply) setTimeout(()=>receive({op:frame.type,requestId:frame.requestId,ok:true,...reply}),20);
 }
@@ -92,8 +92,8 @@ test('topic reply hint routes answers and preserves ordinary messages', { skip: 
   assert.equal(await hint(), null);
   await type('  My answer  ');
   assert.match(await hint(), /This topic has an open decision: "Choose a database"/);
-  assert.equal(await run(`document.querySelector('.hive-topic-decision-hint').getAttribute('role')`), 'status');
-  assert.equal(await run(`document.querySelector('.hive-topic-decision-hint').getAttribute('aria-live')`), 'polite');
+  assert.equal(await run(`document.querySelector('.hive-topic-decision-status').getAttribute('role')`), 'status');
+  assert.equal(await run(`document.querySelector('.hive-topic-decision-status').getAttribute('aria-live')`), 'polite');
   await type('');
   assert.equal(await hint(), null);
   await type('My answer');
@@ -122,4 +122,15 @@ test('topic reply hint routes answers and preserves ordinary messages', { skip: 
   await run(`new Promise(r=>setTimeout(r,200))`);
   assert.equal(await run(`document.activeElement.dataset.focusKey`), 'request-answer:decision');
   assert.equal(await run(`document.activeElement.value`), 'Hidden card answer');
+  await boot();
+  await run(`t.exact()`);await position();
+  assert.equal(await run(`!!document.querySelector('[data-focus-key="request-answer:decision"]')`), false);
+  await type('Unloaded card answer');
+  const beforeLinks = await run(`t.frames.filter(f=>f.type==='hive-deep-link').length`);
+  await run(`[...document.querySelectorAll('.hive-topic-decision-hint button')].find(b=>b.textContent==='Answer it').click()`);
+  await run(`new Promise(r=>setTimeout(r,200))`);
+  assert.equal(await run(`t.frames.filter(f=>f.type==='hive-deep-link').length`), beforeLinks + 1);
+  assert.equal(await run(`t.frames.filter(f=>f.type==='hive-deep-link').at(-1).messageId`), 'm4');
+  assert.equal(await run(`document.activeElement.dataset.focusKey`), 'request-answer:decision');
+  assert.equal(await run(`document.activeElement.value`), 'Unloaded card answer');
 });
