@@ -411,11 +411,7 @@ export async function notifyResolution(rt, host, id) {
 
 function observeSubject(rt, r, revision, at) {
   const previous = r.subjectObservation;
-  if (previous?.at >= at) return;
-  if ((previous?.revision || r.subjectPin.revision) === revision) {
-    rt.metadata.mutate(d => { d.requests[r.id].subjectObservation = { revision, at }; });
-    return;
-  }
+  if (previous?.at >= at || (previous?.revision || r.subjectPin.revision) === revision) return;
   update(rt, r.id, x => {
     x.subjectObservation = { revision, at };
     delete x.subjectNotification;
