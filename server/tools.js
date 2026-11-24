@@ -608,14 +608,15 @@ export const handoffQueenTool = hiveTool({
 
 export const reportPrWaitTool = hiveTool({
   name: 'hive_report_pr_wait',
-  description: 'Report a human PR wait (ready/cannot-fix/clear), or register a durable CI wait with state wait, purpose in reason, expected head, target, desired_outcome and deadline. Targets are checks, unique check name, mergeable or merge; run/attempt/workflow identity is unsupported. Core must observe a linked PR. Read current state immediately; wake on terminal outcome and retain it until acknowledge with wait_id. retry-wake explicitly retries failed/uncertain delivery; cancel-wait cancels a pending wait. Never merges, deploys or closes work.',
+  description: 'Report a human PR wait (ready/cannot-fix/clear), or register a durable CI wait with state wait, purpose in reason, expected head, target, desired_outcome and deadline. Targets are checks, unique check name, mergeable, merge or post-merge. Post-merge polls base-branch runs/suites through GitHub, with optional exact workflow_name; other targets require a core-observed linked PR. Run/attempt/workflow identity selectors are unsupported. Read current state immediately; wake on terminal outcome and retain it until acknowledge with wait_id. retry-wake explicitly retries failed/uncertain delivery; cancel-wait cancels a pending wait. Never merges, deploys or closes work.',
   inputSchema: ({ z, beadId }) => ({
     bead_id: beadId,
     url: z.string().max(2000).optional(),
     head_sha: z.string().regex(/^[a-f0-9]{40}$/i).optional(),
     state: z.enum(['ready', 'cannot-fix', 'clear', 'wait', 'acknowledge', 'retry-wake', 'cancel-wait']),
     reason: z.string().max(500).optional(),
-    target: z.enum(['checks', 'check', 'mergeable', 'merge']).optional(),
+    target: z.enum(['checks', 'check', 'mergeable', 'merge', 'post-merge']).optional(),
+    workflow_name: z.string().min(1).max(500).optional(),
     check_name: z.string().min(1).max(500).optional(),
     desired_outcome: z.enum(['success', 'completed']).optional(),
     deadline: z.string().max(80).optional(),
