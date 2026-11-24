@@ -1,5 +1,5 @@
 import { participation, requireCompleteHierarchy, cellOfBead } from './access.js';
-import { capacity, capacitySlots } from './admission.js';
+import { capacity, capacitySlots, eligibleWorkCell } from './admission.js';
 import { actorFor } from './bead-model.js';
 import { newId } from './metadata-store.js';
 import { assertCurrent } from './lifetime.js';
@@ -32,7 +32,7 @@ export function beforeSpawn({ spawnedBy, parentSession, source, spawner, host })
     const [beadId, cell] = [...targets][0];
     if (!rt.snapshots.graph.beads[beadId] || rt.snapshots.graph.beads[beadId].status === 'closed') return { refuse: 'Hive cannot enrol a helper on a missing or closed parent bead.' };
     const slots = capacitySlots(rt, rt.snapshots.graph);
-    slots.reserved.add(beadId);
+    if (eligibleWorkCell(rt, rt.snapshots.graph, beadId)?.id === cell.id) slots.reserved.add(beadId);
     const usage = capacity(rt, rt.snapshots.graph, { slots });
     if (usage.limit && usage.used > usage.limit) return { refuse: `Hive capacity limit is ${usage.limit}; ${usage.used} slots would be occupied. Ask the queen to free capacity or change Maximum active work items.` };
     const data = { id: newId('helper'), cellId: cell.id, beadId, parentId, at: Date.now() };

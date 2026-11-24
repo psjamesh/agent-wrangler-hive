@@ -127,9 +127,10 @@ test('summary categories partition reviewed, closed and status-only work without
     assert.equal(c.in_progress, 0);
     assert.equal(c.in_review, 1);
     assert.equal(c.closed, 1);
-    assert.equal(c.not_active, 2);
+    assert.equal(c.not_active, 1);
+    assert.equal(c.open, 1);
     assert.equal(c.open + c.in_progress + c.in_review + c.closed + c.not_active, c.total);
-    assert.match(countsSentence(c), /2 not active/);
+    assert.match(countsSentence(c), /1 not active/);
   }
   assert.equal(hive.cells.one.occupiedCount, 2);
 });

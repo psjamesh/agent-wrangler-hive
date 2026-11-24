@@ -172,6 +172,43 @@ test('Hive tile details open independently and dismiss accessibly (isolated Chro
     const r = info.getBoundingClientRect(), c = map.getBoundingClientRect();
     return r.width >= 24 && r.height >= 24 && r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom;
   `), true);
+  for (const [working, held] of [[2, 0], [0, 1], [2, 1], [0, 0]]) {
+    const counters = await run(`
+      const cell = t.graph.hive.cells.alpha;
+      cell.workingCount = ${working}; cell.heldCount = ${held};
+      t.redraw();
+      const tile = document.querySelector('[data-tile-id="alpha"]');
+      const get = kind => {
+        const node = tile.querySelector('[data-counter="' + kind + '"]');
+        return node ? { count: node.querySelector('text').textContent, title: node.querySelector('title').textContent, path: node.querySelector('path').getAttribute('d') } : null;
+      };
+      const { primaryMark } = await import('/public/hex-grid.js');
+      return { working: get('progress'), held: get('held'), pause: primaryMark('deferred', 'Paused').querySelector('path').getAttribute('d'), aria: tile.getAttribute('aria-label') };
+    `);
+    assert.equal(counters.working?.count || '0', String(working));
+    assert.equal(counters.held?.count || '0', String(held));
+    if (working) assert.equal(counters.working.title, `${working} working`);
+    if (held) {
+      assert.equal(counters.held.title, `${held} held, not working`);
+      assert.equal(counters.held.path, counters.pause);
+    }
+    assert.ok(counters.aria.includes(`${working} working, ${held} held, not working`));
+    await shot(`activity-${working ? 'working' : 'no-working'}-${held ? 'held' : 'no-held'}`);
+  }
+  const crowded = await run(`
+    const cell = t.graph.hive.cells.alpha;
+    cell.workingCount = 123; cell.heldCount = 123;
+    cell.inbox.human.count = 123; cell.inbox.queen.count = 123;
+    t.redraw();
+    const tile = document.querySelector('[data-tile-id="alpha"]');
+    const row = tile.querySelector('.hive-tile-counters').getBBox();
+    const info = document.querySelector('[data-hive-info="alpha"]');
+    return { count: tile.querySelectorAll('.hive-counter').length, left: row.x, right: row.x + row.width, infoX: info.transform.baseVal.consolidate().matrix.e, hit: info.querySelector('.hive-info-hit').getAttribute('r') };
+  `);
+  assert.equal(crowded.count, 5);
+  assert.ok(crowded.left >= -73 && crowded.right <= 73, JSON.stringify(crowded));
+  assert.equal(crowded.hit, '12');
+  await shot('activity-five-counters');
   await run(`document.querySelector('.hive-canvas').hiveRestoreView({ k: 0.1, tx: 500, ty: 350 });`);
   assert.equal(await run(`return document.activeElement.classList.contains('hive-canvas');`), true);
   assert.equal(await run(`return getComputedStyle(document.querySelector('[data-hive-info="alpha"]')).visibility;`), 'hidden');

@@ -1,9 +1,15 @@
+import { activeWorkerRestores } from './worker-restores.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 import { GROUP_KINDS } from './bead-model.js';
 
 export function liveClaimant(host, sessionId) {
   const session = sessionId ? host?.sessions?.get?.(sessionId) : null;
   return Boolean(session && !session.archived && session.status !== 'exited');
+}
+
+export function workingNow(host, sessionId) {
+  const session = sessionId ? host?.sessions?.get?.(sessionId) : null;
+  return Boolean(session && !session.archived && !session.dormant && !session.exitOutput && session.status === 'working');
 }
 
 export function sleepingReason(session) {
@@ -19,11 +25,19 @@ export function isUntracked(host, graph, bead) {
 }
 
 export function trackingKey(rt) {
-  return Object.values(rt.snapshots.current.graph.beads).filter((b) => b.ownerSessionId)
-    .map((b) => `${b.ownerSessionId}:${liveClaimant(rt.host, b.ownerSessionId)}`).join('|')
-    + Object.values(rt.metadata.read().bindings || {}).flat().filter(b => b.active).map(b => `|${b.sessionId}:${liveClaimant(rt.host, b.sessionId)}`).join('')
-    + Object.values(rt.metadata.read().workerLaunches || {}).map(l => { const s = rt.host?.sessions?.get?.(l.sessionId); return `|${l.id}:${s?.status}:${s?.archived}`; }).join('')
-    + Object.values(rt.metadata.read().reviews || {}).map((r) => { const s = rt.host?.sessions?.get?.(r.reviewerSessionId); return `|${r.id}:${s?.status}:${s?.archived}`; }).join('');
+  const doc = rt.metadata.read();
+  const ids = new Set([
+    ...Object.values(rt.snapshots.current.graph.beads).map(b => b.ownerSessionId),
+    ...Object.values(doc.bindings || {}).flat().filter(b => b.active).map(b => b.sessionId),
+    ...Object.values(doc.workerLaunches || {}).map(l => l.sessionId),
+    ...Object.values(doc.reviews || {}).map(r => r.reviewerSessionId),
+    ...Object.values(doc.operations || {}).filter(o => o.kind === 'claim').map(o => o.intent?.assignee?.slice(3)),
+    ...activeWorkerRestores(rt).keys(),
+  ].filter(Boolean));
+  return JSON.stringify([
+    [...ids].sort().map(id => { const s = rt.host?.sessions?.get?.(id); return [id, Boolean(s), s?.status, s?.archived, s?.dormant, Boolean(s?.exitOutput)]; }),
+    [...(rt.spawnAdmissions || [])], [...activeWorkerRestores(rt)],
+  ]);
 }
 
 export function hasLiveTerminal(session) {
@@ -62,7 +76,11 @@ export function ungovernedDescendants(rt, host, cell, openBeads = []) {
 export function reconcileInactiveBindings(rt, host) {
   if (!host?.sessions?.get || rt.metadata.error) return;
   const eligible = (cell) => cell?.enabled && !cell.snapshot;
-  const stale = (b) => b.active && host.sessions.get(b.sessionId)?.archived;
+  const reason = (b) => {
+    const session = host.sessions.get(b.sessionId);
+    return !session ? 'Session missing' : session.archived ? 'Session archived' : null;
+  };
+  const stale = (b) => b.active && reason(b);
   const doc = rt.metadata.read();
   const cells = Object.keys(doc.bindings || {}).filter(id => eligible(doc.cells[id]) && doc.bindings[id].some(stale));
   if (!cells.length) return;
@@ -72,7 +90,7 @@ export function reconcileInactiveBindings(rt, host) {
         b.active = false;
         b.unboundAt = Date.now();
         b.unboundBy = 'aw:hive-recovery';
-        b.unboundBecause = 'Session archived';
+        b.unboundBecause = reason(b);
       }
     }
   });

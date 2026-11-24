@@ -196,7 +196,7 @@ function tileText({ title = null, lines = [], sub = [], badge, counters, info = 
   for (const line of sub) { spans.push(h('svg:tspan', { x: '0', y: y.toFixed(1), class: 'hive-hex-sub' }, line)); y += lh; }
   const badgeEl = badge ? h('svg:tspan', { x: '0', y: y.toFixed(1), class: 'hive-hex-badge' }, badge) : null;
   if (badgeEl) { spans.push(badgeEl); y += lh; }
-  const row = counters || info ? tileCounters(counters || [], y - 3, info) : null;
+  const row = counters || info ? tileCounters(counters || [], y - 3, info, rowWidth(y - 3, 9)) : null;
   const infoAt = row?.infoAt;
   if (counters || info) y += lh;
   const label = h('svg:text', { class: 'hive-hex-text', 'text-anchor': 'middle' }, spans);
@@ -279,20 +279,23 @@ const COUNTER_SHAPES = {
   progress: 'M-2.5,-3.5 L3.5,0 L-2.5,3.5 Z',
 };
 
-function tileCounters(counters, y, info = false) {
+function tileCounters(counters, y, info = false, maxWidth = Infinity) {
   const visible = counters.filter(c => c.count > 0).map(c => {
     const value = c.count > 99 ? '99+' : String(c.count);
     return { ...c, value, width: 14 + textWidth(value, 9, 600) };
   });
   const gap = 10;
-  const width = visible.reduce((sum, c) => sum + c.width, 0) + Math.max(0, visible.length - 1) * gap + (info ? 24 + (visible.length ? gap : 0) : 0);
+  const counterWidth = visible.reduce((sum, c) => sum + c.width, 0) + Math.max(0, visible.length - 1) * gap;
+  const infoWidth = info ? 24 + (visible.length ? gap : 0) : 0;
+  const scale = counterWidth ? Math.min(1, Math.max(0, maxWidth - infoWidth) / counterWidth) : 1;
+  const width = counterWidth * scale + infoWidth;
   let left = -width / 2;
   const el = h('svg:g', { class: 'hive-tile-counters', transform: `translate(0 ${y.toFixed(1)})` }, visible.map(c => {
-    const x = left + 5;
-    left += c.width + gap;
-    return h('svg:g', { class: `hive-counter hive-counter-${c.kind}`, dataset: { counter: c.kind }, transform: `translate(${x.toFixed(2)} 0)` },
-      h('svg:title', {}, `${c.label}: ${c.count}`),
-      c.kind === 'needs' ? markShapes('person') : h('svg:path', { class: 'hive-counter-glyph', d: COUNTER_SHAPES[c.kind] }),
+    const x = left + 5 * scale;
+    left += (c.width + gap) * scale;
+    return h('svg:g', { class: `hive-counter hive-counter-${c.kind}`, dataset: { counter: c.kind }, transform: `translate(${x.toFixed(2)} 0)${scale < 1 ? ` scale(${scale.toFixed(4)})` : ''}` },
+      h('svg:title', {}, c.tooltip || `${c.label}: ${c.count}`),
+      c.kind === 'needs' ? markShapes('person') : c.kind === 'held' ? markShapes('deferred') : h('svg:path', { class: 'hive-counter-glyph', d: COUNTER_SHAPES[c.kind] }),
       h('svg:text', { x: '9', y: '3.5', class: 'hive-counter-value' }, c.value));
   }));
   return { el, infoAt: info ? { x: width / 2 - 12, y } : null };

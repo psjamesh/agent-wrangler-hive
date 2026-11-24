@@ -1,3 +1,4 @@
+import { workActivity } from './work-activity.js';
 import { schedulesForCell } from './routines.js';
 import { liveClaimant } from './tracking.js';
 import { capacity, capacitySlots } from './admission.js';
@@ -153,6 +154,17 @@ export function projectForGraph({ runtime, snapshot }) {
     }
     if (cellId) cells[cellId].occupiedCount += 1;
     else outside += 1;
+  }
+  for (const cell of Object.values(cells)) {
+    cell.workActivity = [];
+    cell.workingCount = 0;
+    cell.heldCount = 0;
+  }
+  for (const item of workActivity(runtime, snapshot.graph, slots)) {
+    const cell = cells[item.cellId];
+    if (!cell) continue;
+    cell.workActivity.push(item);
+    if (item.occupiesCapacity) cell[item.working ? 'workingCount' : 'heldCount'] += 1;
   }
   const visibleBeads = {};
   const historyIndex = indexBeadHistory(doc);
