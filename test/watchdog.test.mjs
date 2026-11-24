@@ -297,6 +297,7 @@ test('all thresholds are hive-specific and review/message/wait clear before thei
   await f.watchdog.run(); assert.equal(f.sent.length, 1);
   await f.watchdog.run(); assert.equal(f.sent.length, 1);
   f.beads.work.updatedAt = f.now();
+  f.beads.work.waitingFor = 'Awaiting another prerequisite';
   f.rt.metadata.mutate(d => { d.reviews.r.state = 'cancelled'; d.conversation.cell[0].response.required = false; });
   await f.watchdog.run(); assert.deepEqual(f.flags(), []);
   f.advance(MIN); await f.watchdog.run(); assert.equal(f.sent.length, 2);
@@ -672,3 +673,66 @@ test('unavailable observation age measures each episode rather than the CI wait 
   await createWatchdog({ runtime: f.rt, host: f.host, now: f.now }).run();
   assert.equal(f.flags().find(x => x.kind === 'ci_wait_unavailable').age_ms, 0);
 });
+
+test('stale waits notify once across daily timestamp-only updates and watchdog restarts', async t => {
+  const f = fixture(t), day = 24 * 60 * MIN;
+  f.beads.work.waitingFor = 'Awaiting prerequisite';
+  await f.watchdog.run();
+  f.advance(day); await f.watchdog.run();
+  assert.equal(f.sent.length, 1);
+  for (let i = 0; i < 3; i++) {
+    f.beads.work.updatedAt = f.now();
+    f.beads.work.summary = `Dependency checked ${i}`;
+    f.beads.work.nextAction = `Recheck dependency ${i}`;
+    await f.watchdog.run();
+    f.advance(day);
+    await createWatchdog({ runtime: f.rt, host: f.host, now: f.now }).run();
+    assert.equal(f.sent.length, 1);
+  }
+});
+
+for (const [field, value] of [['status', 'open'], ['waitingFor', 'Awaiting another prerequisite'], ['resume', { reviewAt: '2099-01-01' }], ['resume', { afterBead: 'root' }]]) {
+  test(`changing ${field} starts a fresh stale-wait episode`, async t => {
+    const f = fixture(t), day = 24 * 60 * MIN;
+    f.beads.work.waitingFor = 'Awaiting prerequisite';
+    await f.watchdog.run();
+    f.advance(day); await f.watchdog.run();
+    assert.equal(f.sent.length, 1);
+    f.beads.work[field] = value;
+    f.beads.work.updatedAt = f.now();
+    await f.watchdog.run();
+    assert.ok(!f.flags().some(flag => flag.kind === 'stale_wait'));
+    f.advance(day - 1); await f.watchdog.run(); assert.equal(f.sent.length, 1);
+    f.advance(1); await f.watchdog.run(); assert.equal(f.sent.length, 2);
+    f.advance(day); await f.watchdog.run(); assert.equal(f.sent.length, 2);
+  });
+}
+
+test('unrelated edits do not postpone the first stale-wait alert', async t => {
+  const f = fixture(t), day = 24 * 60 * MIN;
+  f.beads.work.waitingFor = 'Awaiting prerequisite';
+  await f.watchdog.run();
+  f.advance(day / 2);
+  Object.assign(f.beads.work, { updatedAt: f.now(), summary: 'Dependency checked', nextAction: 'Check again' });
+  await f.watchdog.run();
+  f.advance(day / 2 - 1); await f.watchdog.run(); assert.equal(f.sent.length, 0);
+  f.advance(1); await f.watchdog.run(); assert.equal(f.sent.length, 1);
+});
+
+for (const source of ['annotation', 'prerequisite']) {
+  test(`clearing and restoring a ${source} wait starts a new stale-wait episode`, async t => {
+    const f = fixture(t), day = 24 * 60 * MIN;
+    const setWait = waiting => {
+      if (source === 'annotation') f.beads.work.waitingFor = waiting ? 'Awaiting prerequisite' : '';
+      else f.rt.snapshots.graph.edges = waiting ? [{ dependent: 'work', prerequisite: 'root', blocking: true }] : [];
+      f.beads.work.updatedAt = f.now();
+    };
+    setWait(true); await f.watchdog.run();
+    f.advance(day); await f.watchdog.run(); assert.equal(f.sent.length, 1);
+    setWait(false); await f.watchdog.run();
+    assert.ok(!f.flags().some(flag => flag.kind === 'stale_wait'));
+    f.advance(MIN); setWait(true); await f.watchdog.run();
+    f.advance(day - 1); await f.watchdog.run(); assert.equal(f.sent.length, 1);
+    f.advance(1); await f.watchdog.run(); assert.equal(f.sent.length, 2);
+  });
+}
