@@ -11,7 +11,7 @@ import { OPEN_REVIEW_STATES } from './review-state.js';
 import { safeDeliver } from './sessions.js';
 import { isCurrent } from './lifetime.js';
 import { HiveError, refuseSnapshot } from './ops.js';
-import { liveClaimant, sleepingReason } from './tracking.js';
+import { liveClaimant, sleepingReason, reconcileInactiveBindings } from './tracking.js';
 import { GROUP_KINDS, descendantIds } from './bead-model.js';
 import { humanWaitText } from './human-wait.js';
 import { observedWorkerActivityIndex, workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
@@ -453,6 +453,7 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
     if (usable()) await reconcileCiWaits(rt, host, now());
     if (usable()) await resolveLinkWaits(rt, host, now());
     if (!active() || (!usable() && !monitoringProblem(rt))) return;
+    if (usable()) reconcileInactiveBindings(rt, host);
     const index = watchdogIndex(rt, host);
     if (usable()) {
       saveWorkerActivity(rt, host, index.activity);

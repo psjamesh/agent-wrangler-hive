@@ -97,6 +97,6 @@ test('overview details explain activity sources, waits and reconciliation as tex
     activity: [{ beadId: 'item', reason: 'Held, not working; CI wait; Queen reconciliation needed', participants: [{ source: 'claim', sessionId: 'builder', state: 'idle' }, { source: 'launch', sessionId: null, state: 'missing' }] }],
   });
   const { dialog, close } = f.open();
-  for (const text of ['1 working, 1 held, not working', 'Build export', 'CI wait', 'Queen reconciliation needed', 'claim: Builder (idle)', 'launch: No session yet (missing)']) assert.ok(dialog.textContent.includes(text), text);
+  for (const text of ['1 working, 1 held, not working', 'Build export', 'CI wait', 'Queen reconciliation needed', 'Owner: Builder (idle)', 'Starting worker: No session yet (missing)']) assert.ok(dialog.textContent.includes(text), text);
   close();
 });

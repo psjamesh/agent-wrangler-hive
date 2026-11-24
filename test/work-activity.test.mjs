@@ -218,3 +218,17 @@ test('an archived review session stops reserving capacity and never shows green 
   assert.deepEqual(counts(f.cell()), [0, 1]);
   assert.equal(f.cell().workActivity[0].participants[0].state, 'missing');
 });
+
+test('a present session with no board status holds work without an unknown-reservation alarm', t => {
+  const f = fixture(t);
+  f.sessions.builder.status = null;
+  assert.deepEqual(counts(f.cell()), [0, 1]);
+  assert.equal(f.cell().workActivity[0].participants[0].state, 'unavailable');
+  assert.equal(f.cell().workActivity[0].reconciliationNeeded, false);
+  delete f.beads.work.ownerSessionId; delete f.beads.work.assignee;
+  f.edit(d => { d.reviews.r = { id: 'r', cellId: 'cell', workBeadId: 'work', state: 'requested', reviewerSessionId: 'reviewer' }; });
+  f.sessions.reviewer.status = null;
+  f.rt.snapshots.current.revision++;
+  assert.deepEqual(counts(f.cell()), [0, 1]);
+  assert.equal(f.cell().workActivity[0].reconciliationNeeded, false);
+});

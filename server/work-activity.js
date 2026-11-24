@@ -9,7 +9,7 @@ export function sessionActivity(host, sessionId) {
   if (session.archived) return 'archived';
   if (session.exitOutput || session.status === 'exited') return 'exited';
   if (session.dormant) return 'dormant';
-  return session.status || 'unknown';
+  return session.status || 'unavailable';
 }
 
 export const trackedHelperBinding = b => Boolean(b.autoEnrolled || b.helper || b.role === 'helper' || (b.role === 'investigator' && b.workerLaunchId));

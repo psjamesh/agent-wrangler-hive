@@ -225,7 +225,7 @@ test('idle and dormant slot-holding helpers flag once per episode and honor wait
   assert.equal(kinds(f).includes('inactive_helper'), false);
 });
 
-test('missing review, launch and helper sessions flag reconciliation once and clear on resolution', async t => {
+test('missing reviews and launches stay flagged while missing helpers recover once', async t => {
   const f = fixture(t);
   f.bead('work', { status: 'open' });
   f.rt.metadata.mutate(d => {
@@ -233,9 +233,11 @@ test('missing review, launch and helper sessions flag reconciliation once and cl
     d.workerLaunches.l = { id: 'l', cellId: 'cell', beadId: 'work', state: 'uncertain', sessionId: 'missing-launch' };
     d.bindings.cell = [{ id: 'h', active: true, helper: true, role: 'investigator', beadId: 'work', sessionId: 'missing-helper' }];
   });
-  assert.equal(f.flags().filter(x => x.kind === 'missing_reservation_session').length, 3);
   await f.watchdog.run(); await f.watchdog.run();
+  assert.equal(f.flags().filter(x => x.kind === 'missing_reservation_session').length, 2);
   assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0].text, /missing_helper_recovered: 1/);
+  assert.match(f.sent[0].text, /missing_reservation_session: 2/);
   for (const id of ['missing-review', 'missing-launch', 'missing-helper']) f.sessions[id] = { status: 'working' };
   await f.watchdog.run();
   assert.equal(kinds(f).includes('missing_reservation_session'), false);
@@ -267,4 +269,19 @@ test('missing helper recovery notifies once after automatic cleanup, with no fla
   f.sessions.missing = { status: 'working' };
   await f.watchdog.run();
   assert.equal(kinds(f).includes('missing_reservation_session'), false);
+});
+
+test('a timer pass cleans missing helpers before emitting one resolved recovery notice', async t => {
+  const f = fixture(t);
+  f.bead('work', { status: 'open' });
+  f.rt.metadata.mutate(d => { d.bindings.cell = [{ id: 'helper', active: true, autoEnrolled: true, role: 'investigator', beadId: 'work', sessionId: 'worker', at: T0 }]; });
+  delete f.sessions.worker;
+  await f.watchdog.run();
+  assert.equal(f.rt.metadata.read().bindings.cell[0].active, false);
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0].text, /missing_helper_recovered/);
+  assert.doesNotMatch(f.sent[0].text, /missing_reservation_session/);
+  reconcileInactiveBindings(f.rt, f.host);
+  await f.watchdog.run();
+  assert.equal(f.sent.length, 1);
 });
