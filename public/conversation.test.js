@@ -2613,3 +2613,27 @@ test('start selection resolves decisions only inside contiguous history and tole
 test('locally settled unread boundary still selects an older decision before later waiting messages', () => {
   assert.deepEqual(startTarget({ window: range(1, 100), from: q(1), retained: 100, waiting: { after: 50 }, decisions: ['q4'], waits: m => m.n > 50 }), { id: 'q4' });
 });
+
+for (const kind of ['unread', 'hidden decision', 'no visible waiting']) test(`filtered opening preserves search and skips ${kind}`, t => {
+  const f = topicFixture(t, kind === 'no visible waiting' ? ['m1'] : ['m1', 'm2', 'm3']);
+  f.cell.messages[0].text = 'Hidden update';
+  f.cell.messages[2].text = 'Needle update';
+  f.cell.messages[3].text = 'Needle later update';
+  if (kind === 'hidden decision') f.cell.requests = { decision: openDecision('m1') };
+  f.ui.setSearchQuery('Needle');
+  const out = f.draw();
+  assert.equal(f.ui.searchQuery(), 'Needle');
+  assert.equal(out.list.dataset.startAt, kind === 'no visible waiting' ? '' : 'm2');
+  assert.deepEqual(out.list.querySelectorAll('.hive-message').map(m => m.dataset.id), ['m2', 'm3']);
+});
+
+test('filtered opening loads earlier history before choosing its first matching waiting item', t => {
+  const f = gapTopic(t);
+  f.cell.requests = { decision: openDecision('q4') };
+  f.cell.messages.forEach(m => { m.text = m.id === 'q70' || m.id === 'q80' ? 'Needle update' : 'Hidden update'; });
+  f.ui.setSearchQuery('Needle');
+  const out = f.open();
+  assert.equal('startAt' in out.list.dataset, false);
+  f.ask().onReply({ ok: true, messages: range(1, 60).map(m => ({ ...m, text: m.id === 'q55' ? 'Needle update' : 'Hidden update' })), more: false, anchorN: 61 });
+  assert.equal(f.draw().list.dataset.startAt, 'q55');
+});

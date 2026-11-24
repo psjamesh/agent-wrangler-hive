@@ -284,7 +284,7 @@ export function earliestWaiting(t, msgs, ackOf) {
 // Until then `before` is the
 // message to load history before (null for the newest). Waiting only known
 // to come after a message is the first one in the run after it that `waits`.
-export function startTarget({ window, page, from, retained, waiting, decisions = [], waits = () => true }) {
+export function startTarget({ window, page, from, retained, waiting, decisions = [], waits = () => true, matches = null }) {
   if (!retained || (!waiting && !decisions.length)) return { id: '' };
   let run = from ? window.filter((m) => m.n >= from.n) : [];
   let start = Boolean(from) && run.length >= retained;
@@ -298,8 +298,8 @@ export function startTarget({ window, page, from, retained, waiting, decisions =
   const after = waiting && 'after' in waiting;
   const floor = after ? waiting.after : waiting?.n;
   if (waiting && !start && !run.some(m => m.n <= floor)) return { before: run[0] || null };
-  const unread = waiting && run.find(m => after ? m.n > floor && waits(m) : m.n >= floor);
-  return { id: [...found, ...(unread ? [unread] : [])].sort(inTopicOrder)[0]?.id || '' };
+  const unread = waiting && run.find(m => (after ? m.n > floor && waits(m) : m.n >= floor) && (!matches || (matches(m) && waits(m))));
+  return { id: [...found.filter(m => !matches || matches(m)), ...(unread ? [unread] : [])].sort(inTopicOrder)[0]?.id || '' };
 }
 
 function ackMessages(msgs) {
@@ -933,7 +933,7 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
     const ackOf = (m) => ui.ackOf(cell.id, m);
     const waiting = earliestWaiting(t, msgs, ackOf);
     const decisions = Object.values(cell.requests || {}).filter(r => r.threadId === t.id && r.state === 'open' && needsHuman(r)).map(r => r.messageId).filter(Boolean);
-    const s = startTarget({ window, page, from, retained: t.retained, waiting, decisions, waits: unreadFor(ackOf) });
+    const s = startTarget({ window, page, from, retained: t.retained, waiting, decisions, waits: unreadFor(ackOf), matches: searching ? m => visibleIds.has(m.id) : null });
     if ('id' in s) list.dataset.startAt = s.id;
     else if (ui.startFailed(key)) list.dataset.startAt = s.before?.id || '';
     else if (ui.askStart(key, s.before?.id || '')) {

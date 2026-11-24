@@ -26,7 +26,7 @@ function send(frame) {
 }
 client.register({onMessage(fn){receive=fn},api:{state:()=>graph,act:(type,args)=>{send({type,...args});return new Promise(()=>{})},storage:{get:k=>store.get(k),set:(k,v)=>store.set(k,v),remove:k=>store.delete(k)}},register(kind,v){view=v}});
 const root=document.getElementById('root');
-window.t={cell,messages,frames,route:async kind=>{
+window.t={cell,messages,frames,search:query=>{root.querySelector('[data-focus-key="map-search-open"]').click();const input=root.querySelector('[data-focus-key="global-inbox-search"]');input.value=query;input.dispatchEvent(new Event('input',{bubbles:true}));},route:async kind=>{
  if(kind==='global'){root.querySelector('.hive-back').click();await new Promise(r=>setTimeout(r,50));if(!root.querySelector('.hive-global-inbox'))root.querySelector('[data-focus-key="global-inbox-toggle"]').click();}
  else if(kind==='inbox'){root.querySelector('.hive-inbox-filter').click();}
  else if(kind==='needs'){root.querySelector('[data-focus-key="waiting-header"]').click();document.querySelector('dialog [data-wait-action="reply"]').click();return;}
@@ -109,6 +109,15 @@ test('topic routes select unread messages or older decisions and preserve explic
     await run(`for(const m of t.messages)m.ack={required:true,state:{kind:'read'},rev:1};t.cell.threads[0].waitingFrom=null;t.redraw();t.open()`);
     const result=await position();
     assert.equal(result.bottom,true,'reopening a read topic shows its newest message');
+  });
+  await t.test('search keeps filtering and opens the first matching waiting item', async () => {
+    await boot();
+    await run(`t.messages[54].text='Needle update';t.messages[59].text='Needle later';t.redraw();t.search('Needle');t.open()`);
+    const result = await position();
+    assert.equal(result.first, 'm55', 'hidden decision m4 and hidden unread m12 do not set the filtered start');
+    assert.ok(!result.read.includes('m12'), 'hidden unread messages stay unread');
+    assert.deepEqual(await run(`[...document.querySelectorAll('.hive-message')].map(m=>m.dataset.id)`), ['m55', 'm60']);
+    assert.equal(await run(`document.querySelector('[data-focus-key="global-inbox-search"]').value`), 'Needle');
   });
   await t.test('specific message links keep their target ahead of open decisions', async () => {
     await boot();
