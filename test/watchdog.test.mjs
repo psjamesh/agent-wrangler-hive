@@ -202,15 +202,18 @@ test('one durable wake per flag state; clearing allows a fresh episode; queen ch
   f.sessions.worker.status = 'error'; await restarted.run(); assert.equal(f.sent.length, 4);
 });
 
-test('quiet hives never wake, invalid snapshots do not clear receipts, stopped runtime never sends', async t => {
+test('quiet hives and stopped runtimes never send, snapshot failures preserve receipts and warn', async t => {
   const f = fixture(t); await f.watchdog.run(); assert.equal(f.sent.length, 0);
   f.sessions.worker.status = 'exited'; await f.watchdog.run(); assert.equal(f.sent.length, 1);
+  const previous = structuredClone(f.rt.metadata.cell('cell').watchdogFlags);
   f.rt.snapshots.current.error = 'unavailable'; f.sessions.worker.status = 'working'; await f.watchdog.run();
-  assert.equal(Object.keys(f.rt.metadata.cell('cell').watchdogFlags).length, 1);
+  for (const [id, flag] of Object.entries(previous)) assert.deepEqual(f.rt.metadata.cell('cell').watchdogFlags[id], flag);
+  assert.equal(f.sent.length, 2);
+  assert.match(f.sent[1].text, /monitoring_unavailable/);
   f.rt.snapshots.current.error = null;
   f.rt.metadata.mutate(d => { d.cells.cell.enabled = false; }); await f.watchdog.run(); assert.deepEqual(f.flags(), []);
   f.rt.metadata.mutate(d => { d.cells.cell.enabled = true; d.cells.cell.snapshot = {}; }); await f.watchdog.run(); assert.deepEqual(f.flags(), []);
-  f.watchdog.stop(); f.rt.metadata.lifetime.stop(); await f.watchdog.run(); assert.equal(f.sent.length, 1);
+  f.watchdog.stop(); f.rt.metadata.lifetime.stop(); await f.watchdog.run(); assert.equal(f.sent.length, 2);
 });
 
 test('per-hive thresholds are validated, persisted and affect only that hive', t => {
@@ -319,7 +322,7 @@ test('notification dedup survives reloading metadata from disk', async t => {
   assert.equal(f.sent.length, 1);
 });
 
-test('store failures and an unsettled hierarchy neither notify nor clear prior receipts', async t => {
+test('backend failures warn while metadata failures and unsettled hierarchy preserve receipts', async t => {
   const f = fixture(t); f.sessions.worker.status = 'exited'; await f.watchdog.run();
   f.sessions.worker.status = 'working';
   for (const unavailable of ['hierarchy', 'backend', 'metadata']) {
@@ -327,10 +330,11 @@ test('store failures and an unsettled hierarchy neither notify nor clear prior r
     if (unavailable === 'backend') f.rt.beads.status.state = 'error';
     if (unavailable === 'metadata') f.rt.metadata.error = 'unreadable';
     await f.watchdog.run();
-    assert.equal(Object.keys(f.rt.metadata.cell('cell').watchdogFlags).length, 1);
+    assert.ok(Object.values(f.rt.metadata.cell('cell').watchdogFlags).some(flag => flag.kind === 'stalled_worker'));
+    assert.equal(f.sent.length, unavailable === 'hierarchy' ? 1 : 2);
     f.rt.snapshots.hierarchyCurrent = true; f.rt.beads.status.state = 'ready'; f.rt.metadata.error = null;
   }
-  await f.watchdog.run(); assert.deepEqual(f.rt.metadata.cell('cell').watchdogFlags, {}); assert.equal(f.sent.length, 1);
+  await f.watchdog.run(); assert.deepEqual(f.rt.metadata.cell('cell').watchdogFlags, {}); assert.equal(f.sent.length, 2);
 });
 
 test('touching an exited or errored claim does not repeat its unchanged state', async t => {
@@ -613,4 +617,58 @@ test('repository label configuration attention is shown once until recovery', as
   assert.equal(f.flags().filter(flag => flag.kind === 'pr_label_configuration').length, 1);
   f.rt.metadata.mutate(d => { delete d.prLabelRepos['example/repo']; });
   assert.deepEqual(f.flags(), []);
+});
+
+test('snapshot failure replaces stale CI attention and still notifies the queen', async t => {
+  const f = fixture(t);
+  const url = 'https://github.com/example/repo/pull/7';
+  const head = 'a'.repeat(40);
+  let observed = { url, nodeId: 'PR_7', state: 'open', headSha: head, fetchedAt: new Date(f.now() - 4 * 60000).toISOString(), statusCheckRollup: [] };
+  f.host.links = { prObservation: () => observed };
+  f.rt.metadata.mutate(d => { d.ciWaits.work = { id: 'wait_7', beadId: 'work', cellId: 'cell', sessionId: 'worker', url, nodeId: 'PR_7', headSha: head, state: 'pending', target: 'checks', desiredOutcome: 'success', createdAt: f.now(), deadline: f.now() + 3600000 }; });
+  await f.watchdog.run();
+  assert.match(f.rt.metadata.cell('cell').watchdogFlags[JSON.stringify(['ci_wait_unavailable', 'work', 'wait_7'])].reason, /Shared PR observation is stale/);
+  f.rt.snapshots.current.error = 'Reading the Beads store timed out.';
+  observed = { ...observed, fetchedAt: new Date(f.now()).toISOString() };
+  await f.watchdog.run();
+  const flag = Object.values(f.rt.metadata.cell('cell').watchdogFlags).find(x => x.kind === 'ci_wait_unavailable');
+  assert.match(flag.reason, /Beads.*timed out/i);
+  assert.equal(f.sent.length, 2);
+  assert.match(f.sent[1].text, /monitoring_unavailable/);
+  assert.equal(f.rt.metadata.read().ciWaits.work.state, 'pending');
+  f.rt.snapshots.current.error = null;
+  await f.watchdog.run();
+  assert.deepEqual(f.rt.metadata.cell('cell').watchdogFlags, {});
+});
+
+test('a failed graph read cannot silence monitoring when no CI wait exists', async t => {
+  const f = fixture(t);
+  f.rt.snapshots.current.error = 'Reading the Beads store timed out.';
+  f.advance(60 * 60000);
+  await f.watchdog.run();
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0].text, /monitoring_unavailable/);
+  assert.deepEqual(Object.values(f.rt.metadata.cell('cell').watchdogFlags).map(x => x.kind), ['monitoring_unavailable']);
+  await f.watchdog.run();
+  assert.equal(f.sent.length, 1);
+});
+
+
+test('unavailable observation age measures each episode rather than the CI wait age', async t => {
+  const f = fixture(t);
+  const url = 'https://github.com/example/repo/pull/7';
+  const head = 'a'.repeat(40);
+  let observed = null;
+  f.host.links = { prObservation: () => observed };
+  f.rt.metadata.mutate(d => { d.ciWaits.work = { id: 'wait_7', beadId: 'work', cellId: 'cell', sessionId: 'worker', url, headSha: head, state: 'pending', target: 'checks', desiredOutcome: 'success', createdAt: f.now() - 3 * 3600000, deadline: f.now() + 3600000 }; });
+  await f.watchdog.run();
+  assert.equal(f.flags().find(x => x.kind === 'ci_wait_unavailable').age_ms, 0);
+  f.advance(MIN);
+  assert.equal(f.flags().find(x => x.kind === 'ci_wait_unavailable').age_ms, MIN);
+  observed = { url, nodeId: 'PR_7', state: 'open', headSha: head, fetchedAt: new Date(f.now()).toISOString(), statusCheckRollup: [] };
+  await f.watchdog.run();
+  assert.equal(f.flags().some(x => x.kind === 'ci_wait_unavailable'), false);
+  f.advance(4 * MIN);
+  await createWatchdog({ runtime: f.rt, host: f.host, now: f.now }).run();
+  assert.equal(f.flags().find(x => x.kind === 'ci_wait_unavailable').age_ms, 0);
 });

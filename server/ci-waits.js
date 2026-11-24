@@ -4,6 +4,7 @@ import { newId } from './metadata-store.js';
 import { isCurrent, runtimeKey } from './lifetime.js';
 import { prRepository } from './pr-labels.js';
 import { safeDeliver } from './sessions.js';
+import { monitoringProblem } from './monitoring.js';
 
 const FRESH_MS = 180000;
 const ACK_MS = 300000;
@@ -224,10 +225,13 @@ export function ciWaitSuppresses(rt, host, bead, now = Date.now()) {
 
 export function ciWaitAttention(rt, cell, now = Date.now()) {
   const flags = [];
+  const monitoring = monitoringProblem(rt);
   for (const wait of Object.values(rt.metadata.read().ciWaits || {})) {
     const bead = rt.snapshots.graph.beads[wait.beadId];
-    if (wait.cellId !== cell.id || wait.acknowledgedAt || !bead || bead.status === 'closed') continue;
-    const add = (kind, reason) => flags.push({ kind, wait_id: wait.id, bead_id: wait.beadId, session_id: wait.sessionId, since: wait.resolvedAt || wait.createdAt, reason });
+    if (wait.cellId !== cell.id || wait.acknowledgedAt) continue;
+    const add = (kind, reason) => flags.push({ kind, wait_id: wait.id, bead_id: wait.beadId, session_id: wait.sessionId, since: kind === 'ci_wait_unavailable' ? now : wait.resolvedAt || wait.createdAt, reason });
+    if (monitoring) { add('ci_wait_unavailable', monitoring); continue; }
+    if (!bead || bead.status === 'closed') continue;
     const problem = ownerProblem(rt, rt.host, wait);
     if (wait.state === 'pending') {
       const result = evaluateCiWait(wait, observation(rt.host, wait.url), now);
@@ -244,7 +248,9 @@ export function ciWaitAttention(rt, cell, now = Date.now()) {
 }
 
 export function startCiWaits(rt, host, now = Date.now) {
-  const reconcile = () => reconcileCiWaits(rt, host, now()).catch(err => rt.log(`hive: CI wait reconciliation failed: ${err.message}`));
+  const reconcile = () => reconcileCiWaits(rt, host, now())
+    .then(() => { if (isCurrent(rt, host)) rt.watchdog?.schedule(); })
+    .catch(err => rt.log(`hive: CI wait reconciliation failed: ${err.message}`));
   const stop = host.events?.on('pr:observation', reconcile);
   void reconcile();
   return () => stop?.();
