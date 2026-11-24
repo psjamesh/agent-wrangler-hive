@@ -568,7 +568,7 @@ test('post-merge registration uses durable GitHub observation without a linked c
     calls.push(argv);
     assert.ok(f.doc().ciWaits.a, 'persist before remote reads');
     if (argv[1].includes('/pulls/')) return JSON.stringify({ node_id: 'PR_7', head: { sha: SHA }, merged: true, state: 'closed', merge_commit_sha: SHA, merged_at: new Date(NOW).toISOString(), base: { ref: 'main' } });
-    return JSON.stringify([argv[1].includes('check-suites') ? { check_suites: [] } : { workflow_runs: [{ id: 1, workflow_id: 1, name: 'Test', head_sha: SHA, head_branch: 'main', status: 'completed', conclusion: 'success', html_url: URL + '/runs/1' }] }]);
+    return JSON.stringify(argv[1].includes('check-suites') ? { check_suites: [] } : { workflow_runs: [{ id: 1, workflow_id: 1, name: 'Test', head_sha: SHA, head_branch: 'main', event: 'push', head_repository: { full_name: 'example/repo' }, status: 'completed', conclusion: 'success', html_url: URL + '/runs/1' }] });
   };
   f.host.links.prObservation = () => null;
   const input = { ...args(), target: 'post-merge', workflow_name: 'Test', deadline: new Date(NOW + 3600000).toISOString() };
@@ -609,7 +609,7 @@ test('post-merge state resumes from disk and confirmed wake is not repeated', as
   let prReads = 0;
   f.rt.ciGh = async argv => {
     if (argv[1].includes('/pulls/')) { prReads++; return JSON.stringify({ node_id: 'PR_7', head: { sha: SHA }, merged: true, merge_commit_sha: SHA, merged_at: new Date(NOW).toISOString(), base: { ref: 'main' } }); }
-    return JSON.stringify([argv[1].includes('check-suites') ? { check_suites: [] } : { workflow_runs: [{ id: 1, workflow_id: 1, name: 'Test', head_sha: SHA, head_branch: 'main', status: 'completed', conclusion: 'success' }] }]);
+    return JSON.stringify(argv[1].includes('check-suites') ? { check_suites: [] } : { workflow_runs: [{ id: 1, workflow_id: 1, name: 'Test', head_sha: SHA, head_branch: 'main', event: 'push', head_repository: { full_name: 'example/repo' }, status: 'completed', conclusion: 'success' }] });
   };
   await reportCiWait(f.rt, f.host, f.actor(), { ...args(), target: 'post-merge' }, NOW);
   f.rt.metadata = new MetadataStore({ file });

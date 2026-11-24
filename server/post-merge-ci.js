@@ -9,11 +9,17 @@ const passed = new Set(['success', 'neutral', 'skipped']);
 const failed = new Set(['failure', 'timed_out', 'action_required', 'startup_failure', 'stale']);
 
 async function pages(gh, path, field) {
-  const data = JSON.parse(await gh(['api', path, '--paginate', '--slurp']));
-  if (!Array.isArray(data) || !data.length || data.some(page => !Array.isArray(page?.[field]))) throw Error('Incomplete GitHub CI inventory.');
-  const rows = data.flatMap(page => page[field]);
-  if (data.some(page => Number.isFinite(page.total_count) && page.total_count > rows.length)) throw Error('Incomplete GitHub CI inventory.');
-  return rows;
+  const rows = [];
+  for (let page = 1; page <= 40; page++) {
+    const data = JSON.parse(await gh(['api', `${path}${path.includes('?') ? '&' : '?'}per_page=25&page=${page}`]));
+    if (!Array.isArray(data?.[field]) || data.total_count > 1000) throw Error('Incomplete GitHub CI inventory.');
+    rows.push(...data[field]);
+    if (data[field].length < 25 || rows.length >= data.total_count) {
+      if (data.total_count > rows.length) throw Error('Incomplete GitHub CI inventory.');
+      return rows;
+    }
+  }
+  throw Error('Incomplete GitHub CI inventory.');
 }
 
 function row(value, kind) {
@@ -41,31 +47,46 @@ export async function observePostMerge(wait, gh, now = Date.now()) {
   }
   const branch = encodeURIComponent(identity.branch);
   const [rawRuns, rawSuites] = await Promise.all([
-    pages(gh, `repos/${repo}/actions/runs?branch=${branch}&head_sha=${identity.mergeSha}&per_page=100`, 'workflow_runs'),
-    wait.workflowName ? [] : pages(gh, `repos/${repo}/commits/${identity.mergeSha}/check-suites?per_page=100`, 'check_suites'),
+    pages(gh, `repos/${repo}/actions/runs?branch=${branch}&head_sha=${identity.mergeSha}`, 'workflow_runs'),
+    wait.workflowName ? [] : pages(gh, `repos/${repo}/commits/${identity.mergeSha}/check-suites`, 'check_suites'),
   ]);
-  const matching = rawRuns.filter(run => run.head_sha?.toLowerCase() === identity.mergeSha && run.head_branch === identity.branch && (!wait.workflowName || run.name === wait.workflowName));
+  const onBranch = run => run.head_branch === identity.branch && run.head_repository?.full_name?.toLowerCase() === repo.toLowerCase() && !['pull_request', 'pull_request_target', 'merge_group'].includes(run.event);
+  const matching = rawRuns.filter(run => run.head_sha?.toLowerCase() === identity.mergeSha && onBranch(run) && (!wait.workflowName || run.name === wait.workflowName));
   const suiteIds = new Set(matching.map(run => run.check_suite_id));
   const runs = matching.map(run => row(run, 'run'));
-  runs.push(...rawSuites.filter(suite => suite.head_sha?.toLowerCase() === identity.mergeSha && (!suite.head_branch || suite.head_branch === identity.branch) && !suiteIds.has(suite.id)).map(suite => row(suite, 'suite')));
+  runs.push(...rawSuites.filter(suite => suite.head_sha?.toLowerCase() === identity.mergeSha && (!suite.head_branch || suite.head_branch === identity.branch) && !suiteIds.has(suite.id) && !(suite.status !== 'completed' && suite.latest_check_runs_count === 0)).map(suite => row(suite, 'suite')));
   const cancelled = runs.filter(run => run.workflowId && run.conclusion === 'cancelled');
   const successors = {};
   if (cancelled.length) {
-    const later = await pages(gh, `repos/${repo}/actions/runs?branch=${branch}&created=${encodeURIComponent('>=' + new Date(identity.mergedAt).toISOString())}&per_page=100`, 'workflow_runs');
+    const readHead = async () => {
+      const value = JSON.parse(await gh(['api', `repos/${repo}/branches/${branch}`]));
+      if (!SHA.test(value.commit?.sha || '')) throw Error('GitHub base-branch identity is unavailable.');
+      return value.commit.sha.toLowerCase();
+    };
+    const branchHead = await readHead();
     const ancestry = new Map();
+    const workflows = new Map();
     for (const original of cancelled) {
-      const candidates = later.filter(run => run.workflow_id === original.workflowId && run.head_branch === identity.branch && SHA.test(run.head_sha || '') && run.head_sha.toLowerCase() !== identity.mergeSha && stamp(run.created_at) >= identity.mergedAt)
+      if (!workflows.has(original.workflowId)) workflows.set(original.workflowId, await pages(gh, `repos/${repo}/actions/workflows/${original.workflowId}/runs?branch=${branch}&created=${encodeURIComponent('>=' + new Date(identity.mergedAt).toISOString())}`, 'workflow_runs'));
+      const candidates = workflows.get(original.workflowId).filter(run => run.workflow_id === original.workflowId && onBranch(run) && SHA.test(run.head_sha || '') && run.head_sha.toLowerCase() !== identity.mergeSha && stamp(run.created_at) >= identity.mergedAt)
         .sort((a, b) => stamp(b.created_at) - stamp(a.created_at) || b.id - a.id);
       for (const candidate of candidates) {
         const sha = candidate.head_sha.toLowerCase();
         if (!ancestry.has(sha)) {
           const comparison = JSON.parse(await gh(['api', `repos/${repo}/compare/${identity.mergeSha}...${sha}`]));
           if (!['ahead', 'behind', 'identical', 'diverged'].includes(comparison.status) || !SHA.test(comparison.merge_base_commit?.sha || '')) throw Error('GitHub ancestry evidence is unavailable.');
-          ancestry.set(sha, comparison.status === 'ahead' && comparison.merge_base_commit.sha.toLowerCase() === identity.mergeSha);
+          let contains = comparison.status === 'ahead' && comparison.merge_base_commit.sha.toLowerCase() === identity.mergeSha;
+          if (contains) {
+            const reachable = JSON.parse(await gh(['api', `repos/${repo}/compare/${sha}...${branchHead}`]));
+            if (!['ahead', 'behind', 'identical', 'diverged'].includes(reachable.status) || !SHA.test(reachable.merge_base_commit?.sha || '')) throw Error('GitHub base-branch reachability is unavailable.');
+            contains = ['ahead', 'identical'].includes(reachable.status) && reachable.merge_base_commit.sha.toLowerCase() === sha;
+          }
+          ancestry.set(sha, contains);
         }
         if (ancestry.get(sha)) { successors[original.id] = row(candidate, 'run'); break; }
       }
     }
+    if (await readHead() !== branchHead) throw Error('GitHub base branch changed during successor discovery.');
   }
   const selected = runs.map(run => successors[run.id] || run).sort((a, b) => a.id.localeCompare(b.id));
   const inventory = JSON.stringify({ runs: selected, originals: runs.map(run => run.id).sort() });
@@ -88,10 +109,13 @@ export function evaluatePostMerge(wait, now = Date.now()) {
   if (observed.runs.some(run => run.status !== 'completed' || (!passed.has(run.conclusion) && !failed.has(run.conclusion) && run.conclusion !== 'cancelled'))) return {};
   if (now - observed.quietSince < QUIET_MS) return {};
   const result = observed.runs.some(run => failed.has(run.conclusion)) ? 'failed' : observed.runs.some(run => run.conclusion === 'cancelled') ? 'cancelled' : 'passed';
-  const links = observed.runs.map(run => `${run.name}: ${run.conclusion} ${run.url}`).join('; ');
+  const links = observed.runs.map(run => `${run.name} at ${run.sha}: ${run.conclusion} ${run.url}`).join('; ');
   const shas = [...new Set(observed.runs.filter(run => run.sha !== observed.mergeSha).map(run => run.sha))];
+  const replacements = observed.runs.filter(run => run.sha !== observed.mergeSha);
+  const laterFailure = replacements.some(run => failed.has(run.conclusion));
+  const successorResult = laterFailure ? 'failed' : replacements.some(run => run.conclusion === 'cancelled') ? 'cancelled' : 'passed';
   return {
     outcome: observed.superseded ? 'superseded' : result,
-    detail: `${observed.superseded ? `superseded → ${result} at ${shas.join(', ')}. ${result === 'failed' ? 'A later failure may come from a different change. ' : ''}` : `${result} at ${observed.mergeSha}. `}${links}`,
+    detail: `${observed.superseded ? `superseded → ${successorResult} at ${shas.join(', ')}. Overall pipeline: ${result}. ${laterFailure ? 'A later failure may come from a different change. ' : ''}` : `${result} at ${observed.mergeSha}. `}${links}`,
   };
 }

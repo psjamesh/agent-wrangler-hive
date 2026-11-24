@@ -157,7 +157,7 @@ async function deliverWake(rt, host, wait, now) {
   let receipt;
   try {
     receipt = await Promise.race([
-      safeDeliver(host, wait.sessionId, `[Hive] CI wait ${wait.id} for bead ${wait.beadId}: ${wait.outcome}. PR ${wait.url}, expected head ${wait.headSha}, target ${wait.target}${wait.checkName ? ` (${wait.checkName})` : ''}. Purpose: ${wait.purpose}. ${wait.resultDetail || ''} Read hive_context, verify the outcome, then call hive_report_pr_wait with bead_id, state: "acknowledge", wait_id: "${wait.id}". Continue only the authorized work; this notice does not authorize merge or deployment.`, rt),
+      safeDeliver(host, wait.sessionId, `[Hive] CI wait ${wait.id} for bead ${wait.beadId}: ${wait.outcome}. PR ${wait.url}, expected head ${wait.headSha}, target ${wait.target}${wait.checkName ? ` (${wait.checkName})` : ''}. Purpose: ${wait.purpose}. ${wait.resultDetail ? `${wait.resultDetail} ` : ''}Read hive_context, verify the outcome, then call hive_report_pr_wait with bead_id, state: "acknowledge", wait_id: "${wait.id}". Continue only the authorized work; this notice does not authorize merge or deployment.`, rt),
       new Promise(resolve => { timer = setTimeout(() => resolve({ state: 'uncertain', error: 'Wake delivery timed out; it may still arrive.' }), 15000); timer.unref?.(); }),
     ]);
   } finally { clearTimeout(timer); sending.delete(wait.id); }
