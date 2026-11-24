@@ -2637,3 +2637,42 @@ test('filtered opening loads earlier history before choosing its first matching 
   f.ask().onReply({ ok: true, messages: range(1, 60).map(m => ({ ...m, text: m.id === 'q55' ? 'Needle update' : 'Hidden update' })), more: false, anchorN: 61 });
   assert.equal(f.draw().list.dataset.startAt, 'q55');
 });
+
+test('topic reply hint follows text and open human decisions, ordered by creation', t => {
+  const f = fixture(t);
+  f.cell.threads = [{ id: 'topic', title: 'Topic', retained: 0 }];
+  f.cell.requests = {
+    later: { id: 'later', threadId: 'topic', audience: 'human', state: 'open', title: 'Later', createdAt: 20 },
+    first: { id: 'first', threadId: 'topic', audience: 'human', state: 'open', title: 'Original', createdAt: 10, contentRevision: 1, forwarded: { title: 'Forwarded title', contentRevision: 1 } },
+    private: { id: 'private', threadId: 'topic', audience: 'queen', state: 'open', title: 'Private', createdAt: 1 },
+    other: { id: 'other', threadId: 'other', audience: 'human', state: 'open', title: 'Other topic', createdAt: 1 },
+  };
+  f.ui.setAllTopics(f.cell.id, true);
+  f.ui.openThreadFor(f.cell.id, 'topic');
+  let out = f.draw();
+  let hint = out.composer.querySelector('.hive-topic-decision-hint');
+  assert.ok(hint);
+  const live = out.composer.querySelector('.hive-topic-decision-status');
+  assert.ok(live);
+  assert.equal(live.textContent, '');
+  assert.equal(hint.hidden, true);
+  out.textarea.value = '  '; out.textarea.fire('input');
+  assert.equal(hint.hidden, true);
+  out.textarea.value = 'An answer'; out.textarea.fire('input');
+  assert.equal(hint.hidden, false);
+  assert.match(live.textContent, /Forwarded title/);
+  out = f.draw();
+  assert.equal(out.composer.querySelector('.hive-topic-decision-status'), live);
+  hint = out.composer.querySelector('.hive-topic-decision-hint');
+  assert.match(hint.textContent, /"Forwarded title" \(\+1 more\)/);
+  assert.equal(live.getAttribute('role'), 'status');
+  assert.equal(live.getAttribute('aria-live'), 'polite');
+  out.textarea.value = ''; out.textarea.fire('input');
+  assert.equal(hint.hidden, true);
+  assert.equal(live.textContent, '');
+  out.textarea.value = 'Message'; out.textarea.fire('input');
+  f.cell.requests.first.state = 'answered'; f.cell.requests.later.state = 'withdrawn';
+  out = f.draw(); hint = out.composer.querySelector('.hive-topic-decision-hint');
+  assert.equal(hint.hidden, true);
+  assert.equal(live.textContent, '');
+});
