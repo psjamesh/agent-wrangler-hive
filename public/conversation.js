@@ -3,6 +3,7 @@ import { inboxRows, needsRows, mergeRows, inboxRow, inboxFilters, inboxTotals, s
 import { searchTerms, topicMatches } from './inbox-search.js';
 import { beadReferences } from './bead-references.js';
 import { requestCard, needsHuman } from './requests.js';
+import { requestDisplay } from './request-state.js';
 import { conversationEpoch } from './view-state.js';
 import { confirmHive } from './confirm-dialog.js';
 import { imageDraft, imageComposer, messageImages } from './attachments.js';
@@ -994,6 +995,50 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
       },
     });
   };
+  const decisions = Object.values(cell.requests || {})
+    .filter(r => r.threadId === t.id && r.state === 'open' && needsHuman(r))
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  const decision = decisions[0];
+  const hint = h('div', { class: 'hive-topic-decision-hint hive-warning', role: 'status', 'aria-live': 'polite' });
+  const updateHint = () => { hint.hidden = !decision || !textarea.value.trim(); };
+  const moveAnswer = () => {
+    const raw = textarea.value;
+    if (!raw.trim()) return;
+    const answerKey = `request:${decision.id}`;
+    const existing = ui.draftFor(answerKey);
+    ui.setDraftFor(answerKey, existing ? `${existing}\n\n${raw}` : raw);
+    ui.setDraftFor(key, '');
+    textarea.value = '';
+    guard.update();
+    updateHint();
+    ui.setSearchQuery('');
+    const focus = () => {
+      const input = document.querySelector(`[data-focus-key="${CSS.escape(`request-answer:${decision.id}`)}"]`);
+      if (!input || input.disabled) return false;
+      input.value = ui.draftFor(answerKey);
+      input.scrollIntoView({ block: 'center' });
+      input.focus({ preventScroll: true });
+      return true;
+    };
+    if (focus()) return;
+    ctx.send({ type: 'hive-deep-link', cellId: cell.id, threadId: t.id, messageId: decision.messageId }, {
+      quiet: true,
+      onReply: frame => {
+        if (ui.openThread(cell.id) !== t.id) return;
+        if (!frame.ok) { ctx.notice(frame.error || 'Could not open the decision. Your answer draft is kept.'); return; }
+        ui.openDeepLink(frame, hive.metaEpoch);
+        requestAnimationFrame(focus);
+      },
+    });
+  };
+  if (decision) hint.append(
+    h('span', {}, `This topic has an open decision: "${requestDisplay(decision).title}"${decisions.length > 1 ? ` (+${decisions.length - 1} more)` : ''}. Text here is sent as a message, not an answer.`),
+    h('div', { class: 'hive-request-actions' },
+      h('button', { type: 'button', class: 'hive-link-btn', 'data-focus-key': `topic-answer:${key}`, onclick: moveAnswer }, 'Answer it'),
+      h('button', { type: 'button', class: 'hive-link-btn', 'data-focus-key': `topic-message:${key}`, disabled: ctx.busy('hive-send'), onclick: submit }, 'Send as message')));
+  const saveDraft = textarea.oninput;
+  textarea.oninput = () => { saveDraft(); updateHint(); };
+  updateHint();
   sendOnCtrlEnter(textarea, submit);
   const row = composerRow({ cell, beads, ui, ctx, attach, selected, onSubmit: submit, label: 'Send' });
   const guard = lengthGuard(ui, ctx, textarea, row, images);
@@ -1001,6 +1046,7 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
     replyTarget ? h('div', { class: 'hive-quote' }, `Replying to: ${replyTarget.text.slice(0, 120)} `,
       h('button', { type: 'button', class: 'hive-link-btn', onclick: () => ui.setReplyFor(key, null) }, 'Cancel')) : null,
     textarea,
+    hint,
     guard.note,
     row);
   composer.insertBefore(imageComposer({ ui, key, textarea, root: composer, onChange: guard.update, disabled: ctx.busy('hive-send') }), row);
