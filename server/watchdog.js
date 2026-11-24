@@ -60,6 +60,7 @@ export function waitDeadline(text, anchor) {
   }
   return times.length ? Math.max(...times) : 0;
 }
+const staleWaitState = bead => JSON.stringify([bead.status, bead.waitingFor || '', bead.resume?.afterBead || '', bead.resume?.reviewAt || '']);
 const plural = (n, unit) => `${n} ${unit}${n === 1 ? '' : 's'}`;
 
 export function setWatchdogSettings(rt, { cellId, settings }) {
@@ -170,8 +171,11 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       add('prerequisites_resolved', bead.id, resolution.id, resolution.at, 'All blocking prerequisites have closed; work is ready to continue.', { bead_id: bead.id, session_id: bead.ownerSessionId || null, resolution_id: resolution.id });
     }
 
-    if ((index.blockers.get(bead.id) || bead.waitingFor) && updated && now - updated >= settings.waitHours * 3600000) {
-      add('stale_wait', bead.id, [updated, bead.status, bead.waitingFor || ''], updated, 'Waiting work has not been touched.', { bead_id: bead.id, session_id: bead.ownerSessionId || null });
+    const staleState = staleWaitState(bead);
+    const staleAnchor = cell.staleWaitAnchors?.[bead.id];
+    const staleSince = staleAnchor?.state === staleState ? staleAnchor.at : updated;
+    if ((index.blockers.get(bead.id) || bead.waitingFor) && staleSince && now - staleSince >= settings.waitHours * 3600000) {
+      add('stale_wait', bead.id, [staleSince, staleState], staleSince, 'Waiting work is stale. Recheck the wait; if it remains unresolved, consider deferring with a review date.', { bead_id: bead.id, session_id: bead.ownerSessionId || null });
     }
     if (explicitResume(bead) || bead.status === 'deferred') {
       const resume = bead.resume || {};
@@ -341,6 +345,24 @@ function syncPickupHoldAnchors(rt, host, now) {
   if (edits.length) rt.metadata.mutate(d => { for (const [id, anchors] of edits) d.cells[id].pickupHoldAnchors = anchors; });
 }
 
+function syncStaleWaitAnchors(rt, index) {
+  const beads = rt.snapshots.graph.beads;
+  const edits = [];
+  for (const cell of rt.metadata.cells()) {
+    const next = {};
+    const ids = cell.enabled && !cell.snapshot && cell.rootBeadId && beads[cell.rootBeadId] ? descendantIds(beads, cell.rootBeadId) : new Set();
+    for (const id of ids) {
+      const bead = beads[id];
+      if (bead.status === 'closed' || !(bead.waitingFor || index.blockers.get(id))) continue;
+      const state = staleWaitState(bead);
+      const prior = cell.staleWaitAnchors?.[id];
+      next[id] = prior?.state === state ? prior : { state, at: stamp(bead.updatedAt) };
+    }
+    if (JSON.stringify(next) !== JSON.stringify(cell.staleWaitAnchors || {})) edits.push([cell.id, next]);
+  }
+  if (edits.length) rt.metadata.mutate(d => { for (const [id, anchors] of edits) d.cells[id].staleWaitAnchors = anchors; });
+}
+
 export function syncWaitAnchors(rt) {
   const beads = rt.snapshots.graph.beads;
   const edits = [];
@@ -418,6 +440,7 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
     if (usable()) {
       saveWorkerActivity(rt, host, index.activity);
       syncWaitAnchors(rt);
+      syncStaleWaitAnchors(rt, index);
       syncIdleReadyAnchors(rt, host, now());
       syncPickupHoldAnchors(rt, host, now());
     }
