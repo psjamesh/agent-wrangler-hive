@@ -25,7 +25,7 @@ export function cellWaitingItems(ctx, cell) {
   const items = [];
   for (const request of Object.values(cell.requests || {})) {
     if (!needsHuman(request)) continue;
-    items.push({ id: `request:${request.id}`, kind: 'request', cellId: cell.id, beadIds: [ids.has(request.beadId) ? request.beadId : cell.rootBeadId], title: requestDisplay(request).title, reason: request.state === 'answered' ? 'Your answer needs delivery repair. Open the request to retry.' : 'Hive request awaiting your decision or action.', threadId: request.threadId, messageId: request.messageId });
+    items.push({ id: `request:${request.id}`, kind: 'request', cellId: cell.id, beadIds: [ids.has(request.beadId) ? request.beadId : cell.rootBeadId], title: requestDisplay(request).title, reason: request.state === 'answered' ? 'Your answer needs delivery repair. Open the request to retry.' : 'Hive request awaiting your decision or action.', threadId: request.threadId, messageId: request.messageId, repair: request.state === 'answered' });
   }
   if (!cell.enabled) return items;
   const sessions = ctx.graph?.sessions || [];

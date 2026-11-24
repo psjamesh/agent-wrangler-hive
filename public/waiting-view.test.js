@@ -36,7 +36,7 @@ test('waiting modal uses native focus, closes on Escape and navigation, and labe
   assert.equal(dialog.open, true);
   assert.match(text(dialog), /First bead.*Second bead/);
   const reply = all(dialog).find(n => n.tag === 'a' && text(n) === 'Reply');
-  assert.match(reply.attrs.href, /message=m/);
+  assert.match(reply.attrs.href, /hive=c&topic=topic$/);
   reply.events.click();
   assert.equal(dialog.removed, true);
   assert.equal(document.activeElement, opener);
@@ -166,7 +166,7 @@ test('the header chooses and names a stable queen-help bead regardless of PR ass
   assert.equal(f.frames[0][0].beadId, 'a');
 });
 
-test('native waits open the exact request card without adding answer controls and disappear after delivery', t => {
+test('native waits open the request topic without adding answer controls and disappear after delivery', t => {
   const f = setup(t);
   const request = { id: 'native', cellId: 'c', audience: 'human', state: 'open', title: 'Choose an API', beadId: 'b', threadId: 'native-topic', messageId: 'native-message' };
   f.cell.requests = { native: request };
@@ -174,7 +174,7 @@ test('native waits open the exact request card without adding answer controls an
   assert.equal(items.length, 1);
   const section = view.waitingSection(f.ctx, f.ctx.hive.beads.b);
   const link = all(section).find(n => n.tag === 'a' && text(n) === 'Open request');
-  assert.match(link?.attrs.href || '', /hive=c&topic=native-topic&message=native-message/);
+  assert.match(link?.attrs.href || '', /hive=c&topic=native-topic$/);
   assert.equal(all(section).some(n => n.tag === 'textarea' || (n.tag === 'button' && /Answer|Dismiss|Retry/.test(text(n)))), false);
   assert.equal(f.frames.length, 0);
   view.openWaitingMenu(f.ctx, items, null, { cellId: 'c', beadId: 'b' });
@@ -294,4 +294,11 @@ test('an evidence association to another bead’s session PR cannot borrow its f
   assert.equal(all(section).some(n => n.tag === 'button'), false);
   const ownerSection = prv.pullRequestsSection(f.ctx, f.ctx.hive.beads.b);
   assert.ok(all(ownerSection).some(n => n.tag === 'button' && text(n) === 'Ask the queen to fix'));
+});
+
+test('delivery-repair waiting items preserve the exact request card link', t => {
+  const f = setup(t);
+  f.cell.requests = { repair: { id: 'repair', cellId: 'c', audience: 'human', state: 'answered', delivery: { state: 'failed' }, title: 'Retry answer delivery', threadId: 'topic', messageId: 'repair-card' } };
+  const section = view.waitingSection(f.ctx, f.ctx.hive.beads.a);
+  assert.match(all(section).find(n => n.tag === 'a').attrs.href, /hive=c&topic=topic&message=repair-card$/);
 });

@@ -280,11 +280,12 @@ export function earliestWaiting(t, msgs, ackOf) {
 // topic: the window from windowFrom, joined by a loaded page that reaches it.
 // Messages held from elsewhere, such as the Inbox, may leave gaps, so the
 // answer ({ id }, '' for the newest) is known once that run reaches back to
-// the waiting message, or to the oldest one kept. Until then `before` is the
+// the waiting message and all open decision messages, or the oldest one kept.
+// Until then `before` is the
 // message to load history before (null for the newest). Waiting only known
 // to come after a message is the first one in the run after it that `waits`.
-export function startTarget({ window, page, from, retained, waiting, waits = () => true }) {
-  if (!retained || !waiting) return { id: '' };
+export function startTarget({ window, page, from, retained, waiting, decisions = [], waits = () => true, matches = null }) {
+  if (!retained || (!waiting && !decisions.length)) return { id: '' };
   let run = from ? window.filter((m) => m.n >= from.n) : [];
   let start = Boolean(from) && run.length >= retained;
   if (page && (!from || !(from.n > page.anchorN))) {
@@ -292,10 +293,13 @@ export function startTarget({ window, page, from, retained, waiting, waits = () 
     start = !page.more;
   }
   run.sort(inTopicOrder);
-  const after = 'after' in waiting;
-  const floor = after ? waiting.after : waiting.n;
-  if (start || run.some((m) => m.n <= floor)) return { id: run.find((m) => (after ? m.n > floor && waits(m) : m.n >= floor))?.id || '' };
-  return { before: run[0] || null };
+  const found = run.filter(m => decisions.includes(m.id));
+  if (!start && found.length < decisions.length) return { before: run[0] || null };
+  const after = waiting && 'after' in waiting;
+  const floor = after ? waiting.after : waiting?.n;
+  if (waiting && !start && !run.some(m => m.n <= floor)) return { before: run[0] || null };
+  const unread = waiting && run.find(m => (after ? m.n > floor && waits(m) : m.n >= floor) && (!matches || (matches(m) && waits(m))));
+  return { id: [...found.filter(m => !matches || matches(m)), ...(unread ? [unread] : [])].sort(inTopicOrder)[0]?.id || '' };
 }
 
 function ackMessages(msgs) {
@@ -624,7 +628,7 @@ function inboxList({ cell, hive, beads, graph, ui, ctx, known, counted, snapshot
       title: t?.title || 'Topic no longer kept', at: group[0].at, count: n, unreadCount: kind === 'human' ? n : 0, id: m.id,
       author: authorName(graph, cell, m), preview: m.text.replace(/\s+/g, ' ').slice(0, 200),
       texts: group.map(x => x.text), sessionLinks: group.map(x => x.sessionLink).filter(Boolean),
-      hive: messageContextLabel(m, cell, beads, members), link: hiveLink(cell.id, m.threadId, group[0].id),
+      hive: messageContextLabel(m, cell, beads, members), link: hiveLink(cell.id, m.threadId),
     });
   }
   const context = { ...ctx, hive, graph, ui };
@@ -928,7 +932,8 @@ function threadView({ cell, hive, beads, graph, api, ui, ctx, t, window, epoch }
   if (ui.startPending(key)) {
     const ackOf = (m) => ui.ackOf(cell.id, m);
     const waiting = earliestWaiting(t, msgs, ackOf);
-    const s = startTarget({ window, page, from, retained: t.retained, waiting, waits: unreadFor(ackOf) });
+    const decisions = Object.values(cell.requests || {}).filter(r => r.threadId === t.id && r.state === 'open' && needsHuman(r)).map(r => r.messageId).filter(Boolean);
+    const s = startTarget({ window, page, from, retained: t.retained, waiting, decisions, waits: unreadFor(ackOf), matches: searching ? m => visibleIds.has(m.id) : null });
     if ('id' in s) list.dataset.startAt = s.id;
     else if (ui.startFailed(key)) list.dataset.startAt = s.before?.id || '';
     else if (ui.askStart(key, s.before?.id || '')) {

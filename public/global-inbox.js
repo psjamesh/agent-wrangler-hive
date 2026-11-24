@@ -37,7 +37,7 @@ export function needsRows(ctx, cells) {
         key: `request:${r.id}`, cellId: cell.id, hive: cellName(graph, cell), title: display.rewritten ? display.title : titles.get(r.threadId) || r.title, at: r.createdAt, blocking: Boolean(r.blocking),
         author: requestAuthor(graph, r), preview: oneLine(display.body, 200), texts: [display.body, display.title].filter(Boolean), beadIds: [r.beadId].filter(Boolean), repair: r.state === 'answered' ? (['failed', 'uncertain'].includes(r.delivery?.state) ? 'Answer needs delivery repair' : 'Answer being delivered') : null,
         threadId: r.threadId, firstId: r.messageId, needsCount: 1, count: 0, sessionLinks: [r.sessionLink, r.requesterSessionLink || (r.requesterSessionId ? { sessionId: r.requesterSessionId, label: 'Open requester session' } : null)].filter(Boolean),
-        link: hiveLink(cell.id, r.threadId, r.messageId),
+        link: hiveLink(cell.id, r.threadId, r.state === 'answered' ? r.messageId : null),
       });
     }
   }
@@ -61,7 +61,7 @@ export function messageRows(ctx, cells, kind) {
         key: `message:${cell.id}:${first.id}`, cellId: cell.id, hive: cellName(graph, cell), title: titles.get(first.threadId) || 'Topic no longer kept',
         at: first.at, count: group.length, unreadCount: kind === 'human' ? group.length : 0, author: messageAuthor(graph, cell, last), preview: oneLine(last.text, 200),
         sessionLinks: group.map(m => m.sessionLink).filter(Boolean), texts: group.map(m => m.text), beadIds: group.map(m => m.context?.beadId || m.beadId).filter(Boolean), threadId: first.threadId,
-        link: hiveLink(cell.id, first.threadId, first.id),
+        link: hiveLink(cell.id, first.threadId),
       });
     }
     const held = [...byThread.values()].reduce((n, g) => n + g.length, 0);
@@ -86,6 +86,7 @@ export function mergeRows(messages, requests) {
       row.at = Math.min(row.at, request.at);
       row.texts = [...(row.texts || []), ...request.texts];
       row.beadIds = [...(row.beadIds || []), ...request.beadIds];
+      if (request.repair && !row.repair) row.link = request.link;
       row.repair ||= request.repair;
       row.sessionLinks = [...(row.sessionLinks || []), ...request.sessionLinks];
     }
@@ -122,7 +123,7 @@ export function remoteRows(ctx, cells, remote, kind) {
     rows.push({
       key: r.key, threadId: r.threadId, cellId: cell.id, hive: cellName(graph, cell), title: r.title || 'Topic no longer kept', at: r.at, lastAt: r.lastAt, count: r.count, unreadCount: kind === 'human' ? r.count : 0,
       beadIds: r.beadIds || [], texts: [r.last?.text, r.snippet, r.preview].filter(Boolean), sessionLinks: r.sessionLinks || [r.last?.sessionLink].filter(Boolean),
-      author: messageAuthor(graph, cell, r.last), snippet: r.snippet, preview: r.preview, link: hiveLink(cell.id, r.threadId, r.firstId),
+      author: messageAuthor(graph, cell, r.last), snippet: r.snippet, preview: r.preview, link: hiveLink(cell.id, r.threadId),
     });
   }
   return rows.sort((a, b) => a.at - b.at || (a.key < b.key ? -1 : 1));

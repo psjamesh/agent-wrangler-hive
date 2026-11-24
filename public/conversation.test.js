@@ -308,7 +308,7 @@ for (const inbox of [false, true]) test(`opening from ${inbox ? 'Inbox' : 'Topic
   let navigated;
   f.ui[method] = (...args) => { open.apply(f.ui, args); navigated = f.draw(); };
   openInboxRow(f);
-  if (inbox) assert.equal(f.ui.linkedMessage(f.cell.id, thr).messageId, 'm2');
+  if (inbox) assert.equal(f.draw().list.dataset.startAt, 'm2');
   else assert.equal(navigated.list.dataset.startAt, 'm2');
 });
 
@@ -455,7 +455,7 @@ test('opening a topic\'s Inbox row starts at its earliest waiting message', (t) 
   const f = busyInbox(t);
   f.ui.setInboxView(f.cell.id, 'human');
   openInboxRow(f, f.draw().list.children.find((li) => li.dataset?.id === 'm3').querySelector('.hive-topic-btn'));
-  assert.equal(f.ui.linkedMessage(f.cell.id, thr).messageId, 'm1');
+  assert.equal(f.draw().list.dataset.startAt, 'm1');
 });
 
 test('reacting to a message advances the topic read mark to it and shows the earlier ones read', (t) => {
@@ -1530,7 +1530,7 @@ test('merged Inbox opens the canonical request topic and preserves its answer dr
   const filter = descendants(f.draw().head).find(el => el.tagName === 'button' && el.textContent.startsWith('Inbox'));
   assert.ok(filter); filter.fire('click');
   const target = parseHiveLink(f.draw().list.querySelector('.hive-topic-btn').attributes.href);
-  assert.equal(target.messageId, 'native-message');
+  assert.equal(target.messageId, null);
   f.ui.openDeepLink({ ...target, thread: f.cell.threads[0], messages: f.cell.messages, more: false, anchorN: 2 }, f.hive.metaEpoch);
   let out = f.draw();
   assert.match(out.list.textContent, /Keep compatibility/);
@@ -2211,7 +2211,7 @@ test('filtered history keeps its bridge when no message after the gap matches', 
   assert.equal(f.sent.at(-1).before, 'm1');
 });
 
-test('per-cell request cards link to their exact message instead of opening the topic at its default position', t => {
+test('per-cell request rows link to the topic for unread and decision positioning', t => {
   const f = fixture(t);
   const thread = { id: thr, title: 'Decision', beads: [], retained: 1, count: 1 };
   const r = { id: 'request-open', cellId: f.cell.id, threadId: thr, messageId: 'request-message', audience: 'human', state: 'open', title: 'Choose', body: 'Choose one', createdAt: 1 };
@@ -2220,7 +2220,7 @@ test('per-cell request cards link to their exact message instead of opening the 
   f.cell.inbox = { human: { ids: [], count: 0 }, queen: { ids: [], count: 0 } };
   f.ui.setInboxView(f.cell.id, 'human');
   const row = f.draw().list.querySelector('.hive-topic-btn');
-  assert.deepEqual(parseHiveLink(row.attributes.href), { cellId: f.cell.id, threadId: thr, messageId: r.messageId });
+  assert.deepEqual(parseHiveLink(row.attributes.href), { cellId: f.cell.id, threadId: thr, messageId: null });
 });
 
 test('resolved message links win over repeated scroll restoration after late layout', t => {
@@ -2258,11 +2258,11 @@ test('resolved message links win over repeated scroll restoration after late lay
 });
 
 for (const kind of ['request', 'unread']) for (const inbox of ['cell', 'global']) {
-  test(`${inbox} inbox opens a ${kind} at its exact message and keeps it aligned after restoration`, async t => {
+  test(`${inbox} inbox opens a ${kind} topic at its earliest waiting item and keeps it aligned`, async t => {
     const f = fixture(t);
     const messages = range(1, 10);
     const target = messages[8];
-    const thread = { id: thr, title: 'Inbox topic', beads: [], retained: 10, count: 10 };
+    const thread = { id: thr, title: 'Inbox topic', beads: [], retained: 10, count: 10, windowFrom: 'q1' };
     f.cell.threads = [thread];
     f.cell.messages = messages;
     if (kind === 'request') {
@@ -2281,7 +2281,7 @@ for (const kind of ['request', 'unread']) for (const inbox of ['cell', 'global']
     const href = list.querySelector('.hive-topic-btn').attributes.href;
     const link = parseHiveLink(href);
     if (link) {
-      assert.deepEqual(link, { cellId: f.cell.id, threadId: thr, messageId: target.id });
+      assert.deepEqual(link, { cellId: f.cell.id, threadId: thr, messageId: null });
       f.ui.openDeepLink({ ...link, thread, messages, more: false, anchorN: 11 }, f.hive.metaEpoch);
     } else list.querySelector('.hive-topic-btn').fire('click');
     const out = f.draw(), view = laidOut(t, out);
@@ -2558,4 +2558,82 @@ test('a title-only rewrite keeps the worker body outside the original disclosure
   const original = card.querySelector('details');
   assert.match(original.textContent, /Original title/);
   assert.doesNotMatch(original.textContent, /Current body/);
+});
+
+const openDecision = (messageId, patch = {}) => ({ id: `request-${messageId}`, messageId, threadId: thr, state: 'open', audience: 'human', ...patch });
+
+for (const [name, requests, expected] of [
+  ['older open decision', [openDecision('m1')], 'm1'],
+  ['newer open decision', [openDecision('m3')], 'm2'],
+  ['answered decision', [openDecision('m1', { state: 'answered' })], 'm2'],
+  ['queen-only decision', [openDecision('m1', { audience: 'queen' })], 'm2'],
+  ['other topic decision', [openDecision('m1', { threadId: 'other' })], 'm2'],
+]) test(`topic start chooses the earliest unread or unanswered item: ${name}`, t => {
+  const f = topicFixture(t, ['m2']);
+  f.cell.requests = Object.fromEntries(requests.map(r => [r.id, r]));
+  assert.equal(f.draw().list.dataset.startAt, expected);
+});
+
+test('an open decision outside the recent run loads history even when all messages are read', t => {
+  const f = gapTopic(t);
+  f.cell.requests = { decision: openDecision('q4') };
+  f.cell.messages = range(61, 100).map(m => ({ ...m, ack: { required: true, state: READ, rev: 1 } }));
+  f.cell.threads[0].waitingFrom = null;
+  const out = f.open();
+  assert.equal('startAt' in out.list.dataset, false);
+  assert.ok(f.ask());
+  f.ask().onReply({ ok: true, messages: range(1, 60).map(m => ({ ...m, ack: { required: true, state: READ, rev: 1 } })), more: false, anchorN: 61 });
+  assert.equal(f.draw().list.dataset.startAt, 'q4');
+});
+
+test('reopening a topic from the list refreshes its start after all messages are acknowledged', t => {
+  const f = topicFixture(t, ['m2']);
+  laidOut(t, f.draw());
+  f.ui.noteAck(f.cell.id, 'm2', { required: true, state: READ, rev: 1 });
+  f.ui.closeThread(f.cell.id);
+  openInboxRow(f);
+  assert.equal(f.draw().list.dataset.startAt, '');
+});
+
+for (const audience of ['human', 'route-repair']) test(`unanswered ${audience} decision opens a fully read topic at the decision`, t => {
+  const f = topicFixture(t, []);
+  f.cell.requests = { decision: openDecision('m2', { audience, routeReason: 'no-queen' }) };
+  assert.equal(f.draw().list.dataset.startAt, 'm2');
+});
+
+test('start selection resolves decisions only inside contiguous history and tolerates removed decision messages', () => {
+  const window = range(61, 100);
+  const args = { window, from: window[0], retained: 100, waiting: WAITING_51, decisions: ['q4'] };
+  assert.deepEqual(startTarget(args), { before: q(61) });
+  assert.deepEqual(startTarget({ ...args, page: { messages: range(1, 60), more: false, anchorN: 61 } }), { id: 'q4' });
+  assert.deepEqual(startTarget({ ...args, decisions: ['removed'], page: { messages: range(1, 60), more: false, anchorN: 61 } }), { id: 'q51' });
+  assert.deepEqual(startTarget({ ...args, waiting: null, decisions: ['removed'], page: { messages: range(1, 60), more: false, anchorN: 61 } }), { id: '' });
+});
+
+test('locally settled unread boundary still selects an older decision before later waiting messages', () => {
+  assert.deepEqual(startTarget({ window: range(1, 100), from: q(1), retained: 100, waiting: { after: 50 }, decisions: ['q4'], waits: m => m.n > 50 }), { id: 'q4' });
+});
+
+for (const kind of ['unread', 'hidden decision', 'no visible waiting']) test(`filtered opening preserves search and skips ${kind}`, t => {
+  const f = topicFixture(t, kind === 'no visible waiting' ? ['m1'] : ['m1', 'm2', 'm3']);
+  f.cell.messages[0].text = 'Hidden update';
+  f.cell.messages[2].text = 'Needle update';
+  f.cell.messages[3].text = 'Needle later update';
+  if (kind === 'hidden decision') f.cell.requests = { decision: openDecision('m1') };
+  f.ui.setSearchQuery('Needle');
+  const out = f.draw();
+  assert.equal(f.ui.searchQuery(), 'Needle');
+  assert.equal(out.list.dataset.startAt, kind === 'no visible waiting' ? '' : 'm2');
+  assert.deepEqual(out.list.querySelectorAll('.hive-message').map(m => m.dataset.id), ['m2', 'm3']);
+});
+
+test('filtered opening loads earlier history before choosing its first matching waiting item', t => {
+  const f = gapTopic(t);
+  f.cell.requests = { decision: openDecision('q4') };
+  f.cell.messages.forEach(m => { m.text = m.id === 'q70' || m.id === 'q80' ? 'Needle update' : 'Hidden update'; });
+  f.ui.setSearchQuery('Needle');
+  const out = f.open();
+  assert.equal('startAt' in out.list.dataset, false);
+  f.ask().onReply({ ok: true, messages: range(1, 60).map(m => ({ ...m, text: m.id === 'q55' ? 'Needle update' : 'Hidden update' })), more: false, anchorN: 61 });
+  assert.equal(f.draw().list.dataset.startAt, 'q55');
 });

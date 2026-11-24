@@ -1394,7 +1394,7 @@ export default {
   register(registrar) {
     state.api = registrar.api;
     state.watchdogNotifications = createWatchdogNotifications(state.api, { read: () => load('watchdogEpisodes', []), write: v => save('watchdogEpisodes', v) });
-    state.requestNotifications = createRequestNotifications(state.api, { read: () => load('requestEpisodes', []), write: v => save('requestEpisodes', v), answer: (r, optionId) => answerRequestOption(r, optionId, { ui: state.ui, ctx: { send, notice, onError: () => { openHiveLink(globalThis.window, hiveLink(r.cellId, r.threadId, r.messageId)); } } }) });
+    state.requestNotifications = createRequestNotifications(state.api, { read: () => load('requestEpisodes', []), write: v => save('requestEpisodes', v), answer: (r, optionId) => answerRequestOption(r, optionId, { ui: state.ui, ctx: { send, notice, onError: () => { openHiveLink(globalThis.window, hiveLink(r.cellId, r.threadId, r.state === 'answered' ? r.messageId : null)); } } }) });
     state.ui = createUi();
     const saved = readScrollState(globalThis.window?.location?.hash);
     if (saved) { state.scrollMemo = saved.scroll; state.follow = saved.follow; }
