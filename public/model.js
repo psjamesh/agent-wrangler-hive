@@ -162,7 +162,7 @@ export function workCounts(hive, kids, beadId) {
     counts.total += 1;
     if (b.status === 'closed') counts.closed += 1;
     else if (displayStatus(b) === 'in_review') counts.in_review += 1;
-    else if (b.status === 'in_progress') counts[b.occupiesCapacity ? 'in_progress' : 'not_active'] += 1;
+    else if (b.status === 'in_progress' && !['goal', 'workstream'].includes(b.kind)) counts[b.occupiesCapacity ? 'in_progress' : 'not_active'] += 1;
     else counts.open += 1;
     if (b.status !== 'closed' && waitingOn(hive, b.id).length) counts.waiting += 1;
     stack.push(...(kids.get(b.id) || []));

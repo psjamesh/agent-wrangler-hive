@@ -101,14 +101,14 @@ test('pending and bound helpers require an open bead and live cell', async () =>
   }
 });
 
-test('queen helpers on the open cell root remain charged', async () => {
+test('queen helpers on the open cell root do not create a work slot', async () => {
   const f = await setup();
   const { data } = await f.before({ spawnedBy: 'queen' });
   assert.equal(data.beadId, 'root');
-  assert.equal(capacity(f.rt).used, 2);
+  assert.equal(capacity(f.rt).used, 1);
   f.board.set('child', { sessionId: 'child', status: 'idle' });
   await f.spawned({ sessionId: 'child', data });
-  assert.equal(capacity(f.rt).used, 2);
+  assert.equal(capacity(f.rt).used, 1);
 });
 
 test('aborted launch admissions expire because core has no failed-launch notification', async () => {

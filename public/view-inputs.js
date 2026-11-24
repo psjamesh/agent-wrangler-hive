@@ -23,7 +23,7 @@ export function mapInputs(ctx, cell) {
   return JSON.stringify([
     cell ? [cell.id, cell.rootBeadId, cell.beadLayout, cell.arrangeAspect, cell.archived,
       cell.layoutWarning, cell.bindings, cell.snapshot, cell.workstreamColours, cell.workstreamShades, Boolean(ui.form(closedKey(cell.id)))] : Object.values(hive.cells).map(c => [c.id, c.taskId, c.enabled, c.retired, c.rootBeadId, c.queenSessionId, c.bindings,
-      c.position, c.snapshot, c.inbox?.human?.count, c.inbox?.queen?.count, c.requestCounts?.human, c.launch, c.occupiedCount, cellWaitingItems(ctx, c), queenNeedsAttention(ctx.graph, c), queenNotResponding(ctx.graph, c), queenStopped(ctx.graph, c)]),
+      c.position, c.snapshot, c.inbox?.human?.count, c.inbox?.queen?.count, c.requestCounts?.human, c.launch, c.occupiedCount, c.workingCount, c.heldCount, c.workActivity, cellWaitingItems(ctx, c), queenNeedsAttention(ctx.graph, c), queenNotResponding(ctx.graph, c), queenStopped(ctx.graph, c)]),
     Object.values(hive.beads).map(b => [b.id, b.parentId, b.title, b.kind, b.status, b.ownerSessionId,
       b.occupiesCapacity, b.createdAt, b.pickup?.state, b.pickup?.armToken, b.pickup?.reason, b.outcome, b.assignee, b.untracked, b.waitingFor, b.reviewState, b.reviewWorking, b.closeReason, b.closedReason, cell ? null : b.goal]),
     cell ? cellWaitingItems(ctx, cell) : null,

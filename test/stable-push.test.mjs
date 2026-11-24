@@ -236,3 +236,19 @@ test('history remains in Details when an enabled hive cannot show a map', () => 
   assert.ok(panels.dock);
   assert.deepEqual(panels.dock.children[1].children, [history]);
 });
+
+test('the outer client render key follows activity projections without capacity or metadata changes', () => {
+  const code = client.slice(client.indexOf('function signature('), client.indexOf('export function captureFocus'));
+  const signature = vm.runInNewContext(code + '; signature', {
+    state: { uiVersion: 0, pending: new Map(), placements: [], api: {} },
+    beeLevel: () => 0, capacityLimit: () => 8, waitingGraphKey: () => '',
+  });
+  const cell = { id: 'cell', workingCount: 1, heldCount: 0, workActivity: [] };
+  const hive = { cells: { cell }, beads: {}, backend: {}, capacity: { used: 1 }, revision: 1, metaVersion: 1 };
+  const initial = signature(hive);
+  cell.workingCount = 0; cell.heldCount = 1;
+  const idle = signature(hive);
+  assert.notEqual(idle, initial);
+  cell.workActivity = [{ beadId: 'work', reason: 'Held, not working; CI wait' }];
+  assert.notEqual(signature(hive), idle);
+});

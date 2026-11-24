@@ -1720,6 +1720,8 @@ body.light .hive-hex.is-search-match .hive-conversation-ring { stroke: #186879; 
 
 .hive-counter { color: var(--fg-muted, var(--fg)); }
 .hive-counter-needs { color: var(--red-fg, var(--red)); }
+.hive-counter-held { color: var(--fg-muted, var(--fg)); }
+.hive-counter-held .hive-pm-line { stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; }
 .hive-counter-progress { color: var(--green-fg, var(--green)); }
 .hive-counter-glyph, .hive-counter .hive-pm-glyph { fill: none; stroke: currentColor; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
 .hive-counter .hive-pm-glyph { stroke-width: 2; }

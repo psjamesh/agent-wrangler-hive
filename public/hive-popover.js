@@ -1,4 +1,7 @@
+import { sessionLabel } from './model.js';
 import { h } from './dom.js';
+
+const SOURCE_LABELS = { claim: 'Owner', review: 'Reviewer', helper: 'Helper', launch: 'Starting worker', restore: 'Restoring session', 'claim-pending': 'Confirming claim' };
 
 let active = null;
 
@@ -23,12 +26,14 @@ export function openHivePopover(details, anchor, owner) {
   const close = () => { if (dialog.open) dialog.close(); };
   const title = h('h3');
   const body = h('div', { class: 'hive-cell-popover-body' });
-  const draw = ({ name, goal, detail, owed, queen }) => {
+  const draw = ({ name, goal, detail, owed, queen, activity = [], activitySummary, beads, graph }) => {
     dialog.setAttribute('aria-label', `Details for ${name}`);
     title.textContent = name;
     body.replaceChildren(...[
       goal ? h('p', { class: 'hive-overview-goal' }, goal) : null,
       h('p', {}, detail),
+      activitySummary ? h('p', {}, activitySummary) : null,
+      ...activity.map(item => h('p', {}, `${beads?.[item.beadId]?.title || item.beadId}: ${item.reason}. ${item.participants.map(p => `${SOURCE_LABELS[p.source] || 'Participant'}: ${p.sessionId ? sessionLabel(graph, p.sessionId) : 'No session yet'} (${p.state === 'unavailable' ? 'status unavailable' : p.state})`).join('; ')}`)),
       owed ? h('p', {}, `Attention: ${owed}`) : null,
       h('p', {}, queen)].filter(Boolean));
   };

@@ -792,7 +792,7 @@ function signature(hive, graph) {
     .map((s) => `${s.sessionId}:${s.status}:${s.waitingReason || ''}:${s.exitOutput ? 'x' : ''}:${s.archived ? 'a' : ''}:${s.name || s.label || ''}`)
     .join('|');
   const names = (graph?.tasks?.tasks || []).map((t) => `${t.id}:${t.name}`).join('|');
-  return [hive.revision, hive.metaEpoch, hive.metaVersion, hive.backend.state, hive.backend.checkedAt, hive.metadataError || '', sessions, waitingGraphKey(graph), Object.values(hive.cells).some(c => c.pullRequests?.length || c.queenResponse?.pendingSince) ? Math.floor(Date.now() / 60000) : '', names, state.uiVersion, state.pending.size, state.placements.length, beeLevel(), JSON.stringify(hive.capacity), JSON.stringify([hive.agents, hive.agentsError]), capacityLimit(state.api), state.api?.settings?.()?.requestNotifications !== false].join('#');
+  return [hive.revision, hive.metaEpoch, hive.metaVersion, hive.backend.state, hive.backend.checkedAt, hive.metadataError || '', sessions, waitingGraphKey(graph), Object.values(hive.cells).some(c => c.pullRequests?.length || c.queenResponse?.pendingSince) ? Math.floor(Date.now() / 60000) : '', names, state.uiVersion, state.pending.size, state.placements.length, beeLevel(), JSON.stringify(hive.capacity), JSON.stringify(Object.values(hive.cells).map(c => [c.id, c.workingCount, c.heldCount, c.workActivity])), JSON.stringify([hive.agents, hive.agentsError]), capacityLimit(state.api), state.api?.settings?.()?.requestNotifications !== false].join('#');
 }
 
 export function captureFocus(root) {

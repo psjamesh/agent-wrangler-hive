@@ -36,7 +36,7 @@ function cellTile(ctx, cell) {
   const { hive, graph } = ctx;
   const name = cellName(graph, cell);
   const root = cell.rootBeadId ? hive.beads[cell.rootBeadId] : null;
-  const { work: counts, needs, occupied, toRead, toAnswer } = cellMetrics(ctx, cell);
+  const { work: counts, needs, working, held, toRead, toAnswer } = cellMetrics(ctx, cell);
   const goal = String(root?.goal || '').trim();
   const launch = launchState(hive, cell);
   let queen;
@@ -59,7 +59,8 @@ function cellTile(ctx, cell) {
     { kind: 'inbox', count: cell.retired ? 0 : toRead, label: 'Inbox' },
     { kind: 'queen', count: cell.retired ? 0 : toAnswer, label: 'Waiting for queen' },
     { kind: 'needs', count: cell.retired ? 0 : needs, label: 'Needs you' },
-    { kind: 'progress', count: occupied, label: 'In progress' },
+    { kind: 'progress', count: working, label: 'Working', tooltip: `${working} working` },
+    { kind: 'held', count: held, label: 'Held, not working', tooltip: `${held} held, not working` },
   ];
   const owed = [needs ? `${needs} need your input` : '', toRead ? `${toRead} from the queen to read` : '', toAnswer ? `${toAnswer} awaiting the queen` : ''].filter(Boolean).join(', ');
   const pos = { q: cell.position?.q ?? 0, r: cell.position?.r ?? 0 };
@@ -79,9 +80,9 @@ function cellTile(ctx, cell) {
     lineHeight: 16,
     classes: `hive-cell${cell.retired ? ' is-retired' : (cell.enabled ? '' : ' is-off')}${warn ? ' needs-queen' : ''}${cell.snapshot ? ' is-snapshot' : ''}`,
     mark: cell.retired ? outcomeMark(cell.retired) : null,
-    ariaLabel: `${name}. ${goal ? `Goal: ${goal}. ` : ''}${detail}. ${owed ? `Attention: ${owed}. ` : ''}${queen}. Enter opens the hive; Shift and an arrow key moves it.`,
+    ariaLabel: `${name}. ${working} working, ${held} held, not working. ${goal ? `Goal: ${goal}. ` : ''}${detail}. ${owed ? `Attention: ${owed}. ` : ''}${queen}. Enter opens the hive; Shift and an arrow key moves it.`,
     title: false,
-    info: { name, goal, detail, owed, queen },
+    info: { name, goal, detail, owed, queen, activity: cell.workActivity || [], activitySummary: `${working} working, ${held} held, not working`, beads: hive.beads, graph },
   };
 }
 

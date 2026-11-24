@@ -437,6 +437,7 @@ test('a rearmed token gets a fresh catalog hold notice', async () => {
 for (const enrolled of [false, true]) {
   test(`pickup waits for ${enrolled ? 'enrolled' : 'pending'} helpers to free shared capacity`, async () => {
     const f = pickupFixture(1); await arm(f);
+    f.doc().bindings.cell = [{ active: true, beadId: 'b', sessionId: 'queen', role: 'coordinator' }];
     const { data, refuse } = beforeSpawn({ spawnedBy: 'queen', source: 'agent', host: f.host });
     assert.equal(refuse, undefined); assert.ok(data);
     if (enrolled) {
@@ -459,6 +460,7 @@ for (const enrolled of [false, true]) {
 
 test('a helper admitted after eligibility wins the last slot before pickup reservation', async () => {
   const f = pickupFixture(1); await arm(f);
+    f.doc().bindings.cell = [{ active: true, beadId: 'b', sessionId: 'queen', role: 'coordinator' }];
   const load = f.rt.beads.loadSnapshot; let exports = 0;
   f.rt.beads.loadSnapshot = async opts => {
     const graph = await load(opts);
@@ -474,6 +476,7 @@ test('a helper admitted after eligibility wins the last slot before pickup reser
 
 test('a pickup reservation blocks a competing helper before host dispatch', async () => {
   const f = pickupFixture(1); await arm(f);
+    f.doc().bindings.cell = [{ active: true, beadId: 'b', sessionId: 'queen', role: 'coordinator' }];
   const spawn = f.host.sessions.spawn;
   f.host.sessions.spawn = async opts => {
     assert.equal(capacity(f.rt).used, 1);

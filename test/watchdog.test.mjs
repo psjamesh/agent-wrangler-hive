@@ -13,7 +13,7 @@ function fixture(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const rt = new HiveRuntime({ env: { AW_DATA_DIR: dir } });
   let now = 200000000;
-  const sessions = { queen: {}, worker: { status: 'working', lastActivity: now } };
+  const sessions = { queen: {}, reviewer: { status: 'working' }, worker: { status: 'working', lastActivity: now } };
   const sent = [];
   const host = { stores: { hive: rt }, sessions: { get: id => sessions[id] }, deliver: async (id, text) => { sent.push({ id, text }); return { mode: 'live' }; } };
   rt.metadata.lifetime.attach(rt, host);

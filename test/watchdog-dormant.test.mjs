@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { HiveRuntime } from '../server/runtime.js';
+import { reconcileInactiveBindings } from '../server/tracking.js';
 import { archiveSuggestions, collectWatchdog, createWatchdog, waitDeadline } from '../server/watchdog.js';
 
 const MIN = 60000;
@@ -13,7 +14,7 @@ function fixture(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const rt = new HiveRuntime({ env: { AW_DATA_DIR: dir } });
   let now = T0;
-  const sessions = { queen: {}, worker: { status: 'idle', lastActivity: now } };
+  const sessions = { queen: {}, rev: { status: 'working' }, helper: { status: 'working' }, worker: { status: 'idle', lastActivity: now } };
   const sent = [];
   const host = { stores: { hive: rt }, sessions: { get: id => sessions[id] }, deliver: async (id, text) => { sent.push({ id, text }); return { mode: 'live' }; } };
   rt.metadata.lifetime.attach(rt, host);
@@ -193,4 +194,94 @@ test('requests for another bead or cell do not suppress a holder alert', t => {
   assert.deepEqual(kinds(f), ['stalled_worker']);
   f.sessions.worker.dormant = true;
   assert.deepEqual(kinds(f), ['dormant_claim']);
+});
+
+test('idle and dormant slot-holding helpers flag once per episode and honor waits, requests and reviews', async t => {
+  const f = fixture(t);
+  f.bead('work', { status: 'open' });
+  f.rt.metadata.mutate(d => { d.bindings.cell = [{ id: 'helper', active: true, helper: true, role: 'investigator', beadId: 'work', sessionId: 'worker', at: T0 }]; });
+  f.advance(30 * MIN - 1);
+  assert.equal(kinds(f).includes('inactive_helper'), false);
+  f.advance(1);
+  assert.equal(kinds(f).includes('inactive_helper'), true);
+  await f.watchdog.run(); await f.watchdog.run();
+  assert.equal(f.sent.length, 1);
+  f.sessions.worker.status = 'working';
+  await f.watchdog.run();
+  assert.equal(kinds(f).includes('inactive_helper'), false);
+  f.sessions.worker.status = 'idle'; f.sessions.worker.dormant = true;
+  await f.watchdog.run();
+  assert.equal(f.sent.length, 2);
+  f.beads.work.waitingFor = 'Check CI later';
+  f.beads.work.updatedAt = new Date(f.now()).toISOString();
+  assert.equal(kinds(f).includes('inactive_helper'), false);
+  f.beads.work.waitingFor = '';
+  f.rt.metadata.mutate(d => { d.requests.q = { id: 'q', cellId: 'cell', beadId: 'work', state: 'open', requesterSessionId: 'worker' }; });
+  assert.equal(kinds(f).includes('inactive_helper'), false);
+  f.rt.metadata.mutate(d => { d.requests.q.state = 'answered'; d.reviews.r = { id: 'r', cellId: 'cell', workBeadId: 'work', state: 'requested', reviewerSessionId: 'worker', createdAt: f.now() }; });
+  assert.equal(kinds(f).includes('inactive_helper'), false);
+  f.rt.metadata.mutate(d => { d.reviews.r.state = 'approved'; });
+  f.beads.work.status = 'closed';
+  assert.equal(kinds(f).includes('inactive_helper'), false);
+});
+
+test('missing reviews and launches stay flagged while missing helpers recover once', async t => {
+  const f = fixture(t);
+  f.bead('work', { status: 'open' });
+  f.rt.metadata.mutate(d => {
+    d.reviews.r = { id: 'r', cellId: 'cell', workBeadId: 'work', state: 'requested', reviewerSessionId: 'missing-review' };
+    d.workerLaunches.l = { id: 'l', cellId: 'cell', beadId: 'work', state: 'uncertain', sessionId: 'missing-launch' };
+    d.bindings.cell = [{ id: 'h', active: true, helper: true, role: 'investigator', beadId: 'work', sessionId: 'missing-helper' }];
+  });
+  await f.watchdog.run(); await f.watchdog.run();
+  assert.equal(f.flags().filter(x => x.kind === 'missing_reservation_session').length, 2);
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0].text, /missing_helper_recovered: 1/);
+  assert.match(f.sent[0].text, /missing_reservation_session: 2/);
+  for (const id of ['missing-review', 'missing-launch', 'missing-helper']) f.sessions[id] = { status: 'working' };
+  await f.watchdog.run();
+  assert.equal(kinds(f).includes('missing_reservation_session'), false);
+  delete f.sessions['missing-launch'];
+  await f.watchdog.run();
+  assert.equal(f.sent.length, 2);
+  f.beads.work.status = 'closed';
+  assert.equal(kinds(f).includes('missing_reservation_session'), false);
+});
+
+
+test('missing helper recovery notifies once after automatic cleanup, with no flags for invalid targets', async t => {
+  const f = fixture(t);
+  f.bead('work', { status: 'open' });
+  f.bead('group', { status: 'in_progress', kind: 'workstream' });
+  f.bead('external', { status: 'open', kind: 'external' });
+  f.bead('closed', { status: 'closed' });
+  f.rt.metadata.mutate(d => { d.bindings.cell = ['work', 'root', 'group', 'external', 'closed'].map(beadId => ({ id: beadId, active: true, autoEnrolled: true, role: 'investigator', beadId, sessionId: 'missing' })); });
+  reconcileInactiveBindings(f.rt, f.host);
+  const missing = f.flags().filter(x => x.kind === 'missing_helper_recovered');
+  assert.deepEqual(missing.map(x => x.bead_id), ['work']);
+  await f.watchdog.run(); await f.watchdog.run();
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.rt.metadata.read().bindings.cell[0].missingSessionNotice.state, 'delivered');
+  assert.equal(kinds(f).includes('missing_helper_recovered'), false);
+  const restarted = createWatchdog({ runtime: f.rt, host: f.host, now: f.now });
+  await restarted.run();
+  assert.equal(f.sent.length, 1);
+  f.sessions.missing = { status: 'working' };
+  await f.watchdog.run();
+  assert.equal(kinds(f).includes('missing_reservation_session'), false);
+});
+
+test('a timer pass cleans missing helpers before emitting one resolved recovery notice', async t => {
+  const f = fixture(t);
+  f.bead('work', { status: 'open' });
+  f.rt.metadata.mutate(d => { d.bindings.cell = [{ id: 'helper', active: true, autoEnrolled: true, role: 'investigator', beadId: 'work', sessionId: 'worker', at: T0 }]; });
+  delete f.sessions.worker;
+  await f.watchdog.run();
+  assert.equal(f.rt.metadata.read().bindings.cell[0].active, false);
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0].text, /missing_helper_recovered/);
+  assert.doesNotMatch(f.sent[0].text, /missing_reservation_session/);
+  reconcileInactiveBindings(f.rt, f.host);
+  await f.watchdog.run();
+  assert.equal(f.sent.length, 1);
 });

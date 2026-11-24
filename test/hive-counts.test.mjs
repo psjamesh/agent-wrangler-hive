@@ -50,11 +50,12 @@ function fixture(t) {
   const cell = { id: 'cell_test', taskId: 'Test hive', enabled: true, rootBeadId: 'root', queenSessionId: 'queen', position: {q:0,r:0} };
   const beads = { root: { id:'root', title:'Test hive', kind:'goal', status:'in_progress' }, work: {id:'work', title:'Work', parentId:'root', status:'in_progress', assignee:'aw:worker'}, done: {id:'done', title:'Done', parentId:'root', status:'closed'}, other: {id:'other', title:'Other hive', status:'in_progress'} };
   const doc = { cells: { [cell.id]: cell }, conversation: {}, threads: {}, inbox: {}, bindings: {}, beadLayout: {}, arrangeAspect: {}, restoreNotices: {}, operations: {}, launches: {}, requests: {} };
-  const runtime = { metadata: { read: () => doc, cells: () => Object.values(doc.cells) }, beads: { status: {state:'missing'} }, paths: {} };
+  const runtime = { host: { sessions: { get: id => graph.sessions.find(s => s.sessionId === id) || (['worker', 'builder'].includes(id) ? { status: 'working' } : id === 'paused' ? { status: 'idle' } : null) } }, metadata: { read: () => doc, cells: () => Object.values(doc.cells) }, beads: { status: {state:'missing'} }, paths: {} };
   const ui = createUi();
   const graph = { sessions: [] };
   let hive, top;
   const draw = () => {
+    for (const b of Object.values(beads)) if (b.assignee?.startsWith('aw:')) b.ownerSessionId = b.assignee.slice(3);
     hive = projectForGraph({runtime, snapshot:{graph:{beads,edges:[]}}});
     top = renderHive({ui,hive,graph,api:{},notices:[],busy:()=>false,send(){},notice(){}}).top;
     return top.querySelector('[data-tile-id="cell_test"]');
@@ -185,7 +186,8 @@ test('metadata-only launch and claim reservations refresh the cached card counte
   ];
   for (const [collection, reservation] of reservations) {
     (f.doc[collection] ||= {}).pending = reservation;
-    assert.equal(progress(), 2, `${collection}: ${reservation.state}`);
+    assert.equal(progress(), 1, `${collection}: ${reservation.state}`);
+    assert.equal(counter(f.top.querySelector('[data-tile-id="cell_test"]'), 'held').querySelector('text').textContent, '1');
     assert.equal(f.hive.capacity.used, 2);
     assert.equal(JSON.stringify(f.beads), unchanged);
     delete f.doc[collection].pending;
@@ -330,7 +332,7 @@ test('tile and header share counts for blocked work, requests, worker input and 
     assert.equal(header.querySelector('.hive-headprogress').textContent, '1/6 closed');
     assert.match(tile.getAttribute('aria-label'), /1 in progress, 1 in review, 1 not active, 1 waiting, 2 open, 1 of 6 closed/);
     assert.equal(header.querySelector('.hive-headprogress').getAttribute('title'), '1 in progress, 1 in review, 1 not active, 1 waiting, 2 open, 1 of 6 closed');
-    assert.equal(counter(tile, 'progress').querySelector('text').textContent, '1');
+    assert.equal(counter(tile, 'held').querySelector('text').textContent, '1');
     assert.equal(header.querySelector('.hive-capacity-count').textContent, overview.querySelector('.hive-capacity-count').textContent);
   };
   check(2);
@@ -496,4 +498,23 @@ test('small info glyph occupies the status row even with no counters', t => {
   const row = tile.querySelector('.hive-tile-counters');
   const y = el => Number(el.getAttribute('transform').match(/translate\([^ ]+ ([^)]+)/)[1]);
   assert.ok(Math.abs(y(info) - y(row)) < 0.1);
+});
+
+test('overview splits working and held counters with exact tooltips and the cell pause icon', t => {
+  const f = fixture(t);
+  const worker = { sessionId: 'worker', status: 'working' };
+  f.graph.sessions.push(worker);
+  for (const [working, held] of [[1, 0], [0, 1], [1, 1], [0, 0]]) {
+    worker.status = working ? 'working' : 'idle';
+    f.beads.work.status = working || held ? 'in_progress' : 'closed';
+    f.beads.second = { id: 'second', parentId: 'root', kind: 'work', status: working && held ? 'in_progress' : 'closed', assignee: 'aw:paused' };
+    const tile = f.draw();
+    assert.equal(counter(tile, 'progress')?.querySelector('text')?.textContent || '0', String(working));
+    assert.equal(counter(tile, 'held')?.querySelector('text')?.textContent || '0', String(held));
+    if (working) assert.equal(counter(tile, 'progress').querySelector('title').textContent, `${working} working`);
+    if (held) {
+      assert.equal(counter(tile, 'held').querySelector('title').textContent, `${held} held, not working`);
+      assert.equal(counter(tile, 'held').querySelector('path').getAttribute('d'), 'M-2.1,-3.6 V3.6 M2.1,-3.6 V3.6');
+    }
+  }
 });

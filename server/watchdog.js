@@ -1,3 +1,5 @@
+import { eligibleWorkCell } from './admission.js';
+import { workReservations, sessionActivity, trackedHelperBinding } from './work-activity.js';
 import { ciWaitAttention, ciWaitSuppresses, reconcileCiWaits } from './ci-waits.js';
 import { monitoringProblem } from './monitoring.js';
 import { explicitResume, linksResolved, resolveLinkWaits, structuredWait, waitStatus, STRUCTURED_WAIT_HELP } from './link-waits.js';
@@ -9,7 +11,7 @@ import { OPEN_REVIEW_STATES } from './review-state.js';
 import { safeDeliver } from './sessions.js';
 import { isCurrent } from './lifetime.js';
 import { HiveError, refuseSnapshot } from './ops.js';
-import { liveClaimant, sleepingReason } from './tracking.js';
+import { liveClaimant, sleepingReason, reconcileInactiveBindings } from './tracking.js';
 import { GROUP_KINDS, descendantIds } from './bead-model.js';
 import { humanWaitText } from './human-wait.js';
 import { observedWorkerActivityIndex, workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
@@ -261,6 +263,43 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
       add('stalled_worker', bead.id, [sid, 'idle', since], since, 'Claimed worker is idle without a recorded handoff.', { bead_id: bead.id, session_id: sid });
     }
   }
+  for (const b of doc.bindings?.[cell.id] || []) {
+    if (!b.active && b.unboundBecause === 'Session missing' && !b.missingSessionNotice && trackedHelperBinding(b)
+      && eligibleWorkCell(rt, rt.snapshots.graph, b.beadId)?.id === cell.id) {
+      add('missing_helper_recovered', b.id, b.unboundAt, b.unboundAt,
+        'Automatically ended a helper binding whose session no longer exists; its reservation is resolved.',
+        { bead_id: b.beadId, session_id: b.sessionId, binding_id: b.id });
+    }
+  }
+  const reservations = workReservations(rt, rt.snapshots.graph, now).filter(r => r.cellId === cell.id);
+  for (const r of reservations) {
+    if (!['review', 'launch', 'helper'].includes(r.source)) continue;
+    const session = r.sessionId && host?.sessions?.get?.(r.sessionId);
+    if (r.sessionId && !session) {
+      add('missing_reservation_session', [r.source, r.recordId || r.beadId, r.sessionId], 'missing', stamp(r.at) || now,
+        `The ${r.source} reservation's session no longer exists. Reconcile it before replacing work.`,
+        { bead_id: r.beadId, session_id: r.sessionId, source: r.source, reservation_id: r.recordId });
+      continue;
+    }
+    if (r.source !== 'helper' || !session || session.archived || session.hasBackgroundShell) continue;
+    const state = sessionActivity(host, r.sessionId);
+    if (!['idle', 'dormant'].includes(state)) continue;
+    const bead = beads[r.beadId];
+    const updated = stamp(bead.updatedAt);
+    const recorded = cell.waitAnchors?.[bead.id];
+    const proseAnchor = recorded && recorded.text === bead.waitingFor ? recorded.at : updated;
+    const proseGrace = bead.waitingFor && proseAnchor && now - proseAnchor < settings.waitGraceMinutes * 60000;
+    const requestOpen = index.asked.get(cell.id)?.has(bead.id) || index.requesters.get(cell.id)?.has(r.sessionId);
+    if (proseGrace || ciWaitSuppresses(rt, host, bead, now) || structuredWait(rt.snapshots.graph, bead)
+      || index.blockers.get(bead.id) || requestOpen || histories.get(bead.id)?.some(review => OPEN_REVIEW_STATES.has(review.state))) continue;
+    const since = Math.max(stamp(r.at), workerLastActivity(session, bead, index.activity), index.activity.get(r.sessionId) || 0);
+    const threshold = state === 'dormant' ? settings.workerMinutes : settings.idleMinutes;
+    if (since && now - since >= threshold * 60000) {
+      add('inactive_helper', [bead.id, r.sessionId], state, since,
+        `Work retains a ${state} helper or investigator with no recorded wait, request or review. Reconcile its binding.`,
+        { bead_id: bead.id, session_id: r.sessionId });
+    }
+  }
   const labelRepos = new Set(Object.values(doc.prLabels || {}).filter(record => record?.status === 'pending' && (record.cellIds?.includes(cell.id) || record.associations?.some(row => row.cellId === cell.id))).map(record => prRepository(record.url)?.toLowerCase()).filter(Boolean));
   for (const repo of labelRepos) {
     const failure = doc.prLabelRepos?.[repo];
@@ -436,6 +475,7 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
     if (usable()) await reconcileCiWaits(rt, host, now());
     if (usable()) await resolveLinkWaits(rt, host, now());
     if (!active() || (!usable() && !monitoringProblem(rt))) return;
+    if (usable()) reconcileInactiveBindings(rt, host);
     const index = watchdogIndex(rt, host);
     if (usable()) {
       saveWorkerActivity(rt, host, index.activity);
@@ -493,6 +533,10 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
         }
         for (const { cellId, key, flag } of items) {
           d.cells[cellId].watchdogFlags[flag.id].noticed[key] = { state: 'sending', at };
+          if (flag.kind === 'missing_helper_recovered') {
+            const binding = d.bindings[cellId]?.find(b => b.id === flag.binding_id);
+            if (binding) binding.missingSessionNotice = { state: 'sending', at };
+          }
           if (flag.kind === 'blocked_status_migrated') for (const id of flag.migrated_bead_ids) d.cells[cellId].blockedMigrations[id].notice = { state: 'sending', at };
           const event = d.cells[cellId].linkWaits?.[flag.bead_id]?.resolution;
           if (flag.kind === 'prerequisites_resolved' && event?.id === flag.resolution_id) event.notice = { state: 'sending', at };
@@ -504,6 +548,11 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
       if (!active()) return;
       rt.metadata.mutate(d => {
         for (const { cellId, key, flag } of items) {
+          if (flag.kind === 'missing_helper_recovered') {
+            const binding = d.bindings[cellId]?.find(b => b.id === flag.binding_id);
+            if (binding?.missingSessionNotice?.at === at) Object.assign(binding.missingSessionNotice, result);
+            delete d.cells[cellId].watchdogFlags[flag.id];
+          }
           if (flag.kind === 'blocked_status_migrated') {
             for (const id of flag.migrated_bead_ids) Object.assign(d.cells[cellId].blockedMigrations[id].notice, result);
             delete d.cells[cellId].watchdogFlags[flag.id];

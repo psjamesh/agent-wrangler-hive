@@ -25,12 +25,28 @@ export function hiveWorkIds(rt, graph) {
   return ids;
 }
 
+export function eligibleWorkCell(rt, graph, beadId) {
+  const bead = graph.beads[beadId];
+  if (!bead || bead.status === 'closed' || bead.kind === 'external' || GROUP_KINDS.has(bead.kind)) return null;
+  const roots = new Map(rt.metadata.cells().map(cell => [cell.rootBeadId, cell]));
+  if (roots.has(beadId)) return null;
+  const seen = new Set();
+  for (let cursor = bead; cursor && !seen.has(cursor.id); cursor = graph.beads[cursor.parentId]) {
+    seen.add(cursor.id);
+    const cell = roots.get(cursor.id);
+    if (cell) return cell.snapshot ? null : cell;
+  }
+  return null;
+}
+
 // Core sends no completion notification for failed launches or later hook refusals.
 // Expire transient admissions so those launches cannot hold capacity indefinitely.
 export function helperSlots(rt, graph = rt.snapshots.graph, now = Date.now()) {
   const slots = new Map();
-  const liveCells = new Set(rt.metadata.cells().filter(c => c.enabled && !c.snapshot).map(c => c.id));
-  const eligible = (cellId, beadId) => liveCells.has(cellId) && graph.beads[beadId] && graph.beads[beadId].status !== 'closed';
+  const eligible = (cellId, beadId) => {
+    const cell = eligibleWorkCell(rt, graph, beadId);
+    return cell?.id === cellId && cell.enabled;
+  };
   for (const [id, admission] of rt.spawnAdmissions || []) {
     if (now - admission.at >= 10 * 60 * 1000) rt.spawnAdmissions.delete(id);
     else if (eligible(admission.cellId, admission.beadId)) slots.set(admission.beadId, admission);
