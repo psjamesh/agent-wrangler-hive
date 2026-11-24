@@ -1487,3 +1487,29 @@ test('option-only edits notify again and only the current queen can refresh the 
   assert.equal(refreshed.queenSessionId, other);
   assert.deepEqual(refreshed.options.map(o => o.id), ['pause', 'remove']);
 });
+
+test('same-revision PR observation events never rewrite approval metadata', async t => {
+  const f = fixture(t), r = await f.create(queen, { kind: 'approval', subject_pin: prPin });
+  await requests.humanAnswer(f.rt, f.host, { request_id: r.id, ...rev(r), text: 'Approved', receipt: 'pr-heartbeat' });
+  let observed = { url: prPin.url, headSha: prPin.revision, fetchedAt: Date.now() - 2000, state: 'open' };
+  f.host.links = { prObservation: () => observed };
+  let listener;
+  f.host.events = { on(name, fn) { listener = fn; return () => {}; } };
+  const mutate = f.rt.metadata.mutate.bind(f.rt.metadata);
+  let mutations = 0;
+  t.mock.method(f.rt.metadata, 'mutate', fn => { mutations++; return mutate(fn); });
+  const stop = requests.startRequestSubjects(f.rt, f.host);
+  await listener();
+  assert.equal(mutations, 0);
+  assert.equal(f.rt.metadata.read().requests[r.id].subjectObservation, undefined);
+  observed = { ...observed, headSha: 'b'.repeat(40), fetchedAt: Date.now() - 1000 };
+  await listener();
+  assert.equal(f.rt.metadata.read().requests[r.id].subjectObservation.revision, 'b'.repeat(40));
+  const changed = structuredClone(f.rt.metadata.read().requests[r.id]);
+  mutations = 0;
+  observed = { ...observed, fetchedAt: Date.now() };
+  await listener();
+  assert.equal(mutations, 0);
+  assert.deepEqual(f.rt.metadata.read().requests[r.id], changed);
+  stop();
+});

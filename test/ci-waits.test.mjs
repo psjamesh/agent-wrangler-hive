@@ -545,3 +545,18 @@ test('a pre-registration different head cannot supersede an expired wait', () =>
   const observed = snapshot({ headSha: 'b'.repeat(40), fetchedAt: NOW - 1000 });
   assert.deepEqual(evaluateCiWait(wait({ deadline: NOW + 1000 }), observed, NOW + 1000), { outcome: 'overdue' });
 });
+
+
+test('observation recovery schedules watchdog cleanup even when the pending wait is unchanged', async () => {
+  const { startCiWaits } = await import('../server/ci-waits.js');
+  const f = fixture();
+  await reportCiWait(f.rt, f.host, f.actor(), args(), NOW);
+  let listener;
+  f.host.events = { on(name, fn) { listener = fn; return () => {}; } };
+  let scheduled = 0;
+  f.rt.watchdog = { schedule() { scheduled++; } };
+  const stop = startCiWaits(f.rt, f.host, () => NOW);
+  await listener();
+  assert.ok(scheduled > 0);
+  stop();
+});

@@ -1,4 +1,5 @@
 import { ciWaitAttention, ciWaitSuppresses, reconcileCiWaits } from './ci-waits.js';
+import { monitoringProblem } from './monitoring.js';
 import { explicitResume, linksResolved, resolveLinkWaits, structuredWait, waitStatus, STRUCTURED_WAIT_HELP } from './link-waits.js';
 import { pickupState, defaultPickupProblem, idleReadyProblem, idleReadyAvailable } from './pickup.js';
 import { prRepository } from './pr-labels.js';
@@ -124,11 +125,16 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
   const flags = [];
   const add = (kind, subject, state, since, reason, fields) => {
     const id = JSON.stringify([kind, subject, state]);
-    since = cell.watchdogFlags?.[id]?.since ?? since;
+    since = (kind === 'ci_wait_unavailable' ? cell.watchdogFlags?.[id]?.episodeAt : cell.watchdogFlags?.[id]?.since) ?? since;
     flags.push({ id, kind, ...fields, ...(fields?.session_id ? { session_link: availableSessionHref(host, fields.session_id) } : {}), reason, since, age_ms: Math.max(0, now - since) });
   };
   for (const flag of ciWaitAttention(rt, cell, now)) {
     add(flag.kind, flag.bead_id, flag.wait_id, flag.since, flag.reason, { bead_id: flag.bead_id, session_id: flag.session_id, wait_id: flag.wait_id });
+  }
+  const monitoring = monitoringProblem(rt);
+  if (monitoring) {
+    add('monitoring_unavailable', cell.id, 'unavailable', now, `${monitoring} Restore Beads access so CI waits and timed reminders can resume.`, {});
+    return flags;
   }
   const migrations = Object.entries(cell.blockedMigrations || {}).filter(([, migration]) => !migration.notice).sort(([a], [b]) => a.localeCompare(b));
   if (migrations.length) {
@@ -404,22 +410,23 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
     } finally { clearTimer(timer); }
   }
   async function pass() {
-    if (!usable()) return;
-    await reconcileCiWaits(rt, host, now());
-    if (!usable()) return;
-    await resolveLinkWaits(rt, host, now());
-    if (!usable()) return;
+    if (!active()) return;
+    if (usable()) await reconcileCiWaits(rt, host, now());
+    if (usable()) await resolveLinkWaits(rt, host, now());
+    if (!active() || (!usable() && !monitoringProblem(rt))) return;
     const index = watchdogIndex(rt, host);
-    saveWorkerActivity(rt, host, index.activity);
-    syncWaitAnchors(rt);
-    syncIdleReadyAnchors(rt, host, now());
-    syncPickupHoldAnchors(rt, host, now());
+    if (usable()) {
+      saveWorkerActivity(rt, host, index.activity);
+      syncWaitAnchors(rt);
+      syncIdleReadyAnchors(rt, host, now());
+      syncPickupHoldAnchors(rt, host, now());
+    }
     const changes = new Map(), groups = new Map();
     for (const cell of rt.metadata.cells()) {
       const flags = collectWatchdog(rt, host, cell, now(), index);
       const previous = cell.watchdogFlags || {};
-      const next = Object.fromEntries(flags.map(flag => [flag.id, previous[flag.id] || { ...flag, episodeAt: now(), noticed: {} }]));
-      if (Object.keys(previous).some(id => !next[id]) || flags.some(flag => !previous[flag.id])) changes.set(cell.id, next);
+      const next = { ...(usable() ? {} : previous), ...Object.fromEntries(flags.map(flag => [flag.id, previous[flag.id] ? { ...previous[flag.id], ...flag } : { ...flag, episodeAt: now(), noticed: {} }])) };
+      if (Object.keys(previous).some(id => !next[id]) || flags.some(flag => !previous[flag.id] || previous[flag.id].reason !== flag.reason || previous[flag.id].since !== flag.since)) changes.set(cell.id, next);
       const queen = cell.queenSessionId;
       const key = `${queen}:${cell.queenGeneration || 0}`;
       for (const flag of flags) if (!next[flag.id].noticed?.[key] && queen) {
@@ -433,7 +440,7 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
     }
     let attempts = 0;
     for (const [queen, candidates] of groups) {
-      if (!usable() || attempts >= MAX_DIGESTS_PER_PASS) return;
+      if (!active() || attempts >= MAX_DIGESTS_PER_PASS) return;
       const recipient = host.sessions?.get?.(queen);
       if (!recipient || recipient.archived || typeof host.deliver !== 'function') continue;
       const currentFlags = new Map();
@@ -453,10 +460,10 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
       for (const cellId of new Set(items.map(i => i.cellId))) {
         const cell = rt.metadata.cell(cellId);
         const key = items.find(i => i.cellId === cellId).key;
-        for (const s of archiveSuggestions(rt, host, cell, at)) if (cell.archiveSuggested?.[s.session_id] !== key) archive.push({ ...s, cellId, key });
+        if (usable()) for (const s of archiveSuggestions(rt, host, cell, at)) if (cell.archiveSuggested?.[s.session_id] !== key) archive.push({ ...s, cellId, key });
       }
       rt.metadata.mutate(d => {
-        for (const cellId of new Set(items.map(i => i.cellId))) {
+        if (usable()) for (const cellId of new Set(items.map(i => i.cellId))) {
           const current = new Set(archiveSuggestions(rt, host, rt.metadata.cell(cellId), at).map(x => x.session_id));
           const kept = d.cells[cellId].archiveSuggested;
           if (kept) for (const sid of Object.keys(kept)) if (!current.has(sid)) delete kept[sid];
