@@ -2,14 +2,15 @@ import { requireBeadAccess } from './access.js';
 import { HiveError } from './ops.js';
 import { newId } from './metadata-store.js';
 import { isCurrent, runtimeKey } from './lifetime.js';
-import { prRepository } from './pr-labels.js';
+import { evaluatePostMerge, observePostMerge } from './post-merge-ci.js';
+import { prRepository, runGh } from './pr-labels.js';
 import { safeDeliver } from './sessions.js';
 import { monitoringProblem } from './monitoring.js';
 
 const FRESH_MS = 180000;
 const ACK_MS = 300000;
 const SHA = /^[a-f0-9]{40}$/i;
-const TARGETS = ['checks', 'check', 'mergeable', 'merge'];
+const TARGETS = ['checks', 'check', 'mergeable', 'merge', 'post-merge'];
 const stamp = value => typeof value === 'number' ? value : Date.parse(value) || 0;
 const line = value => typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, 500) : '';
 const inflight = new WeakMap();
@@ -80,7 +81,7 @@ function evaluateObservation(wait, observed, now) {
 }
 
 export function evaluateCiWait(wait, observed, now = Date.now()) {
-  const result = evaluateObservation(wait, observed, now);
+  const result = wait.target === 'post-merge' ? evaluatePostMerge(wait, now) : evaluateObservation(wait, observed, now);
   if (result.outcome) return result;
   return now < wait.deadline ? result : { outcome: 'overdue' };
 }
@@ -116,16 +117,17 @@ export function reportCiWait(rt, host, actor, args, now = Date.now()) {
     });
   } else {
     if (args.state !== 'wait') throw new HiveError('Unknown CI wait state.');
-    if (['run_id', 'attempt', 'workflow', 'workflow_id'].some(key => args[key] !== undefined) || !TARGETS.includes(args.target)) throw new HiveError('Select checks, check, mergeable or merge. Run, attempt and workflow identity waits are unsupported by core observations.');
+    if (['run_id', 'attempt', 'workflow', 'workflow_id'].some(key => args[key] !== undefined) || !TARGETS.includes(args.target)) throw new HiveError('Select checks, check, mergeable, merge or post-merge. Run, attempt and workflow identity waits are unsupported by core observations.');
     if (!SHA.test(args.head_sha || '') || !prRepository(args.url)) throw new HiveError('Give a canonical PR URL and its full head SHA.');
     const record = registrationRecord(rt, host, bead, cell, args.url, now);
     if (!bead.ownerSessionId) throw new HiveError('A CI wait requires a responsible claimant.');
     if (!line(args.reason)) throw new HiveError('Give the purpose of the wait in reason.');
-    if (!['success', 'completed'].includes(args.desired_outcome) || (['merge', 'mergeable'].includes(args.target) && args.desired_outcome !== 'success')) throw new HiveError('desired_outcome must be success, or completed for a check target.');
+    if (!['success', 'completed'].includes(args.desired_outcome) || (['merge', 'mergeable', 'post-merge'].includes(args.target) && args.desired_outcome !== 'success')) throw new HiveError('desired_outcome must be success, or completed for a check target.');
     if (args.target === 'check' ? !line(args.check_name) : args.check_name !== undefined) throw new HiveError('check_name is required only for a named check target.');
+    if (args.workflow_name !== undefined && (args.target !== 'post-merge' || !line(args.workflow_name))) throw new HiveError('workflow_name is supported only for post-merge waits.');
     const deadline = Date.parse(args.deadline);
     if (!/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(args.deadline || '') || !Number.isFinite(deadline) || deadline <= now) throw new HiveError('Give a future deadline with an explicit timezone.');
-    const next = { beadId: bead.id, cellId: cell.id, sessionId: bead.ownerSessionId, url: args.url, headSha: args.head_sha.toLowerCase(), target: args.target, checkName: args.check_name, desiredOutcome: args.desired_outcome, purpose: line(args.reason), deadline };
+    const next = { beadId: bead.id, cellId: cell.id, sessionId: bead.ownerSessionId, url: args.url, headSha: args.head_sha.toLowerCase(), target: args.target, workflowName: args.workflow_name === undefined ? undefined : args.workflow_name.trim(), checkName: args.check_name, desiredOutcome: args.desired_outcome, purpose: line(args.reason), deadline };
     const same = current && Object.entries(next).every(([key, value]) => current[key] === value);
     if (current && !current.acknowledgedAt && !same) throw new HiveError('Acknowledge the previous outcome, or cancel the pending wait and acknowledge it before replacing it.');
     rt.metadata.mutate(doc => {
@@ -155,7 +157,7 @@ async function deliverWake(rt, host, wait, now) {
   let receipt;
   try {
     receipt = await Promise.race([
-      safeDeliver(host, wait.sessionId, `[Hive] CI wait ${wait.id} for bead ${wait.beadId}: ${wait.outcome}. PR ${wait.url}, expected head ${wait.headSha}, target ${wait.target}${wait.checkName ? ` (${wait.checkName})` : ''}. Purpose: ${wait.purpose}. Read hive_context, verify the outcome, then call hive_report_pr_wait with bead_id, state: "acknowledge", wait_id: "${wait.id}". Continue only the authorized work; this notice does not authorize merge or deployment.`, rt),
+      safeDeliver(host, wait.sessionId, `[Hive] CI wait ${wait.id} for bead ${wait.beadId}: ${wait.outcome}. PR ${wait.url}, expected head ${wait.headSha}, target ${wait.target}${wait.checkName ? ` (${wait.checkName})` : ''}. Purpose: ${wait.purpose}. ${wait.resultDetail || ''} Read hive_context, verify the outcome, then call hive_report_pr_wait with bead_id, state: "acknowledge", wait_id: "${wait.id}". Continue only the authorized work; this notice does not authorize merge or deployment.`, rt),
       new Promise(resolve => { timer = setTimeout(() => resolve({ state: 'uncertain', error: 'Wake delivery timed out; it may still arrive.' }), 15000); timer.unref?.(); }),
     ]);
   } finally { clearTimeout(timer); sending.delete(wait.id); }
@@ -186,11 +188,22 @@ async function reconcilePass(rt, host, now) {
     let wait = waitFor(rt, initial.beadId);
     const problem = ownerProblem(rt, host, wait);
     if (wait.state === 'pending') {
-      const observed = observation(host, wait.url);
+      if (wait.target === 'post-merge' && now - (wait.postMerge?.attemptedAt || 0) >= 60000) {
+        let postMerge;
+        try { postMerge = { ...await observePostMerge(wait, rt.ciGh || runGh, now), attemptedAt: now }; }
+        catch { postMerge = { ...wait.postMerge, attemptedAt: now, error: true }; }
+        if (!isCurrent(rt, host)) return;
+        const current = waitFor(rt, wait.beadId);
+        if (current?.id !== wait.id || current.state !== 'pending' || current.acknowledgedAt) continue;
+        rt.metadata.mutate(doc => { doc.ciWaits[wait.beadId].postMerge = postMerge; });
+        wait = waitFor(rt, wait.beadId);
+        rt.changed();
+      }
+      const observed = wait.target === 'post-merge' ? null : observation(host, wait.url);
       const result = evaluateCiWait(wait, observed, now);
       const patch = { observerProblem: result.unavailable || null };
       if (!wait.nodeId && observed?.nodeId && !observed.lastError) patch.nodeId = observed.nodeId;
-      if (result.outcome) Object.assign(patch, { state: 'resolved', outcome: result.outcome, resolvedAt: now });
+      if (result.outcome) Object.assign(patch, { state: 'resolved', outcome: result.outcome, resultDetail: result.detail, resolvedAt: now });
       if (Object.entries(patch).some(([key, value]) => wait[key] !== value)) {
         rt.metadata.mutate(doc => { Object.assign(doc.ciWaits[wait.beadId], patch); });
         wait = waitFor(rt, wait.beadId);
@@ -252,6 +265,8 @@ export function startCiWaits(rt, host, now = Date.now) {
     .then(() => { if (isCurrent(rt, host)) rt.watchdog?.schedule(); })
     .catch(err => rt.log(`hive: CI wait reconciliation failed: ${err.message}`));
   const stop = host.events?.on('pr:observation', reconcile);
+  const timer = setInterval(reconcile, 60000);
+  timer.unref?.();
   void reconcile();
-  return () => stop?.();
+  return () => { clearInterval(timer); stop?.(); };
 }

@@ -560,3 +560,95 @@ test('observation recovery schedules watchdog cleanup even when the pending wait
   assert.ok(scheduled > 0);
   stop();
 });
+
+test('post-merge registration uses durable GitHub observation without a linked core PR', async () => {
+  const f = fixture();
+  const calls = [];
+  f.rt.ciGh = async argv => {
+    calls.push(argv);
+    assert.ok(f.doc().ciWaits.a, 'persist before remote reads');
+    if (argv[1].includes('/pulls/')) return JSON.stringify({ node_id: 'PR_7', head: { sha: SHA }, merged: true, state: 'closed', merge_commit_sha: SHA, merged_at: new Date(NOW).toISOString(), base: { ref: 'main' } });
+    return JSON.stringify([argv[1].includes('check-suites') ? { check_suites: [] } : { workflow_runs: [{ id: 1, workflow_id: 1, name: 'Test', head_sha: SHA, head_branch: 'main', status: 'completed', conclusion: 'success', html_url: URL + '/runs/1' }] }]);
+  };
+  f.host.links.prObservation = () => null;
+  const input = { ...args(), target: 'post-merge', workflow_name: 'Test', deadline: new Date(NOW + 3600000).toISOString() };
+  const { reportPrWaitTool } = await import('./helpers/tools.mjs');
+  assert.equal(reportPrWaitTool.inputSchema.safeParse(input).success, true);
+  const registered = await reportCiWait(f.rt, f.host, f.actor(), input, NOW);
+  assert.equal(registered.state, 'pending');
+  assert.equal(registered.postMerge.mergeSha, SHA);
+  assert.equal(registered.workflowName, 'Test');
+  assert.equal(f.delivered.length, 0);
+  await reconcileCiWaits(f.rt, f.host, NOW + 60000);
+  await reconcileCiWaits(f.rt, f.host, NOW + 120000);
+  await reconcileCiWaits(f.rt, f.host, NOW + 180000);
+  assert.equal(f.doc().ciWaits.a.outcome, 'passed');
+  assert.equal(f.delivered.length, 1);
+  assert.match(f.delivered[0].message, /Test.*runs\/1/);
+  const count = calls.length;
+  await reconcileCiWaits(f.rt, f.host, NOW + 240000);
+  assert.equal(calls.length, count);
+  assert.equal(f.delivered.length, 1);
+});
+
+test('post-merge watchdog flags missing and stale observations without core PR support', async () => {
+  const f = fixture();
+  f.rt.metadata.mutate(d => { d.ciWaits = { a: wait({ target: 'post-merge' }) }; });
+  assert.ok(ciWaitAttention(f.rt, f.doc().cells.cell, NOW).some(x => x.kind === 'ci_wait_unavailable'));
+  f.rt.metadata.mutate(d => { d.ciWaits.a.postMerge = { fetchedAt: NOW - 180001, runs: [] }; });
+  assert.ok(ciWaitAttention(f.rt, f.doc().cells.cell, NOW).some(x => x.kind === 'ci_wait_unavailable'));
+});
+
+test('post-merge state resumes from disk and confirmed wake is not repeated', async t => {
+  const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+  const { MetadataStore } = await import('../server/metadata-store.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'post-merge-restart-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const f = fixture(), file = path.join(dir, 'metadata.json'), original = f.doc();
+  f.rt.metadata = new MetadataStore({ file }); f.rt.metadata.mutate(d => Object.assign(d, original));
+  let prReads = 0;
+  f.rt.ciGh = async argv => {
+    if (argv[1].includes('/pulls/')) { prReads++; return JSON.stringify({ node_id: 'PR_7', head: { sha: SHA }, merged: true, merge_commit_sha: SHA, merged_at: new Date(NOW).toISOString(), base: { ref: 'main' } }); }
+    return JSON.stringify([argv[1].includes('check-suites') ? { check_suites: [] } : { workflow_runs: [{ id: 1, workflow_id: 1, name: 'Test', head_sha: SHA, head_branch: 'main', status: 'completed', conclusion: 'success' }] }]);
+  };
+  await reportCiWait(f.rt, f.host, f.actor(), { ...args(), target: 'post-merge' }, NOW);
+  f.rt.metadata = new MetadataStore({ file });
+  f.host.links = {};
+  await reconcileCiWaits(f.rt, f.host, NOW + 150000);
+  assert.equal(f.rt.metadata.read().ciWaits.a.outcome, 'passed');
+  assert.equal(prReads, 1);
+  assert.equal(f.delivered.length, 1);
+  f.rt.metadata = new MetadataStore({ file });
+  await reconcileCiWaits(f.rt, f.host, NOW + 210000);
+  assert.equal(f.delivered.length, 1);
+});
+
+test('late post-merge reads cannot write after runtime retirement or replace cancellation', async () => {
+  for (const mode of ['retire', 'cancel']) {
+    const f = fixture();
+    f.rt.ciGh = async () => {
+      if (mode === 'retire') f.rt.metadata.lifetime.stop();
+      else f.rt.metadata.mutate(d => Object.assign(d.ciWaits.a, { state: 'resolved', outcome: 'cancelled', resolvedAt: NOW }));
+      return JSON.stringify({ node_id: 'PR_7', head: { sha: SHA }, merged: false, state: 'open' });
+    };
+    await reportCiWait(f.rt, f.host, f.actor(), { ...args(), target: 'post-merge' }, NOW);
+    assert.equal(f.doc().ciWaits.a.postMerge, undefined);
+    assert.equal(f.delivered.length, 0);
+  }
+});
+
+test('post-merge API failures retain the wait and flag observation attention', async () => {
+  const f = fixture();
+  f.rt.ciGh = async () => { throw Error('GitHub unavailable'); };
+  await reportCiWait(f.rt, f.host, f.actor(), { ...args(), target: 'post-merge' }, NOW);
+  assert.equal(f.doc().ciWaits.a.state, 'pending');
+  assert.ok(ciWaitAttention(f.rt, f.doc().cells.cell, NOW).some(flag => flag.kind === 'ci_wait_unavailable'));
+  assert.equal(f.delivered.length, 0);
+});
+
+test('post-merge workflow selection preserves exact internal spacing', async () => {
+  const f = fixture();
+  f.rt.ciGh = async () => { throw Error('offline'); };
+  const saved = await reportCiWait(f.rt, f.host, f.actor(), { ...args(), target: 'post-merge', workflow_name: 'Build  Deploy' }, NOW);
+  assert.equal(saved.workflowName, 'Build  Deploy');
+});
