@@ -24,7 +24,7 @@ export function reportPrWait(rt, actor, args) {
 
 function staleApprovalOf(staleBeads, ids, url) {
   const stale = [...ids].flatMap(id => staleBeads.get(id)?.prs || []).find(pr => pr.url === url);
-  return stale ? { reviewStale: stale.text } : {};
+  return { ...(stale ? { reviewStale: stale.text } : {}), ...([...ids].some(id => staleBeads.has(id)) ? { approvalStale: true } : {}) };
 }
 
 export function waitingProjection(rt, cell, beadIds) {

@@ -104,3 +104,33 @@ test('with several linked PRs only the moved head is stale and only it carries t
   assert.match(projected[URL].reviewStale, /head now ec57ebb/);
   assert.equal(projected[OTHER].reviewStale, undefined, 'an unknown head gets no stale claim');
 });
+
+test('a stale cell is not counted as ready through its matching PR, and the map always says stale', async t => {
+  const { beadTile } = await import('../public/cell-view.js');
+  const { cellMetrics } = await import('../public/cell-metrics.js');
+  const model = await import('../public/model.js');
+  const OTHER = 'https://github.com/example/desktop/pull/4885';
+  const f = fixture(t, { headSha: APPROVED });
+  f.rt.metadata.mutate(d => { d.prLabels[OTHER] = { url: OTHER, state: 'OPEN', headSha: MOVED, stateCheckedAt: f.now, associations: [{ cellId: 'cell', beadId: 'work' }] }; });
+  const projected = waitingProjection(f.rt, f.cell(), new Set(['work'])).pullRequests;
+  const matching = projected.find(pr => pr.url === URL);
+  assert.equal(matching.reviewStale, undefined);
+  assert.equal(matching.approvalStale, true);
+  const now = Date.now();
+  const pullRequests = projected.map(pr => ({ ...pr, stateCheckedAt: now }));
+  const bead = { id: 'work', parentId: 'root', title: 'Ship change', kind: 'work', status: 'in_progress', ...reviewFields(f.rt, 'work') };
+  const cell = { id: 'cell', enabled: true, taskId: 'task', rootBeadId: 'root', queenSessionId: 'queen', bindings: [], requests: {}, pullRequests };
+  const hive = { cells: { cell }, beads: { root: { id: 'root', kind: 'goal' }, work: bead }, edges: [] };
+  const ctx = { hive, graph: { sessions: [{ sessionId: 'queen', status: 'idle' }] } };
+  assert.equal(prState(pullRequests.find(pr => pr.url === URL), now), 'working');
+  assert.equal(cellMetrics(ctx, cell).prNeeds, 0);
+  const tile = () => beadTile({ ...ctx }, bead, { cellId: 'cell', x: 0, y: 0, layout: { groupHeads: [], parentHead: {}, halo: {}, rootId: 'root' } }, model.childrenMap(hive.beads));
+  assert.deepEqual(tile().marks.map(m => m.kind), ['review-stale']);
+  assert.doesNotMatch(tile().title, /needs review or merge/);
+
+  cell.requests.input = { id: 'input', audience: 'human', state: 'open', beadId: 'work', title: 'Choose policy', kind: 'approval', subjectPin: { kind: 'pr', url: URL, revision: APPROVED } };
+  assert.deepEqual(tile().marks.map(m => m.kind), ['person', 'review-stale']);
+  for (const words of [tile().title, tile().ariaLabel]) assert.match(words, /Approval stale: approved at cb1535e; head now ec57ebb, re-review needed/);
+  bead.status = 'deferred';
+  assert.ok(tile().marks.some(m => m.kind === 'review-stale'));
+});

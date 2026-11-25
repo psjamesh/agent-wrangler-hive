@@ -133,7 +133,8 @@ export function beadTile(ctx, bead, tile, kids) {
     waits.length ? `${designWait ? 'Waiting on design. ' : ''}Needed first: ${waits.map((id) => hive.beads[id]?.title || id).join('; ')}` : '',
     ['requested', 'in_review'].includes(bead.reviewState) ? [bead.review?.summary, bead.review?.waitingFor].filter(Boolean).join('; ') : '',
   ].filter(Boolean);
-  const own = `${state}${waits.length ? `, waits on ${waits.length}` : ''}${['requested', 'in_review'].includes(bead.reviewState) ? `, ${bead.reviewWorking ? 'reviewer working' : 'review pending'}` : ''}`;
+  const stale = bead.status !== 'closed' && bead.reviewState === 'stale' && bead.reviewStale ? `Approval stale: ${bead.reviewStale.text}` : '';
+  const own = `${state}${waits.length ? `, waits on ${waits.length}` : ''}${['requested', 'in_review'].includes(bead.reviewState) ? `, ${bead.reviewWorking ? 'reviewer working' : 'review pending'}` : ''}${stale ? `, ${stale}` : ''}`;
   const waiting = waitingItems(ctx, bead);
   const prWaiting = waiting.filter(isPrReviewWait);
   const inputWaiting = waiting.filter(item => !isPrReviewWait(item));
@@ -147,6 +148,7 @@ export function beadTile(ctx, bead, tile, kids) {
   if (kind) marks.push({ kind, focus: kind === 'waiting' && Boolean(waitReason), count: markItems.length, onMark: markItems.length ? anchor => openWaitingMenu(ctx, markItems, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true, waitKind: kind === 'pr' ? 'pr' : 'input' }) : null, title: [attention || (kind === 'waiting' && designWait ? 'Waiting on design' : markWords(kind, bead)), kind === 'waiting' && waitReason ? `Waiting for: ${waitReason}` : ''].filter(Boolean).join('. ') });
   if (prWaiting.length && kind !== 'pr') marks.push({ kind: 'pr', count: prWaiting.length, title: `PR needs review or merge: ${prWaiting.map(item => item.title).join('; ')}`, onMark: anchor => openWaitingMenu(ctx, prWaiting, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true, waitKind: 'pr' }) });
   if (status === 'in_review' && !kind?.startsWith('review-')) marks.push({ kind: bead.reviewWorking ? 'review-working' : 'review-pending', title: markWords(bead.reviewWorking ? 'review-working' : 'review-pending', bead) });
+  if (stale && kind !== 'review-stale') marks.push({ kind: 'review-stale', title: stale });
   if (waitReason && kind !== 'waiting') marks.push({ kind: 'recorded-wait', title: `Waiting for: ${waitReason}` });
   const detail = `${externalWait ? 'Waiting on something outside this hive. ' : ''}${waitReason ? `Waiting for: ${waitReason}. ` : ''}${attachmentText ? `${attachmentText} ` : ''}Work: ${isHead ? `${countText}; ` : ''}${own}. ${agentText}.${waitReasons.length ? ` Waiting: ${waitReasons.join('; ')}.` : ''}`;
   const menu = isHead || Boolean(cell?.enabled && !snap && !cell.retired && bead.status !== 'closed' && bead.kind !== 'external');
