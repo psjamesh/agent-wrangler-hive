@@ -116,7 +116,7 @@ function notificationFor(extra) {
   let shown;
   const notify = createRequestNotifications({ ui: { notify(args) { shown = args; } } });
   notify(graph());
-  const r = request('excerpt', extra), original = structuredClone(r);
+  const r = request('excerpt', { forwarded: { title: extra.title, body: extra.body }, ...extra }), original = structuredClone(r);
   notify(graph(r));
   assert.deepEqual(r, original);
   return shown;
@@ -146,5 +146,29 @@ test('notification truncation does not cut the final word or add an ellipsis to 
   assert.equal(shown.title, `${'t'.repeat(79)}…`);
   assert.equal(shown.body, `${'b'.repeat(119)}…`);
   assert.equal(notificationFor({ body: '  Short\n\ttext  ' }).body, 'Short text');
-  assert.equal(notificationFor({ body: 'b'.repeat(121) }).body, '…');
+  assert.equal(notificationFor({ body: 'b'.repeat(121) }).body, `${'b'.repeat(119)}…`);
+});
+
+test('overlong first tokens stay informative without splitting Unicode characters', () => {
+  for (const body of [`https://example.com/${'a'.repeat(120)} needs a decision`, '🔥'.repeat(121)]) {
+    assert.equal(notificationFor({ body }).body, `${Array.from(body).slice(0, 119).join('')}…`);
+  }
+  const title = '🔥'.repeat(81);
+  assert.equal(notificationFor({ title }).title, `${'🔥'.repeat(79)}…`);
+  assert.equal(notificationFor({ title: '🔥'.repeat(80) }).title, '🔥'.repeat(80));
+});
+
+test('plain excerpts preserve comparisons and generic types while removing HTML tags', () => {
+  for (const body of ['Should limit be x < 5 and y > 3 for the retry policy?', 'Use Map<string, number> for the cache?']) {
+    assert.equal(notificationFor({ body }).body, body);
+  }
+  assert.equal(notificationFor({ body: '<strong>Review</strong> <a href="https://example.com">the proposal</a>.' }).body, 'Review the proposal.');
+});
+
+for (const state of ['open', 'answered']) test(`${state} notifications preserve warning and generic fallbacks for unrewritten requests`, () => {
+  const extra = { body: 'Original question stays in the request card.', forwarded: null, state, delivery: { state: 'failed' } };
+  for (const warning of ['No queen in this hive', 'Hive is unavailable; queen routing is paused']) {
+    assert.equal(notificationFor({ ...extra, warning }).body, warning);
+  }
+  assert.equal(notificationFor(extra).body, 'Hive request needs you');
 });

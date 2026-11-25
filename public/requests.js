@@ -102,21 +102,22 @@ function notificationExcerpt(value, limit) {
     .replace(/^\s*(`{3,}|~{3,}).*$/gm, '')
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/<((?:https?:\/\/|mailto:)[^>]+)>/g, '$1')
-    .replace(/<[^>]*>/g, '')
+    .replace(/<\/?[A-Za-z][\w-]*(?:\s[^<>]*)?\/?>/g, '')
     .replace(/^\s{0,3}(?:(?:#{1,6}\s+|>\s*|[-+*]\s+|\d+[.)]\s+)\s*)+/gm, '')
     .replace(/(`+|\*\*|__|~~)(.*?)\1/g, '$2')
     .replace(/(^|[\s(])([*_])(.+?)\2(?=$|[\s.,!?;)])/g, '$1$3')
     .replace(/\s+/g, ' ').trim();
-  if (text.length <= limit) return text;
+  const characters = Array.from(text);
+  if (characters.length <= limit) return text;
   const words = text.split(' '), excerpt = [];
   let length = 0;
   for (const word of words) {
-    const next = length + (excerpt.length ? 1 : 0) + word.length;
+    const next = length + (excerpt.length ? 1 : 0) + Array.from(word).length;
     if (next > limit - 1) break;
     excerpt.push(word);
     length = next;
   }
-  return `${excerpt.join(' ')}…`;
+  return `${excerpt.length ? excerpt.join(' ') : characters.slice(0, limit - 1).join('')}…`;
 }
 
 export function createRequestNotifications(api, { read = () => null, write = () => {}, answer = null, open = url => openHiveLink(globalThis.window, url) } = {}) {
@@ -142,7 +143,7 @@ export function createRequestNotifications(api, { read = () => null, write = () 
       const actions = [...options.map(o => ({ id: `option:${o.id}`, label: o.label, primary: /\(Recommended\)/i.test(o.label) })), { id: 'open', label: 'View request', primary: !options.length }];
       const display = requestDisplay(r);
       try {
-        Promise.resolve(api.ui?.notify?.({ id: `native:${episode}`, title: notificationExcerpt(r.state === 'answered' ? 'Hive answer needs delivery repair' : display.title, 80), body: notificationExcerpt(display.body || r.warning || 'Hive request needs you', 120), actions })).then(action => {
+        Promise.resolve(api.ui?.notify?.({ id: `native:${episode}`, title: notificationExcerpt(r.state === 'answered' ? 'Hive answer needs delivery repair' : display.title, 80), body: notificationExcerpt(display.rewritten ? display.body : r.warning || 'Hive request needs you', 120), actions })).then(action => {
           if (shown.get(episode) !== token || token.consumed || api.settings?.()?.requestNotifications === false) return;
           token.consumed = true;
           if (action === 'open') open(hiveLink(r.cellId, r.threadId, r.state === 'answered' ? r.messageId : null));
