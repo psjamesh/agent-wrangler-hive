@@ -158,11 +158,12 @@ test('overlong first tokens stay informative without splitting Unicode character
   assert.equal(notificationFor({ title: '🔥'.repeat(80) }).title, '🔥'.repeat(80));
 });
 
-test('plain excerpts preserve comparisons and generic types while removing HTML tags', () => {
-  for (const body of ['Should limit be x < 5 and y > 3 for the retry policy?', 'Use Map<string, number> for the cache?']) {
+test('plain excerpts preserve angle brackets in comparisons, types and literal HTML', () => {
+  for (const body of ['Should limit be x < 5 and y > 3 for the retry policy?', 'Use Map<string, number> for the cache?', 'Return Promise<void> from the handler?', 'Use List<T> or Array<string>?', 'Is a<b and c>d true?']) {
     assert.equal(notificationFor({ body }).body, body);
   }
-  assert.equal(notificationFor({ body: '<strong>Review</strong> <a href="https://example.com">the proposal</a>.' }).body, 'Review the proposal.');
+  const html = '<STRONG>Review</STRONG> <a href="https://example.com">the proposal</a>.';
+  assert.equal(notificationFor({ body: html }).body, html);
 });
 
 for (const state of ['open', 'answered']) test(`${state} notifications preserve warning and generic fallbacks for unrewritten requests`, () => {

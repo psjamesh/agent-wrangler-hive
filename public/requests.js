@@ -101,8 +101,6 @@ function notificationExcerpt(value, limit) {
   const text = String(value || '')
     .replace(/^\s*(`{3,}|~{3,}).*$/gm, '')
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/<((?:https?:\/\/|mailto:)[^>]+)>/g, '$1')
-    .replace(/<\/?[A-Za-z][\w-]*(?:\s[^<>]*)?\/?>/g, '')
     .replace(/^\s{0,3}(?:(?:#{1,6}\s+|>\s*|[-+*]\s+|\d+[.)]\s+)\s*)+/gm, '')
     .replace(/(`+|\*\*|__|~~)(.*?)\1/g, '$2')
     .replace(/(^|[\s(])([*_])(.+?)\2(?=$|[\s.,!?;)])/g, '$1$3')
