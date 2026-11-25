@@ -15,11 +15,11 @@ import { liveClaimant } from './tracking.js';
 import { holdsBead } from './bead-sessions.js';
 import { assertCurrent } from './lifetime.js';
 import { newId } from './metadata-store.js';
-import { actorFor, descendantIds, GROUP_KINDS } from './bead-model.js';
-import { requireNonHelper, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller, waitForHierarchy } from './access.js';
+import { actorFor, descendantIds, GROUP_KINDS, isSessionId } from './bead-model.js';
+import { requireNonHelper, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, resolveCaller, waitForHierarchy, notePendingParticipant } from './access.js';
 import { HiveError, ensureWritable, ensureStoreWritable, waitForWritable, text, withLock, withLocks, claimBead, bindIfMissing } from './ops.js';
 import { applyLaunchPolicy, launchRestriction } from './launch-policy.js';
-import { ADMISSION_LOCK, capacity, checkAdmission, exportedGraph, RESERVED_LAUNCH_STATES } from './admission.js';
+import { ADMISSION_LOCK, capacity, checkAdmission, exportedGraph, RESERVED_LAUNCH_STATES, RETIRED_LAUNCH_STATES } from './admission.js';
 
 const runFile = promisify(execFile);
 
@@ -37,7 +37,6 @@ async function defaultWorkerWorktree(opts, role) {
 
 const inFlight = new Set();
 export function workerLaunchInFlight(id) { return inFlight.has(id); }
-const RETIRED_LAUNCH_STATES = new Set(['archived', 'cancelled', 'abandoned', 'refused', 'review-ended']);
 
 function launchOptions(input) {
   const out = { intent: text(input.intent, 'intent', 20000, { required: true }) };
@@ -160,6 +159,11 @@ export function workerBeforeDispatch({ sessionId, ext, host }) {
     l.state = 'binding';
     l.updatedAt = Date.now();
   });
+  const l = rt.metadata.read().workerLaunches[ext.workerLaunchId];
+  const cell = l && rt.metadata.cell(l.cellId);
+  if (isSessionId(sessionId) && l?.sessionId === sessionId && l.state === 'binding' && cell?.enabled && !cell.snapshot && cell.taskId === l.taskId) {
+    notePendingParticipant(rt, sessionId, { cellId: cell.id, taskId: l.taskId, spawnedBy: null, launchId: l.id });
+  }
   return true;
 }
 

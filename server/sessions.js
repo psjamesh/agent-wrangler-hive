@@ -3,7 +3,7 @@ import { assertCurrent } from './lifetime.js';
 import { applyLaunchPolicy, launchRestriction } from './launch-policy.js';
 import { newId } from './metadata-store.js';
 import { isSessionId } from './bead-model.js';
-import { participation, SPAWN_GRACE_MS } from './access.js';
+import { participation, notePendingParticipant } from './access.js';
 import { HiveError, recordQueen, clearQueen, text, refuseSnapshot, setQueenInstructions } from './ops.js';
 
 const ACTIVE_LAUNCH = new Set(['pending', 'bound', 'uncertain']);
@@ -270,9 +270,7 @@ export function prepareSession({ sessionId, taskId, spawnedBy, host }) {
   const cell = rt.metadata.cellForTask(taskId);
   if (!cell || !cell.enabled) return;
   if (!participation(rt, host, spawnedBy).some((p) => p.cell.id === cell.id)) return;
-  const now = Date.now();
-  for (const [sid, v] of rt.pendingParticipants) if (now - v.at > SPAWN_GRACE_MS) rt.pendingParticipants.delete(sid);
-  rt.pendingParticipants.set(sessionId, { cellId: cell.id, taskId, spawnedBy, at: now });
+  notePendingParticipant(rt, sessionId, { cellId: cell.id, taskId, spawnedBy });
 }
 
 export function sessionSummary(host, sessionId) {

@@ -8,6 +8,7 @@ export const WORK_LIMIT_SETTING = 'maxClaimedWork';
 export const DEFAULT_WORK_LIMIT = 8;
 export const ADMISSION_LOCK = 'hive:admission';
 export const RESERVED_LAUNCH_STATES = new Set(['reserved', 'binding', 'claimed', 'uncertain']);
+export const RETIRED_LAUNCH_STATES = new Set(['archived', 'cancelled', 'abandoned', 'refused', 'review-ended']);
 
 export function workLimit(rt) {
   const value = rt.host?.settings?.get?.(WORK_LIMIT_SETTING) ?? rt.settings?.get?.(WORK_LIMIT_SETTING);

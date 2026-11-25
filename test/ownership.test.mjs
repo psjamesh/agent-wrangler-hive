@@ -75,6 +75,7 @@ async function dispatchFixture(f, mode = 'ok') {
     else assert.equal(f.live[ext.beadId].assignee, actorFor(sessionId), 'the first agent action must see its claim');
     assert(Object.values(f.doc().bindings).flat().some((b) => b.sessionId === sessionId && b.beadId === ext.beadId && b.active));
     if (mode === 'throw-after-claim') throw new Error('startup failed after claim');
+    await f.beforeListed?.(sessionId);
     f.board.set(sessionId, { sessionId, taskId: opts.taskId, status: 'working' });
     return { sessionId };
   };
@@ -86,6 +87,72 @@ test('worker launch claims and binds before the first agent action', async () =>
   const out = await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build it' });
   assert.equal(out.session_id, 'worker-1');
   assert.equal(f.live.a.assignee, 'aw:worker-1');
+});
+
+test('recovery keeps launch and review bindings while core does not list the session yet', async () => {
+  const { reconcileInactiveBindings, LAUNCH_GRACE_MS } = await import('../server/tracking.js');
+  const { hideTool } = await import('../server/manifest.js');
+  const f = holderFixture('claude');
+  await launchRecording(f);
+  const seen = [];
+  f.beforeListed = (sid) => {
+    assert.equal(f.host.sessions.get(sid), undefined);
+    reconcileInactiveBindings(f.rt, f.host);
+    seen.push(sid);
+    assert(f.doc().bindings.cell.some((b) => b.sessionId === sid && b.active), 'binding survives startup recovery');
+    for (const tool of ['hive_context', 'hive_request_input']) assert.equal(hideTool({ host: f.host, caller: sid, tool }), false, `${tool} stays visible at startup`);
+    assert.equal(hideTool({ host: f.host, caller: sid, tool: 'request_human_input' }), true);
+  };
+  f.live.a.assignee = null; f.live.a.status = 'open';
+  f.rt.snapshots.graph = buildGraph(Object.values(f.live));
+  const worker = await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build it' });
+  const review = await reviews.requestReview(f.rt, f.host, f.worker(worker.session_id), { bead_id: 'a', intent: 'review' });
+  const helper = await workers.spawnWorker(f.rt, f.host, f.worker(worker.session_id), { bead_id: 'a', intent: 'check' }, { role: 'investigator' });
+  assert.deepEqual(seen, [worker.session_id, review.session_id, helper.session_id]);
+
+  f.board.delete(helper.session_id);
+  f.rt.metadata.mutate((d) => { d.workerLaunches[helper.launch_id].state = 'refused'; });
+  reconcileInactiveBindings(f.rt, f.host);
+  assert.equal(f.doc().bindings.cell.find((b) => b.sessionId === helper.session_id).unboundBecause, 'Session missing');
+  assert.equal(hideTool({ host: f.host, caller: helper.session_id, tool: 'hive_context' }), true);
+  assert.equal(f.doc().reviews[review.review_id].reviewerSessionId, review.session_id);
+
+  f.board.delete(review.session_id);
+  reconcileInactiveBindings(f.rt, f.host);
+  assert(f.doc().bindings.cell.some((b) => b.sessionId === review.session_id && b.active));
+  reconcileInactiveBindings(f.rt, f.host, Date.now() + LAUNCH_GRACE_MS);
+  const dropped = f.doc().bindings.cell.find((b) => b.sessionId === review.session_id);
+  assert.equal(dropped.active, false);
+  assert.equal(dropped.unboundBecause, 'Session missing');
+
+  f.board.get(worker.session_id).archived = true;
+  reconcileInactiveBindings(f.rt, f.host);
+  const archived = f.doc().bindings.cell.find((b) => b.sessionId === worker.session_id);
+  assert.equal(archived.active, false);
+  assert.equal(archived.unboundBecause, 'Session archived');
+});
+
+test('a validated Hive launch grants pending membership before its task lands, without spawnedBy', async () => {
+  const { createManifest } = await import('../server/manifest.js');
+  const { participation } = await import('../server/access.js');
+  const manifest = createManifest({ dir: '.' });
+  const f = fixture();
+  const cells = (sid) => participation(f.rt, f.host, sid).map((p) => `${p.cell.id}:${p.role}`);
+  f.rt.metadata.mutate((d) => { d.workerLaunches.wl = { id: 'wl', cellId: 'cell', taskId: 'task', beadId: 'a', role: 'worker', sessionId: null, state: 'reserved', createdAt: Date.now() }; });
+  manifest.hooks['session.prepare']({ sessionId: 'fresh', taskId: 'task', spawnedBy: null, host: f.host });
+  assert.deepEqual(cells('fresh'), []);
+  manifest.session.onBeforeDispatch({ sessionId: 'fresh', ext: { workerLaunchId: 'wl', beadId: 'a' }, host: f.host });
+  assert.deepEqual(cells('fresh'), ['cell:worker']);
+  manifest.session.onBeforeDispatch({ sessionId: 'forged', ext: { workerLaunchId: 'wl', beadId: 'a' }, host: f.host });
+  manifest.session.onBeforeDispatch({ sessionId: 'unknown', ext: { workerLaunchId: 'nope', beadId: 'a' }, host: f.host });
+  assert.deepEqual(cells('forged'), []);
+  assert.deepEqual(cells('unknown'), []);
+  f.board.set('fresh', { sessionId: 'fresh', taskId: 'other-task', status: 'working' });
+  assert.deepEqual(cells('fresh'), ['other:worker']);
+  f.board.delete('fresh');
+  assert.deepEqual(cells('fresh'), ['cell:worker']);
+  f.rt.metadata.mutate((d) => { d.workerLaunches.wl.state = 'abandoned'; });
+  assert.deepEqual(cells('fresh'), []);
 });
 
 test('reservations fence duplicate launches and cross-cell claims before dispatch', async () => {
@@ -1660,6 +1727,23 @@ for (const launcher of ['builder', 'queen']) test(`${launcher} launches a bound 
   reconcileInactiveBindings(f.rt, f.host);
   assert.ok(attachmentsFor(f.rt, f.host, 'a').some(a => a.session_id === launch.sessionId && a.role === 'helper' && !a.live && a.ended_at));
 
+});
+
+test('the queen restores a dropped reviewer to its own open review without cancelling it', async () => {
+  const f = holderFixture('claude');
+  await launchRecording(f);
+  const out = await reviews.requestReview(f.rt, f.host, f.worker('builder'), { bead_id: 'a', intent: 'review' });
+  f.rt.metadata.mutate((d) => { for (const b of d.bindings.cell) if (b.sessionId === out.session_id) Object.assign(b, { active: false, unboundBy: 'aw:hive-recovery', unboundBecause: 'Session missing' }); });
+  await assert.rejects(reviews.reviewVerdict(f.rt, f.host, f.worker(out.session_id), { bead_id: 'a', verdict: 'approved', summary: 'ok', commit: 'c1' }), /bound reviewer/);
+  await assert.rejects(bindSession(f.rt, f.host, f.worker('builder'), { bead_id: 'a', session_id: out.session_id, role: 'review' }), /open review/);
+  await assert.rejects(bindSession(f.rt, f.host, f.actor(), { bead_id: 'a', session_id: 'other', role: 'review' }), /open review/);
+  const rebound = await bindSession(f.rt, f.host, f.actor(), { bead_id: 'a', session_id: out.session_id, role: 'review' });
+  assert.equal(rebound.review_id, out.review_id);
+  assert.equal(Object.keys(f.doc().reviews).length, 1);
+  assert.equal(f.doc().reviews[out.review_id].state, 'in_review');
+  assert(f.doc().bindings.cell.some((b) => b.active && b.sessionId === out.session_id && b.role === 'reviewer' && b.reviewId === out.review_id));
+  await reviews.reviewVerdict(f.rt, f.host, f.worker(out.session_id), { bead_id: 'a', verdict: 'approved', summary: 'ok', commit: 'c1' });
+  assert.equal(f.doc().reviews[out.review_id].state, 'approved');
 });
 
 test('a session started elsewhere is nominated as reviewer by the holder or queen and can give its verdict', async () => {

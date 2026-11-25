@@ -11,7 +11,7 @@ import { OPEN_REVIEW_STATES, beadApprovalStale } from './review-state.js';
 import { safeDeliver } from './sessions.js';
 import { isCurrent } from './lifetime.js';
 import { HiveError, refuseSnapshot } from './ops.js';
-import { liveClaimant, sleepingReason, reconcileInactiveBindings } from './tracking.js';
+import { liveClaimant, sleepingReason, reconcileInactiveBindings, startingSession } from './tracking.js';
 import { GROUP_KINDS, descendantIds } from './bead-model.js';
 import { humanWaitText } from './human-wait.js';
 import { observedWorkerActivityIndex, workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
@@ -276,6 +276,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     if (!['review', 'launch', 'helper'].includes(r.source)) continue;
     const session = r.sessionId && host?.sessions?.get?.(r.sessionId);
     if (r.sessionId && !session) {
+      if (startingSession(rt, r.sessionId, now)) continue;
       add('missing_reservation_session', [r.source, r.recordId || r.beadId, r.sessionId], 'missing', stamp(r.at) || now,
         `The ${r.source} reservation's session no longer exists. Reconcile it before replacing work.`,
         { bead_id: r.beadId, session_id: r.sessionId, source: r.source, reservation_id: r.recordId });
@@ -483,7 +484,7 @@ export function createWatchdog({ runtime: rt, host, now = Date.now, setTimer = s
     if (usable()) await reconcileCiWaits(rt, host, now());
     if (usable()) await resolveLinkWaits(rt, host, now());
     if (!active() || (!usable() && !monitoringProblem(rt))) return;
-    if (usable()) reconcileInactiveBindings(rt, host);
+    if (usable()) reconcileInactiveBindings(rt, host, now());
     const index = watchdogIndex(rt, host);
     if (usable()) {
       saveWorkerActivity(rt, host, index.activity);

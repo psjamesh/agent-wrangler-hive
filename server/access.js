@@ -1,5 +1,6 @@
 import { assertCurrent } from './lifetime.js';
 import { isSessionId } from './bead-model.js';
+import { RETIRED_LAUNCH_STATES } from './admission.js';
 
 export class AccessError extends Error {
   constructor(message) {
@@ -10,6 +11,16 @@ export class AccessError extends Error {
 
 export const COORDINATING_ROLES = new Set(['queen', 'coordinator']);
 export const SPAWN_GRACE_MS = 10 * 60 * 1000;
+
+export function notePendingParticipant(rt, sessionId, entry, now = Date.now()) {
+  for (const [sid, v] of rt.pendingParticipants) if (now - v.at > SPAWN_GRACE_MS) rt.pendingParticipants.delete(sid);
+  rt.pendingParticipants.set(sessionId, { ...entry, at: now });
+}
+
+const launchLive = (doc, sessionId, launchId) => {
+  const l = doc.workerLaunches?.[launchId];
+  return Boolean(l && l.sessionId === sessionId && !RETIRED_LAUNCH_STATES.has(l.state));
+};
 
 function taskIdOf(host, sessionId) {
   try {
@@ -30,7 +41,7 @@ export function participation(rt, host, sessionId) {
   const doc = rt.metadata.read();
   const taskId = taskIdOf(host, sessionId);
   const pending = rt.pendingParticipants.get(sessionId);
-  const spawned = pending && Date.now() - pending.at < SPAWN_GRACE_MS && (!taskId || taskId === pending.taskId) ? pending : null;
+  const spawned = pending && Date.now() - pending.at < SPAWN_GRACE_MS && (!taskId || taskId === pending.taskId) && (!pending.launchId || launchLive(doc, sessionId, pending.launchId)) ? pending : null;
   const out = [];
   for (const cell of Object.values(doc.cells)) {
     if (!cell.enabled || cell.snapshot) continue;
