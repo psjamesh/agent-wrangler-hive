@@ -57,7 +57,7 @@ test('four simultaneous marks fit inside the hex content and expose PR text on f
     assert.equal(marks.length, 4);
     for (const mark of marks) {
       const [, x, y, scale] = mark.attributes.transform.match(/translate\(([-\d.]+) ([-\d.]+)\) scale\(([\d.]+)\)/).map(Number);
-      const apothem = (size * 0.945 - 1) * Math.sqrt(3) / 2;
+      const apothem = (size * 0.92 * 0.945 - 1) * Math.sqrt(3) / 2;
       for (let edge = 0; edge < 6; edge++) {
         const angle = edge * Math.PI / 3;
         const clearance = apothem - x * Math.cos(angle) - y * Math.sin(angle);

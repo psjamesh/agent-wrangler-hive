@@ -43,6 +43,7 @@ test('PR review badges and Needs You remain distinct in cell and overview maps',
   const call = (method, params = {}) => new Promise((resolve, reject) => { const id = ++seq; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })); });
   const run = async expression => { const r = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); assert.equal(r.exceptionDetails, undefined, JSON.stringify(r.exceptionDetails)); return r.result.value; };
   await call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await call('Emulation.setFocusEmulationEnabled', { enabled: true });
   await call('Page.enable');
   await call('Runtime.enable');
   const loaded = new Promise(resolve => socket.addEventListener('message', function onLoad(event) { if (JSON.parse(event.data).method !== 'Page.loadEventFired') return; socket.removeEventListener('message', onLoad); resolve(); }));
@@ -75,7 +76,9 @@ test('PR review badges and Needs You remain distinct in cell and overview maps',
   assert.deepEqual(await marks(), ['hive-pm hive-pm-pr']);
   await run(`t.crowded();document.querySelector('[data-tile-id="work"]').focus()`);
   assert.deepEqual(await marks(), ['hive-pm hive-pm-person', 'hive-pm hive-pm-pr', 'hive-pm hive-pm-review-pending', 'hive-pm hive-pm-recorded-wait']);
-  assert.match(await run(`document.querySelector('.hive-mark-tooltip:not([hidden])').textContent`), /PR needs review or merge/);
+  const focus = await run(`({active:document.activeElement?.dataset.tileId,documentFocused:document.hasFocus(),tooltips:[...document.querySelectorAll('.hive-mark-tooltip')].map(n=>({hidden:n.hidden,text:n.textContent}))})`);
+  assert.equal(focus.active, 'work', JSON.stringify(focus));
+  assert.ok(focus.tooltips.some(t=>!t.hidden && /PR needs review or merge/.test(t.text)), JSON.stringify(focus));
   assert.equal(await run(`(()=>{const tile=document.querySelector('[data-tile-id="work"]');const title=tile.querySelector('.hive-hex-text').getBBox();const marks=[...tile.querySelectorAll('.hive-pm')].map(m=>m.transform.baseVal.consolidate().matrix.f-8.1);return title.y+title.height<=Math.min(...marks)})()`), true, 'Title stays above four badges');
   if (process.env.HIVE_SHOT_DIR) {
     const shot = await call('Page.captureScreenshot', { format: 'png' });
