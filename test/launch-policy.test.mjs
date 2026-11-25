@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fixture } from './ownership.test.mjs';
@@ -362,3 +366,44 @@ for (const role of ['work', 'review']) for (const [setting, policy] of [
     assert.deepEqual(answers, [policy, policy, policy]);
   });
 }
+
+function launchDirectory(t, git = true) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hive-worker-cwd-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  if (git) execFileSync('git', ['init', dir], { stdio: 'pipe' });
+  const cwd = path.join(dir, 'nested');
+  fs.mkdirSync(cwd);
+  return cwd;
+}
+
+for (const git of [true, false]) test(`work launch in ${git ? 'git' : 'non-git'} cwd defaults worktree appropriately`, async t => {
+  const f = fixture();
+  const { calls } = recordSpawns(f);
+  const cwd = launchDirectory(t, git);
+  await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build', cwd });
+  assert.deepEqual(calls[0].worktree, git ? { auto: true } : undefined);
+});
+
+for (const worktree of [{ auto: false, branch: 'chosen' }, { auto: true, base: 'origin/main' }]) test(`work launch preserves explicit worktree ${JSON.stringify(worktree)}`, async t => {
+  const f = fixture();
+  const { calls } = recordSpawns(f);
+  await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build', cwd: launchDirectory(t), worktree });
+  assert.deepEqual(calls[0].worktree, worktree);
+});
+
+for (const role of ['reviewer', 'investigator']) test(`${role} in git cwd keeps optional worktree`, async t => {
+  const f = fixture(0);
+  const { calls } = recordSpawns(f);
+  const cwd = launchDirectory(t);
+  await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build' });
+  if (role === 'reviewer') await requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review', commit: 'abc', cwd });
+  else await workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'help', cwd }, { role });
+  assert.equal(calls[1].worktree, undefined);
+});
+
+for (const worktree of [false, null]) test(`worker cannot opt out with worktree ${worktree}`, async () => {
+  const f = fixture();
+  const { calls } = recordSpawns(f);
+  await assert.rejects(workers.spawnWorker(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'build', worktree }), /worktree must be an object/);
+  assert.equal(calls.length, 0);
+});

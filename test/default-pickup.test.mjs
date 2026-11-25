@@ -252,3 +252,13 @@ test('an open review directly excludes default work without relying on launch or
   f.doc().reviews.r = { workBeadId: 'a', state: 'in_review' };
   await run(f); assert.equal(f.spawned.length, 0);
 });
+
+test('saved pickup profile without worktree gets the git worktree default at launch', async () => {
+  const f = pickupFixture();
+  f.profile.cwd = process.cwd();
+  delete f.profile.worktree;
+  defaults(f);
+  await run(f);
+  assert.equal(f.spawned.length, 1);
+  assert.deepEqual(f.spawned[0].worktree, { auto: true });
+});
