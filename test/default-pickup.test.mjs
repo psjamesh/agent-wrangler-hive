@@ -1,3 +1,4 @@
+import { launchDirectory } from './helpers/git-cwd.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { pickupFixture } from './helpers/pickup.mjs';
@@ -251,4 +252,14 @@ test('an open review directly excludes default work without relying on launch or
   const f = pickupFixture(); defaults(f); f.live.b.status = 'closed';
   f.doc().reviews.r = { workBeadId: 'a', state: 'in_review' };
   await run(f); assert.equal(f.spawned.length, 0);
+});
+
+test('saved pickup profile without worktree gets the git worktree default at launch', async t => {
+  const f = pickupFixture();
+  f.profile.cwd = launchDirectory(t);
+  delete f.profile.worktree;
+  defaults(f);
+  await run(f);
+  assert.equal(f.spawned.length, 1);
+  assert.deepEqual(f.spawned[0].worktree, { auto: true });
 });

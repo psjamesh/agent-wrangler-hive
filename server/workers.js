@@ -1,3 +1,7 @@
+import { execFile } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import { hostApiAtLeast } from './host-api.js';
 import { activeWorkerRestores } from './worker-restores.js';
 import { assertAllowedModel } from './review-policy.js';
@@ -16,6 +20,20 @@ import { requireNonHelper, COORDINATING_ROLES, requireBeadAccess, requireCoordin
 import { HiveError, ensureWritable, ensureStoreWritable, waitForWritable, text, withLock, withLocks, claimBead, bindIfMissing } from './ops.js';
 import { applyLaunchPolicy, launchRestriction } from './launch-policy.js';
 import { ADMISSION_LOCK, capacity, checkAdmission, exportedGraph, RESERVED_LAUNCH_STATES } from './admission.js';
+
+const runFile = promisify(execFile);
+
+async function defaultWorkerWorktree(opts, role) {
+  if (role !== 'worker' || opts.worktree !== undefined || !opts.cwd) return;
+  const cwd = opts.cwd === '~' ? os.homedir() : opts.cwd.startsWith('~/') ? path.join(os.homedir(), opts.cwd.slice(2)) : path.resolve(opts.cwd);
+  try {
+    const { stdout } = await runFile('git', ['-C', cwd, 'rev-parse', '--is-inside-work-tree'], { timeout: 10000, encoding: 'utf8' });
+    if (stdout.trim() === 'true') {
+      opts.cwd = cwd;
+      opts.worktree = { auto: true };
+    }
+  } catch {}
+}
 
 const inFlight = new Set();
 export function workerLaunchInFlight(id) { return inFlight.has(id); }
@@ -295,6 +313,8 @@ export async function spawnWorker(rt, host, actor, input, { reviewId = null, rol
   try { await waitForWritable(rt); }
   catch (err) { if (pickup && (err.hierarchyBusy || rt.snapshots.current?.error)) throw pickupReadUnavailable(err.message); throw err; }
   actor = coordinator(rt, host, actor, as);
+  await defaultWorkerWorktree(opts, role);
+  assertCurrent(rt, host);
   assertAllowedModel(opts);
   let catalog;
   try { catalog = await host.agents?.list?.(); }
