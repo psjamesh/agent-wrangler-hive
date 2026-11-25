@@ -8,7 +8,7 @@ export function prState(pr, now = Date.now()) {
   const report = pr.humanAttention;
   if (pr.state !== 'OPEN' || !report || !pr.headSha || report.headSha !== pr.headSha) return 'working';
   if (report.state === 'cannot-fix') return 'stuck';
-  if (report.state === 'ready' && pr.isDraft === false && pr.checks === 'green' && pr.reviewDecision !== 'CHANGES_REQUESTED' && pr.mergeable !== 'CONFLICTING') return 'ready';
+  if (report.state === 'ready' && !pr.reviewStale && pr.isDraft === false && pr.checks === 'green' && pr.reviewDecision !== 'CHANGES_REQUESTED' && pr.mergeable !== 'CONFLICTING') return 'ready';
   return 'working';
 }
 

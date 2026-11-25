@@ -62,6 +62,7 @@ export function pullRequestRow(ctx, bead, pr) {
       h('span', { class: 'hive-pr-state' }, { ready: 'Ready for your review', stuck: 'Needs your help', working: 'With the worker', merged: 'Merged', closed: 'Closed', stale: 'Status out of date' }[state])),
     pr.observationError ? h('p', { class: 'hive-warning' }, `GitHub refresh failed: ${pr.observationError.message}. Last observed ${pr.stateCheckedAt == null ? 'never' : new Date(pr.stateCheckedAt).toLocaleString()}. Retrying after ${new Date(pr.observationError.retryAt).toLocaleString()}.`) : null,
     ['ready', 'stuck'].includes(state) ? h('p', { class: 'hive-pr-reason' }, pr.humanAttention.reason) : null,
+    pr.state === 'OPEN' && (pr.reviewStale || bead.reviewStale?.url === pr.url) ? h('p', { class: 'hive-warning' }, `Hive approval stale: ${pr.reviewStale || bead.reviewStale.text}.`) : null,
     h('details', { class: 'hive-pr-detail' }, h('summary', { dataset: { waitAction: 'checks' } }, 'Checks and review'),
       h('p', {}, `Checks: ${pr.checks}. GitHub review: ${pr.reviewDecision || 'not recorded'}.`),
       pr.humanAttention ? h('p', {}, `Worker/queen report: ${pr.humanAttention.reason}`) : null,

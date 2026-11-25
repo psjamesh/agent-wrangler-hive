@@ -236,6 +236,7 @@ const LUCIDE = {
   ],
   'review-working': SEARCH,
   'review-pending': SEARCH,
+  'review-stale': SEARCH,
   busy: [
     ['path', { d: 'M12 8V4H8' }],
     ['rect', { width: '16', height: '12', x: '4', y: '8', rx: '2' }],
