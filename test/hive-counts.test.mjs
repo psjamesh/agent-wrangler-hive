@@ -320,12 +320,13 @@ test('tile and header share counts for blocked work, requests, worker input and 
   hive.edges.push({ dependent: 'blocked', prerequisite: 'blocker', blocking: true });
   const ctx = () => ({ ui: f.ui, hive, graph: f.graph, api: {}, notices: [], busy: () => false, send() {}, notice() {} });
   const cell = hive.cells[f.cell.id];
-  const check = needs => {
+  const check = (needs, prs = 0) => {
     const overview = renderHive(ctx()).top;
     const tile = overview.querySelector('[data-tile-id="cell_test"]');
     const local = renderHive({ ...ctx(), ui: { ...f.ui, cellId: () => f.cell.id } }).top;
     const header = local.querySelector('.hive-cellhead');
-    assert.equal(counter(tile, 'needs')?.querySelector('text')?.textContent || '0', String(needs));
+    assert.equal(counter(tile, 'needs')?.querySelector('text')?.textContent || '0', String(needs - prs));
+    assert.equal(counter(tile, 'pr')?.querySelector('text')?.textContent || '0', String(prs));
     f.graph.hive = hive;
     assert.equal(f.view.badge(f.graph), needs);
     assert.equal(header.querySelector('[data-focus-key="waiting-header"]')?.textContent || '', needs ? `${needs} need you` : '');
@@ -340,7 +341,7 @@ test('tile and header share counts for blocked work, requests, worker input and 
   check(1);
   const head = 'a'.repeat(40);
   cell.pullRequests = [{ url: 'https://github.com/example/repo/pull/1', number: 1, title: 'Ready work', beadIds: ['work'], state: 'OPEN', headSha: head, isDraft: false, checks: 'green', stateCheckedAt: Date.now(), humanAttention: { state: 'ready', headSha: head, reason: 'Ready for merge' } }];
-  check(2);
+  check(2, 1);
   cell.pullRequests[0].humanAttention.state = 'cannot-fix';
   check(2);
   cell.pullRequests[0].stateCheckedAt = 0;

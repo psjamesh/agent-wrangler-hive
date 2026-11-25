@@ -36,7 +36,7 @@ function cellTile(ctx, cell) {
   const { hive, graph } = ctx;
   const name = cellName(graph, cell);
   const root = cell.rootBeadId ? hive.beads[cell.rootBeadId] : null;
-  const { work: counts, needs, working, held, toRead, toAnswer } = cellMetrics(ctx, cell);
+  const { work: counts, needs, prNeeds, working, held, toRead, toAnswer } = cellMetrics(ctx, cell);
   const goal = String(root?.goal || '').trim();
   const launch = launchState(hive, cell);
   let queen;
@@ -58,11 +58,12 @@ function cellTile(ctx, cell) {
   const counters = [
     { kind: 'inbox', count: cell.retired ? 0 : toRead, label: 'Inbox' },
     { kind: 'queen', count: cell.retired ? 0 : toAnswer, label: 'Waiting for queen' },
-    { kind: 'needs', count: cell.retired ? 0 : needs, label: 'Needs you' },
+    { kind: 'needs', count: cell.retired ? 0 : needs - prNeeds, label: 'Needs you' },
+    { kind: 'pr', count: cell.retired ? 0 : prNeeds, label: 'PR needs review or merge' },
     { kind: 'progress', count: working, label: 'Working', tooltip: `${working} working` },
     { kind: 'held', count: held, label: 'Held, not working', tooltip: `${held} held, not working` },
   ];
-  const owed = [needs ? `${needs} need your input` : '', toRead ? `${toRead} from the queen to read` : '', toAnswer ? `${toAnswer} awaiting the queen` : ''].filter(Boolean).join(', ');
+  const owed = [needs - prNeeds ? `${needs - prNeeds} need your input` : '', prNeeds ? `${prNeeds} PR${prNeeds === 1 ? ' needs' : 's need'} review or merge` : '', toRead ? `${toRead} from the queen to read` : '', toAnswer ? `${toAnswer} awaiting the queen` : ''].filter(Boolean).join(', ');
   const pos = { q: cell.position?.q ?? 0, r: cell.position?.r ?? 0 };
   const { x, y } = toPixel(pos, CELL_SIZE);
   return {
