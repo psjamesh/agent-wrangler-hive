@@ -768,7 +768,9 @@ body.light .hive-root { --hive-unread-bg: #edf3fc; }
 .hive-pm-fill { fill: var(--hive-pm-quiet); stroke: none; }
 .hive-pm-approved .hive-pm-glyph { stroke: var(--hive-pm-quiet); }
 .hive-pm-glyph { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.hive-pm-pr .hive-pm-bg,
 .hive-pm-person .hive-pm-bg { fill: var(--hive-pm-person); stroke: var(--hive-pm-person); }
+.hive-pm-pr .hive-pr-glyph { fill: var(--hive-pm-person-ink); stroke: none; }
 .hive-pm-person .hive-pm-glyph { stroke: var(--hive-pm-person-ink); }
 .hive-pm-review-working .hive-pm-bg,
 .hive-pm-busy .hive-pm-bg { fill: var(--hive-pm-busy); stroke: var(--hive-pm-busy); }
@@ -1719,6 +1721,7 @@ body.light .hive-hex.is-search-match .hive-conversation-ring { stroke: #186879; 
 .hive-search-field, .hive-map-search > .hive-muted { display: block; margin-top: 5px; }
 
 .hive-counter { color: var(--fg-muted, var(--fg)); }
+.hive-counter-pr,
 .hive-counter-needs { color: var(--red-fg, var(--red)); }
 .hive-counter-held { color: var(--fg-muted, var(--fg)); }
 .hive-counter-held .hive-pm-line { stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; }

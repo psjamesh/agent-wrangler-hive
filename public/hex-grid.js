@@ -265,7 +265,10 @@ const PRIMARY_SHAPES = {
   deferred: [['path', { d: 'M-2.1,-3.6 V3.6 M2.1,-3.6 V3.6', class: 'hive-pm-line' }]],
 };
 
+const PR_PATH = 'M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z';
+
 function markShapes(kind) {
+  if (kind === 'pr') return h('svg:g', { class: 'hive-pr-glyph', transform: 'scale(0.68) translate(-8 -8)' }, h('svg:path', { d: PR_PATH }));
   if (LUCIDE[kind]) {
     return h('svg:g', { class: 'hive-pm-glyph', transform: `scale(${LUCIDE_SCALE}) translate(-12 -12)` },
       LUCIDE[kind].map(([tag, attrs]) => h(`svg:${tag}`, attrs)));
@@ -295,7 +298,7 @@ function tileCounters(counters, y, info = false, maxWidth = Infinity) {
     left += (c.width + gap) * scale;
     return h('svg:g', { class: `hive-counter hive-counter-${c.kind}`, dataset: { counter: c.kind }, transform: `translate(${x.toFixed(2)} 0)${scale < 1 ? ` scale(${scale.toFixed(4)})` : ''}` },
       h('svg:title', {}, c.tooltip || `${c.label}: ${c.count}`),
-      c.kind === 'needs' ? markShapes('person') : c.kind === 'held' ? markShapes('deferred') : h('svg:path', { class: 'hive-counter-glyph', d: COUNTER_SHAPES[c.kind] }),
+      c.kind === 'pr' ? primaryMark('pr', c.tooltip || `${c.label}: ${c.count}`, 0, 0, 0.72) : c.kind === 'needs' ? markShapes('person') : c.kind === 'held' ? markShapes('deferred') : h('svg:path', { class: 'hive-counter-glyph', d: COUNTER_SHAPES[c.kind] }),
       h('svg:text', { x: '9', y: '3.5', class: 'hive-counter-value' }, c.value));
   }));
   return { el, infoAt: info ? { x: width / 2 - 12, y } : null };

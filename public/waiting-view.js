@@ -1,6 +1,6 @@
 import { h } from './dom.js';
 import { hiveLink } from './deep-links.js';
-import { cellWaitingItems as collect } from './waiting-model.js';
+import { cellWaitingItems as collect, isPrReviewWait } from './waiting-model.js';
 import { pullRequestRow } from './pr-view.js';
 
 const caches = new WeakMap();
@@ -53,7 +53,7 @@ export function openWaitingMenu(ctx, items, anchor = null, scope = {}) {
     if (dialog.replaceChildren) dialog.replaceChildren(...nodes); else dialog.append(...nodes);
   };
   draw(ctx, items);
-  menu = { dialog, draw, scope: { cellId: scope.cellId || items[0].cellId, beadId: scope.beadId || tileId, actionsOnly: scope.actionsOnly || false }, signature: menuSignature(items) };
+  menu = { dialog, draw, scope: { cellId: scope.cellId || items[0].cellId, beadId: scope.beadId || tileId, actionsOnly: scope.actionsOnly || false, waitKind: scope.waitKind }, signature: menuSignature(items) };
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
   dialog.addEventListener('close', () => {
     dialog.remove();
@@ -73,10 +73,10 @@ export function openWaitingMenu(ctx, items, anchor = null, scope = {}) {
 
 export function refreshWaitingMenu(ctx) {
   if (!menu) return;
-  const { cellId, beadId, actionsOnly } = menu.scope;
+  const { cellId, beadId, actionsOnly, waitKind } = menu.scope;
   const cell = ctx.hive.cells[cellId];
   if (!cell || (ctx.ui.cellId && ctx.ui.cellId() !== cellId)) { disposeWaitingMenu(); return; }
-  const items = cellWaitingItems(ctx, cell).filter(item => (!beadId || item.beadIds.includes(beadId)) && (!actionsOnly || item.kind !== 'message'));
+  const items = cellWaitingItems(ctx, cell).filter(item => (!beadId || item.beadIds.includes(beadId)) && (!actionsOnly || item.kind !== 'message') && (!waitKind || (waitKind === 'pr' ? isPrReviewWait(item) : !isPrReviewWait(item))));
   if (!items.length) { disposeWaitingMenu(); return; }
   const signature = menuSignature(items);
   if (signature === menu.signature) return;

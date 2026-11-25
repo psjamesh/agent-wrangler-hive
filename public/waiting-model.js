@@ -12,6 +12,8 @@ export function prState(pr, now = Date.now()) {
   return 'working';
 }
 
+export const isPrReviewWait = item => item.kind === 'pr' && prState(item.pr) === 'ready';
+
 function sessionBeads(ctx, cell, sid, ids) {
   const attached = [...ids].filter(id => ctx.hive.beads[id]?.ownerSessionId === sid || cell.bindings?.some(b => b.sessionId === sid && b.beadId === id));
   if (attached.length) return attached.sort();
