@@ -17,10 +17,11 @@ export function staleApproval(doc, review) {
       && (!approvedAt || !pr.stateCheckedAt || stamp(pr.stateCheckedAt) >= approvedAt)
       && (pr.associations?.some(a => a.beadId === review.workBeadId && (!review.cellId || !a.cellId || a.cellId === review.cellId))
         || (!pr.associations && pr.beadIds?.includes(review.workBeadId))));
-  if (!heads.length || heads.some(pr => pr.headSha.toLowerCase().startsWith(approved))) return null;
-  const pr = heads[0];
-  const head = pr.headSha.toLowerCase();
-  return { url: pr.url, approved, head, text: `approved at ${approved.slice(0, 7)}; head now ${head.slice(0, 7)}, re-review needed` };
+  const moved = heads.filter(pr => !pr.headSha.toLowerCase().startsWith(approved)).map(pr => {
+    const head = pr.headSha.toLowerCase();
+    return { url: pr.url, head, text: `approved at ${approved.slice(0, 7)}; head now ${head.slice(0, 7)}, re-review needed` };
+  });
+  return moved.length ? { ...moved[0], approved, prs: moved } : null;
 }
 
 function currentReview(doc, beadId) {

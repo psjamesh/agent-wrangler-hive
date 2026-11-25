@@ -52,7 +52,7 @@ test('moved head marks the approval stale everywhere and names both SHAs', t => 
   const text = 'approved at cb1535e; head now ec57ebb, re-review needed';
   const fields = reviewFields(f.rt, 'work');
   assert.equal(fields.reviewState, 'stale');
-  assert.deepEqual(fields.reviewStale, { url: URL, approved: 'cb1535e', head: MOVED, text });
+  assert.deepEqual(fields.reviewStale, { url: URL, approved: 'cb1535e', head: MOVED, text, prs: [{ url: URL, head: MOVED, text }] });
   const slim = slimBead(f.rt, f.rt.snapshots.graph, 'work');
   assert.equal(slim.reviewState, 'stale');
   assert.equal(slim.reviewStale.text, text);
@@ -84,4 +84,23 @@ test('a head observed before the verdict is treated as unknown', t => {
   const f = fixture(t, { headSha: MOVED });
   f.rt.metadata.mutate(d => { d.prLabels[URL].stateCheckedAt = f.now - 2000; });
   assert.equal(reviewFields(f.rt, 'work').reviewState, 'approved');
+});
+
+test('with several linked PRs only the moved head is stale and only it carries the warning', t => {
+  const OTHER = 'https://github.com/example/desktop/pull/4885';
+  const link = (f, headSha) => f.rt.metadata.mutate(d => { d.prLabels[OTHER] = { url: OTHER, state: 'OPEN', headSha, stateCheckedAt: f.now, associations: [{ cellId: 'cell', beadId: 'work' }] }; });
+  const f = fixture(t, { headSha: APPROVED });
+  link(f, MOVED);
+  const fields = reviewFields(f.rt, 'work');
+  assert.equal(fields.reviewState, 'stale');
+  assert.deepEqual(fields.reviewStale.prs.map(pr => pr.url), [OTHER]);
+  const prs = Object.fromEntries(waitingProjection(f.rt, f.cell(), new Set(['work'])).pullRequests.map(pr => [pr.url, pr]));
+  assert.equal(prs[URL].reviewStale, undefined);
+  assert.match(prs[OTHER].reviewStale, /head now ec57ebb/);
+
+  const g = fixture(t, { headSha: MOVED });
+  link(g, null);
+  const projected = Object.fromEntries(waitingProjection(g.rt, g.cell(), new Set(['work'])).pullRequests.map(pr => [pr.url, pr]));
+  assert.match(projected[URL].reviewStale, /head now ec57ebb/);
+  assert.equal(projected[OTHER].reviewStale, undefined, 'an unknown head gets no stale claim');
 });

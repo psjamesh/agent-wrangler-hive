@@ -338,8 +338,8 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     const stale = beadApprovalStale(doc, bead.id);
     if (!stale) continue;
     const review = histories.get(bead.id)?.find(r => r.state === 'approved' && r.commit?.toLowerCase() === stale.approved);
-    add('stale_approval', bead.id, [stale.approved, stale.head], stamp(review?.verdict?.at) || now,
-      `Approval is stale: ${stale.text}. Do not treat ${bead.id} as shippable; request an exact-head re-review.`,
+    add('stale_approval', bead.id, [stale.approved, ...stale.prs.map(pr => pr.head)], stamp(review?.verdict?.at) || now,
+      `Approval is stale: ${stale.prs.map(pr => `${pr.url} ${pr.text}`).join('; ')}. Do not treat ${bead.id} as shippable; request an exact-head re-review.`,
       { bead_id: bead.id, session_id: bead.ownerSessionId || null, pr_url: stale.url, review_id: review?.id || null, approved_commit: stale.approved, head_sha: stale.head });
   }
   for (const message of doc.conversation[cell.id] || []) {
