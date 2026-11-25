@@ -63,7 +63,7 @@ function cellTile(ctx, cell) {
     { kind: 'progress', count: working, label: 'Working', tooltip: `${working} working` },
     { kind: 'held', count: held, label: 'Held, not working', tooltip: `${held} held, not working` },
   ];
-  const owed = [needs - prNeeds ? `${needs - prNeeds} need your input` : '', prNeeds ? `${prNeeds} PR needs review or merge` : '', toRead ? `${toRead} from the queen to read` : '', toAnswer ? `${toAnswer} awaiting the queen` : ''].filter(Boolean).join(', ');
+  const owed = [needs - prNeeds ? `${needs - prNeeds} need your input` : '', prNeeds ? `${prNeeds} PR${prNeeds === 1 ? ' needs' : 's need'} review or merge` : '', toRead ? `${toRead} from the queen to read` : '', toAnswer ? `${toAnswer} awaiting the queen` : ''].filter(Boolean).join(', ');
   const pos = { q: cell.position?.q ?? 0, r: cell.position?.r ?? 0 };
   const { x, y } = toPixel(pos, CELL_SIZE);
   return {

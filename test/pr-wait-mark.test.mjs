@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { beadTile } from '../public/cell-view.js';
 import { cellMetrics } from '../public/cell-metrics.js';
-import { primaryMark, renderHexMap } from '../public/hex-grid.js';
+import { primaryMark, renderHexMap, MARK_R, MARK_STROKE } from '../public/hex-grid.js';
+import { prSummary } from '../public/pr-view.js';
 import * as model from '../public/model.js';
 import { installDom, walk } from './helpers/dom.mjs';
 
@@ -26,10 +27,51 @@ test('PR ready handoffs use their own mark, while native requests retain Needs Y
   for (const words of [f.tile().mark.title, f.tile().title, f.tile().ariaLabel]) assert.match(words, /PR needs review or merge/);
   f.request();
   assert.deepEqual(f.tile().marks.map(m => m.kind), ['person', 'pr']);
+  assert.match(f.tile().ariaLabel, /PR needs review or merge/);
   assert.equal(f.tile().marks[0].count, 1);
   assert.equal(f.tile().marks[1].count, 1);
   f.cell.pullRequests = [];
   assert.deepEqual(f.tile().marks.map(m => m.kind), ['person']);
+});
+
+test('PR summaries distinguish review or merge from general help', () => {
+  const f = fixture();
+  assert.match(prSummary([f.pr]), /1 PR needs review or merge/);
+  assert.match(prSummary([f.pr, { ...f.pr, url: `${f.pr.url}0` }]), /2 PRs need review or merge/);
+  assert.doesNotMatch(prSummary([f.pr]), /waiting for you/);
+  assert.match(prSummary([{ ...f.pr, humanAttention: { ...f.pr.humanAttention, state: 'cannot-fix' } }]), /1 waiting for you/);
+});
+
+test('four simultaneous marks fit inside the hex content and expose PR text on focus', t => {
+  installDom(t);
+  const previous = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = () => 1;
+  t.after(() => { globalThis.requestAnimationFrame = previous; });
+  const f = fixture();
+  f.request();
+  Object.assign(f.bead, { title: 'Review pull request and approve merge policy', reviewState: 'in_review', waitingFor: 'External report' });
+  assert.deepEqual(f.tile().marks.map(m => m.kind), ['person', 'pr', 'review-pending', 'recorded-wait']);
+  for (const size of [60, 90]) {
+    const map = renderHexMap({ viewKey: `pr-four-${size}`, size, items: [f.tile()], bounds: { x: -size, y: -size, w: size * 2, h: size * 2 } }).el;
+    const marks = walk(map).filter(n => n.attributes.class?.startsWith('hive-pm hive-pm-'));
+    assert.equal(marks.length, 4);
+    for (const mark of marks) {
+      const [, x, y, scale] = mark.attributes.transform.match(/translate\(([-\d.]+) ([-\d.]+)\) scale\(([\d.]+)\)/).map(Number);
+      const apothem = (size * 0.945 - 1) * Math.sqrt(3) / 2;
+      for (let edge = 0; edge < 6; edge++) {
+        const angle = edge * Math.PI / 3;
+        const clearance = apothem - x * Math.cos(angle) - y * Math.sin(angle);
+        assert.ok(clearance >= (MARK_R + MARK_STROKE / 2) * scale, `${mark.attributes.class} crosses edge ${edge} at size ${size}`);
+      }
+    }
+    const title = walk(map).filter(n => n.attributes.class === 'hive-hex-title');
+    assert.ok(title.length >= 3, 'Crowded tile retains a multiline title');
+    const markY = Number(marks[0].attributes.transform.match(/translate\([-\d.]+ ([-\d.]+)/)[1]);
+    assert.ok(Number(title.at(-1).attributes.y) + 9.5 * 0.24 < markY - (MARK_R + MARK_STROKE / 2) * Math.max(1, size / 60), 'Title ends above the marks');
+    const tile = walk(map).find(n => n.dataset.tileId === 'work');
+    tile.dispatchEvent({ type: 'focus' });
+    assert.match(walk(map).find(n => n.attributes.class === 'hive-mark-tooltip').textContent, /PR needs review or merge/);
+  }
 });
 
 test('PR badge clears on stale, changed, terminal, failing, evidence-only or cleared handoffs', () => {
@@ -71,6 +113,8 @@ test('overview counters split PR review waits from Needs You without losing tota
   assert.deepEqual(counters(), ['needs', 'pr']);
   const badge = walk(draw()).find(n => n.attributes.class === 'hive-pm hive-pm-pr');
   assert.match(badge.textContent, /PR needs review or merge/);
+  f.cell.pullRequests.push({ ...f.pr, url: `${f.pr.url}0` });
+  assert.match(cellTile(f.ctx, f.cell).ariaLabel, /2 PRs need review or merge/);
   f.cell.pullRequests = [];
   assert.deepEqual(counters(), ['needs']);
 });

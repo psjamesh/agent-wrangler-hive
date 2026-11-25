@@ -528,8 +528,8 @@ export function renderHexMap({
     const linked = Boolean(rel && (rel.prereq.length || rel.dependents.length));
     const markScale = Math.max(1, size / 60);
     const marks = it.marks || (it.mark ? [it.mark] : []);
-    const markAt = form.markY(markScale) - (marks.length > 1 ? 6 * markScale : 0);
-    const focusWords = marks.filter(m => m.focus || m.kind.startsWith('review-') || m.kind === 'recorded-wait' || m.kind === 'in-progress' || m.kind === 'approved').map(m => m.title).join('\n');
+    const markAt = form.markY(markScale) - (marks.length > 1 ? Math.max(6, (marks.length - 1) * 10 / SQRT3) * markScale : 0);
+    const focusWords = marks.filter(m => m.focus || m.kind.startsWith('review-') || m.kind === 'pr' || m.kind === 'recorded-wait' || m.kind === 'in-progress' || m.kind === 'approved').map(m => m.title).join('\n');
     const label = tileText({
       title: it.titleText != null ? { text: it.titleText, maxLines: it.titleLines || 3, px: it.titlePx || 12 } : null,
       lines: it.lines,

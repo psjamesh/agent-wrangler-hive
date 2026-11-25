@@ -10,13 +10,13 @@ const page = `<!doctype html><html><head><link rel="stylesheet" href="/public/st
 import client from '/public/client.js';
 let view;
 const store=new Map();
-const cell={id:'cell',taskId:'task',enabled:true,rootBeadId:'root',queenSessionId:'queen',bindings:[],requests:{},pullRequests:[],launches:[],threads:[],messages:[],beadLayout:{},workstreamColours:{},archived:{},restoreNotices:[],inbox:{human:{count:0},queen:{count:0}}};
+const cell={id:'cell',taskId:'task',enabled:true,rootBeadId:'root',queenSessionId:'queen',bindings:[],requests:{},pullRequests:[],launches:[],threads:[],messages:[],beadLayout:{},workstreamColours:{},archived:{},restoreNotices:[],inbox:{human:{ids:[],count:0},queen:{ids:[],count:0}}};
 const pr={url:'https://github.com/example/repo/pull/7',cellId:'cell',number:7,title:'Ship change',beadIds:['work'],state:'OPEN',headSha:'a'.repeat(40),checks:'green',isDraft:false,stateCheckedAt:Date.now(),humanAttention:{state:'ready',headSha:'a'.repeat(40),reason:'Please review and merge'}};
 const hive={cells:{cell},beads:{root:{id:'root',title:'Demo',kind:'goal',status:'open'},work:{id:'work',parentId:'root',title:'Ship change',kind:'work',status:'open'}},edges:[],launches:[],operations:[],metaEpoch:'e',metaVersion:1,backend:{state:'ready',snapshotComplete:true,snapshotBeadIds:['root','work']}};
 const graph={hive,sessions:[{sessionId:'queen',name:'Queen',status:'idle'}],tasks:{tasks:[{id:'task',name:'Demo hive'}]}};
 client.register({api:{state:()=>graph,settings:()=>({beeLevel:0,showBees:false}),storage:{get:k=>store.get(k),set:(k,v)=>store.set(k,v),remove:k=>store.delete(k)}},register(kind,v){if(kind==='view')view=v}});
 const root=document.getElementById('root');
-window.t={state:(prs,input)=>{cell.pullRequests=prs?[{...pr,stateCheckedAt:Date.now()}]:[];cell.requests=input?{input:{id:'input',audience:'human',state:'open',beadId:'work',title:'Choose policy'}}:{};hive.metaVersion++;view.update(root,null,{...graph});}};
+window.t={crowded:()=>{Object.assign(hive.beads.work,{title:'Review pull request and approve merge policy',reviewState:'in_review',waitingFor:'External report'});t.state(true,true)},state:(prs,input)=>{cell.pullRequests=prs?[{...pr,stateCheckedAt:Date.now()}]:[];cell.requests=input?{input:{id:'input',audience:'human',state:'open',beadId:'work',title:'Choose policy'}}:{};hive.metaVersion++;view.update(root,null,{...graph});}};
 view.mount(root,null);t.state(true,false);
 </script></body></html>`;
 
@@ -57,8 +57,10 @@ test('PR review badges and Needs You remain distinct in cell and overview maps',
   assert.match(await run(`document.querySelector('[data-counter="pr"] title').textContent`), /PR needs review or merge/);
   assert.equal(await run(`getComputedStyle(document.querySelector('[data-counter="pr"] .hive-pm-bg')).fill`), 'rgb(204, 51, 51)');
   await run(`document.querySelector('[data-tile-id="cell"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}))`);
+  assert.deepEqual(exceptions, [], 'Opening the cell raised an exception');
   const marks = () => run(`[...document.querySelector('[data-tile-id="work"]').querySelectorAll('.hive-pm')].map(n=>n.getAttribute('class'))`);
   assert.deepEqual(await marks(), ['hive-pm hive-pm-person', 'hive-pm hive-pm-pr']);
+  assert.match(await run(`document.querySelector('[data-tile-id="work"]').getAttribute('aria-label')`), /PR needs review or merge/);
   assert.match(await run(`document.querySelector('[data-tile-id="work"] .hive-pm-pr title').textContent`), /PR needs review or merge/);
   assert.equal(await run(`getComputedStyle(document.querySelector('[data-tile-id="work"] .hive-pm-pr .hive-pm-bg')).fill`), 'rgb(204, 51, 51)');
   assert.equal(await run(`getComputedStyle(document.querySelector('[data-tile-id="work"] .hive-pm-pr path')).fill`), 'rgb(255, 255, 255)');
@@ -71,8 +73,12 @@ test('PR review badges and Needs You remain distinct in cell and overview maps',
   assert.deepEqual(await marks(), ['hive-pm hive-pm-person']);
   await run(`t.state(true,false)`);
   assert.deepEqual(await marks(), ['hive-pm hive-pm-pr']);
-  if (process.env.HIVE_SCREENSHOT_DIR) {
+  await run(`t.crowded();document.querySelector('[data-tile-id="work"]').focus()`);
+  assert.deepEqual(await marks(), ['hive-pm hive-pm-person', 'hive-pm hive-pm-pr', 'hive-pm hive-pm-review-pending', 'hive-pm hive-pm-recorded-wait']);
+  assert.match(await run(`document.querySelector('.hive-mark-tooltip:not([hidden])').textContent`), /PR needs review or merge/);
+  assert.equal(await run(`(()=>{const tile=document.querySelector('[data-tile-id="work"]');const title=tile.querySelector('.hive-hex-text').getBBox();const marks=[...tile.querySelectorAll('.hive-pm')].map(m=>m.transform.baseVal.consolidate().matrix.f-8.1);return title.y+title.height<=Math.min(...marks)})()`), true, 'Title stays above four badges');
+  if (process.env.HIVE_SHOT_DIR) {
     const shot = await call('Page.captureScreenshot', { format: 'png' });
-    await writeFile(join(process.env.HIVE_SCREENSHOT_DIR, 'pr-review-badge.png'), Buffer.from(shot.data, 'base64'));
+    await writeFile(join(process.env.HIVE_SHOT_DIR, 'pr-review-badge.png'), Buffer.from(shot.data, 'base64'));
   }
 });

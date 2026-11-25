@@ -25,8 +25,9 @@ export function prSummary(prs) {
   const byUrl = new Map();
   for (const pr of prs) if (!byUrl.has(pr.url) || !pr.evidenceOnly) byUrl.set(pr.url, pr);
   const open = [...byUrl.values()].filter(pr => !['merged', 'closed'].includes(prState(pr)));
-  const needs = open.filter(pr => !pr.evidenceOnly && ['ready', 'stuck'].includes(prState(pr))).length;
-  return open.length ? `${open.length} open PR${open.length === 1 ? '' : 's'}, ${needs} waiting for you` : '';
+  const ready = open.filter(pr => !pr.evidenceOnly && prState(pr) === 'ready').length;
+  const needs = open.filter(pr => !pr.evidenceOnly && prState(pr) === 'stuck').length;
+  return open.length ? [`${open.length} open PR${open.length === 1 ? '' : 's'}`, ready ? `${ready} PR${ready === 1 ? ' needs' : 's need'} review or merge` : '', needs || !ready ? `${needs} waiting for you` : ''].filter(Boolean).join(', ') : '';
 }
 
 export function pullRequestRow(ctx, bead, pr) {
