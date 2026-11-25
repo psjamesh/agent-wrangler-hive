@@ -111,3 +111,40 @@ test('delivery-repair notifications preserve their exact request card link', asy
   await Promise.resolve();
   assert.match(href, /hive=cell&topic=topic&message=message$/);
 });
+
+function notificationFor(extra) {
+  let shown;
+  const notify = createRequestNotifications({ ui: { notify(args) { shown = args; } } });
+  notify(graph());
+  const r = request('excerpt', extra), original = structuredClone(r);
+  notify(graph(r));
+  assert.deepEqual(r, original);
+  return shown;
+}
+
+test('notification excerpts keep short and exact-boundary text intact', () => {
+  for (const [title, body] of [['Short title', 'A short body.'], ['t'.repeat(80), 'b'.repeat(120)]]) {
+    const shown = notificationFor({ title, body });
+    assert.equal(shown.title, title);
+    assert.equal(shown.body, body);
+  }
+});
+
+for (const state of ['open', 'answered']) test(`${state} notification excerpts truncate whole words and flatten Markdown`, () => {
+  const title = 'Review '.repeat(20).trim();
+  const body = '# **Please review** [the proposal](https://example.com/proposal).\n\n> - Choose `option_one` and ~~obsolete~~ *details*.\n'.repeat(6);
+  const shown = notificationFor({ title, body, forwarded: { title, body }, state, delivery: { state: 'failed' } });
+  assert.equal(shown.title, state === 'answered' ? 'Hive answer needs delivery repair' : `${'Review '.repeat(11).trim()}…`);
+  assert.equal(shown.body, 'Please review the proposal. Choose option_one and obsolete details. Please review the proposal. Choose option_one and…');
+  assert.ok(shown.title.length <= 80);
+  assert.ok(shown.body.length <= 120);
+  assert.doesNotMatch(shown.body, /[\n\r#*`>~]|https:/);
+});
+
+test('notification truncation does not cut the final word or add an ellipsis to whitespace', () => {
+  const shown = notificationFor({ title: `${'t'.repeat(79)} word`, body: `${'b'.repeat(119)} word` });
+  assert.equal(shown.title, `${'t'.repeat(79)}…`);
+  assert.equal(shown.body, `${'b'.repeat(119)}…`);
+  assert.equal(notificationFor({ body: '  Short\n\ttext  ' }).body, 'Short text');
+  assert.equal(notificationFor({ body: 'b'.repeat(121) }).body, '…');
+});
