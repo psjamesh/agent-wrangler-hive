@@ -42,6 +42,7 @@ export function primaryKind(bead, waits, agentDots, humanWaits = 0, ownerDot = n
   if (humanWaits || agentDots.includes('needs')) return 'person';
   if (bead.status === 'closed') return bead.outcome === 'done' ? 'done' : 'closed';
   if (['requested', 'in_review'].includes(bead.reviewState)) return bead.reviewWorking ? 'review-working' : 'review-pending';
+  if (['open', 'in_progress'].includes(bead.status) && bead.reviewState === 'stale') return 'review-stale';
   if (bead.untracked) return 'untracked';
   if (agentDots.includes('working')) return 'busy';
   if (['open', 'in_progress'].includes(bead.status) && bead.reviewState === 'approved') return 'approved';
@@ -59,6 +60,7 @@ const MARK_WORDS = {
   pickup: 'Ready for pickup; awaiting automatic worker start',
   'review-working': 'In review: reviewer working',
   'review-pending': 'In review: review pending',
+  'review-stale': 'Approval stale: re-review needed',
   done: 'Done',
   untracked: 'No active owner: started work has no live claimant or open blocker',
   busy: 'An agent is working on it',
@@ -71,6 +73,7 @@ const MARK_WORDS = {
 export function markWords(kind, bead) {
   if (kind === 'closed') return `Closed (${bead.outcome || 'no outcome recorded'})`;
   if (kind === 'waiting') return 'Waiting on a prerequisite';
+  if (kind === 'review-stale' && bead?.reviewStale?.text) return `Approval stale: ${bead.reviewStale.text}`;
   return MARK_WORDS[kind] || '';
 }
 const kindLabel = kind => kind === 'workstream' ? 'Cluster' : kind;
@@ -130,7 +133,8 @@ export function beadTile(ctx, bead, tile, kids) {
     waits.length ? `${designWait ? 'Waiting on design. ' : ''}Needed first: ${waits.map((id) => hive.beads[id]?.title || id).join('; ')}` : '',
     ['requested', 'in_review'].includes(bead.reviewState) ? [bead.review?.summary, bead.review?.waitingFor].filter(Boolean).join('; ') : '',
   ].filter(Boolean);
-  const own = `${state}${waits.length ? `, waits on ${waits.length}` : ''}${['requested', 'in_review'].includes(bead.reviewState) ? `, ${bead.reviewWorking ? 'reviewer working' : 'review pending'}` : ''}`;
+  const stale = bead.status !== 'closed' && bead.reviewState === 'stale' && bead.reviewStale ? `Approval stale: ${bead.reviewStale.text}` : '';
+  const own = `${state}${waits.length ? `, waits on ${waits.length}` : ''}${['requested', 'in_review'].includes(bead.reviewState) ? `, ${bead.reviewWorking ? 'reviewer working' : 'review pending'}` : ''}${stale ? `, ${stale}` : ''}`;
   const waiting = waitingItems(ctx, bead);
   const prWaiting = waiting.filter(isPrReviewWait);
   const inputWaiting = waiting.filter(item => !isPrReviewWait(item));
@@ -144,6 +148,7 @@ export function beadTile(ctx, bead, tile, kids) {
   if (kind) marks.push({ kind, focus: kind === 'waiting' && Boolean(waitReason), count: markItems.length, onMark: markItems.length ? anchor => openWaitingMenu(ctx, markItems, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true, waitKind: kind === 'pr' ? 'pr' : 'input' }) : null, title: [attention || (kind === 'waiting' && designWait ? 'Waiting on design' : markWords(kind, bead)), kind === 'waiting' && waitReason ? `Waiting for: ${waitReason}` : ''].filter(Boolean).join('. ') });
   if (prWaiting.length && kind !== 'pr') marks.push({ kind: 'pr', count: prWaiting.length, title: `PR needs review or merge: ${prWaiting.map(item => item.title).join('; ')}`, onMark: anchor => openWaitingMenu(ctx, prWaiting, anchor, { cellId: cell.id, beadId: bead.id, actionsOnly: true, waitKind: 'pr' }) });
   if (status === 'in_review' && !kind?.startsWith('review-')) marks.push({ kind: bead.reviewWorking ? 'review-working' : 'review-pending', title: markWords(bead.reviewWorking ? 'review-working' : 'review-pending', bead) });
+  if (stale && kind !== 'review-stale') marks.push({ kind: 'review-stale', title: stale });
   if (waitReason && kind !== 'waiting') marks.push({ kind: 'recorded-wait', title: `Waiting for: ${waitReason}` });
   const detail = `${externalWait ? 'Waiting on something outside this hive. ' : ''}${waitReason ? `Waiting for: ${waitReason}. ` : ''}${attachmentText ? `${attachmentText} ` : ''}Work: ${isHead ? `${countText}; ` : ''}${own}. ${agentText}.${waitReasons.length ? ` Waiting: ${waitReasons.join('; ')}.` : ''}`;
   const menu = isHead || Boolean(cell?.enabled && !snap && !cell.retired && bead.status !== 'closed' && bead.kind !== 'external');
@@ -219,7 +224,7 @@ export function legend(snapshot = false) {
       title: snapshot
         ? 'One mark per item, from its recorded work status. Captured sessions describe the capture, not now, so this hive never shows an agent working or waiting for input; their states are in each tooltip.'
         : 'A person icon marks agent input, a Hive decision or action request or a PR needing general help. A red pull-request badge marks a PR explicitly ready for your review or merge. Both marks appear when both kinds of wait exist. Unread messages stay in Topics and Inbox. Several waits get a count badge. Worker-handled failing checks stay quiet. The most urgent mark comes first. Waiting for input means an attached agent is asking someone something; the cross means the work itself waits on a prerequisite. Plain magnifier badges show review: green while the reviewer works, blue while pending. The prerequisite cross is grey; amber marks work with no active owner. A green outlined triangle means ready for automatic pickup. A chain-link glyph marks an external prerequisite. Review marks remain visible alongside them. A recorded wait uses an hourglass unless the primary mark is a waiting cross; then its reason is included in the cross tooltip. The outlined progress arc means in-progress work with an idle live owner. Items with no mark have no activity or recorded wait. Each tooltip names every agent and its state.',
-    }, [...(snapshot ? [] : [['person', 'waiting for you (count when several)'], ['pr', 'PR needs review or merge'], ['busy', 'agent working'], ['review-working', 'in review: reviewer working'], ['review-pending', 'in review: review pending'], ['in-progress', 'in progress; agent idle']]), ['approved', MARK_WORDS.approved], ['pickup', 'ready for automatic pickup'], ['external', 'external: outside this hive (teammate PR, release, vendor)'], ['recorded-wait', 'recorded wait (cross carries reason when waiting)'], ['untracked', 'No active owner'], ['waiting', 'waiting on prerequisites'], ['waiting', 'Waiting on design (decision or investigation needed first)'], ['deferred', 'deferred'], ['done', 'done'], ['closed', 'closed otherwise']].map(([k, label]) => h('span', { class: 'hive-legend-st' },
+    }, [...(snapshot ? [] : [['person', 'waiting for you (count when several)'], ['pr', 'PR needs review or merge'], ['busy', 'agent working'], ['review-working', 'in review: reviewer working'], ['review-pending', 'in review: review pending'], ['review-stale', 'approval stale: PR head moved, re-review needed'], ['in-progress', 'in progress; agent idle']]), ['approved', MARK_WORDS.approved], ['pickup', 'ready for automatic pickup'], ['external', 'external: outside this hive (teammate PR, release, vendor)'], ['recorded-wait', 'recorded wait (cross carries reason when waiting)'], ['untracked', 'No active owner'], ['waiting', 'waiting on prerequisites'], ['waiting', 'Waiting on design (decision or investigation needed first)'], ['deferred', 'deferred'], ['done', 'done'], ['closed', 'closed otherwise']].map(([k, label]) => h('span', { class: 'hive-legend-st' },
       h('svg:svg', { viewBox: '-8 -8 16 16', width: '14', height: '14', 'aria-hidden': 'true' }, primaryMark(k, label)), label))),
     h('span', { class: 'hive-legend-item hive-legend-note' }, 'No mark: no activity or recorded wait'),
     swatch('is-done', 'Closed work'),
@@ -303,7 +308,7 @@ function beadDetails(ctx, cell) {
       }, 'Release…')) : (bead.assignee ? h('div', {}, `Assigned to ${bead.assignee}`) : null),
     bound.length ? h('div', { class: 'hive-row' }, h('strong', {}, 'Other attached agents: '), bound.map((b) => sessionButton(ctx, b.sessionId, ` (${b.role})`))) : null,
     waits.length ? h('div', { class: 'hive-row' }, h('strong', {}, 'Waiting on: '), waits.map(link)) : null,
-    bead.review ? h('div', { class: 'hive-row' }, h('strong', {}, `Review: ${String(bead.reviewState).replaceAll('_', ' ')}. `), detail.bead?.review?.summary || bead.review.summary || '', bead.review.reviewerSessionId ? sessionButton(ctx, bead.review.reviewerSessionId, ' (reviewer)') : null) : null,
+    bead.review ? h('div', { class: 'hive-row' }, h('strong', {}, `Review: ${String(bead.reviewState).replaceAll('_', ' ')}${bead.reviewStale ? ` (${bead.reviewStale.text})` : ''}. `), detail.bead?.review?.summary || bead.review.summary || '', bead.review.reviewerSessionId ? sessionButton(ctx, bead.review.reviewerSessionId, ' (reviewer)') : null) : null,
     recordedWait(bead) ? h('div', { class: 'hive-row' }, h('strong', {}, 'Waiting for: '), recordedWait(bead)) : null,
     full.nextAction ? h('div', { class: 'hive-row' }, h('strong', {}, 'Next: '), full.nextAction) : null,
     dependents.length ? h('div', { class: 'hive-row' }, h('strong', {}, 'Needed by: '), dependents.map(link)) : null,

@@ -7,7 +7,7 @@ import { pickupState, defaultPickupProblem, idleReadyProblem, idleReadyAvailable
 import { prRepository } from './pr-labels.js';
 import { availableSessionHref } from './session-links.js';
 import { awaitingQueen } from './conversation.js';
-import { OPEN_REVIEW_STATES } from './review-state.js';
+import { OPEN_REVIEW_STATES, beadApprovalStale } from './review-state.js';
 import { safeDeliver } from './sessions.js';
 import { isCurrent } from './lifetime.js';
 import { HiveError, refuseSnapshot } from './ops.js';
@@ -333,6 +333,14 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     if (OPEN_REVIEW_STATES.has(review.state) && !review.verdict && ids.has(review.workBeadId) && beads[review.workBeadId]?.status !== 'closed' && since && now - since >= settings.reviewMinutes * 60000) {
       add('stuck_review', review.id, since, since, 'Requested review has no verdict.', { bead_id: review.workBeadId, session_id: review.reviewerSessionId || null, review_id: review.id });
     }
+  }
+  for (const bead of open) {
+    const stale = beadApprovalStale(doc, bead.id);
+    if (!stale) continue;
+    const review = histories.get(bead.id)?.find(r => r.state === 'approved' && r.commit?.toLowerCase() === stale.approved);
+    add('stale_approval', bead.id, [stale.approved, ...stale.prs.map(pr => pr.head)], stamp(review?.verdict?.at) || now,
+      `Approval is stale: ${stale.prs.map(pr => `${pr.url} ${pr.text}`).join('; ')}. Do not treat ${bead.id} as shippable; request an exact-head re-review.`,
+      { bead_id: bead.id, session_id: bead.ownerSessionId || null, pr_url: stale.url, review_id: review?.id || null, approved_commit: stale.approved, head_sha: stale.head });
   }
   for (const message of doc.conversation[cell.id] || []) {
     const since = stamp(message.at);

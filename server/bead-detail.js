@@ -34,7 +34,7 @@ export function slimBead(runtime, graph, id, { root = false, historyRecords = ru
   const full = fullBead(runtime, graph, id);
   const out = {};
   for (const key of SLIM_FIELDS) out[key] = full[key];
-  for (const key of ['reviewState', 'reviewWorking']) if (key in full) out[key] = full[key];
+  for (const key of ['reviewState', 'reviewStale', 'reviewWorking']) if (key in full) out[key] = full[key];
   if (full.review) out.review = slimReview(full.review);
   out.untracked = full.untracked;
   out.historyVersion = createHash('sha256').update(JSON.stringify(beadHistory(historyRecords, full))).digest('hex').slice(0, 16);
