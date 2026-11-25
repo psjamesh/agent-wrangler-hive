@@ -1,7 +1,4 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { launchDirectory } from './helpers/git-cwd.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fixture } from './ownership.test.mjs';
@@ -365,15 +362,6 @@ for (const role of ['work', 'review']) for (const [setting, policy] of [
     assert.deepEqual(policies, [policy]);
     assert.deepEqual(answers, [policy, policy, policy]);
   });
-}
-
-function launchDirectory(t, git = true) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hive-worker-cwd-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  if (git) execFileSync('git', ['init', dir], { stdio: 'pipe' });
-  const cwd = path.join(dir, 'nested');
-  fs.mkdirSync(cwd);
-  return cwd;
 }
 
 for (const git of [true, false]) test(`work launch in ${git ? 'git' : 'non-git'} cwd defaults worktree appropriately`, async t => {
