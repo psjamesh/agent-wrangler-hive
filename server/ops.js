@@ -1326,7 +1326,10 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
     if (worked) throw new AccessError('A session that has worked on this cell cannot review it.');
     requireNonHelper(rt, { sessionId: target, cell }, 'review beads');
   }
-  if (attachRole && beadId && !unbind) checkAdmission(rt, await rt.beads.loadSnapshot({ all: true }), beadId, { sessionId: null, review: true });
+  const rebind = cleanRole === 'reviewer' && !unbind && COORDINATING_ROLES.has(actor.role)
+    ? Object.values(rt.metadata.read().reviews || {}).find((r) => r.cellId === cell.id && r.workBeadId === beadId && r.state === 'in_review' && r.reviewerSessionId === target)
+    : null;
+  if (attachRole && beadId && !unbind && !rebind) checkAdmission(rt, await rt.beads.loadSnapshot({ all: true }), beadId, { sessionId: null, review: true });
   const by = actorFor(actor.sessionId);
   const at = Date.now();
   const noteText = text(note, 'note', LIMITS.short) || '';
@@ -1346,8 +1349,8 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
     rt.changed();
     return { cell_id: cell.id, session_id: target, unbound: count };
   }
-  let reviewId = null;
-  if (cleanRole === 'reviewer') {
+  let reviewId = rebind?.id || null;
+  if (cleanRole === 'reviewer' && !rebind) {
     if (Object.values(rt.metadata.read().reviews || {}).some((r) => r.workBeadId === beadId && ['requested', 'in_review'].includes(r.state))) throw new HiveError('This cell already has an open review; wait for its verdict or cancel it.', 'conflict');
     const bead = rt.snapshots.graph.beads[beadId];
     if (!bead || bead.status === 'closed' || bead.id === cell.rootBeadId) throw new HiveError('Join a review session to open work in this hive.');
@@ -1364,7 +1367,7 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
       if (existing) existing.active = false;
       list.push({ id: newId('bind'), sessionId: target, beadId, role: cleanRole, ...(cleanRole === 'investigator' ? { helper: true } : {}), note: noteText, boundBy: by, at, active: true, ...(reviewId ? { reviewId } : {}) });
     }
-    if (reviewId) {
+    if (reviewId && !rebind) {
       const builderSid = rt.snapshots.graph.beads[beadId].assignee?.startsWith('aw:') ? rt.snapshots.graph.beads[beadId].assignee.slice(3) : null;
       const builderAgent = (builderSid && host.sessions.get(builderSid)?.agent) || null;
       const agent = host.sessions.get(target)?.agent || null;
@@ -1372,7 +1375,7 @@ async function bindSessionNow(rt, host, actor, { bead_id, session_id, role, unbi
     }
   });
   rt.changed();
-  if (reviewId && cell.queenSessionId && cell.queenSessionId !== actor.sessionId) {
+  if (reviewId && !rebind && cell.queenSessionId && cell.queenSessionId !== actor.sessionId) {
     Promise.resolve().then(() => host.deliver?.(cell.queenSessionId, `[Hive] Review session ${target} joined ${beadId}, added by ${actor.sessionId}. No action needed.`)).catch(() => {});
   }
   return { cell_id: cell.id, session_id: target, bead_id: beadId, role: apiRole(cleanRole), ...(reviewId ? { review_id: reviewId } : {}) };

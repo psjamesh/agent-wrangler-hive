@@ -1,6 +1,7 @@
 import { activeWorkerRestores } from './worker-restores.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 import { GROUP_KINDS } from './bead-model.js';
+import { RETIRED_LAUNCH_STATES } from './admission.js';
 
 export function liveClaimant(host, sessionId) {
   const session = sessionId ? host?.sessions?.get?.(sessionId) : null;
@@ -73,12 +74,23 @@ export function ungovernedDescendants(rt, host, cell, openBeads = []) {
   return out;
 }
 
-export function reconcileInactiveBindings(rt, host) {
+export const LAUNCH_GRACE_MS = 2 * 60000;
+
+const stampOf = value => typeof value === 'number' && Number.isFinite(value) ? value : typeof value === 'string' ? Date.parse(value) || 0 : 0;
+
+export function startingSession(rt, sessionId, now = Date.now()) {
+  if (!sessionId) return false;
+  return Object.values(rt.metadata.read().workerLaunches || {}).some((l) => l.sessionId === sessionId && !RETIRED_LAUNCH_STATES.has(l.state)
+    && [l.submittedAt || l.createdAt, l.boundAt].some((at) => { const t = stampOf(at); return t > 0 && t <= now && now - t < LAUNCH_GRACE_MS; }));
+}
+
+export function reconcileInactiveBindings(rt, host, now = Date.now()) {
   if (!host?.sessions?.get || rt.metadata.error) return;
   const eligible = (cell) => cell?.enabled && !cell.snapshot;
   const reason = (b) => {
     const session = host.sessions.get(b.sessionId);
-    return !session ? 'Session missing' : session.archived ? 'Session archived' : null;
+    if (session) return session.archived ? 'Session archived' : null;
+    return startingSession(rt, b.sessionId, now) ? null : 'Session missing';
   };
   const stale = (b) => b.active && reason(b);
   const doc = rt.metadata.read();
@@ -86,11 +98,12 @@ export function reconcileInactiveBindings(rt, host) {
   if (!cells.length) return;
   rt.metadata.mutate(d => {
     for (const id of cells) for (const b of d.bindings[id] || []) {
-      if (stale(b)) {
+      const because = b.active && reason(b);
+      if (because) {
         b.active = false;
-        b.unboundAt = Date.now();
+        b.unboundAt = now;
         b.unboundBy = 'aw:hive-recovery';
-        b.unboundBecause = reason(b);
+        b.unboundBecause = because;
       }
     }
   });

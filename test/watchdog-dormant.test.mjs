@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { HiveRuntime } from '../server/runtime.js';
-import { reconcileInactiveBindings } from '../server/tracking.js';
+import { reconcileInactiveBindings, startingSession, LAUNCH_GRACE_MS } from '../server/tracking.js';
 import { archiveSuggestions, collectWatchdog, createWatchdog, waitDeadline } from '../server/watchdog.js';
 
 const MIN = 60000;
@@ -248,6 +248,47 @@ test('missing reviews and launches stay flagged while missing helpers recover on
   assert.equal(kinds(f).includes('missing_reservation_session'), false);
 });
 
+
+test('launches and reviews core does not list yet are not flagged or unbound until the launch window passes', async t => {
+  const f = fixture(t);
+  f.bead('work', { status: 'in_progress' });
+  f.rt.metadata.mutate(d => {
+    d.workerLaunches.l = { id: 'l', cellId: 'cell', beadId: 'work', role: 'worker', state: 'claimed', sessionId: 'starting-worker', createdAt: T0 - 10 * MIN, submittedAt: f.now() };
+    d.workerLaunches.lr = { id: 'lr', cellId: 'cell', beadId: 'work', role: 'reviewer', reviewId: 'r', state: 'launched', sessionId: 'starting-review', createdAt: T0 - 10 * MIN, submittedAt: f.now() };
+    d.reviews.r = { id: 'r', cellId: 'cell', workBeadId: 'work', state: 'in_review', reviewerSessionId: 'starting-review', launchId: 'lr', createdAt: T0 - 10 * MIN, startedAt: f.now() };
+    d.bindings.cell = [
+      { id: 'bw', active: true, role: 'worker', beadId: 'work', sessionId: 'starting-worker', workerLaunchId: 'l', at: f.now() },
+      { id: 'br', active: true, role: 'reviewer', beadId: 'work', sessionId: 'starting-review', workerLaunchId: 'lr', reviewId: 'r', at: f.now() },
+    ];
+  });
+  await f.watchdog.run();
+  assert.equal(kinds(f).includes('missing_reservation_session'), false);
+  assert.ok(f.rt.metadata.read().bindings.cell.every(b => b.active));
+  f.advance(LAUNCH_GRACE_MS);
+  await f.watchdog.run();
+  assert.equal(f.flags().filter(x => x.kind === 'missing_reservation_session').length, 2);
+  assert.deepEqual(f.rt.metadata.read().bindings.cell.map(b => [b.active, b.unboundBecause, b.unboundAt]), [[false, 'Session missing', f.now()], [false, 'Session missing', f.now()]]);
+});
+
+test('a fresh rebind or a retired launch never restarts the launch window', async t => {
+  const f = fixture(t);
+  f.bead('work', { status: 'in_progress' });
+  const old = f.now() - LAUNCH_GRACE_MS;
+  f.rt.metadata.mutate(d => {
+    d.workerLaunches.lr = { id: 'lr', cellId: 'cell', beadId: 'work', role: 'reviewer', reviewId: 'r', state: 'launched', sessionId: 'old-review', createdAt: old, submittedAt: old, boundAt: old };
+    d.reviews.r = { id: 'r', cellId: 'cell', workBeadId: 'work', state: 'in_review', reviewerSessionId: 'old-review', launchId: 'lr', createdAt: old, startedAt: old };
+    d.workerLaunches.la = { id: 'la', cellId: 'cell', beadId: 'work', role: 'investigator', state: 'abandoned', sessionId: 'abandoned', createdAt: f.now(), submittedAt: f.now(), boundAt: f.now() };
+    d.bindings.cell = [
+      { id: 'rebound', active: true, role: 'reviewer', beadId: 'work', sessionId: 'old-review', reviewId: 'r', at: f.now() },
+      { id: 'retired', active: true, role: 'investigator', beadId: 'work', sessionId: 'abandoned', workerLaunchId: 'la', at: f.now() },
+    ];
+  });
+  assert.equal(startingSession(f.rt, 'old-review', f.now()), false);
+  assert.equal(startingSession(f.rt, 'abandoned', f.now()), false);
+  reconcileInactiveBindings(f.rt, f.host, f.now());
+  assert.deepEqual(f.rt.metadata.read().bindings.cell.map(b => [b.active, b.unboundBecause]), [[false, 'Session missing'], [false, 'Session missing']]);
+  assert.ok(kinds(f).includes('missing_reservation_session'));
+});
 
 test('missing helper recovery notifies once after automatic cleanup, with no flags for invalid targets', async t => {
   const f = fixture(t);
