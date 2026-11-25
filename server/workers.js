@@ -281,6 +281,7 @@ export async function workerLaunchContext({ sid, task, ext, reason, host }) {
         if (binding) Object.assign(binding, { role: launch.role, workerLaunchId: launchId, ...(launch.reviewId ? { reviewId: launch.reviewId } : {}) });
         else list.push({ id: newId('bind'), sessionId: sid, beadId: target, role: launch.role, workerLaunchId: launchId, ...(launch.reviewId ? { reviewId: launch.reviewId } : {}), boundBy: actorFor(launch.requestedBy), active: true, at: Date.now() });
         rec.state = initial ? 'claimed' : 'launched';
+        rec.boundAt ||= Date.now();
         rec.updatedAt = Date.now();
       });
       rt.changed();
