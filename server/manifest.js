@@ -8,6 +8,7 @@ import { onArchive } from './archived-claims.js';
 import { workerLaunchContext } from './workers.js';
 import { WORK_LIMIT_SETTING } from './admission.js';
 import { HiveRuntime, BD_PATH_SETTING } from './runtime.js';
+import { KEEP_AWAKE_SETTING, KEEP_AWAKE_AC_SETTING } from './keep-awake.js';
 import { setupHandlers, configHandlers } from './handlers.js';
 import { workTools } from './tools.js';
 import { participation } from './access.js';
@@ -77,6 +78,18 @@ export function createManifest({ dir }) {
       label: 'Pop up when a Hive request needs you',
       help: 'Shows a card anywhere in Agent Wrangler when a queen forwards you a request or your answer could not be delivered. Requests always appear in the Hive conversation either way.',
     }, {
+      key: KEEP_AWAKE_SETTING,
+      hidden: true,
+      type: 'toggle',
+      label: 'Keep Mac awake while Hive work is active',
+      help: 'Holds a macOS idle-sleep assertion (caffeinate -i) while any hive has a claimed worker, an open review or a pending CI wait, and releases it when Hive is idle. Default on. Does nothing on other platforms.',
+    }, {
+      key: KEEP_AWAKE_AC_SETTING,
+      hidden: true,
+      type: 'toggle',
+      label: 'Only on AC power',
+      help: 'Keeps the Mac awake only while it is on AC power. Default on.',
+    }, {
       key: 'beeLevel',
       type: 'number',
       label: 'Number of bees',
@@ -107,7 +120,7 @@ export function createManifest({ dir }) {
     codexPolicy,
     session: { onBeforeDispatch, onArchive, onResume },
     hooks: { 'session.beforeSpawn': beforeSpawn, 'session.spawned': spawned, 'session.prepare': prepareSession, 'session.launchContext': async (args) => (await workerLaunchContext(args)) ?? queenLaunchContext(args) },
-    graph: ({ host }) => ({ hive: { ...host.stores.hive.projection(), ...agentCatalogForGraph(host.stores.hive, host), handoverSources: handoverSources(host) } }),
+    graph: ({ host }) => ({ hive: { ...host.stores.hive.projection(), ...agentCatalogForGraph(host.stores.hive, host), handoverSources: handoverSources(host), keepAwake: host.stores.hive.evaluateKeepAwake?.() ?? null } }),
     sweeps: [{
       id: 'refresh',
       everyMs: REFRESH_EVERY_MS,

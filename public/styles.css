@@ -1673,7 +1673,8 @@ body.light .hive-related-chip { border-color: #186879; }
 }
 .hive-capacity-editor input[type="number"] { width: 6em; }
 .hive-capacity-editor > label:first-child { flex-basis: 100%; }
-.hive-bd-setting, .hive-notification-setting { display: grid; gap: 8px; }
+.hive-bd-setting, .hive-notification-setting, .hive-keep-awake-setting, .hive-settings-suboption { display: grid; gap: 8px; }
+.hive-settings-suboption { padding-left: 24px; }
 .hive-capacity-unlimited { display: inline-flex; align-items: center; gap: 4px; }
 .hive-capacity-editor p { flex-basis: 100%; margin: 0; font-size: 12px; }
 .hive-request { border: 1px solid var(--border, #666); border-radius: 8px; padding: 12px; margin: 8px 0; overflow-wrap: anywhere; }

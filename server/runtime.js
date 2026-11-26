@@ -2,7 +2,7 @@ import { startCiWaits } from './ci-waits.js';
 import { observeLinkWaits } from './link-waits.js';
 import { createPickupDispatcher } from './pickup.js';
 import { createWatchdog } from './watchdog.js';
-import { workLimit, helperSlots } from './admission.js';
+import { workLimit, helperSlots, capacitySlots } from './admission.js';
 import { reconcileRequests, notifyQueen, notifyResolution, startRequestSubjects, reconcileRequestSubjects } from './requests.js';
 import { reconcileInactiveBindings, trackingKey } from './tracking.js';
 import { cleanupOrphanAttachments } from './attachments.js';
@@ -17,13 +17,15 @@ import { recover, afterWrite } from './recovery.js';
 import { threadAllCells } from './conversation.js';
 import { reopenUnfinished } from './workstreams.js';
 import { createPrLabelSweep } from './pr-label-discovery.js';
+import { createKeepAwake, keepAwakeSettings } from './keep-awake.js';
 
 export const BD_PATH_SETTING = 'bdPath';
+const KEEP_AWAKE_TICK_MS = 30000;
 
 // Everything Hive keeps for the life of the process, built by the store
 // factory before any host façade exists. `attach(host)` happens on activate.
 export class HiveRuntime {
-  constructor({ settings = null, log = () => {}, env = process.env } = {}) {
+  constructor({ settings = null, log = () => {}, env = process.env, keepAwake = {} } = {}) {
     this.paths = hivePaths(env);
     this.log = log;
     this.settings = settings;
@@ -55,6 +57,45 @@ export class HiveRuntime {
     });
     this.pendingParticipants = new Map();
     this._projection = { key: '', value: null };
+    this.keepAwake = createKeepAwake({
+      log,
+      onChange: () => {
+        if (!this.metadata.lifetime.isCurrent() || !this.host?.rebuild) return;
+        Promise.resolve(this.host.rebuild()).catch((err) => this.log(`hive: rebuild failed: ${err.message}`));
+      },
+      ...keepAwake,
+    });
+  }
+
+  setting(key) {
+    return this.host?.settings?.get?.(key) ?? this.settings?.get?.(key);
+  }
+
+  // Active work: a live claim, an open review, a reserved launch or helper,
+  // or a pending CI wait. Dormant claim holders do not count.
+  activeWork() {
+    let work = 0;
+    let ciWaits = 0;
+    try {
+      const slots = capacitySlots(this, this.snapshots.graph);
+      work = new Set([...slots.claimed, ...slots.reserved]).size;
+    } catch (err) {
+      this.log(`hive: could not count active work: ${err.message}`);
+    }
+    try {
+      ciWaits = Object.values(this.metadata.read().ciWaits || {}).filter((w) => w?.state === 'pending').length;
+    } catch (err) {
+      this.log(`hive: could not count CI waits: ${err.message}`);
+    }
+    return { active: work > 0 || ciWaits > 0, work, ciWaits };
+  }
+
+  evaluateKeepAwake() {
+    if (!this.host || !this.metadata.lifetime.isCurrent()) {
+      this.keepAwake.stop();
+      return this.keepAwake.status;
+    }
+    return this.keepAwake.evaluate({ ...keepAwakeSettings((key) => this.setting(key)), ...this.activeWork() });
   }
 
   configuredPath() {
@@ -78,6 +119,9 @@ export class HiveRuntime {
     }
     try { reconcileRequests(this, host, { startup: true }); } catch (err) { this.log(`hive: requests unavailable: ${err.message}`); }
     this.stopRequestSubjects = startRequestSubjects(this, host);
+    this.keepAwakeTimer = setInterval(() => this.evaluateKeepAwake(), KEEP_AWAKE_TICK_MS);
+    this.keepAwakeTimer.unref?.();
+    this.evaluateKeepAwake();
     this.recheck()
       .then(() => (this.metadata.lifetime.isCurrent(host) ? recover(this, host) : null))
       .then((recovered) => {
@@ -115,11 +159,15 @@ export class HiveRuntime {
     this.stopCiObservations?.();
     this.stopRequestSubjects?.();
     this.watchdog?.stop();
+    clearInterval(this.keepAwakeTimer);
+    this.keepAwakeTimer = null;
+    this.keepAwake.dispose();
     this.host = null;
   }
 
   changed() {
     if (!this.metadata.lifetime.isCurrent()) return;
+    this.evaluateKeepAwake();
     this.watchdog?.schedule();
     const host = this.host;
     if (!host?.rebuild) return;

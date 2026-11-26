@@ -8,7 +8,7 @@
   "main": "index.js",
   "scripts": {
     "release": "npm version --no-git-tag-version --ignore-scripts",
-    "test": "node --test test/*.test.mjs test/*.test.js public/*.test.js server/*.test.js",
+    "test": "HIVE_KEEP_AWAKE=off node --test test/*.test.mjs test/*.test.js public/*.test.js server/*.test.js",
     "test:native": "node --test test/native/*.test.js",
     "test:browser": "node scripts/test-browser.mjs"
   },

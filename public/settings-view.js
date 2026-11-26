@@ -84,6 +84,59 @@ function notificationSetting({ ui, api }) {
     form.error ? h('p', { role: 'alert' }, form.error) : null);
 }
 
+function toggleSetting({ ui, api }, { key, setting, label, help, disabled = false, focusKey, savedText }) {
+  let form = ui.form(key);
+  if (!form?.saving) {
+    const value = api?.settings?.()?.[setting] !== false;
+    form = { ...form, value, saved: form?.value === value && form?.saved };
+    ui.patchForm(key, form);
+  }
+  const change = patch => ui.setForm(key, { ...ui.form(key), ...patch });
+  const save = async e => {
+    const draft = ui.form(key);
+    if (draft.saving) return;
+    const value = e.target.checked;
+    change({ value, saving: true, saved: false, error: null });
+    try {
+      if (typeof api?.settings?.set !== 'function') throw new Error('Settings cannot be saved here.');
+      await api.settings.set(setting, value);
+      change({ saving: false, saved: true });
+    } catch (err) {
+      change({ value: draft.value, saving: false, error: `Could not save ${label}: ${err.message}` });
+    } finally {
+      restoreSettingsFocus(focusKey);
+    }
+  };
+  const helpId = `hive-${focusKey}-help`;
+  return [
+    h('label', { class: 'hive-check' }, h('input', {
+      type: 'checkbox', checked: form.value, disabled: form.saving || disabled, 'data-focus-key': focusKey,
+      'aria-describedby': helpId, onchange: save,
+    }), label),
+    h('p', { class: 'hive-muted', id: helpId }, help),
+    form.saved ? h('p', { role: 'status' }, savedText) : null,
+    form.error ? h('p', { role: 'alert' }, form.error) : null,
+  ];
+}
+
+export function keepAwakeSetting(ctx) {
+  const status = ctx.hive?.keepAwake;
+  const enabled = ctx.api?.settings?.()?.keepAwake !== false;
+  return h('div', { class: 'hive-keep-awake-setting' },
+    ...toggleSetting(ctx, {
+      key: 'global-keep-awake', setting: 'keepAwake', label: 'Keep Mac awake while Hive work is active', focusKey: 'settings-keep-awake',
+      help: 'Stops idle sleep while any hive has a claimed worker, an open review or a pending CI wait, and lets the Mac sleep again when Hive is idle. The display can still sleep. macOS only.',
+      savedText: 'Keep-awake preference saved.',
+    }),
+    h('div', { class: 'hive-settings-suboption' }, ...toggleSetting(ctx, {
+      key: 'global-keep-awake-ac', setting: 'keepAwakeAcOnly', label: 'Only on AC power', focusKey: 'settings-keep-awake-ac', disabled: !enabled,
+      help: 'Lets the Mac sleep normally on battery power.',
+      savedText: 'Power preference saved.',
+    })),
+    status ? h('p', { class: 'hive-muted', role: 'status', id: 'hive-keep-awake-status' },
+      status.holding ? `Now: keeping the Mac awake (caffeinate pid ${status.pid ?? 'unknown'}).` : `Now: not keeping the Mac awake. ${status.detail || ''}`.trim()) : null);
+}
+
 const sections = { hive: ['general', 'agents', 'lifecycle', 'advanced'], all: ['general', 'advanced'] };
 const sectionKey = tab => `hive:settings-section:${tab}`;
 
@@ -129,7 +182,7 @@ export function settingsModal(ctx, cell = null, thisHive = () => null) {
         : ids[(ids.indexOf(id) + (event.key === 'ArrowLeft' ? ids.length - 1 : 1)) % ids.length]);
     },
   }, id[0].toUpperCase() + id.slice(1));
-  const keys = ['global-capacity', 'global-bd', 'global-notifications',
+  const keys = ['global-capacity', 'global-bd', 'global-notifications', 'global-keep-awake', 'global-keep-awake-ac',
     ...(cell ? [`settings-rename:${cell.id}`, `goal:${cell.id}`, `instructions:${cell.id}`, `watchdog:${cell.id}`, `codex-approvals:${cell.id}`, `review-policy:${cell.id}`, `worker-profile:${cell.id}`] : [])];
   const saving = () => keys.some(key => ui.form(key)?.saving || ui.form(key)?.pending) || ctx.bees.saving?.() || Object.values(ctx.hive?.beads || {}).some(b => ui.form(`worker-profile:${cell?.id}:${b.id}`)?.saving);
   const close = (restore = true) => {
@@ -138,6 +191,8 @@ export function settingsModal(ctx, cell = null, thisHive = () => null) {
     ui.setForm('global-capacity', null);
     ui.setForm('global-bd', null);
     ui.setForm('global-notifications', null);
+    ui.setForm('global-keep-awake', null);
+    ui.setForm('global-keep-awake-ac', null);
     if (cell) { ui.setForm(`settings-rename:${cell.id}`, null); ui.setForm(`goal:${cell.id}`, null); }
     if (restore) requestAnimationFrame(() => (document.querySelector(`[data-focus-key="${form.returnKey || 'open-settings'}"]`) || document.querySelector('[data-focus-key="open-settings"]'))?.focus());
     return true;
@@ -174,6 +229,6 @@ export function settingsModal(ctx, cell = null, thisHive = () => null) {
           h('button', { type: 'button', class: 'hive-quiet-btn', disabled: ui.form('global-bd')?.saving,
             onclick: () => ui.setForm('global-bd', { ...ui.form('global-bd'), value: '', saved: false, error: null }) }, 'Reset to defaults'),
           h('p', { class: 'hive-muted' }, 'Reset clears the draft path. Save path to apply it.'))
-          : [capacityEditor(ctx), notificationSetting(ctx), ctx.bees.slider('all'),
+          : [capacityEditor(ctx), notificationSetting(ctx), keepAwakeSetting(ctx), ctx.bees.slider('all'),
             h('p', { class: 'hive-muted' }, 'Bees are decoration and mean nothing about the work. Reduced-motion settings stop them.')]))));
 }

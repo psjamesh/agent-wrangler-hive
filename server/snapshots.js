@@ -14,7 +14,8 @@ function deepFreeze(obj) {
 export function createSnapshotCache({ beads, onChange = () => {}, log = () => {}, isCurrent = () => true }) {
   let current = { revision: 0, loadedAt: null, error: null, graph: EMPTY };
   let running = null;
-  let again = false;
+  let passes = 0;
+  const waiters = [];
   let lastErrorAt = 0;
   let loadedGeneration = null;
 
@@ -38,32 +39,45 @@ export function createSnapshotCache({ beads, onChange = () => {}, log = () => {}
     } catch (err) {
       if (!isCurrent()) return current;
       lastErrorAt = Date.now();
-      log(`hive: snapshot refresh failed: ${err.message}`);
-      current = { ...current, revision: current.revision + 1, error: err.message };
+      log(`hive: snapshot refresh failed: ${err.message}${err.diagnostics ? ` ${JSON.stringify(err.diagnostics)}` : ''}`);
+      current = { ...current, revision: current.revision + 1, error: err.message, errorDetail: err.diagnostics || null };
     }
     onChange(current);
     return current;
   }
 
+  function settleWaiters(upTo, result, error = null) {
+    const due = waiters.filter((w) => w.target <= upTo);
+    waiters.splice(0, waiters.length, ...waiters.filter((w) => w.target > upTo));
+    for (const w of due) {
+      if (error) w.reject(error);
+      else w.resolve(result);
+    }
+  }
+
+  async function drain() {
+    try {
+      while (isCurrent() && waiters.some((w) => w.target > passes)) {
+        const pass = ++passes;
+        try {
+          settleWaiters(pass, await doRefresh());
+        } catch (err) {
+          settleWaiters(pass, null, err);
+        }
+      }
+    } finally {
+      running = null;
+      settleWaiters(Infinity, current);
+    }
+  }
+
+  // Each caller waits for the first pass that starts after its call, never
+  // for passes requested later, so continuous refreshes cannot hold it.
   function refresh() {
     if (!isCurrent()) return Promise.resolve(current);
-    if (running) {
-      again = true;
-      return running;
-    }
-    running = (async () => {
-      try {
-        let out;
-        do {
-          again = false;
-          out = await doRefresh();
-        } while (again && isCurrent());
-        return out;
-      } finally {
-        running = null;
-      }
-    })();
-    return running;
+    const waiting = new Promise((resolve, reject) => waiters.push({ target: passes + 1, resolve, reject }));
+    if (!running) running = drain();
+    return waiting;
   }
 
   const invalidate = () => {

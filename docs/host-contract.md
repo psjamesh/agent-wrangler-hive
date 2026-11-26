@@ -28,7 +28,7 @@ The manifest declares `engines.wranglerApi: ^2.0.0`. Hive uses the synchronous `
 
 | Surface | Use |
 | --- | --- |
-| `stores.hive` | One `HiveRuntime` per activation: the metadata store, the bd adapter and the snapshot cache. |
+| `stores.hive` | One `HiveRuntime` per activation: the metadata store, the bd adapter, the snapshot cache and the keep-awake holder. The snapshot cache runs one pass at a time; each `refresh()` caller resolves with the first pass that starts after its call, so a stream of later callers cannot hold it. A pass that throws rejects only its own callers, and callers are released when the runtime stops. |
 | `graph` | Publishes a cached projection under the `hive` key. It never runs `bd`. |
 | `tools` | The `hive_*` tools on AW's existing MCP server. |
 | `handlers` | Human actions from the Hive view: setup, cells, queen, conversation, layout and reconciliation. |
@@ -42,13 +42,14 @@ The manifest declares `engines.wranglerApi: ^2.0.0`. Hive uses the synchronous `
 | `sweeps` | Every 60 seconds: refreshes the snapshot and reconciles uncertain operations. A separate sweep labels eligible session PRs. |
 | `settings.maxClaimedWork` | Maximum active work items: one global limit counting claimed beads, open reviews and launching workers, default 8; 0 means Unlimited. Read at each admission without restart; lowering it keeps current work. The view projects the same admission calculation, with shared slots counted once. |
 | `settings.bdPath` | The human-owned absolute path to `bd`. |
+| `settings.keepAwake`, `settings.keepAwakeAcOnly` | “Keep Mac awake while Hive work is active” and its “Only on AC power” sub-option, both default on. See [Keep-awake](#keep-awake). |
 | `activate` / `deactivate` | Attach the runtime to the host façade, and detach it. |
 | `client`, `styles` | The `view` slot `overview` (label "Hive") on the rail. |
 
 ### Client API
 
 - `api.send` and `onMessage`: control frames and their replies.
-- `api.settings()`, `api.settings.set(key, value)` and `api.settings.onChange`: read, save and subscribe to Hive settings. The Hive Settings panel saves `maxClaimedWork` through this host path; the host validates its number definition, persists it and broadcasts the updated settings/board. The count opens that panel in overview and cell headers; the setup screen exposes it even when bd is unavailable. Saving bdPath rechecks the backend without a reload. The same panel saves requestNotifications (default on), labelled “Pop up when a Hive request needs you”. These rows are hidden from extension settings, and Hive registers no extension settings panel. No custom settings-write handler is used.
+- `api.settings()`, `api.settings.set(key, value)` and `api.settings.onChange`: read, save and subscribe to Hive settings. The Hive Settings panel saves `maxClaimedWork` through this host path; the host validates its number definition, persists it and broadcasts the updated settings/board. The count opens that panel in overview and cell headers; the setup screen exposes it even when bd is unavailable. Saving bdPath rechecks the backend without a reload. The same panel saves requestNotifications (default on), labelled “Pop up when a Hive request needs you”, and the keep-awake toggles with a line saying whether the Mac is being kept awake. These rows are hidden from extension settings, and Hive registers no extension settings panel. No custom settings-write handler is used.
 - `api.storage`: the selected cell, bead and link mode.
 - `api.mountSession`: embeds AW's own session panel, with its native Chat and Terminal controls, in the cell view. Falls back to `api.openSession`.
 - `api.claimDrag`: holds board re-rendering while a tile is being dragged.
@@ -112,6 +113,15 @@ Both state polling and label search run with the roughly one-minute discovery sw
 
 The `links:read` API is documented in [PortSwigger/agent-wrangler#468 (Add read-only session links capability)](https://github.com/PortSwigger/agent-wrangler/pull/468), merged as `1c6861a`. Deployment requires a host containing API 1.70.0.
 
+## Keep-awake
+
+While Hive work is active, Hive holds one `/usr/bin/caffeinate -i -w <service pid>`, which stops idle sleep but not display sleep, and releases it when Hive is idle. Active work is the admission capacity's claimed work (live claim holders only; a dormant holder does not count), open reviews, reserved launches and helpers, plus any pending CI wait. The runtime re-evaluates on every graph change and board build and every 30 s, reading settings each time, so a saved toggle applies without a restart.
+
+- With “Only on AC power” on, Hive reads `pmset -g batt` (5 s timeout, cached 30 s) and holds only while it reports `AC Power`. Battery, UPS or an unreadable source releases or withholds the assertion.
+- `-w` ends caffeinate with the service. Hive also kills it when work goes idle, either setting turns it off, the runtime detaches (shutdown or generation swap) and on process exit. A replacement is started only after the previous process has exited; an unexpected exit backs off 5 s, 30 s, 2 min, then 10 min.
+- Nothing happens on other platforms, when `/usr/bin/caffeinate` is missing, or when the process environment sets `HIVE_KEEP_AWAKE=off` (the test script does).
+- The state shows in Settings → All hives → General and in full `hive_context` as `cell.keep_awake` (`holding`, `enabled`, `ac_only`, `power`, `reason`).
+
 ## Beads (`bd`)
 
 Hive supports bd **>=1.3.4 <1.4.0** with `bd schema` reporting `schema_version: 1`, on an embedded Dolt store (`metadata.json` with `backend: dolt` and `dolt_mode: embedded`). Anything else shows the setup screen, and every write is refused.
@@ -119,7 +129,10 @@ Hive supports bd **>=1.3.4 <1.4.0** with `bd schema` reporting `schema_version: 
 ### Process rules
 
 - All calls go through one queue, one subprocess at a time, as an `execFile` argument array with no shell, at most 64 queued.
-- Subprocess timeouts send `SIGTERM` after 20 s for reads, 30 s for writes and 120 s for `init`, excluding queue wait, with a 64 MB output cap. There is no termination escalation. Stdin is closed.
+- Hive owns each subprocess deadline: 20 s for reads, 30 s for writes and 120 s for `init`, excluding queue wait, with a 64 MB output cap. Stdin is closed. At the deadline Hive sends `SIGTERM`, then `SIGKILL` 3 s later. The queue slot is freed only after the process has exited and its output streams have closed; streams still open 2 s after exit (a descendant holding the pipe) are destroyed. A process that never exits after `SIGKILL` keeps the slot and is logged every 5 s; Hive never signals a process after its exit.
+- Each queued job has a pre-spawn deadline: 90 s for reads, 180 s for writes and compound jobs, measured on the wall clock from enqueue. A job still queued at its deadline, including one found overdue when it reaches the head, is dropped and its caller gets `busy` with `noWrite: true`; it never runs later. A job that has started is never dropped.
+- Host sleep is detected from timer lateness: a 1 s heartbeat runs while commands are queued or running, and each deadline timer checks its own lateness, so either can observe a wake first. A running command whose deadline passes because of a sleep gets a fresh deadline measured from the wake (at most three times) instead of being killed.
+- Every command records diagnostics: command id, subcommand name (never other arguments), queued, start and finish times, queue age and depth, pid, exit code and signal, the escalation used, deadline renewals, any host sleep gap and up to 500 characters of stderr. Errors carry them as `diagnostics` and summarise them in their text, naming a sleep as a host sleep rather than a store fault. Timeouts, escalations, expiries and sleeps are logged in full. Only a genuine non-zero `export` exit marks the backend as needing a recheck; a timeout, kill, expiry or sleep leaves readiness unchanged and shows as a snapshot error.
 - The environment drops inherited `BEADS_*`, `BD_*`, `CLAUDE_SESSION_ID` and `XDG_CONFIG_HOME`, and sets `BEADS_DIR`, `HOME` and `XDG_CONFIG_HOME` under Hive's data folder, plus `DO_NOT_TRACK=1`, `BD_NON_INTERACTIVE=1`, `BD_LAST_TOUCHED_FALLBACK=0`, `BD_NO_DEP_TYPE_WARNING=1` and `NO_COLOR=1`.
 - Immediately before each command, in the same queued job, Hive checks that the binary that job will run is the one the last probe accepted, and that the configured path and that binary's identity (real path, inode, size, modification time) still match. A probe drops readiness as it starts, so no command queued under an older check can run against a newer one. If they differ, the command is not run, readiness is dropped and Hive probes again. A binary that will not start, or a store that cannot be read, also drops readiness, which brings the setup screen back.
 - Every read passes `--readonly`. Every write passes `--json --actor aw:<session id>`, or `--actor aw:human` for a human action.
@@ -127,7 +140,7 @@ Hive supports bd **>=1.3.4 <1.4.0** with `bd schema` reporting `schema_version: 
   - Exit 0 is success.
   - Exit 13 is a failed guard, reported as a conflict, with nothing written.
   - Any other non-zero exit is a refusal.
-  - A timeout or signal is **uncertain**, and is never retried.
+  - A timeout or signal after the command started is **uncertain**, and is never retried. Creates are reconciled by reading the store for their op id.
   - A create that reports success without ids is uncertain too.
 
 ### Commands used
