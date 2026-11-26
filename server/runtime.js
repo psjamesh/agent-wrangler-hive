@@ -2,7 +2,7 @@ import { startCiWaits } from './ci-waits.js';
 import { observeLinkWaits } from './link-waits.js';
 import { createPickupDispatcher } from './pickup.js';
 import { createWatchdog } from './watchdog.js';
-import { workLimit, helperSlots, hiveWorkIds } from './admission.js';
+import { workLimit, helperSlots, hiveWorkIds, eligibleWorkCell } from './admission.js';
 import { OPEN_REVIEW_STATES } from './review-state.js';
 import { reconcileRequests, notifyQueen, notifyResolution, startRequestSubjects, reconcileRequestSubjects } from './requests.js';
 import { reconcileInactiveBindings, trackingKey } from './tracking.js';
@@ -74,11 +74,11 @@ export class HiveRuntime {
     return this.host?.settings?.get?.(key) ?? this.settings?.get?.(key);
   }
 
-  // Active work from live evidence only, so an unreconciled reservation or a
-  // missing session never keeps the Mac awake: claims, open reviews and
-  // launches whose session is running (not archived, exited or dormant), a
-  // launch still starting within its admission window, helpers, and pending
-  // CI waits.
+  // Active work from live evidence only, in enabled hives, so an unreconciled
+  // reservation, a missing or dormant session or a disabled hive never keeps
+  // the Mac awake: claims, open reviews, launches and helpers whose session is
+  // running, a launch or helper admission still inside its start window, and
+  // pending CI waits.
   activeWork(now = Date.now()) {
     const running = (sid) => {
       const session = sid ? this.host?.sessions?.get?.(sid) : null;
@@ -89,19 +89,28 @@ export class HiveRuntime {
     try {
       const graph = this.snapshots.graph;
       const doc = this.metadata.read();
+      const live = (beadId, cellId = null) => {
+        const cell = eligibleWorkCell(this, graph, beadId);
+        return Boolean(cell?.enabled && (!cellId || cell.id === cellId));
+      };
       for (const id of hiveWorkIds(this, graph)) {
         const bead = graph.beads[id];
-        if (bead.status === 'in_progress' && bead.assignee && running(bead.ownerSessionId)) ids.add(id);
+        if (bead.status === 'in_progress' && bead.assignee && running(bead.ownerSessionId) && live(id)) ids.add(id);
       }
       for (const review of Object.values(doc.reviews || {})) {
-        if (OPEN_REVIEW_STATES.has(review.state) && running(review.reviewerSessionId)) ids.add(review.workBeadId);
+        if (OPEN_REVIEW_STATES.has(review.state) && running(review.reviewerSessionId) && live(review.workBeadId)) ids.add(review.workBeadId);
       }
       for (const launch of Object.values(doc.workerLaunches || {})) {
-        if (!LIVE_LAUNCH_STATES.has(launch.state)) continue;
+        if (!LIVE_LAUNCH_STATES.has(launch.state) || !live(launch.beadId, launch.cellId)) continue;
         if (launch.sessionId ? running(launch.sessionId) : now - (launch.createdAt || 0) < LAUNCH_WINDOW_MS) ids.add(launch.beadId);
       }
-      for (const id of helperSlots(this, graph, now).keys()) ids.add(id);
-      ciWaits = Object.values(doc.ciWaits || {}).filter((w) => w?.state === 'pending').length;
+      for (const admission of this.spawnAdmissions?.values?.() || []) {
+        if (now - admission.at < LAUNCH_WINDOW_MS && live(admission.beadId, admission.cellId)) ids.add(admission.beadId);
+      }
+      for (const [cellId, list] of Object.entries(doc.bindings || {})) {
+        for (const b of list) if (b.active && b.autoEnrolled && running(b.sessionId) && live(b.beadId, cellId)) ids.add(b.beadId);
+      }
+      ciWaits = Object.values(doc.ciWaits || {}).filter((w) => w?.state === 'pending' && doc.cells?.[w.cellId]?.enabled && !doc.cells[w.cellId].snapshot).length;
     } catch (err) {
       this.log(`hive: could not count active work: ${err.message}`);
     }

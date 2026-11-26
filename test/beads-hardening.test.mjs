@@ -210,3 +210,23 @@ test('a read queued across a host sleep still runs at wake, in either timer orde
     assert.equal(f.spawned.at(-1).args[0], 'export');
   }
 });
+
+test('a write that exits 0 only after Hive sent SIGTERM is still uncertain', async (t) => {
+  const clock = fakeTimers();
+  const f = await hardenedAdapter(t, { clock, script: () => (child, close) => {
+    child.kill = (sig) => { child.kills.push(sig); setImmediate(() => { child.emit('exit', 0, null); close(null, '{"id":"hive-a"}', ''); }); return true; };
+  } });
+  const write = f.adapter.update('hive-a', { summary: 'x' }, 'aw:a').catch((err) => err);
+  await flush();
+  await clock.advance(31000);
+  const err = await write;
+  assert.equal(err.code, 'uncertain');
+  assert.match(err.message, /may or may not have been applied/);
+  f.script = () => (child, close) => {
+    child.kill = (sig) => { child.kills.push(sig); setImmediate(() => { child.emit('exit', 0, null); close(null, '{"id":"hive-a"}', ''); }); return true; };
+  };
+  const show = f.adapter.show('hive-a').catch((e) => e);
+  await flush();
+  await clock.advance(21000);
+  assert.match((await show).message, /timed out/);
+});

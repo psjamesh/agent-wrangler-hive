@@ -115,10 +115,10 @@ The `links:read` API is documented in [PortSwigger/agent-wrangler#468 (Add read-
 
 ## Keep-awake
 
-While Hive work is active, Hive holds one `/usr/bin/caffeinate -i -w <service pid>`, which stops idle sleep but not display sleep, and releases it when Hive is idle. Active work is counted from live evidence only: claimed work, open reviews and worker launches whose session is running (not archived, exited or dormant), a launch with no session yet within ten minutes of its reservation, admitted helpers, and any pending CI wait. Unlike admission capacity, an uncertain launch, an unsettled claim operation or a review whose reviewer session is missing does not count, so an unreconciled record never keeps the Mac awake. The runtime re-evaluates on every graph change and board build and every 30 s, reading settings each time, so a saved toggle applies without a restart.
+While Hive work is active, Hive holds one `/usr/bin/caffeinate -i -w <service pid>`, which stops idle sleep but not display sleep, and releases it when Hive is idle. Active work is counted from live evidence only, in enabled non-snapshot hives: claimed work, open reviews, worker launches and helpers whose session is running (not archived, exited or dormant), a launch or helper admission with no session yet within ten minutes, and pending CI waits. Unlike admission capacity, an uncertain launch, an unsettled claim operation or a review whose reviewer session is missing does not count, so an unreconciled record never keeps the Mac awake. The runtime re-evaluates on every graph change and board build and every 30 s, reading settings each time, so a saved toggle applies without a restart.
 
 - With “Only on AC power” on, Hive reads `pmset -g batt` (5 s timeout, cached 30 s) and holds only while it reports `AC Power`. Battery, UPS or an unreadable source releases or withholds the assertion.
-- `-w` ends caffeinate with the service. Hive also kills it when work goes idle, either setting turns it off, the runtime detaches (shutdown or generation swap) and on process exit. A replacement is started only after the previous process has exited; an unexpected exit backs off 5 s, 30 s, 2 min, then 10 min.
+- `-w` ends caffeinate with the service. Hive also kills it, without starting another until a later evaluation wants one, when work goes idle, either setting turns it off, the runtime detaches (shutdown or generation swap) and on process exit. A replacement is started only after the previous process has exited; an unexpected exit backs off 5 s, 30 s, 2 min, then 10 min.
 - Nothing happens on other platforms, when `/usr/bin/caffeinate` is missing, or when the process environment sets `HIVE_KEEP_AWAKE=off` (the test script does).
 - The state shows in Settings → All hives → General and in full `hive_context` as `cell.keep_awake` (`holding`, `enabled`, `ac_only`, `power`, `reason`).
 
@@ -140,7 +140,7 @@ Hive supports bd **>=1.3.4 <1.4.0** with `bd schema` reporting `schema_version: 
   - Exit 0 is success.
   - Exit 13 is a failed guard, reported as a conflict, with nothing written.
   - Any other non-zero exit is a refusal.
-  - A timeout or signal after the command started is **uncertain**, and is never retried. Creates are reconciled by reading the store for their op id.
+  - A timeout or signal after the command started is **uncertain**, and is never retried. This includes a command that exits 0 only after Hive's deadline fired; a read in that state is a timeout. Creates are reconciled by reading the store for their op id.
   - A create that reports success without ids is uncertain too.
 
 ### Commands used

@@ -48,6 +48,7 @@ export function createKeepAwake({
   let failures = 0;
   let retryAt = 0;
   let disposed = false;
+  let wanted = false;
   let input = { enabled: false, acOnly: true, active: false, work: 0, ciWaits: 0 };
   const power = { source: null, checkedAt: 0, seq: 0, inflight: false };
   let status = snapshot('stopped');
@@ -133,7 +134,7 @@ export function createKeepAwake({
     } else {
       return;
     }
-    if (!disposed) evaluate(input);
+    if (!disposed && wanted) evaluate(input);
   }
 
   function checkPower() {
@@ -145,7 +146,7 @@ export function createKeepAwake({
       power.inflight = false;
       power.source = source;
       power.checkedAt = now();
-      if (!disposed) evaluate(input);
+      if (!disposed && wanted) evaluate(input);
     };
     try {
       const proc = execFile('/usr/bin/pmset', ['-g', 'batt'], { timeout: POWER_TIMEOUT_MS, encoding: 'utf8' }, (err, stdout) => done(err ? null : parsePowerSource(stdout)));
@@ -159,6 +160,7 @@ export function createKeepAwake({
     if (disposed) return status;
     input = { enabled: Boolean(next.enabled), acOnly: next.acOnly !== false, active: Boolean(next.active), work: next.work || 0, ciWaits: next.ciWaits || 0 };
     const reason = decide();
+    wanted = reason === 'held' || reason === 'checking';
     if (reason === 'held') hold();
     else release();
     publish(reason === 'held' && !child ? (now() < retryAt ? 'backoff' : 'starting') : reason);
@@ -181,6 +183,7 @@ export function createKeepAwake({
   }
 
   function stop() {
+    wanted = false;
     release();
     power.seq += 1;
     power.inflight = false;

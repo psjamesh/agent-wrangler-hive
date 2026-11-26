@@ -129,6 +129,21 @@ test('an unreadable power source does not hold when only on AC', async () => {
   assert.equal(h.spawns.length, 0);
 });
 
+test('stop releases without respawning when the old process exits', async () => {
+  const h = harness();
+  h.ka.evaluate(active);
+  await flush();
+  h.ka.stop();
+  assert.deepEqual(h.spawns[0].child.kills, ['SIGTERM']);
+  await flush();
+  await flush();
+  assert.equal(h.spawns.length, 1);
+  assert.equal(h.ka.status.holding, false);
+  assert.equal(h.ka.status.reason, 'stopped');
+  h.ka.evaluate(active);
+  assert.equal(h.spawns.length, 2, 'a later evaluation can hold again');
+});
+
 test('dispose on runtime shutdown kills the process and ignores later evaluations', async () => {
   const h = harness();
   h.ka.evaluate(active);
@@ -187,7 +202,7 @@ test('the runtime counts pending CI waits as active work and releases on detach'
   const lifetime = rt.metadata.lifetime;
   lifetime.isCurrent = () => true;
   assert.equal(rt.evaluateKeepAwake().reason, 'idle');
-  rt.metadata.mutate((d) => { (d.ciWaits ||= {})['hive-a'] = { id: 'w1', state: 'pending' }; });
+  rt.metadata.mutate((d) => { d.cells.c = { id: 'c', enabled: true }; (d.ciWaits ||= {})['hive-a'] = { id: 'w1', cellId: 'c', state: 'pending' }; });
   rt.evaluateKeepAwake();
   await flush();
   assert.equal(rt.keepAwake.status.holding, true);
@@ -230,4 +245,13 @@ test('only live evidence counts as active work', async (t) => {
   assert.equal(rt.activeWork(1000).active, true, 'a launch still starting within its window counts');
   graph = buildGraph([raw('root'), raw('a', 'root', { status: 'in_progress', assignee: 'aw:live' }), raw('b', 'root')]);
   assert.deepEqual(rt.activeWork(10 * 60 * 1000 + 1), { active: true, work: 1, ciWaits: 0 });
+  graph = buildGraph([raw('root'), raw('a', 'root'), raw('b', 'root')]);
+  rt.metadata.mutate((d) => { d.bindings.c = [{ beadId: 'b', sessionId: 'sleepy', role: 'investigator', active: true, autoEnrolled: true }]; });
+  assert.equal(rt.activeWork(10 * 60 * 1000 + 1).active, false, 'a dormant helper does not count');
+  rt.metadata.mutate((d) => { d.bindings.c[0].sessionId = 'live'; });
+  assert.equal(rt.activeWork(10 * 60 * 1000 + 1).work, 1, 'a running helper counts');
+  rt.metadata.mutate((d) => { d.bindings.c = []; d.cells.c.enabled = false; d.ciWaits = { b: { id: 'w', cellId: 'c', beadId: 'b', state: 'pending' } }; d.reviews.r3 = { id: 'r3', workBeadId: 'b', state: 'in_review', reviewerSessionId: 'live' }; });
+  assert.deepEqual(rt.activeWork(10 * 60 * 1000 + 1), { active: false, work: 0, ciWaits: 0 }, 'a disabled hive does not count');
+  rt.metadata.mutate((d) => { d.cells.c.enabled = true; });
+  assert.deepEqual(rt.activeWork(10 * 60 * 1000 + 1), { active: true, work: 1, ciWaits: 1 });
 });

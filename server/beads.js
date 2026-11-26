@@ -329,7 +329,7 @@ export function createBeadsAdapter({
       try {
         child = execFile(exe, args, { cwd, env: childEnv({ withBeadsDir }), maxBuffer: MAX_BUFFER, encoding: 'utf8', windowsHide: true },
           (err, stdout, stderr) => {
-            if (!err) return finish({ code: 0, stdout, stderr, rawStderr: stderr, started: true });
+            if (!err) return finish({ code: 0, stdout, stderr, rawStderr: stderr, timedOut: d.timedOut, started: true });
             const timedOut = d.timedOut;
             const code = typeof err.code === 'number' ? err.code : null;
             const killed = Boolean(err.killed || err.signal);
@@ -468,7 +468,7 @@ export function createBeadsAdapter({
   }
 
   function writeOutcome(res, what) {
-    if (res.code === 0) return;
+    if (res.code === 0 && !res.timedOut) return;
     if (res.stale) throw new BeadsError('setup-required', `${what} was not attempted: ${state.detail}`);
     noteStartFailure(res);
     const extra = { stderr: clip(res.stderr), diagnostics: res.diagnostics };
@@ -480,7 +480,7 @@ export function createBeadsAdapter({
   }
 
   function readOutcome(res, what) {
-    if (res.code === 0) return;
+    if (res.code === 0 && !res.timedOut) return;
     if (res.stale) throw new BeadsError('setup-required', `${what} was not attempted: ${state.detail}`);
     noteStartFailure(res);
     if (res.timedOut) throw new BeadsError('failed', `${what} timed out${detailed(res) || '.'}`, { timedOut: true, stderr: clip(res.stderr), diagnostics: res.diagnostics });
@@ -524,7 +524,7 @@ export function createBeadsAdapter({
     }
     const neutralCwd = fs.existsSync(workspaceDir) ? workspaceDir : nearestExisting(workspaceDir);
     const ver = await run(['--version'], { raw: true, probing: true, exe, cwd: neutralCwd, withBeadsDir: false });
-    const version = ver.code === 0 ? parseVersion(ver.stdout) : null;
+    const version = ver.code === 0 && !ver.timedOut ? parseVersion(ver.stdout) : null;
     if (!version) {
       setState({ state: 'missing-binary', executable: exe, version: null, detail: `${exe} did not report a bd version: ${clip(ver.stderr || ver.stdout, 300)}`, checkedAt: at });
       return state;
@@ -534,7 +534,7 @@ export function createBeadsAdapter({
       return state;
     }
     const schema = await run(['schema'], { raw: true, probing: true, exe, cwd: neutralCwd, withBeadsDir: false });
-    const schemaVersion = schema.code === 0 ? parseJson(schema.stdout)?.schema_version : undefined;
+    const schemaVersion = schema.code === 0 && !schema.timedOut ? parseJson(schema.stdout)?.schema_version : undefined;
     if (schemaVersion !== SUPPORTED_BD.schemaVersion) {
       setState({ state: 'incompatible', executable: exe, version: version.text, detail: `bd reports JSON schema ${JSON.stringify(schemaVersion ?? null)}; Hive supports schema ${SUPPORTED_BD.schemaVersion}.`, checkedAt: at });
       return state;
@@ -552,7 +552,7 @@ export function createBeadsAdapter({
       return state;
     }
     const info = await run(['info', '--json'], { exe, probing: true });
-    if (info.code !== 0) {
+    if (info.code !== 0 || info.timedOut) {
       setState({ state: 'error', executable: exe, version: version.text, detail: `bd could not open the store: ${failureText(info)}`, checkedAt: at });
       return state;
     }
@@ -603,7 +603,7 @@ export function createBeadsAdapter({
     requireReady();
     checkId(id);
     const res = await run(['show', id, '--json']);
-    if (res.code !== 0) {
+    if (res.code !== 0 || res.timedOut) {
       if (/not found|no issues found/i.test(failureText(res))) return null;
       readOutcome(res, `Reading ${id}`);
     }
