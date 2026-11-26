@@ -239,7 +239,12 @@ test('only live evidence counts as active work', async (t) => {
     d.operations.o1 = { id: 'o1', kind: 'claim', state: 'uncertain', intent: { beadId: 'b' } };
   });
   assert.deepEqual(rt.activeWork(10 * 60 * 1000 + 1), { active: false, work: 0, ciWaits: 0 });
-  rt.metadata.mutate((d) => { d.reviews.r2 = { id: 'r2', workBeadId: 'b', state: 'in_review', reviewerSessionId: 'live' }; });
+  rt.metadata.mutate((d) => { d.workerLaunches.l4 = { id: 'l4', cellId: 'c', beadId: 'b', state: 'claimed', sessionId: 'live', createdAt: 0 }; });
+  assert.equal(rt.activeWork(10 * 60 * 1000 + 1).active, false, 'a claimed launch whose claim was released does not count');
+  rt.metadata.mutate((d) => { d.workerLaunches.l5 = { id: 'l5', cellId: 'c', beadId: 'b', state: 'binding', sessionId: 'live', createdAt: 0 }; });
+  assert.equal(rt.activeWork(10 * 60 * 1000 + 1).active, false, 'a launch stuck past its start window does not count');
+  assert.equal(rt.activeWork(1000).work, 1);
+  rt.metadata.mutate((d) => { delete d.workerLaunches.l4; delete d.workerLaunches.l5; d.reviews.r2 = { id: 'r2', workBeadId: 'b', state: 'in_review', reviewerSessionId: 'live' }; });
   assert.deepEqual(rt.activeWork(10 * 60 * 1000 + 1), { active: true, work: 1, ciWaits: 0 });
   rt.metadata.mutate((d) => { delete d.reviews.r2; });
   assert.equal(rt.activeWork(1000).active, true, 'a launch still starting within its window counts');

@@ -22,7 +22,7 @@ import { createKeepAwake, keepAwakeSettings } from './keep-awake.js';
 
 export const BD_PATH_SETTING = 'bdPath';
 const KEEP_AWAKE_TICK_MS = 30000;
-const LIVE_LAUNCH_STATES = new Set(['reserved', 'binding', 'claimed']);
+const STARTING_LAUNCH_STATES = new Set(['reserved', 'binding']);
 const LAUNCH_WINDOW_MS = 10 * 60 * 1000;
 
 // Everything Hive keeps for the life of the process, built by the store
@@ -77,8 +77,8 @@ export class HiveRuntime {
   // Active work from live evidence only, in enabled hives, so an unreconciled
   // reservation, a missing or dormant session or a disabled hive never keeps
   // the Mac awake: claims, open reviews, launches and helpers whose session is
-  // running, a launch or helper admission still inside its start window, and
-  // pending CI waits.
+  // running, a launch still starting or a helper admission inside its start
+  // window, and pending CI waits. A claimed launch counts only through its claim.
   activeWork(now = Date.now()) {
     const running = (sid) => {
       const session = sid ? this.host?.sessions?.get?.(sid) : null;
@@ -101,8 +101,8 @@ export class HiveRuntime {
         if (OPEN_REVIEW_STATES.has(review.state) && running(review.reviewerSessionId) && live(review.workBeadId)) ids.add(review.workBeadId);
       }
       for (const launch of Object.values(doc.workerLaunches || {})) {
-        if (!LIVE_LAUNCH_STATES.has(launch.state) || !live(launch.beadId, launch.cellId)) continue;
-        if (launch.sessionId ? running(launch.sessionId) : now - (launch.createdAt || 0) < LAUNCH_WINDOW_MS) ids.add(launch.beadId);
+        if (!STARTING_LAUNCH_STATES.has(launch.state) || now - (launch.createdAt || 0) >= LAUNCH_WINDOW_MS || !live(launch.beadId, launch.cellId)) continue;
+        if (!launch.sessionId || running(launch.sessionId)) ids.add(launch.beadId);
       }
       for (const admission of this.spawnAdmissions?.values?.() || []) {
         if (now - admission.at < LAUNCH_WINDOW_MS && live(admission.beadId, admission.cellId)) ids.add(admission.beadId);
