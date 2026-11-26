@@ -2,7 +2,8 @@ import { startCiWaits } from './ci-waits.js';
 import { observeLinkWaits } from './link-waits.js';
 import { createPickupDispatcher } from './pickup.js';
 import { createWatchdog } from './watchdog.js';
-import { workLimit, helperSlots, capacitySlots } from './admission.js';
+import { workLimit, helperSlots, hiveWorkIds } from './admission.js';
+import { OPEN_REVIEW_STATES } from './review-state.js';
 import { reconcileRequests, notifyQueen, notifyResolution, startRequestSubjects, reconcileRequestSubjects } from './requests.js';
 import { reconcileInactiveBindings, trackingKey } from './tracking.js';
 import { cleanupOrphanAttachments } from './attachments.js';
@@ -21,6 +22,8 @@ import { createKeepAwake, keepAwakeSettings } from './keep-awake.js';
 
 export const BD_PATH_SETTING = 'bdPath';
 const KEEP_AWAKE_TICK_MS = 30000;
+const LIVE_LAUNCH_STATES = new Set(['reserved', 'binding', 'claimed']);
+const LAUNCH_WINDOW_MS = 10 * 60 * 1000;
 
 // Everything Hive keeps for the life of the process, built by the store
 // factory before any host façade exists. `attach(host)` happens on activate.
@@ -71,23 +74,38 @@ export class HiveRuntime {
     return this.host?.settings?.get?.(key) ?? this.settings?.get?.(key);
   }
 
-  // Active work: a live claim, an open review, a reserved launch or helper,
-  // or a pending CI wait. Dormant claim holders do not count.
-  activeWork() {
-    let work = 0;
+  // Active work from live evidence only, so an unreconciled reservation or a
+  // missing session never keeps the Mac awake: claims, open reviews and
+  // launches whose session is running (not archived, exited or dormant), a
+  // launch still starting within its admission window, helpers, and pending
+  // CI waits.
+  activeWork(now = Date.now()) {
+    const running = (sid) => {
+      const session = sid ? this.host?.sessions?.get?.(sid) : null;
+      return Boolean(session && !session.archived && !session.dormant && session.status !== 'exited');
+    };
+    const ids = new Set();
     let ciWaits = 0;
     try {
-      const slots = capacitySlots(this, this.snapshots.graph);
-      work = new Set([...slots.claimed, ...slots.reserved]).size;
+      const graph = this.snapshots.graph;
+      const doc = this.metadata.read();
+      for (const id of hiveWorkIds(this, graph)) {
+        const bead = graph.beads[id];
+        if (bead.status === 'in_progress' && bead.assignee && running(bead.ownerSessionId)) ids.add(id);
+      }
+      for (const review of Object.values(doc.reviews || {})) {
+        if (OPEN_REVIEW_STATES.has(review.state) && running(review.reviewerSessionId)) ids.add(review.workBeadId);
+      }
+      for (const launch of Object.values(doc.workerLaunches || {})) {
+        if (!LIVE_LAUNCH_STATES.has(launch.state)) continue;
+        if (launch.sessionId ? running(launch.sessionId) : now - (launch.createdAt || 0) < LAUNCH_WINDOW_MS) ids.add(launch.beadId);
+      }
+      for (const id of helperSlots(this, graph, now).keys()) ids.add(id);
+      ciWaits = Object.values(doc.ciWaits || {}).filter((w) => w?.state === 'pending').length;
     } catch (err) {
       this.log(`hive: could not count active work: ${err.message}`);
     }
-    try {
-      ciWaits = Object.values(this.metadata.read().ciWaits || {}).filter((w) => w?.state === 'pending').length;
-    } catch (err) {
-      this.log(`hive: could not count CI waits: ${err.message}`);
-    }
-    return { active: work > 0 || ciWaits > 0, work, ciWaits };
+    return { active: ids.size > 0 || ciWaits > 0, work: ids.size, ciWaits };
   }
 
   evaluateKeepAwake() {

@@ -7,6 +7,7 @@ import { EventEmitter } from 'node:events';
 import { createKeepAwake, parsePowerSource, CAFFEINATE } from '../server/keep-awake.js';
 import { HiveRuntime } from '../server/runtime.js';
 import { flush } from './helpers/fake-timers.mjs';
+import { buildGraph } from '../server/bead-model.js';
 
 const AC = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true\n";
 const BATTERY = "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t80%; discharging; 4:00 remaining present: true\n";
@@ -202,4 +203,31 @@ test('the runtime counts pending CI waits as active work and releases on detach'
   rt.detach();
   assert.equal(rt.keepAwake.status.holding, false);
   assert.equal(rt.keepAwake.status.reason, 'stopped');
+});
+
+test('only live evidence counts as active work', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hive-active-work-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const rt = new HiveRuntime({ env: { AW_DATA_DIR: dir }, keepAwake: { platform: 'linux' } });
+  const sessions = new Map([['live', { sessionId: 'live', status: 'working' }], ['sleepy', { sessionId: 'sleepy', status: 'idle', dormant: true }], ['gone', { sessionId: 'gone', status: 'exited' }]]);
+  rt.host = { sessions: { get: (id) => sessions.get(id), forTask: () => [] } };
+  rt.metadata.lifetime.isCurrent = () => true;
+  const raw = (id, parentId, extra = {}) => ({ id, title: id, status: 'open', metadata: { hive_kind: parentId ? 'work' : 'goal' }, dependencies: parentId ? [{ issue_id: id, depends_on_id: parentId, type: 'parent-child' }] : [], ...extra });
+  let graph = buildGraph([raw('root'), raw('a', 'root', { status: 'in_progress', assignee: 'aw:sleepy' }), raw('b', 'root')]);
+  rt.snapshots = { get graph() { return graph; } };
+  rt.metadata.mutate((d) => {
+    d.cells.c = { id: 'c', taskId: 't', rootBeadId: 'root', enabled: true };
+    d.workerLaunches.l1 = { id: 'l1', cellId: 'c', beadId: 'b', state: 'uncertain', sessionId: 'missing', createdAt: 0 };
+    d.workerLaunches.l2 = { id: 'l2', cellId: 'c', beadId: 'b', state: 'reserved', sessionId: null, createdAt: 0 };
+    d.workerLaunches.l3 = { id: 'l3', cellId: 'c', beadId: 'b', state: 'claimed', sessionId: 'gone', createdAt: 0 };
+    d.reviews.r1 = { id: 'r1', workBeadId: 'b', state: 'requested', reviewerSessionId: 'missing' };
+    d.operations.o1 = { id: 'o1', kind: 'claim', state: 'uncertain', intent: { beadId: 'b' } };
+  });
+  assert.deepEqual(rt.activeWork(10 * 60 * 1000 + 1), { active: false, work: 0, ciWaits: 0 });
+  rt.metadata.mutate((d) => { d.reviews.r2 = { id: 'r2', workBeadId: 'b', state: 'in_review', reviewerSessionId: 'live' }; });
+  assert.deepEqual(rt.activeWork(10 * 60 * 1000 + 1), { active: true, work: 1, ciWaits: 0 });
+  rt.metadata.mutate((d) => { delete d.reviews.r2; });
+  assert.equal(rt.activeWork(1000).active, true, 'a launch still starting within its window counts');
+  graph = buildGraph([raw('root'), raw('a', 'root', { status: 'in_progress', assignee: 'aw:live' }), raw('b', 'root')]);
+  assert.deepEqual(rt.activeWork(10 * 60 * 1000 + 1), { active: true, work: 1, ciWaits: 0 });
 });

@@ -194,3 +194,19 @@ test('a command that exits but leaves its pipe held open is closed at its deadli
   assert.deepEqual(f.spawned[0].child.kills, []);
   assert.match((await read).message, /timed out/);
 });
+
+test('a read queued across a host sleep still runs at wake, in either timer order', async (t) => {
+  for (const reverse of [false, true]) {
+    const clock = fakeTimers();
+    const f = await hardenedAdapter(t, { clock, script: (args) => (args[1] === 'hive-head' ? behave.manual() : behave.ok('')) });
+    const head = f.adapter.close('hive-head', 'done', 'aw:a');
+    const read = f.adapter.loadSnapshot();
+    await flush();
+    await clock.sleep(600000, { reverse });
+    await clock.advance(5000);
+    f.spawned[0].finish('{"id":"hive-head"}');
+    await head;
+    assert.ok(await read);
+    assert.equal(f.spawned.at(-1).args[0], 'export');
+  }
+});
