@@ -233,6 +233,11 @@ export function spawnRestriction(doc, sid) {
   return l.restriction === 'denied' ? 'denied' : 'unrestricted';
 }
 
+function keepAwakeContext(status) {
+  if (!status) return null;
+  return { holding: status.holding, enabled: status.enabled, ac_only: status.acOnly, power: status.power, reason: status.detail };
+}
+
 export async function buildContext(rt, host, actor, { include_closed = false, bead_id, scope = 'cell' } = {}) {
   await rt.snapshots.refresh();
   if (scope === 'bead') {
@@ -280,6 +285,7 @@ export async function buildContext(rt, host, actor, { include_closed = false, be
         watchdog_settings: watchdogSettings(cell),
         review_policy: reviewPolicy(cell),
         codex_approvals: cell.codexApprovals || 'config',
+        keep_awake: keepAwakeContext(rt.keepAwake?.status),
         queen_instructions: cell.queenInstructions || '',
         setup: cell.setup?.state || null,
       },

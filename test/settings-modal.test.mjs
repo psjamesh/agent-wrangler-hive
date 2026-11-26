@@ -331,3 +331,29 @@ for (const section of ['agents', 'advanced']) test(`retired hive explains its re
   assert.equal(f.key(`settings-section-hive-${section}`).getAttribute('aria-selected'), 'true');
   assert.match(f.dialog().textContent, /Reopen the hive in Lifecycle to change these settings/);
 });
+
+test('All hives settings toggle keep-awake and its AC-only sub-option and show whether it is held', async t => {
+  const f = fixture(t);
+  f.ctx.hive.keepAwake = { holding: true, pid: 4321, detail: 'Keeping the Mac awake while Hive work is active.' };
+  f.open(null);
+  assert.match(f.dialog().textContent, /Keep Mac awake while Hive work is active.*Only on AC power/s);
+  assert.notEqual(f.key('settings-keep-awake').getAttribute('checked'), null);
+  assert.notEqual(f.key('settings-keep-awake-ac').getAttribute('checked'), null);
+  assert.match(f.dialog().textContent, /Now: keeping the Mac awake \(caffeinate pid 4321\)/);
+  f.key('settings-keep-awake').checked = false;
+  fire(f.key('settings-keep-awake'), 'change');
+  await new Promise(resolve => setImmediate(resolve)); f.draw(null);
+  assert.deepEqual(f.writes, [['keepAwake', false]]);
+  assert.match(f.dialog().textContent, /Keep-awake preference saved/);
+  assert.notEqual(f.key('settings-keep-awake-ac').getAttribute('disabled'), null);
+  f.ctx.hive.keepAwake = { holding: false, detail: 'Off in Hive settings.' };
+  f.draw(null);
+  assert.match(f.dialog().textContent, /Now: not keeping the Mac awake\. Off in Hive settings\./);
+  f.ctx.api.settings().keepAwake = true;
+  f.ctx.api.settings.set = async (key, value) => { f.writes.push([key, value]); f.ctx.api.settings()[key] = value; };
+  f.draw(null);
+  f.key('settings-keep-awake-ac').checked = false;
+  fire(f.key('settings-keep-awake-ac'), 'change');
+  await new Promise(resolve => setImmediate(resolve)); f.draw(null);
+  assert.deepEqual(f.writes.at(-1), ['keepAwakeAcOnly', false]);
+});

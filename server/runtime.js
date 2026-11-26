@@ -2,7 +2,8 @@ import { startCiWaits } from './ci-waits.js';
 import { observeLinkWaits } from './link-waits.js';
 import { createPickupDispatcher } from './pickup.js';
 import { createWatchdog } from './watchdog.js';
-import { workLimit, helperSlots } from './admission.js';
+import { workLimit, helperSlots, hiveWorkIds, eligibleWorkCell } from './admission.js';
+import { OPEN_REVIEW_STATES } from './review-state.js';
 import { reconcileRequests, notifyQueen, notifyResolution, startRequestSubjects, reconcileRequestSubjects } from './requests.js';
 import { reconcileInactiveBindings, trackingKey } from './tracking.js';
 import { cleanupOrphanAttachments } from './attachments.js';
@@ -17,13 +18,17 @@ import { recover, afterWrite } from './recovery.js';
 import { threadAllCells } from './conversation.js';
 import { reopenUnfinished } from './workstreams.js';
 import { createPrLabelSweep } from './pr-label-discovery.js';
+import { createKeepAwake, keepAwakeSettings } from './keep-awake.js';
 
 export const BD_PATH_SETTING = 'bdPath';
+const KEEP_AWAKE_TICK_MS = 30000;
+const STARTING_LAUNCH_STATES = new Set(['reserved', 'binding']);
+const LAUNCH_WINDOW_MS = 10 * 60 * 1000;
 
 // Everything Hive keeps for the life of the process, built by the store
 // factory before any host façade exists. `attach(host)` happens on activate.
 export class HiveRuntime {
-  constructor({ settings = null, log = () => {}, env = process.env } = {}) {
+  constructor({ settings = null, log = () => {}, env = process.env, keepAwake = {} } = {}) {
     this.paths = hivePaths(env);
     this.log = log;
     this.settings = settings;
@@ -55,6 +60,69 @@ export class HiveRuntime {
     });
     this.pendingParticipants = new Map();
     this._projection = { key: '', value: null };
+    this.keepAwake = createKeepAwake({
+      log,
+      onChange: () => {
+        if (!this.metadata.lifetime.isCurrent() || !this.host?.rebuild) return;
+        Promise.resolve(this.host.rebuild()).catch((err) => this.log(`hive: rebuild failed: ${err.message}`));
+      },
+      ...keepAwake,
+    });
+  }
+
+  setting(key) {
+    return this.host?.settings?.get?.(key) ?? this.settings?.get?.(key);
+  }
+
+  // Active work from live evidence only, in enabled hives, so an unreconciled
+  // reservation, a missing or dormant session or a disabled hive never keeps
+  // the Mac awake: claims, open reviews, launches and helpers whose session is
+  // running, a launch still starting or a helper admission inside its start
+  // window, and pending CI waits. A claimed launch counts only through its claim.
+  activeWork(now = Date.now()) {
+    const running = (sid) => {
+      const session = sid ? this.host?.sessions?.get?.(sid) : null;
+      return Boolean(session && !session.archived && !session.dormant && session.status !== 'exited');
+    };
+    const ids = new Set();
+    let ciWaits = 0;
+    try {
+      const graph = this.snapshots.graph;
+      const doc = this.metadata.read();
+      const live = (beadId, cellId = null) => {
+        const cell = eligibleWorkCell(this, graph, beadId);
+        return Boolean(cell?.enabled && (!cellId || cell.id === cellId));
+      };
+      for (const id of hiveWorkIds(this, graph)) {
+        const bead = graph.beads[id];
+        if (bead.status === 'in_progress' && bead.assignee && running(bead.ownerSessionId) && live(id)) ids.add(id);
+      }
+      for (const review of Object.values(doc.reviews || {})) {
+        if (OPEN_REVIEW_STATES.has(review.state) && running(review.reviewerSessionId) && live(review.workBeadId)) ids.add(review.workBeadId);
+      }
+      for (const launch of Object.values(doc.workerLaunches || {})) {
+        if (!STARTING_LAUNCH_STATES.has(launch.state) || now - (launch.createdAt || 0) >= LAUNCH_WINDOW_MS || !live(launch.beadId, launch.cellId)) continue;
+        if (!launch.sessionId || running(launch.sessionId)) ids.add(launch.beadId);
+      }
+      for (const admission of this.spawnAdmissions?.values?.() || []) {
+        if (now - admission.at < LAUNCH_WINDOW_MS && live(admission.beadId, admission.cellId)) ids.add(admission.beadId);
+      }
+      for (const [cellId, list] of Object.entries(doc.bindings || {})) {
+        for (const b of list) if (b.active && b.autoEnrolled && running(b.sessionId) && live(b.beadId, cellId)) ids.add(b.beadId);
+      }
+      ciWaits = Object.values(doc.ciWaits || {}).filter((w) => w?.state === 'pending' && !(w.deadline && w.deadline <= now) && doc.cells?.[w.cellId]?.enabled && !doc.cells[w.cellId].snapshot).length;
+    } catch (err) {
+      this.log(`hive: could not count active work: ${err.message}`);
+    }
+    return { active: ids.size > 0 || ciWaits > 0, work: ids.size, ciWaits };
+  }
+
+  evaluateKeepAwake() {
+    if (!this.host || !this.metadata.lifetime.isCurrent()) {
+      this.keepAwake.stop();
+      return this.keepAwake.status;
+    }
+    return this.keepAwake.evaluate({ ...keepAwakeSettings((key) => this.setting(key)), ...this.activeWork() });
   }
 
   configuredPath() {
@@ -78,6 +146,9 @@ export class HiveRuntime {
     }
     try { reconcileRequests(this, host, { startup: true }); } catch (err) { this.log(`hive: requests unavailable: ${err.message}`); }
     this.stopRequestSubjects = startRequestSubjects(this, host);
+    this.keepAwakeTimer = setInterval(() => this.evaluateKeepAwake(), KEEP_AWAKE_TICK_MS);
+    this.keepAwakeTimer.unref?.();
+    this.evaluateKeepAwake();
     this.recheck()
       .then(() => (this.metadata.lifetime.isCurrent(host) ? recover(this, host) : null))
       .then((recovered) => {
@@ -115,11 +186,15 @@ export class HiveRuntime {
     this.stopCiObservations?.();
     this.stopRequestSubjects?.();
     this.watchdog?.stop();
+    clearInterval(this.keepAwakeTimer);
+    this.keepAwakeTimer = null;
+    this.keepAwake.dispose();
     this.host = null;
   }
 
   changed() {
     if (!this.metadata.lifetime.isCurrent()) return;
+    this.evaluateKeepAwake();
     this.watchdog?.schedule();
     const host = this.host;
     if (!host?.rebuild) return;

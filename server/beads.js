@@ -13,6 +13,18 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 const MAX_QUEUE = 64;
 const EXIT_GUARD_FAILED = 13;
 const STDERR_LIMIT = 4000;
+const DIAG_STDERR_LIMIT = 500;
+const TERM_GRACE_MS = 3000;
+const KILL_REPORT_MS = 5000;
+const STREAM_CLOSE_MS = 2000;
+const READ_QUEUE_DEADLINE_MS = 90000;
+const WRITE_QUEUE_DEADLINE_MS = 180000;
+const HEARTBEAT_MS = 1000;
+const RESUME_GAP_MS = 5000;
+const MAX_EXTENSIONS = 3;
+const GAP_HISTORY_MS = 60 * 60 * 1000;
+const RECENT_COMMANDS = 20;
+const SYSTEM_TIMERS = { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (t) => clearTimeout(t), setInterval: (fn, ms) => setInterval(fn, ms), clearInterval: (t) => clearInterval(t) };
 const CANDIDATE_DIRS = ['/opt/homebrew/bin', '/usr/local/bin', '/home/linuxbrew/.linuxbrew/bin', '/usr/bin'];
 
 export class BeadsError extends Error {
@@ -26,6 +38,30 @@ export class BeadsError extends Error {
 function clip(s, n = STDERR_LIMIT) {
   const str = String(s || '');
   return str.length > n ? `${str.slice(0, n)}…` : str;
+}
+
+const seconds = (ms) => `${(Math.max(0, ms) / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
+
+function commandName(argv) {
+  const name = argv.find((a) => a !== '--readonly');
+  return typeof name === 'string' && /^[a-z-]{1,20}$/.test(name) ? name : 'bd';
+}
+
+export function describeCommand(d) {
+  if (!d) return '';
+  const parts = [`command ${d.id} (${d.command})`];
+  if (d.pid) parts.push(`pid ${d.pid}`);
+  parts.push(`queued ${seconds(d.queueMs)} behind ${d.queueDepth}`);
+  if (d.startedAt) parts.push(`ran ${seconds((d.finishedAt ?? d.startedAt) - d.startedAt)}`);
+  if (d.escalation) parts.push(d.escalation === 'SIGKILL' ? 'ignored SIGTERM and was killed with SIGKILL' : 'stopped with SIGTERM');
+  if (d.exitCode !== null && d.exitCode !== undefined) parts.push(`exit ${d.exitCode}`);
+  else if (d.signal) parts.push(`signal ${d.signal}`);
+  if (d.extensions) parts.push(`deadline renewed ${d.extensions}× after a wake`);
+  return parts.join(', ');
+}
+
+export function resumeText(d) {
+  return d?.resumeGapMs ? `The host was asleep or suspended for about ${seconds(d.resumeGapMs)} while this command was queued or running; this is a host sleep, not a store fault.` : '';
 }
 
 function isExecutable(file) {
@@ -129,11 +165,60 @@ function sameIdentity(a, b) {
 
 export function createBeadsAdapter({
   executable = null, workspaceDir, homeDir, scratchDir, execFile = nodeExecFile, env = process.env, log = () => {},
-  configuredPath = () => null, onStateChange = () => {}, assertCurrent = () => {},
+  configuredPath = () => null, onStateChange = () => {}, assertCurrent = () => {}, timers = SYSTEM_TIMERS,
 }) {
   const beadsDir = path.join(workspaceDir, '.beads');
+  const now = () => timers.now();
   let queue = Promise.resolve();
   let pending = 0;
+  let jobSeq = 0;
+  let commandSeq = 0;
+  let runningJob = null;
+  const recent = [];
+  const gaps = [];
+  let heartbeat = null;
+  let lastTick = 0;
+
+  function recordGap(at, ms) {
+    const last = gaps.at(-1);
+    if (last && at - ms <= last.at) {
+      last.ms = Math.max(last.ms, ms);
+      last.at = Math.max(last.at, at);
+    } else {
+      gaps.push({ at, ms });
+    }
+    while (gaps.length && gaps[0].at < at - GAP_HISTORY_MS) gaps.shift();
+  }
+
+  function gapBetween(from, to) {
+    return gaps.reduce((sum, g) => (g.at > from && g.at - g.ms < to ? sum + g.ms : sum), 0);
+  }
+
+  function tick() {
+    const t = now();
+    const late = t - lastTick - HEARTBEAT_MS;
+    if (late > RESUME_GAP_MS) recordGap(t, late);
+    lastTick = t;
+  }
+
+  function startHeartbeat() {
+    if (heartbeat) return;
+    lastTick = now();
+    heartbeat = timers.setInterval(tick, HEARTBEAT_MS);
+    heartbeat?.unref?.();
+  }
+
+  function stopHeartbeat() {
+    if (!heartbeat || pending > 0) return;
+    timers.clearInterval(heartbeat);
+    heartbeat = null;
+  }
+
+  function remember(d) {
+    recent.push(d);
+    if (recent.length > RECENT_COMMANDS) recent.shift();
+    if (d.timedOut || d.escalation || d.resumeGapMs || d.expired) log(`hive: bd ${JSON.stringify(d)}`);
+  }
   // Writes that can change which beads sit under which (create, reparent,
   // kind or type change, delete) bump the generation when they start and
   // again when they end, whatever their outcome, so only a snapshot read
@@ -177,30 +262,162 @@ export function createBeadsAdapter({
 
   function spawnOnce(exe, args, { cwd, timeout, withBeadsDir = true }) {
     assertCurrent();
+    const job = runningJob;
+    const startedAt = now();
+    const d = {
+      id: `bd-${++commandSeq}`, command: commandName(args), job: job?.id ?? null,
+      queuedAt: job?.queuedAt ?? startedAt, queueDepth: job?.depth ?? 0, queueMs: startedAt - (job?.queuedAt ?? startedAt),
+      startedAt, finishedAt: null, pid: null, exitCode: null, signal: null, timedOut: false, escalation: null, extensions: 0, resumeGapMs: 0, stderr: '',
+    };
     return new Promise((resolve) => {
-      let child;
+      let child = null;
+      let settled = false;
+      let exited = false;
+      let timer = null;
+      let armedAt = 0;
+      let armedMs = 0;
+      const clear = () => { if (timer !== null) timers.clearTimeout(timer); timer = null; };
+      const arm = (ms, fn) => { clear(); armedAt = now(); armedMs = ms; timer = timers.setTimeout(fn, ms); };
+      const send = (sig) => {
+        if (exited || settled || typeof child?.kill !== 'function') return;
+        try { child.kill(sig); } catch {}
+        d.escalation = sig;
+      };
+      const finish = (res) => {
+        if (settled) return;
+        settled = true;
+        clear();
+        d.finishedAt = now();
+        d.resumeGapMs = gapBetween(d.queuedAt, d.finishedAt);
+        if (res.code !== undefined && res.code !== null) d.exitCode = res.code;
+        d.timedOut = Boolean(res.timedOut);
+        d.stderr = clip(res.rawStderr ?? '', DIAG_STDERR_LIMIT);
+        remember(d);
+        resolve({ ...res, diagnostics: d });
+      };
+      const destroyStreams = () => {
+        child?.stdout?.destroy?.();
+        child?.stderr?.destroy?.();
+      };
+      const unreaped = () => {
+        if (settled) return;
+        if (exited) return destroyStreams();
+        log(`hive: bd ${d.id} (pid ${d.pid ?? 'unknown'}) has not exited ${seconds(KILL_REPORT_MS)} after SIGKILL; its queue slot stays held until it does.`);
+        arm(KILL_REPORT_MS, unreaped);
+      };
+      const kill = () => {
+        send('SIGKILL');
+        arm(KILL_REPORT_MS, unreaped);
+      };
+      const deadline = () => {
+        if (exited) {
+          d.timedOut = true;
+          return destroyStreams();
+        }
+        const t = now();
+        const late = t - armedAt - armedMs;
+        if (late > RESUME_GAP_MS) recordGap(t, late);
+        if (d.extensions < MAX_EXTENSIONS && late > RESUME_GAP_MS) {
+          d.extensions += 1;
+          arm(timeout, deadline);
+          return;
+        }
+        d.timedOut = true;
+        send('SIGTERM');
+        arm(TERM_GRACE_MS, kill);
+      };
       try {
-        child = execFile(exe, args, { cwd, env: childEnv({ withBeadsDir }), timeout, killSignal: 'SIGTERM', maxBuffer: MAX_BUFFER, encoding: 'utf8', windowsHide: true },
+        child = execFile(exe, args, { cwd, env: childEnv({ withBeadsDir }), maxBuffer: MAX_BUFFER, encoding: 'utf8', windowsHide: true },
           (err, stdout, stderr) => {
-            if (!err) return resolve({ code: 0, stdout, stderr, started: true });
-            const timedOut = Boolean(err.killed || err.signal);
+            if (!err) return finish({ code: 0, stdout, stderr, rawStderr: stderr, timedOut: d.timedOut, started: true });
+            const timedOut = d.timedOut;
             const code = typeof err.code === 'number' ? err.code : null;
-            resolve({ code, stdout: stdout || '', stderr: stderr || err.message || '', timedOut, spawnError: code === null && !timedOut ? err.code || err.message : null, started: code !== null || timedOut });
+            const killed = Boolean(err.killed || err.signal);
+            if (err.signal) d.signal = err.signal;
+            const spawnError = code === null && !timedOut && !killed ? err.code || err.message : null;
+            finish({ code, stdout: stdout || '', stderr: stderr || err.message || '', rawStderr: stderr, timedOut, spawnError, started: !spawnError });
           });
       } catch (err) {
-        resolve({ code: null, stdout: '', stderr: err.message, spawnError: err.message, started: false });
+        finish({ code: null, stdout: '', stderr: err.message, spawnError: err.message, started: false });
         return;
       }
-      child.stdin?.end();
+      d.pid = child?.pid ?? null;
+      child?.on?.('exit', (code, signal) => {
+        exited = true;
+        if (typeof code === 'number') d.exitCode = code;
+        if (signal) d.signal = signal;
+        if (settled || !d.timedOut) return;
+        arm(STREAM_CLOSE_MS, destroyStreams);
+      });
+      child?.stdin?.end();
+      if (!settled && timeout) arm(timeout, deadline);
     });
   }
 
-  function enqueue(fn) {
-    if (pending >= MAX_QUEUE) return Promise.reject(new BeadsError('busy', 'Too many Beads operations are queued; try again shortly.'));
+  function expiredError(job) {
+    const waited = now() - job.queuedAt;
+    const gap = gapBetween(job.queuedAt, now());
+    const d = { id: job.id, command: 'queued', job: job.id, queuedAt: job.queuedAt, queueDepth: job.depth, queueMs: waited, expired: true, resumeGapMs: gap };
+    remember(d);
+    return new BeadsError('busy', `A Beads command waited ${seconds(waited)} in Hive's queue behind ${job.depth} other(s) and was dropped before it started (${job.id}); nothing was changed and it is safe to retry.${gap ? ` ${resumeText(d)}` : ''}`, { noWrite: true, expired: true, diagnostics: d });
+  }
+
+  // Reads age by awake time, so a read queued across a host sleep still runs
+  // at wake. Writes and compound jobs age by wall time: a write whose caller
+  // gave up during a sleep must not land later.
+  function enqueue(fn, { deadlineMs = WRITE_QUEUE_DEADLINE_MS, awake = false } = {}) {
+    if (pending >= MAX_QUEUE) return Promise.reject(new BeadsError('busy', 'Too many Beads operations are queued; try again shortly.', { noWrite: true }));
+    const job = { id: `job-${++jobSeq}`, queuedAt: now(), depth: pending, state: 'queued', timer: null, armedAt: 0, armedMs: 0 };
+    const age = () => now() - job.queuedAt - (awake ? gapBetween(job.queuedAt, now()) : 0);
     pending += 1;
-    const job = queue.then(fn);
-    queue = job.then(() => {}, () => {});
-    return job.finally(() => { pending -= 1; });
+    startHeartbeat();
+    return new Promise((resolve, reject) => {
+      let done = false;
+      const settle = (to, value) => {
+        if (done) return;
+        done = true;
+        pending -= 1;
+        stopHeartbeat();
+        to(value);
+      };
+      const expire = () => {
+        if (job.state !== 'queued') return;
+        const late = now() - job.armedAt - job.armedMs;
+        if (job.timer !== null && late > RESUME_GAP_MS) {
+          recordGap(now(), late);
+          if (awake) {
+            armExpiry(2 * HEARTBEAT_MS);
+            return;
+          }
+        }
+        const remaining = deadlineMs - age();
+        if (remaining > 0) {
+          if (job.timer !== null) timers.clearTimeout(job.timer);
+          armExpiry(remaining);
+          return;
+        }
+        job.state = 'expired';
+        if (job.timer !== null) timers.clearTimeout(job.timer);
+        settle(reject, expiredError(job));
+      };
+      const armExpiry = (ms) => { job.armedAt = now(); job.armedMs = ms; job.timer = timers.setTimeout(expire, ms); };
+      armExpiry(deadlineMs);
+      queue = queue.then(async () => {
+        if (job.state === 'queued' && age() >= deadlineMs) expire();
+        if (job.state !== 'queued') return;
+        timers.clearTimeout(job.timer);
+        job.timer = null;
+        job.state = 'running';
+        runningJob = job;
+        try {
+          settle(resolve, await fn(job));
+        } catch (err) {
+          settle(reject, err);
+        } finally {
+          runningJob = null;
+        }
+      });
+    });
   }
 
   function setState(next, { fromRefresh = false } = {}) {
@@ -224,7 +441,7 @@ export function createBeadsAdapter({
     return enqueue(() => {
       if (!probing && invalidated(exe)) return STALE;
       return spawnOnce(exe, argv, { cwd, withBeadsDir, timeout: timeout ?? (write ? WRITE_TIMEOUT_MS : READ_TIMEOUT_MS) });
-    });
+    }, write || raw ? { deadlineMs: WRITE_QUEUE_DEADLINE_MS } : { deadlineMs: READ_QUEUE_DEADLINE_MS, awake: true });
   }
 
   function invalidated(exe) {
@@ -243,23 +460,31 @@ export function createBeadsAdapter({
     }
   }
 
+  function detailed(res) {
+    const d = res.diagnostics;
+    if (!d) return '';
+    const gap = resumeText(d);
+    return ` (${describeCommand(d)}).${gap ? ` ${gap}` : ''}`;
+  }
+
   function writeOutcome(res, what) {
-    if (res.code === 0) return;
+    if (res.code === 0 && !res.timedOut) return;
     if (res.stale) throw new BeadsError('setup-required', `${what} was not attempted: ${state.detail}`);
     noteStartFailure(res);
-    if (res.timedOut) throw new BeadsError('uncertain', `${what} did not finish in time; it may or may not have been applied. It will not be retried automatically.`, { stderr: clip(res.stderr) });
-    if (!res.started) throw new BeadsError('failed', `${what} could not start bd: ${res.spawnError || res.stderr}`);
-    if (res.code === EXIT_GUARD_FAILED) throw new BeadsError('conflict', failureText(res), { stderr: clip(res.stderr), noWrite: true });
-    if (res.code === null) throw new BeadsError('uncertain', `${what} ended abnormally; it may or may not have been applied.`, { stderr: clip(res.stderr) });
-    throw new BeadsError('refused', failureText(res), { stderr: clip(res.stderr), exitCode: res.code });
+    const extra = { stderr: clip(res.stderr), diagnostics: res.diagnostics };
+    if (res.timedOut) throw new BeadsError('uncertain', `${what} did not finish in time; it may or may not have been applied. It will not be retried automatically${detailed(res) || '.'}`, extra);
+    if (!res.started) throw new BeadsError('failed', `${what} could not start bd: ${res.spawnError || res.stderr}`, { diagnostics: res.diagnostics });
+    if (res.code === EXIT_GUARD_FAILED) throw new BeadsError('conflict', failureText(res), { ...extra, noWrite: true });
+    if (res.code === null) throw new BeadsError('uncertain', `${what} ended abnormally; it may or may not have been applied${detailed(res) || '.'}`, extra);
+    throw new BeadsError('refused', failureText(res), { ...extra, exitCode: res.code });
   }
 
   function readOutcome(res, what) {
-    if (res.code === 0) return;
+    if (res.code === 0 && !res.timedOut) return;
     if (res.stale) throw new BeadsError('setup-required', `${what} was not attempted: ${state.detail}`);
     noteStartFailure(res);
-    if (res.timedOut) throw new BeadsError('failed', `${what} timed out.`);
-    throw new BeadsError('failed', `${what} failed: ${failureText(res)}`, { stderr: clip(res.stderr) });
+    if (res.timedOut) throw new BeadsError('failed', `${what} timed out${detailed(res) || '.'}`, { timedOut: true, stderr: clip(res.stderr), diagnostics: res.diagnostics });
+    throw new BeadsError('failed', `${what} failed: ${failureText(res)}${detailed(res)}`, { stderr: clip(res.stderr), diagnostics: res.diagnostics });
   }
 
   function requireReady() {
@@ -299,7 +524,7 @@ export function createBeadsAdapter({
     }
     const neutralCwd = fs.existsSync(workspaceDir) ? workspaceDir : nearestExisting(workspaceDir);
     const ver = await run(['--version'], { raw: true, probing: true, exe, cwd: neutralCwd, withBeadsDir: false });
-    const version = ver.code === 0 ? parseVersion(ver.stdout) : null;
+    const version = ver.code === 0 && !ver.timedOut ? parseVersion(ver.stdout) : null;
     if (!version) {
       setState({ state: 'missing-binary', executable: exe, version: null, detail: `${exe} did not report a bd version: ${clip(ver.stderr || ver.stdout, 300)}`, checkedAt: at });
       return state;
@@ -309,7 +534,7 @@ export function createBeadsAdapter({
       return state;
     }
     const schema = await run(['schema'], { raw: true, probing: true, exe, cwd: neutralCwd, withBeadsDir: false });
-    const schemaVersion = schema.code === 0 ? parseJson(schema.stdout)?.schema_version : undefined;
+    const schemaVersion = schema.code === 0 && !schema.timedOut ? parseJson(schema.stdout)?.schema_version : undefined;
     if (schemaVersion !== SUPPORTED_BD.schemaVersion) {
       setState({ state: 'incompatible', executable: exe, version: version.text, detail: `bd reports JSON schema ${JSON.stringify(schemaVersion ?? null)}; Hive supports schema ${SUPPORTED_BD.schemaVersion}.`, checkedAt: at });
       return state;
@@ -327,7 +552,7 @@ export function createBeadsAdapter({
       return state;
     }
     const info = await run(['info', '--json'], { exe, probing: true });
-    if (info.code !== 0) {
+    if (info.code !== 0 || info.timedOut) {
       setState({ state: 'error', executable: exe, version: version.text, detail: `bd could not open the store: ${failureText(info)}`, checkedAt: at });
       return state;
     }
@@ -360,7 +585,7 @@ export function createBeadsAdapter({
   async function loadSnapshot({ all = false } = {}) {
     requireReady();
     const res = await run(all ? ['export', '--all'] : ['export']);
-    if (res.code !== 0 && res.started && !res.stale && state.state === 'ready') {
+    if (typeof res.code === 'number' && res.code !== 0 && !res.timedOut && res.started && !res.stale && state.state === 'ready') {
       setState({ ...state, state: 'error', identity: null, detail: `bd could not read the store: ${failureText(res)}. Recheck once it is fixed.`, checkedAt: Date.now() }, { fromRefresh: true });
     }
     readOutcome(res, 'Reading the Beads store');
@@ -378,7 +603,7 @@ export function createBeadsAdapter({
     requireReady();
     checkId(id);
     const res = await run(['show', id, '--json']);
-    if (res.code !== 0) {
+    if (res.code !== 0 || res.timedOut) {
       if (/not found|no issues found/i.test(failureText(res))) return null;
       readOutcome(res, `Reading ${id}`);
     }
@@ -744,6 +969,7 @@ export function createBeadsAdapter({
 
   return {
     get status() { return state; },
+    get recentCommands() { return recent.slice(); },
     get hierarchy() { return { generation: hierarchyGeneration, writing: hierarchyWrites > 0 }; },
     onHierarchySettled(listener) {
       hierarchyListeners.add(listener);
