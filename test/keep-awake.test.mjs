@@ -254,4 +254,6 @@ test('only live evidence counts as active work', async (t) => {
   assert.deepEqual(rt.activeWork(10 * 60 * 1000 + 1), { active: false, work: 0, ciWaits: 0 }, 'a disabled hive does not count');
   rt.metadata.mutate((d) => { d.cells.c.enabled = true; });
   assert.deepEqual(rt.activeWork(10 * 60 * 1000 + 1), { active: true, work: 1, ciWaits: 1 });
+  rt.metadata.mutate((d) => { delete d.reviews.r3; d.ciWaits.b.deadline = 10 * 60 * 1000; });
+  assert.deepEqual(rt.activeWork(10 * 60 * 1000 + 1), { active: false, work: 0, ciWaits: 0 }, 'an expired CI wait does not count');
 });

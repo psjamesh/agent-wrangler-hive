@@ -110,7 +110,7 @@ export class HiveRuntime {
       for (const [cellId, list] of Object.entries(doc.bindings || {})) {
         for (const b of list) if (b.active && b.autoEnrolled && running(b.sessionId) && live(b.beadId, cellId)) ids.add(b.beadId);
       }
-      ciWaits = Object.values(doc.ciWaits || {}).filter((w) => w?.state === 'pending' && doc.cells?.[w.cellId]?.enabled && !doc.cells[w.cellId].snapshot).length;
+      ciWaits = Object.values(doc.ciWaits || {}).filter((w) => w?.state === 'pending' && !(w.deadline && w.deadline <= now) && doc.cells?.[w.cellId]?.enabled && !doc.cells[w.cellId].snapshot).length;
     } catch (err) {
       this.log(`hive: could not count active work: ${err.message}`);
     }
