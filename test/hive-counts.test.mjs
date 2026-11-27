@@ -488,7 +488,7 @@ test('Space on overview info opens details without starting map search', t => {
   dialog.querySelector('button').fire('click');
 });
 
-test('small info glyph occupies the status row even with no counters', t => {
+test('info glyph sits centred at the bottom of the hive and reserves no counter row', t => {
   const f = fixture(t);
   f.beads.work.status = 'closed';
   const tile = f.draw();
@@ -496,9 +496,12 @@ test('small info glyph occupies the status row even with no counters', t => {
   assert.equal(tile.querySelectorAll('.hive-counter').length, 0);
   assert.equal(info.querySelector('.hive-info-glyph').getAttribute('r'), '4.5');
   assert.equal(info.querySelector('.hive-info-hit').getAttribute('r'), '12');
+  const at = el => el.getAttribute('transform').match(/translate\(([^ ]+) ([^)]+)\)/).slice(1).map(Number);
+  const [tx, ty] = at(tile), [ix, iy] = at(info);
+  assert.ok(Math.abs(ix - tx) < 0.1);
+  assert.ok(iy - ty > 40);
   const row = tile.querySelector('.hive-tile-counters');
-  const y = el => Number(el.getAttribute('transform').match(/translate\([^ ]+ ([^)]+)/)[1]);
-  assert.ok(Math.abs(y(info) - y(row)) < 0.1);
+  assert.ok(!row || at(row)[1] < iy - ty - 20);
 });
 
 test('overview splits working and held counters with exact tooltips and the cell pause icon', t => {

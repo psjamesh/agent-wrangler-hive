@@ -153,14 +153,14 @@ function halfWidth(y, r) {
 // by the relationship mark above and the status mark below. Each title row
 // is wrapped to the hexagon's width across that row's full glyph height, and
 // the block uses as many title lines as the title needs and the band allows.
-function tileText({ title = null, lines = [], sub = [], badge, counters, info = false, progress, size, lh = size * 0.21, half, bandTop, bandBottom }) {
+function tileText({ title = null, lines = [], sub = [], badge, counters, progress, size, lh = size * 0.21, half, bandTop, bandBottom }) {
   const barH = progress ? Math.max(4, size * 0.07) : 0;
   const px = title?.px || 12;
   const subPx = px * 0.85;
   const asc = px * ASCENT;
   const rowWidth = (base, p) => 2 * Math.min(half(base - p * ASCENT), half(base + p * DESCENT)) - TEXT_PAD * 2;
   const layout = (n) => {
-    const rows = n + sub.length + (badge ? 1 : 0) + (counters || info ? 1 : 0);
+    const rows = n + sub.length + (badge ? 1 : 0) + (counters ? 1 : 0);
     const height = asc + (rows - 1) * lh + px * DESCENT + (progress ? lh * 0.55 + barH : 0);
     const blockTop = (bandTop + bandBottom) / 2 - height / 2;
     const first = blockTop + asc;
@@ -196,19 +196,18 @@ function tileText({ title = null, lines = [], sub = [], badge, counters, info = 
   for (const line of sub) { spans.push(h('svg:tspan', { x: '0', y: y.toFixed(1), class: 'hive-hex-sub' }, line)); y += lh; }
   const badgeEl = badge ? h('svg:tspan', { x: '0', y: y.toFixed(1), class: 'hive-hex-badge' }, badge) : null;
   if (badgeEl) { spans.push(badgeEl); y += lh; }
-  const row = counters || info ? tileCounters(counters || [], y - 3, info, rowWidth(y - 3, 9)) : null;
-  const infoAt = row?.infoAt;
-  if (counters || info) y += lh;
+  const row = counters ? tileCounters(counters, y - 3, rowWidth(y - 3, 9)) : null;
+  if (counters) y += lh;
   const label = h('svg:text', { class: 'hive-hex-text', 'text-anchor': 'middle' }, spans);
   const text = row ? h('svg:g', {}, label, row.el) : label;
-  if (!progress) return { text, badgeEl, infoAt };
+  if (!progress) return { text, badgeEl };
   const barY = y - lh + subPx * DESCENT + lh * 0.55;
   const w = Math.max(barH * 4, Math.min(size * 0.92, 2 * Math.min(half(barY), half(barY + barH)) - TEXT_PAD * 4));
   const done = progress.total ? Math.max(0, Math.min(1, progress.done / progress.total)) : 0;
   const bar = h('svg:g', { class: 'hive-progress', 'aria-hidden': 'true' },
     h('svg:rect', { class: 'hive-progress-track', x: (-w / 2).toFixed(1), y: barY.toFixed(1), width: w.toFixed(1), height: barH.toFixed(1), rx: (barH / 2).toFixed(1) }),
     done > 0 ? h('svg:rect', { class: 'hive-progress-fill', x: (-w / 2).toFixed(1), y: barY.toFixed(1), width: Math.max(barH, w * done).toFixed(1), height: barH.toFixed(1), rx: (barH / 2).toFixed(1) }) : null);
-  return { text: h('svg:g', {}, text, bar), badgeEl, infoAt };
+  return { text: h('svg:g', {}, text, bar), badgeEl };
 }
 
 // Node-local marks for the focused item's immediate links. They sit on the
@@ -283,16 +282,15 @@ const COUNTER_SHAPES = {
   progress: 'M-2.5,-3.5 L3.5,0 L-2.5,3.5 Z',
 };
 
-function tileCounters(counters, y, info = false, maxWidth = Infinity) {
+function tileCounters(counters, y, maxWidth = Infinity) {
   const visible = counters.filter(c => c.count > 0).map(c => {
     const value = c.count > 99 ? '99+' : String(c.count);
     return { ...c, value, width: 14 + textWidth(value, 9, 600) };
   });
   const gap = 10;
   const counterWidth = visible.reduce((sum, c) => sum + c.width, 0) + Math.max(0, visible.length - 1) * gap;
-  const infoWidth = info ? 24 + (visible.length ? gap : 0) : 0;
-  const scale = counterWidth ? Math.min(1, Math.max(0, maxWidth - infoWidth) / counterWidth) : 1;
-  const width = counterWidth * scale + infoWidth;
+  const scale = counterWidth ? Math.min(1, maxWidth / counterWidth) : 1;
+  const width = counterWidth * scale;
   let left = -width / 2;
   const el = h('svg:g', { class: 'hive-tile-counters', transform: `translate(0 ${y.toFixed(1)})` }, visible.map(c => {
     const x = left + 5 * scale;
@@ -302,7 +300,7 @@ function tileCounters(counters, y, info = false, maxWidth = Infinity) {
       c.kind === 'pr' ? primaryMark('pr', c.tooltip || `${c.label}: ${c.count}`, 0, 0, 0.72) : c.kind === 'needs' ? markShapes('person') : c.kind === 'held' ? markShapes('deferred') : h('svg:path', { class: 'hive-counter-glyph', d: COUNTER_SHAPES[c.kind] }),
       h('svg:text', { x: '9', y: '3.5', class: 'hive-counter-value' }, c.value));
   }));
-  return { el, infoAt: info ? { x: width / 2 - 12, y } : null };
+  return { el };
 }
 
 export function primaryMark(kind, title, x = 0, y = 0, scale = 1) {
@@ -529,7 +527,9 @@ export function renderHexMap({
     const linked = Boolean(rel && (rel.prereq.length || rel.dependents.length));
     const markScale = Math.max(1, size / 60);
     const marks = it.marks || (it.mark ? [it.mark] : []);
-    const markAt = form.markY(markScale) - (marks.length > 1 ? Math.max(6, (marks.length - 1) * 10 / SQRT3) * markScale : 0);
+    const slots = marks.length + (it.onInfo ? 1 : 0);
+    const markAt = form.markY(markScale) - (slots > 1 ? Math.max(6, (slots - 1) * 10 / SQRT3) * markScale : 0);
+    const slotX = (i) => (i - (slots - 1) / 2) * 20 * markScale;
     const focusWords = marks.filter(m => m.focus || m.kind.startsWith('review-') || m.kind === 'pr' || m.kind === 'recorded-wait' || m.kind === 'in-progress' || m.kind === 'approved').map(m => m.title).join('\n');
     const label = tileText({
       title: it.titleText != null ? { text: it.titleText, maxLines: it.titleLines || 3, px: it.titlePx || 12 } : null,
@@ -537,13 +537,12 @@ export function renderHexMap({
       sub: it.sub,
       badge: it.badge,
       counters: it.counters,
-      info: Boolean(it.onInfo),
       progress: it.progress,
       size,
       lh: it.lineHeight,
       half: form.half,
       bandTop: linked ? form.relY + REL_HALF + 1.5 : form.top,
-      bandBottom: marks.length ? Math.min(form.bottom, markAt - (MARK_R + MARK_STROKE / 2) * markScale - 1.5) : form.bottom,
+      bandBottom: slots ? Math.min(form.bottom, markAt - (MARK_R + MARK_STROKE / 2) * markScale - 1.5) : form.bottom,
     });
     const g = h('svg:g', {
       class: `hive-hex ${it.classes || ''}${it.id === selectedId ? ' is-selected' : ''}`,
@@ -568,8 +567,7 @@ export function renderHexMap({
       h('svg:text', { class: 'hive-rel-mark-text', 'text-anchor': 'middle', y: '4' })) : null;
     if (mark) g.append(mark);
     marks.forEach((m, i) => {
-      const x = (i - (marks.length - 1) / 2) * 20 * markScale;
-      const pm = primaryMark(m.kind, m.title, x, markAt, markScale);
+      const pm = primaryMark(m.kind, m.title, slotX(i), markAt, markScale);
       if (!pm) return;
       if (m.count > 1) pm.append(h('svg:circle', { cx: '6', cy: '-5', r: '4.5', class: 'hive-waiting-count-bg' }), h('svg:text', { x: '6', y: '-3', 'text-anchor': 'middle', class: 'hive-waiting-count' }, String(m.count)));
       if (m.onMark) {
@@ -599,8 +597,8 @@ export function renderHexMap({
         class: 'hive-tile-info', role: 'button', tabindex: '0',
         'aria-label': `Details for ${it.info.name}`, 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
         'data-focus-key': `hive-info:${it.id}`, 'data-hive-info': it.id,
-        'data-position': `translate(${it.x + label.infoAt.x} ${it.y + label.infoAt.y})`,
-        transform: `translate(${it.x + label.infoAt.x} ${it.y + label.infoAt.y})`,
+        'data-position': `translate(${(it.x + slotX(slots - 1)).toFixed(1)} ${(it.y + markAt).toFixed(1)})`,
+        transform: `translate(${(it.x + slotX(slots - 1)).toFixed(1)} ${(it.y + markAt).toFixed(1)})`,
       }, h('svg:circle', { r: '12', class: 'hive-info-hit' }), h('svg:circle', { r: '4.5', class: 'hive-info-glyph', 'aria-hidden': 'true' }), h('svg:text', { y: '3.2', 'text-anchor': 'middle', 'aria-hidden': 'true' }, 'i'));
       for (const type of ['pointerdown', 'pointerup', 'dblclick', 'contextmenu']) info.addEventListener(type, event => {
         event.stopPropagation();
