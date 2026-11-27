@@ -13,6 +13,7 @@ import { isCurrent } from './lifetime.js';
 import { HiveError, refuseSnapshot } from './ops.js';
 import { liveClaimant, sleepingReason, reconcileInactiveBindings, startingSession } from './tracking.js';
 import { GROUP_KINDS, descendantIds } from './bead-model.js';
+import { orphanIds } from './clusters.js';
 import { humanWaitText } from './human-wait.js';
 import { observedWorkerActivityIndex, workerActivityIndex, workerLastActivity, saveWorkerActivity } from './worker-activity.js';
 
@@ -144,6 +145,13 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
     const ids = migrations.map(([id]) => id);
     add('blocked_status_migrated', cell.id, migrations.map(([id, migration]) => [id, migration.at]), Math.min(...migrations.map(([, migration]) => migration.at)),
       `Migrated blocked cells to open: ${ids.map(id => `${id} (${beads[id]?.title || id})`).join(', ')}. Links and waiting annotations were preserved. Waiting now comes from open blocks prerequisites.`, { migrated_bead_ids: ids });
+  }
+  const orphans = orphanIds(beads, cell.rootBeadId);
+  if (orphans.length) {
+    const shown = orphans.slice(0, 50);
+    add('orphan_cell', cell.id, 'present', now,
+      `${orphans.length} cell(s) sit outside every cluster: ${shown.map(id => `${id} (${beads[id]?.title || id}${beads[id]?.status === 'closed' ? ', closed' : ''})`).join(', ')}${orphans.length > shown.length ? ', …' : ''}. File each under the cluster that shares its outcome with hive_update_bead(parent_id), creating a cluster where none fits. Filing closed cells under a closed cluster does not reopen it.`,
+      { bead_ids: orphans });
   }
   const idleAvailable = open.some(bead => idleReadyCandidate(bead, cell)) && idleReadyAvailable(rt, host, cell);
   for (const bead of open) {

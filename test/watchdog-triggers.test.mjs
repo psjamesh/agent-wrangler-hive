@@ -16,14 +16,14 @@ function fixture(t) {
   const sent = [];
   const host = { stores: { hive: rt }, sessions: { get: id => sessions[id] }, deliver: async (id, text) => { sent.push({ id, text }); return { mode: 'live' }; } };
   rt.metadata.lifetime.attach(rt, host);
-  const beads = { root: { id: 'root', status: 'open', kind: 'goal' } };
+  const beads = { root: { id: 'root', status: 'open', kind: 'goal' }, ws: { id: 'ws', parentId: 'root', status: 'open', kind: 'workstream' } };
   const edges = [];
   rt.snapshots = { current: { loadedAt: now, error: null, graph: { beads, edges } }, get graph() { return this.current.graph; } };
   rt.beads.status.state = 'ready';
   rt.metadata.mutate(d => { d.cells.cell = { id: 'cell', rootBeadId: 'root', enabled: true, queenSessionId: 'queen' }; });
   const watchdog = createWatchdog({ runtime: rt, host, now: () => now });
   const flags = () => collectWatchdog(rt, host, rt.metadata.cell('cell'), now);
-  const bead = (id, extra = {}) => (beads[id] = { id, parentId: 'root', kind: 'work', status: 'open', updatedAt: now, evidence: [], ...extra });
+  const bead = (id, extra = {}) => (beads[id] = { id, parentId: 'ws', kind: 'work', status: 'open', updatedAt: now, evidence: [], ...extra });
   return { rt, sessions, beads, edges, sent, watchdog, flags, bead, now: () => now, advance: ms => { now += ms; } };
 }
 const kinds = f => f.flags().map(x => x.kind).sort();
@@ -476,3 +476,23 @@ for (const agent of ['codex', 'claude']) {
     });
   }
 }
+
+test('cells outside every cluster raise one orphan_cell item per hive until they are filed', async t => {
+  const f = fixture(t);
+  f.bead('stray', { parentId: 'root', title: 'Stray' });
+  f.bead('child', { parentId: 'stray', kind: 'decision' });
+  f.bead('old', { parentId: 'root', status: 'closed', title: 'Old' });
+  f.bead('fine', { parentId: 'ws' });
+  f.beads.group = { id: 'group', parentId: 'root', kind: 'workstream', status: 'open' };
+  const [flag, ...rest] = f.flags();
+  assert.deepEqual(rest, []);
+  assert.equal(flag.kind, 'orphan_cell');
+  assert.deepEqual(flag.bead_ids, ['child', 'old', 'stray']);
+  assert.match(flag.reason, /old \(Old, closed\)/);
+  await f.watchdog.run(); assert.equal(f.sent.length, 1); assert.match(f.sent[0].text, /orphan_cell: 1/);
+  f.beads.stray.parentId = 'ws';
+  f.advance(MIN); await f.watchdog.run(); assert.equal(f.sent.length, 1);
+  assert.deepEqual(f.flags()[0].bead_ids, ['old']);
+  f.beads.old.parentId = 'group';
+  assert.deepEqual(f.flags(), []);
+});

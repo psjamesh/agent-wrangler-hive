@@ -189,7 +189,7 @@ test('new Hive-created beads carry their default-pickup eligibility marker', asy
   const { createBeads } = await import('../server/ops.js');
   const f = pickupFixture(); let created;
   f.rt.beads.createMany = async ({ nodes }) => { created = nodes; return { ids: { n0: 'new' } }; };
-  await createBeads(f.rt, f.actor(), { beads: [{ title: 'New bounded work' }] });
+  await createBeads(f.rt, f.actor(), { beads: [{ title: 'New bounded work', parent: 'ws' }] });
   assert.equal(created[0].pickup.automatic, true);
 });
 
@@ -236,8 +236,10 @@ test('worker-created follow-up beads default to held and cannot request unheld c
   const { createBeads } = await import('../server/ops.js');
   const f = pickupFixture(); let created;
   f.rt.beads.createMany = async ({ nodes }) => { created = nodes; return { ids: { n0: 'new' } }; };
+  f.live.a.assignee = 'aw:worker'; await f.rt.snapshots.refresh();
   await createBeads(f.rt, f.actor('worker', 'worker'), { beads: [{ title: 'Follow-up' }] });
   assert.equal(created[0].pickup.held, true);
+  assert.equal(created[0].parentId, 'ws');
   await assert.rejects(createBeads(f.rt, f.actor('worker', 'worker'), { beads: [{ title: 'Bypass readiness', hold: false }] }), /queen|human/i);
 });
 

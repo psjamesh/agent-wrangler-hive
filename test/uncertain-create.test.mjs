@@ -37,7 +37,7 @@ test('a create that times out after starting stays uncertain, is never retried a
   f.rt.beads.findByOperation = (...args) => real.adapter.findByOperation(...args);
 
   let response;
-  const call = createBeadsTool.handler({ host: f.host, caller: 'queen' }, { beads: [{ ref: 'new', title: 'New work', kind: 'investigation' }] }).then((out) => { response = out; });
+  const call = createBeadsTool.handler({ host: f.host, caller: 'queen' }, { beads: [{ ref: 'new', title: 'New work', kind: 'investigation', parent: 'ws' }] }).then((out) => { response = out; });
   await flush();
   await clock.advance(40000);
   await call;

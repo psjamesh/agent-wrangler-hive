@@ -19,6 +19,7 @@ import {
 import { requireNonHelper, AccessError, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, requireQueen, cellOfBead, requireCompleteHierarchy, waitForHierarchy, resolveCaller, participation } from './access.js';
 import { layoutBase, stackable } from '../public/layout-base.js';
 import { archiveHidden } from '../public/archive-layout.js';
+import { needsCluster, clusterAt, closedClusterAt, clusterCandidates, clusterRefusal, closedClusterRefusal } from './clusters.js';
 import { inRange, MAX_COORD } from '../public/hex-search.js';
 
 export class HiveError extends Error {
@@ -921,11 +922,13 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
       cellId: cell.id,
     };
   });
+  const steward = ['queen', 'human'].includes(actor.role);
+  const fallback = steward ? null : ownCluster(rt, actor, cell);
   for (const n of nodes) {
     const p = n.parentRaw;
     delete n.parentRaw;
     if (p === undefined || p === null || p === '') {
-      n.parentId = cell.rootBeadId;
+      n.parentId = needsCluster(n.kind) && fallback ? fallback : cell.rootBeadId;
     } else if (typeof p === 'string' && refs.has(p)) {
       if (p === n.key) throw new HiveError(`${p} cannot be its own parent.`);
       n.parentKey = p;
@@ -936,6 +939,7 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
       n.parentId = p;
     }
   }
+  requireClusteredNodes(rt, cell, nodes, refs, steward);
   const touchedCells = new Set([cell.id]);
   const edges = links.map((l, i) => {
     const type = l.type === undefined ? 'blocks' : l.type;
@@ -982,6 +986,55 @@ export async function createBeads(rt, actor, { beads = [], links = [] }) {
   };
 }
 
+function ownCluster(rt, actor, cell) {
+  const beads = rt.snapshots.graph.beads;
+  const inCell = descendantIds(beads, cell.rootBeadId);
+  const anchors = [
+    ...[...inCell].filter((id) => beads[id]?.ownerSessionId === actor.sessionId && beads[id].status !== 'closed'),
+    ...(rt.metadata.read().bindings[cell.id] || []).filter((b) => b.active && b.sessionId === actor.sessionId && inCell.has(b.beadId)).map((b) => b.beadId),
+  ];
+  const found = new Set(anchors.map((id) => clusterAt(beads, cell.rootBeadId, id)).filter(Boolean));
+  return found.size === 1 ? [...found][0] : null;
+}
+
+function candidatesFor(rt, cell, beads = rt.snapshots.graph.beads) {
+  const hidden = archiveHidden({ beads, rootId: cell.rootBeadId, archived: rt.metadata.read().archived });
+  return clusterCandidates(beads, cell.rootBeadId, hidden);
+}
+
+function requireClusteredMove(rt, cell, beads, id, next, { steward, moved }) {
+  if (id === cell.rootBeadId) return;
+  const root = cell.rootBeadId;
+  if (needsCluster(next.kind) && !clusterAt(beads, root, next.parentId)) {
+    throw new HiveError(clusterRefusal(`Cell ${id} "${next.title}"`, candidatesFor(rt, cell, beads), { queen: steward }), 'refused');
+  }
+  if (steward || !moved) return;
+  const closed = closedClusterAt(beads, root, next.parentId);
+  if (closed && [...descendantIds(beads, id)].some((d) => (d === id ? next : beads[d])?.status !== 'closed')) {
+    throw new HiveError(closedClusterRefusal(`Cell ${id} "${next.title}"`, closed, beads[closed].title), 'access');
+  }
+}
+
+function requireClusteredNodes(rt, cell, nodes, refs, steward) {
+  const beads = rt.snapshots.graph.beads;
+  const root = cell.rootBeadId;
+  for (const [i, n] of nodes.entries()) {
+    let cursor = n;
+    const seen = new Set();
+    let clustered = !needsCluster(n.kind);
+    while (!clustered && cursor.parentKey && !seen.has(cursor.key)) {
+      seen.add(cursor.key);
+      cursor = nodes[refs.get(cursor.parentKey)];
+      if (cursor.kind === 'workstream') clustered = true;
+    }
+    if (!clustered && !cursor.parentKey) clustered = Boolean(clusterAt(beads, root, cursor.parentId));
+    if (!clustered) throw new HiveError(clusterRefusal(`beads[${i}] "${n.title}"`, candidatesFor(rt, cell), { queen: steward }), 'refused');
+    if (steward || !n.parentId) continue;
+    const closed = closedClusterAt(beads, root, n.parentId);
+    if (closed) throw new HiveError(closedClusterRefusal(`beads[${i}] "${n.title}"`, closed, beads[closed].title), 'access');
+  }
+}
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
 export async function updateBead(rt, actor, input) {
@@ -1009,6 +1062,7 @@ export async function updateBead(rt, actor, input) {
     if (bead.status === 'closed') throw new HiveError(`Cell ${id} is closed. Reopening is a human or queen decision; publish the reason if it should reopen.`);
     patch.status = input.status;
   }
+  let targetCell = cell;
   if (input.parent_id !== undefined) {
     if (isRoot) throw new HiveError('The hive root cannot be moved.');
     const parentId = input.parent_id || cell.rootBeadId;
@@ -1017,6 +1071,7 @@ export async function updateBead(rt, actor, input) {
     if (descendantIds(rt.snapshots.graph.beads, id).has(parentId)) throw new HiveError('That would make the cell its own ancestor.');
     if (target.id !== cell.id) requireCoordinator(actor.cells.find((p) => p.cell.id === target.id) || { role: null }, 'move work into another hive');
     patch.parentId = parentId;
+    targetCell = target;
   }
   const resumeAt = input.resume_review_at, resumeAfter = input.resume_after_bead;
   if (resumeAt !== undefined || resumeAfter !== undefined) {
@@ -1047,6 +1102,9 @@ export async function updateBead(rt, actor, input) {
   const removeLabels = Array.isArray(input.remove_evidence_labels) ? input.remove_evidence_labels.slice(0, 50).map(String) : [];
   for (const k of Object.keys(patch)) if (patch[k] === undefined) delete patch[k];
   if (!Object.keys(patch).length && !add.length && !removeLabels.length) throw new HiveError('Nothing to update.');
+  const steward = ['queen', 'human'].includes(actor.role);
+  const reshaped = patch.parentId !== undefined || patch.kind !== undefined;
+  if (reshaped) requireClusteredMove(rt, targetCell, rt.snapshots.graph.beads, id, { ...bead, ...patch }, { steward, moved: patch.parentId !== undefined });
   const expectedUpdatedAt = input.expected_updated_at;
   if (expectedUpdatedAt !== undefined && (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt)) throw new HiveError('expected_updated_at must be the updated_at that hive_context showed for this cell.');
   const validatesWait = input.status !== undefined || resumeAt !== undefined || resumeAfter !== undefined;
@@ -1081,6 +1139,7 @@ export async function updateBead(rt, actor, input) {
         pickupBefore = current;
         if (expectedUpdatedAt && current.updatedAt !== expectedUpdatedAt) throw new HiveError(`Cell ${id} changed since ${expectedUpdatedAt} (now ${current.updatedAt}); nothing was applied. Re-read it with hive_context and resend against the current version.`, 'conflict');
         if (validatesWait) requireStructuredWait(graph, { ...current, ...patch });
+        if (reshaped) requireClusteredMove(rt, targetCell, graph.beads, id, { ...current, ...patch }, { steward, moved: patch.parentId !== undefined });
         if (!affectsCapacity) return;
         const nextBead = { ...current, ...patch };
         if (patch.kind === 'external') {

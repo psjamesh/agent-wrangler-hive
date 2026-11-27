@@ -10,7 +10,7 @@ import test from 'node:test';
 import { createBeads, claimBead, finishBead, readyBeads, reconcileForAgent, updateBead, waitingOn } from '../server/ops.js';
 import { buildGraph, actorFor } from '../server/bead-model.js';
 
-const raw = (id, parent = 'root', extra = {}) => ({ id, title: id, status: 'open', assignee: null, metadata: { hive_kind: 'work' }, dependencies: parent ? [{ issue_id: id, depends_on_id: parent, type: 'parent-child' }] : [], ...extra });
+const raw = (id, parent = 'ws', extra = {}) => ({ id, title: id, status: 'open', assignee: null, metadata: { hive_kind: 'work' }, dependencies: parent ? [{ issue_id: id, depends_on_id: parent, type: 'parent-child' }] : [], ...extra });
 function withAttachmentStorage(t, f) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hive-context-images-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -19,7 +19,7 @@ function withAttachmentStorage(t, f) {
 }
 function fixture(limit = 1) {
   let doc = { cells: { cell: { id: 'cell', taskId: 'task', rootBeadId: 'root', enabled: true, queenSessionId: 'queen' }, other: { id: 'other', taskId: 'other-task', rootBeadId: 'other-root', enabled: true, queenSessionId: 'queen2' } }, bindings: {}, operations: {}, launches: {}, workerLaunches: {}, reviews: {}, conversation: {}, threads: {}, inbox: {}, beadLayout: {}, arrangeAspect: {}, workstreamColours: {}, archived: {}, restoreNotices: {}, restoring: {} };
-  const live = { root: raw('root', null, { metadata: { hive_kind: 'goal' } }), a: raw('a'), b: raw('b'), 'other-root': raw('other-root', null, { metadata: { hive_kind: 'goal' } }), c: raw('c', 'other-root') };
+  const live = { root: raw('root', null, { metadata: { hive_kind: 'goal' } }), ws: raw('ws', 'root', { issue_type: 'epic', metadata: { hive_kind: 'workstream' } }), a: raw('a'), b: raw('b'), 'other-root': raw('other-root', null, { metadata: { hive_kind: 'goal' } }), c: raw('c', 'other-ws'), 'other-ws': raw('other-ws', 'other-root', { issue_type: 'epic', metadata: { hive_kind: 'workstream' } }) };
   const board = new Map([['queen', { sessionId: 'queen', taskId: 'task', status: 'working' }], ['queen2', { sessionId: 'queen2', taskId: 'other-task', status: 'working' }]]);
   const graph = () => buildGraph(Object.values(live));
   const rt = {
@@ -510,7 +510,7 @@ test('review starts on the existing bead at full capacity, without a bead or lin
   const out = await reviews.requestReview(f.rt, f.host, f.actor(), { bead_id: 'a', intent: 'review' });
   assert.equal(out.bead_id, 'a');
   assert.equal(f.live.a.assignee, 'aw:queen');
-  assert.equal(Object.keys(f.live).length, 5);
+  assert.equal(Object.keys(f.live).length, 7);
   assert.equal(f.live.a.dependencies.length, 1);
   const review = f.doc().reviews[out.review_id];
   assert.equal(review.state, 'in_review');
@@ -825,7 +825,7 @@ test('context and map project the review wait on the work bead and track reviewe
   assert(!context.attention.untracked_beads.some((b) => b.bead_id === 'a'));
   assert(!context.attention.untracked_sessions.some((s) => s.session_id === out.session_id));
   let hive = projected();
-  assert.equal(Object.keys(hive.beads).length, 5);
+  assert.equal(Object.keys(hive.beads).length, 7);
   assert.equal(primaryKind(hive.beads.a, [], []), 'review-working');
   const workingTile = beadTile({ hive, graph: { sessions: [...f.board.values()] } }, hive.beads.a, { cellId: 'cell', x: 0, y: 0, layout: { groupHeads: [], parentHead: {}, halo: {}, rootId: 'root' } }, new Map());
   for (const text of [workingTile.title, workingTile.mark.title, workingTile.ariaLabel]) assert.match(text, /Review races/);
@@ -1246,7 +1246,7 @@ function externalFixture() {
   };
   f.rt.beads.close = async id => { f.live[id].status = 'closed'; };
   f.addExternal = async () => {
-    await createBeads(f.rt, f.actor(), { beads: [{ ref: 'outside', kind: 'external', title: 'Teammate PR approved' }], links: [{ dependent: 'a', prerequisite: 'outside', type: 'blocks' }] });
+    await createBeads(f.rt, f.actor(), { beads: [{ ref: 'outside', kind: 'external', title: 'Teammate PR approved', parent: 'ws' }], links: [{ dependent: 'a', prerequisite: 'outside', type: 'blocks' }] });
   };
   return f;
 }
