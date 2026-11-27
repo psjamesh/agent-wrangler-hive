@@ -7,7 +7,7 @@ export function pickupFixture(limit = 8) {
   let now = 100000;
   let doc = { cells: {}, bindings: {}, operations: {}, workerLaunches: {}, reviews: {}, launches: {}, pickupReceipts: {}, pickupAttempts: {}, pickupRates: {}, conversation: {} };
   const raw = (id, parentId = null) => ({ id, title: id, description: `Build ${id}`, acceptance_criteria: `Verify ${id}`, status: 'open', updated_at: `v${++version}`, metadata: { hive_kind: parentId ? 'work' : 'goal' }, dependencies: parentId ? [{ issue_id: id, depends_on_id: parentId, type: 'parent-child' }] : [] });
-  const live = { root: raw('root'), a: raw('a', 'root'), b: raw('b', 'root') };
+  const live = { root: raw('root'), ws: { ...raw('ws', 'root'), issue_type: 'epic', metadata: { hive_kind: 'workstream' } }, a: raw('a', 'ws'), b: raw('b', 'ws') };
   doc.cells.cell = { id: 'cell', taskId: 'task', rootBeadId: 'root', enabled: true, queenSessionId: 'queen', queenGeneration: 1, setup: { state: 'ready' } };
   const board = new Map([['queen', { sessionId: 'queen', taskId: 'task', status: 'idle' }]]);
   const catalog = [{ id: 'claude', available: true, models: [{ value: 'sonnet', resolved: 'claude-sonnet-fixed', efforts: ['medium'] }], efforts: [{ value: 'medium' }], capabilities: { disallowedTools: true } }];

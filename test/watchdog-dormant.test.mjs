@@ -18,13 +18,13 @@ function fixture(t) {
   const sent = [];
   const host = { stores: { hive: rt }, sessions: { get: id => sessions[id] }, deliver: async (id, text) => { sent.push({ id, text }); return { mode: 'live' }; } };
   rt.metadata.lifetime.attach(rt, host);
-  const beads = { root: { id: 'root', status: 'open', kind: 'goal' } };
+  const beads = { root: { id: 'root', status: 'open', kind: 'goal' }, ws: { id: 'ws', parentId: 'root', status: 'open', kind: 'workstream' } };
   rt.snapshots = { current: { loadedAt: now, error: null, graph: { beads, edges: [] } }, get graph() { return this.current.graph; } };
   rt.beads.status.state = 'ready';
   rt.metadata.mutate(d => { d.cells.cell = { id: 'cell', rootBeadId: 'root', enabled: true, queenSessionId: 'queen' }; });
   const watchdog = createWatchdog({ runtime: rt, host, now: () => now });
   const flags = () => collectWatchdog(rt, host, rt.metadata.cell('cell'), now);
-  const bead = (id, extra = {}) => (beads[id] = { id, parentId: 'root', kind: 'work', status: 'in_progress', updatedAt: new Date(now).toISOString(), evidence: [], ...extra });
+  const bead = (id, extra = {}) => (beads[id] = { id, parentId: 'ws', kind: 'work', status: 'in_progress', updatedAt: new Date(now).toISOString(), evidence: [], ...extra });
   return { rt, host, sessions, beads, sent, watchdog, flags, bead, advance: ms => { now += ms; }, now: () => now };
 }
 const kinds = f => f.flags().map(x => x.kind).sort();

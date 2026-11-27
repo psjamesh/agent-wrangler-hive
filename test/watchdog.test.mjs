@@ -17,7 +17,7 @@ function fixture(t) {
   const sent = [];
   const host = { stores: { hive: rt }, sessions: { get: id => sessions[id] }, deliver: async (id, text) => { sent.push({ id, text }); return { mode: 'live' }; } };
   rt.metadata.lifetime.attach(rt, host);
-  const beads = { root: { id: 'root', status: 'open' }, work: { id: 'work', parentId: 'root', status: 'in_progress', ownerSessionId: 'worker', updatedAt: now } };
+  const beads = { root: { id: 'root', status: 'open', kind: 'goal' }, ws: { id: 'ws', parentId: 'root', status: 'open', kind: 'workstream' }, work: { id: 'work', parentId: 'ws', status: 'in_progress', ownerSessionId: 'worker', updatedAt: now } };
   rt.snapshots = { current: { loadedAt: now, error: null, graph: { beads, edges: [] } }, get graph() { return this.current.graph; } };
   rt.beads.status.state = 'ready';
   rt.metadata.mutate(d => { d.cells.cell = { id: 'cell', rootBeadId: 'root', enabled: true, queenSessionId: 'queen' }; });
@@ -365,7 +365,7 @@ test('large conversations and requests are traversed once rather than once per b
 
 test('backlogs and queen replacement send one readable digest with a receipt per item', async t => {
   const f = fixture(t);
-  for (let i = 0; i < 50; i++) f.beads[`wait${i}`] = { id: `wait${i}`, parentId: 'root', status: 'deferred', resume: { reviewAt: '2099-01-01' }, waitingFor: 'dependency', updatedAt: f.now() - 25 * 3600000 };
+  for (let i = 0; i < 50; i++) f.beads[`wait${i}`] = { id: `wait${i}`, parentId: 'ws', status: 'deferred', resume: { reviewAt: '2099-01-01' }, waitingFor: 'dependency', updatedAt: f.now() - 25 * 3600000 };
   await f.watchdog.run(); assert.equal(f.sent.length, 1);
   assert.match(f.sent[0].text, /50/); assert.match(f.sent[0].text, /stale_wait/); assert.match(f.sent[0].text, /full list/i);
   assert.ok(f.sent[0].text.length < 4000);

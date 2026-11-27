@@ -364,11 +364,11 @@ export const readyTool = hiveTool({
 
 export const createBeadsTool = hiveTool({
   name: 'hive_create_beads',
-  description: 'Create one or more cells (work items, clusters, investigations, decisions...) in your hive in one atomic step, with optional links. Give new cells a ref so later entries in the same call can use it as parent or link end. New scoped work waits at least two minutes and until a later pickup pass before default launch: include prerequisites and children in this same batch, or set hold: true until setup is complete. Worker-created follow-ups are held for queen review. Cells without a parent go under the hive goal. Links say what depends on what; they are not created by position in the view.',
+  description: 'Create one or more cells (work items, clusters, investigations, decisions...) in your hive in one atomic step, with optional links. Give new cells a ref so later entries in the same call can use it as parent or link end. New scoped work waits at least two minutes and until a later pickup pass before default launch: include prerequisites and children in this same batch, or set hold: true until setup is complete. Worker-created follow-ups are held for queen review. Every cell except a cluster must sit inside a cluster (kind workstream); only clusters may sit directly under the hive goal. A cell outside every cluster is refused with a list of candidate clusters, open and closed. Filing under a closed cluster reopens it and is reserved to the queen and human. Links say what depends on what; they are not created by position in the view.',
   inputSchema: ({ z, strictObject }) => ({
     beads: z.array(strictObject({
       ref: z.string().max(40).optional().describe('Temporary name for this call, e.g. "api".'),
-      parent: z.string().max(80).optional().describe('Parent cell id or a ref from this call. Defaults to the hive goal.'),
+      parent: z.string().max(80).optional().describe('Parent cell id or a ref from this call: a cluster or a cell inside one, unless this cell is itself a cluster. If a worker omits it, the cell goes in the cluster around that worker’s own claimed or bound cell; otherwise only a cluster may omit it (it goes under the hive goal).'),
       title: z.string().min(1).max(200).describe('Short, self-contained action or outcome in plain words, shown on the map. Put ticket or PR references after the meaningful words, or in goal/summary/evidence.'),
       kind: z.string().max(40).optional().describe('work (default), workstream (cluster), investigation, fix, review, decision, idea, external (outside prerequisite; never claimable work)...'),
       goal: z.string().max(20000).optional().describe('The outcome this cell is for.'),
@@ -401,7 +401,7 @@ export const updateBeadTool = hiveTool({
     status: z.enum(SETTABLE_STATUSES, { error: BLOCKED_STATUS_HELP }).optional(),
     resume_review_at: z.string().max(40).optional().describe('With status "deferred": a review date (e.g. 2026-12-01) after which Hive raises the cell to the queen. Empty string clears it. Deferred requires a structured condition.'),
     resume_after_bead: z.string().max(80).optional().describe('With status "deferred": a prerequisite cell id; Hive raises this cell to the queen when it closes. Empty string clears it.'),
-    parent_id: z.string().max(80).optional().describe('New parent cell id; empty string moves it under the hive goal.'),
+    parent_id: z.string().max(80).optional().describe('New parent cell id; empty string moves it under the hive goal, where only clusters may sit.'),
     expected_updated_at: z.string().max(80).optional().describe('Optional guard: the cell\'s updated_at as hive_context showed it. The update is refused if the cell has changed since. Omit to overwrite as before.'),
     add_evidence: z.array(evidenceSchema).max(20).optional(),
     remove_evidence_labels: z.array(z.string().max(200)).max(50).optional(),

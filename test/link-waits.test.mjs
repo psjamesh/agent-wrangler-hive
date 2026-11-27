@@ -19,7 +19,7 @@ for (const status of ['deferred']) {
   test(`${status} requires a structured condition, including through create and release`, async () => {
     const f = await fixture();
     await assert.rejects(updateBead(f.rt, f.actor(), { bead_id: 'a', status, waiting_for: 'After the release ships' }), /structured.*hive_link_beads.*resume_after_bead.*resume_review_at/i);
-    await assert.rejects(createBeads(f.rt, f.actor(), { beads: [{ title: 'Later', status }] }), /structured/i);
+    await assert.rejects(createBeads(f.rt, f.actor(), { beads: [{ title: 'Later', status, parent: 'ws' }] }), /structured/i);
     f.live.a.assignee = 'aw:queen';
     await assert.rejects(releaseBead(f.rt, f.actor(), { bead_id: 'a', status }), /structured/i);
   });

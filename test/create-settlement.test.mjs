@@ -5,7 +5,7 @@ import { createSnapshotCache } from '../server/snapshots.js';
 import { createBeadsTool } from './helpers/tools.mjs';
 
 const flush = () => new Promise(setImmediate);
-const input = { beads: [{ ref: 'new', title: 'New work', kind: 'investigation' }] };
+const input = { beads: [{ ref: 'new', title: 'New work', kind: 'investigation', parent: 'ws' }] };
 
 async function fixture() {
   const f = pickupFixture();
