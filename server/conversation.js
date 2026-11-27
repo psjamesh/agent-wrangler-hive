@@ -352,6 +352,8 @@ const PREVIEW = 140;
 // messages a browser holds.
 export { isHumanRequest } from './request-visibility.js';
 
+const prunedRequestScope = m => Object.hasOwn(m, 'requestScopeId') ? m.requestScopeId : m.answers?.length ? null : m.requestId;
+
 function requestScopes(doc, cellId) {
   const messages = new Map((doc.conversation[cellId] || []).map(m => [m.id, m]));
   const byMessage = new Map(), byThread = new Map(), cache = new Map();
@@ -369,7 +371,7 @@ function requestScopes(doc, cellId) {
       if (cache.has(current.id)) { scope = cache.get(current.id); break; }
       if (path.has(current.id)) { scope = 'unavailable'; break; }
       path.add(current.id);
-      if (current.requestId) { scope = current.requestId; break; }
+      if (current.requestId) { scope = doc.requests?.[current.requestId] ? current.requestId : prunedRequestScope(current); break; }
       if (Object.hasOwn(current, 'requestScopeId')) { scope = current.requestScopeId; break; }
       const parent = messages.get(current.replyTo);
       if (parent) { current = parent; continue; }
@@ -410,7 +412,7 @@ export function audienceConversationDoc(doc, cellId, viewer = { role: 'human' })
   const list = raw.filter(m => {
     const scope = scopeOf(m);
     return !hiddenTopics.has(m.threadId) && (!scope || maySeeRequest(doc.requests?.[scope], viewer));
-  }).map(m => ({ ...m, ...(m.requestId ? { text: viewer.role === 'human' ? requestDisplay(requests[m.requestId]).title : requests[m.requestId].title } : {}) }));
+  }).map(m => ({ ...m, ...(m.requestId && requests[m.requestId] ? { text: viewer.role === 'human' ? requestDisplay(requests[m.requestId]).title : requests[m.requestId].title } : {}) }));
   const visibleIds = new Set(list.map(m => m.id));
   const numbers = new Map();
   for (const m of list) {
@@ -451,7 +453,12 @@ export function preserveRequestAudience(doc, request) {
   const publicRequest = maySeeRequest(request);
   if (publicRequest) { topic.publicHistory = true; topic.publicRequestTitle = requestDisplay(request).title; }
   const scopeOf = requestScopes(doc, request.cellId);
-  for (const m of doc.conversation[request.cellId] || []) if (!m.requestId && scopeOf(m) === request.id) m.requestScopeId = publicRequest ? null : request.id;
+  for (const m of doc.conversation[request.cellId] || []) {
+    if (m.requestId === request.id) {
+      m.requestScopeId = publicRequest ? null : request.id;
+      m.text = publicRequest ? requestDisplay(request).title : request.title;
+    } else if (!m.requestId && scopeOf(m) === request.id) m.requestScopeId = publicRequest ? null : request.id;
+  }
 }
 
 function requireAudienceTarget(doc, cellId, threadId, messageId, viewer) {

@@ -1513,3 +1513,36 @@ test('same-revision PR observation events never rewrite approval metadata', asyn
   assert.deepEqual(f.rt.metadata.read().requests[r.id], changed);
   stop();
 });
+
+for (const legacy of [false, true]) test(`queen answers stay answered after ${legacy ? 'legacy ' : ''}request pruning`, async t => {
+  const f = await privacyFixture(t);
+  const human = await f.conv.recordHumanInput(f.rt, { cellId: 'cell', text: 'Can we ship it?' });
+  const hid = human.message_id || human.messageId || human.id;
+  const asked = await f.create(queen, { reply_to: hid, title: 'Ship now or wait?' });
+  assert.equal(asked.audience, 'human');
+  await requests.humanAnswer(f.rt, f.host, { request_id: asked.id, ...rev(asked), text: 'Ship now', receipt: 'ship' });
+  const secret = await f.create(worker, { title: 'SECRET PRIVATE TITLE' });
+  await requests.answerRequest(f.rt, f.host, queen, { request_id: secret.id, ...rev(secret), text: 'Private answer' });
+  if (legacy) f.rt.metadata.mutate(d => { delete d.requests[asked.id]; delete d.requests[secret.id]; });
+  else {
+    f.rt.metadata.mutate(d => {
+      const base = Date.now() + 1000;
+      for (let i = 0; i < 500; i++) {
+        const id = `hreq_${(i + 1).toString(16).padStart(12, '0')}`;
+        d.requests[id] = { ...structuredClone(d.requests[asked.id]), id, messageId: `msg_${id.slice(5)}`, state: 'resolved', updatedAt: base + i };
+      }
+    });
+    await f.create(worker, { title: 'Trigger prune' });
+  }
+  const doc = f.rt.metadata.read();
+  assert.equal(doc.requests[asked.id], undefined);
+  assert.equal(doc.requests[secret.id], undefined);
+  const ctx = await cellContextConversation(f.rt, f.host, f.actor);
+  assert.equal(ctx.awaiting_response.some(m => m.message_id === hid), false);
+  assert.equal(f.conv.inboxPage(f.rt, { cellId: 'cell', awaiting: 'queen' }).messages.some(m => m.id === hid), false);
+  assert.equal(f.projection().cells.cell.threads.some(t => t.awaiting.queen), false);
+  const seen = humanConversationDoc(doc, 'cell').conversation.cell;
+  assert.equal(seen.find(m => m.id === asked.messageId)?.text, 'Ship now or wait?');
+  assert.deepEqual(seen.find(m => m.id === hid).response.answers.map(a => a.messageId), [asked.messageId]);
+  assert.doesNotMatch(JSON.stringify(seen), /SECRET PRIVATE TITLE/);
+});
