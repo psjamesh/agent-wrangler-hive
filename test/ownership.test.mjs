@@ -2810,3 +2810,13 @@ test('updating and finishing evidence immediately enrolls PRs without a GitHub l
   assert.deepEqual(f.doc().prLabels[url].beadIds, ['a', 'b']);
   assert.equal(f.doc().prLabels[url].stateCheckedAt, null);
 });
+
+test('a move into another hive must land inside one of that hive’s clusters', async () => {
+  const f = fixture();
+  await f.rt.snapshots.refresh();
+  f.rt.metadata.mutate(d => { d.bindings.other = [{ id: 'coord', active: true, sessionId: 'queen', role: 'coordinator', beadId: 'other-ws' }]; });
+  const both = f.actor();
+  f.rt.beads.update = async (id, patch, who, check) => { check?.({ issues: Object.values(f.live), errors: [] }); };
+  await assert.rejects(updateBead(f.rt, both, { bead_id: 'a', parent_id: 'other-root' }), err => /must sit inside a cluster/.test(err.message) && /other-ws/.test(err.message) && !/- ws "ws"/.test(err.message));
+  await updateBead(f.rt, both, { bead_id: 'a', parent_id: 'other-ws' });
+});

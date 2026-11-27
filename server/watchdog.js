@@ -150,7 +150,7 @@ export function collectWatchdog(rt, host, cell, now = Date.now(), index = watchd
   if (orphans.length) {
     const shown = orphans.slice(0, 50);
     add('orphan_cell', cell.id, 'present', now,
-      `${orphans.length} cell(s) sit outside every cluster: ${shown.map(id => `${id} (${beads[id]?.title || id}${beads[id]?.status === 'closed' ? ', closed' : ''})`).join(', ')}${orphans.length > shown.length ? ', …' : ''}. File each under the cluster that shares its outcome with hive_update_bead(parent_id), creating a cluster where none fits. Filing closed cells under a closed cluster does not reopen it.`,
+      `${orphans.length} cell(s) sit outside every cluster: ${shown.map(id => `${id} (${beads[id]?.title || id}${beads[id]?.status === 'closed' ? ', closed' : ''})`).join(', ')}${orphans.length > shown.length ? ', …' : ''}. File each under the cluster that shares its outcome with hive_update_bead(parent_id), creating a cluster where none fits. Filing closed cells under a closed cluster does not reopen it. Open work can start automatically once filed under a cluster that includes existing unmarked work; hold it with hive_set_pickup first if it is not ready.`,
       { bead_ids: orphans });
   }
   const idleAvailable = open.some(bead => idleReadyCandidate(bead, cell)) && idleReadyAvailable(rt, host, cell);

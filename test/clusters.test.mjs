@@ -152,3 +152,58 @@ test('a worker cannot move open work under a closed cluster; closed work may go 
   f.live.loose.status = 'closed'; await refresh(f);
   await updateBead(f.rt, f.actor('worker', 'worker'), { bead_id: 'loose', parent_id: 'shut' });
 });
+
+test('filing closed work into a hidden archived cluster keeps the cluster archived', async () => {
+  const { archiveHidden } = await import('../public/archive-layout.js');
+  const { fileIntoArchive } = await import('../server/clusters.js');
+  const closed = (id, parentId, extra = {}) => node(id, parentId, { status: 'closed', closedAt: `${id}-at`, ...extra });
+  const beads = {
+    root: node('root', null, { kind: 'goal' }),
+    shut: closed('shut', 'root', { kind: 'workstream' }),
+    x: closed('x', 'shut'),
+    old: closed('old', 'root'),
+    oldkid: closed('oldkid', 'old'),
+    live: node('live', 'root', { kind: 'workstream' }),
+    open: node('open', 'root'),
+  };
+  const rec = (id, ids) => ({ cellId: 'cell', closedAt: `${id}-at`, ids, itemCount: ids.length - 1, positions: {}, shown: false });
+  const doc = () => ({ archived: { shut: rec('shut', ['shut', 'x']), old: rec('old', ['old', 'oldkid']) } });
+  const moved = (id, parentId) => ({ ...beads, [id]: { ...beads[id], parentId } });
+
+  const d = doc();
+  assert.equal(fileIntoArchive(d, { beads, rootId: 'root', cellId: 'cell', id: 'old', parentId: 'x' }), true);
+  assert.equal(d.archived.old, undefined);
+  assert.deepEqual(d.archived.shut.ids, ['shut', 'x', 'old', 'oldkid']);
+  assert.equal(d.archived.shut.itemCount, 3);
+  assert.deepEqual([...archiveHidden({ beads: moved('old', 'x'), rootId: 'root', archived: d.archived })].sort(), ['old', 'oldkid', 'shut', 'x']);
+
+  const visible = doc();
+  assert.equal(fileIntoArchive(visible, { beads, rootId: 'root', cellId: 'cell', id: 'old', parentId: 'live' }), false);
+  assert.equal(visible.archived.old, undefined);
+  assert.deepEqual(visible.archived.shut.ids, ['shut', 'x']);
+
+  const shown = doc(); shown.archived.shut.shown = true;
+  assert.equal(fileIntoArchive(shown, { beads, rootId: 'root', cellId: 'cell', id: 'old', parentId: 'shut' }), false);
+
+  const openWork = doc();
+  assert.equal(fileIntoArchive(openWork, { beads, rootId: 'root', cellId: 'cell', id: 'open', parentId: 'shut' }), false);
+  assert.deepEqual(openWork.archived.shut.ids, ['shut', 'x']);
+
+  const top = doc();
+  assert.equal(fileIntoArchive(top, { beads: moved('shut', 'live'), rootId: 'root', cellId: 'cell', id: 'shut', parentId: 'root' }), false);
+  assert.ok(top.archived.shut);
+});
+
+test('filing through hive_update_bead updates the archive records', async () => {
+  const f = fixture();
+  under(f, 'a', 'old', 'root', { status: 'closed', closed_at: 'old-at' });
+  f.live.shut.closed_at = 'shut-at';
+  f.rt.metadata.mutate(d => { d.archived = {
+    shut: { cellId: 'cell', closedAt: 'shut-at', ids: ['shut'], itemCount: 0, positions: {}, shown: false },
+    old: { cellId: 'cell', closedAt: 'old-at', ids: ['old'], itemCount: 0, positions: {}, shown: false },
+  }; });
+  await refresh(f);
+  await updateBead(f.rt, f.actor(), { bead_id: 'old', parent_id: 'shut' });
+  assert.equal(f.doc().archived.old, undefined);
+  assert.deepEqual(f.doc().archived.shut.ids, ['shut', 'old']);
+});

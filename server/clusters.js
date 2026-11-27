@@ -1,4 +1,5 @@
 import { descendantIds } from './bead-model.js';
+import { activeKids, archiveHidden, under } from '../public/archive-layout.js';
 
 export const CANDIDATE_LIMIT = 15;
 
@@ -74,4 +75,18 @@ export function clusterRefusal(subject, { shown, more }, { queen = true } = {}) 
 
 export function closedClusterRefusal(subject, clusterId, title) {
   return `${subject} would sit under closed cluster ${clusterId} "${title}", which reopens it. Only the queen or human can file work under a closed cluster; ask the queen with hive_request_input. Nothing was changed.`;
+}
+
+export function fileIntoArchive(doc, { beads, rootId, cellId, id, parentId }) {
+  if (parentId === rootId) return false;
+  const moved = [...under(activeKids(beads), id)];
+  const hidden = archiveHidden({ beads, rootId, archived: doc.archived });
+  let head = parentId;
+  while (head && beads[head] && beads[head].parentId !== rootId) head = beads[head].parentId;
+  const rec = head && doc.archived?.[head];
+  if (doc.archived?.[id]) delete doc.archived[id];
+  if (!rec || rec.cellId !== cellId || rec.shown || !hidden.has(head) || !moved.every((m) => beads[m]?.status === 'closed')) return false;
+  const ids = [...new Set([...(Array.isArray(rec.ids) ? rec.ids : []), ...moved])];
+  doc.archived[head] = { ...rec, ids, itemCount: ids.length - 1 };
+  return true;
 }

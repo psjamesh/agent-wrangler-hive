@@ -19,7 +19,7 @@ import {
 import { requireNonHelper, AccessError, COORDINATING_ROLES, requireBeadAccess, requireCoordinator, requireQueen, cellOfBead, requireCompleteHierarchy, waitForHierarchy, resolveCaller, participation } from './access.js';
 import { layoutBase, stackable } from '../public/layout-base.js';
 import { archiveHidden } from '../public/archive-layout.js';
-import { needsCluster, clusterAt, closedClusterAt, clusterCandidates, clusterRefusal, closedClusterRefusal } from './clusters.js';
+import { needsCluster, clusterAt, closedClusterAt, clusterCandidates, clusterRefusal, closedClusterRefusal, fileIntoArchive } from './clusters.js';
 import { inRange, MAX_COORD } from '../public/hex-search.js';
 
 export class HiveError extends Error {
@@ -1159,6 +1159,13 @@ export async function updateBead(rt, actor, input) {
         if (startsWork) return { assignee: current.assignee, status: current.status };
       } : undefined);
       phase.applied = true;
+      if (patch.parentId !== undefined) {
+        const before = rt.snapshots.graph.beads;
+        const beads = before[id] ? { ...before, [id]: { ...before[id], parentId } } : before;
+        try {
+          rt.metadata.mutate(d => { fileIntoArchive(d, { beads, rootId: targetCell.rootBeadId, cellId: targetCell.id, id, parentId: patch.parentId }); });
+        } catch (err) { rt.log?.(`hive: could not update archive records after moving ${id}: ${err.message}`); }
+      }
       if (patch.evidence) trackEvidencePrs(rt, cell, { id, evidence: patch.evidence });
       if (refreshToken && (patch.summary !== undefined || patch.nextAction !== undefined)) {
         rt.metadata.mutate(d => {
