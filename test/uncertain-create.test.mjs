@@ -23,6 +23,10 @@ test('a create that times out after starting stays uncertain, is never retried a
       };
       return;
     }
+    if (args.includes('export')) {
+      setImmediate(() => close(null, Object.values(f.live).map((issue) => JSON.stringify(issue)).join('\n'), ''));
+      return;
+    }
     if (args[0] === 'list') {
       const op = args[args.indexOf('--metadata-field') + 1].split('=')[1];
       setImmediate(() => close(null, JSON.stringify(store.filter((b) => b.metadata[HIVE_META.op] === op)), ''));

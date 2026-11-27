@@ -7,22 +7,30 @@ export function needsCluster(kind) {
   return kind !== 'workstream' && kind !== 'goal';
 }
 
-export function clusterAt(beads, rootId, fromId) {
+function clusterWhere(beads, rootId, fromId, match) {
   const seen = new Set();
-  for (let p = fromId; p && p !== rootId && beads[p] && !seen.has(p); p = beads[p].parentId) {
+  let found = null;
+  let p = fromId;
+  for (; p && p !== rootId && beads[p] && !seen.has(p); p = beads[p].parentId) {
     seen.add(p);
-    if (beads[p].kind === 'workstream') return p;
+    if (!found && beads[p].kind === 'workstream' && match(beads[p])) found = p;
   }
-  return null;
+  return p === rootId && beads[rootId] ? found : null;
+}
+
+export function clusterAt(beads, rootId, fromId) {
+  return clusterWhere(beads, rootId, fromId, () => true);
 }
 
 export function closedClusterAt(beads, rootId, fromId) {
+  return clusterWhere(beads, rootId, fromId, (b) => b.status === 'closed');
+}
+
+export function insideHive(beads, rootId, id) {
   const seen = new Set();
-  for (let p = fromId; p && p !== rootId && beads[p] && !seen.has(p); p = beads[p].parentId) {
-    seen.add(p);
-    if (beads[p].kind === 'workstream' && beads[p].status === 'closed') return p;
-  }
-  return null;
+  let p = id;
+  for (; p && p !== rootId && beads[p] && !seen.has(p); p = beads[p].parentId) seen.add(p);
+  return p === rootId && Boolean(beads[rootId]);
 }
 
 export function orphanIds(beads, rootId) {

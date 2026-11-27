@@ -45,7 +45,7 @@ async function fixture(t, status = 'in_progress') {
   const beads = createBeadsAdapter({ execFile, configuredPath: () => executable, workspaceDir: path.join(dir, 'workspace'), homeDir: path.join(dir, 'home'), scratchDir: path.join(dir, 'scratch') });
   const initialized = await beads.initialize();
   assert.equal(initialized.state.state, 'ready');
-  const { ids } = await beads.createMany({ nodes: [{ key: 'root', title: 'Root' }, { key: 'work', title: 'Work', parentKey: 'root' }] }, who, 'op_fixture');
+  const { ids } = await beads.createMany({ nodes: [{ key: 'root', title: 'Root' }, { key: 'ws', title: 'Cluster', kind: 'workstream', issueType: 'epic', parentKey: 'root' }, { key: 'work', title: 'Work', parentKey: 'ws' }] }, who, 'op_fixture');
   await beads.claim(ids.work, who);
   await beads.update(ids.work, { status }, who);
   const metadata = new MetadataStore({ file: path.join(dir, 'metadata.json') });
@@ -57,7 +57,7 @@ async function fixture(t, status = 'in_progress') {
   const host = { tasks: { get: () => ({}), forSession: () => ({ taskId: 'task_test' }) }, sessions: { forTask: () => [], get: () => null } };
   rt.host = host;
   metadata.mutate((d) => { d.bindings[cell.id] = [{ sessionId, active: true }]; });
-  return { rt, actor, host, id: ids.work, dir, control, native: (args) => JSON.parse(execFileSync(executable, args, { ...nativeOptions, encoding: 'utf8' })) };
+  return { rt, actor, host, id: ids.work, cluster: ids.ws, dir, control, native: (args) => JSON.parse(execFileSync(executable, args, { ...nativeOptions, encoding: 'utf8' })) };
 }
 
 for (const status of ['open', 'in_progress', 'deferred']) {
@@ -345,22 +345,22 @@ test('R1 reparenting fences both the old and new existing parent', async (t) => 
   const f = await fixture(t, 'deferred');
   const { ids } = await f.rt.beads.createMany({ nodes: [
     { key: 'inside', title: 'Inside', parentId: f.id },
-    { key: 'outside', title: 'Outside', parentId: f.actor.cell.rootBeadId },
+    { key: 'outside', title: 'Outside', parentId: f.cluster },
   ] }, who, 'op_children');
   await f.rt.snapshots.refresh();
   pendingRelease(f);
   await assert.rejects(updateBead(f.rt, f.actor, { bead_id: ids.outside, parent_id: f.id }), { code: 'busy' });
-  await assert.rejects(updateBead(f.rt, f.actor, { bead_id: ids.inside, parent_id: f.actor.cell.rootBeadId }), { code: 'busy' });
+  await assert.rejects(updateBead(f.rt, f.actor, { bead_id: ids.inside, parent_id: f.cluster }), { code: 'busy' });
   assert.equal((await f.rt.beads.loadSnapshot()).beads[ids.inside].parentId, f.id);
   await f.rt.beads.update(ids.outside, { parentId: f.id }, who);
   await f.rt.snapshots.refresh();
-  await assert.rejects(updateBead(f.rt, f.actor, { bead_id: ids.outside, parent_id: f.actor.cell.rootBeadId }), { code: 'busy' });
+  await assert.rejects(updateBead(f.rt, f.actor, { bead_id: ids.outside, parent_id: f.cluster }), { code: 'busy' });
 });
 
 test('review control: unrelated creation stays writable and reconciliation clears the fence', async (t) => {
   const f = await fixture(t, 'deferred');
   pendingRelease(f);
-  const result = await createBeads(f.rt, f.actor, { beads: [{ ref: 'new', title: 'Unrelated' }] });
+  const result = await createBeads(f.rt, f.actor, { beads: [{ ref: 'new', title: 'Unrelated', parent: f.cluster }] });
   await updateBead(f.rt, f.actor, { bead_id: result.ids.new, summary: 'Unrelated writes work' });
   f.rt.changed = () => {};
   await reconcileForAgent(f.rt, { ...f.actor, role: 'queen' }, { op_id: 'op_interrupted', verdict: 'not-applied', note: 'Verified no unclaim happened' });

@@ -631,7 +631,7 @@ export function createBeadsAdapter({
     return hierarchyWrite(() => createManyNow(...args));
   }
 
-  async function createManyNow({ nodes, edges = [] }, actor, opId) {
+  async function createManyNow({ nodes, edges = [] }, actor, opId, check) {
     requireReady();
     if (Array.isArray(nodes) && nodes.some(n => n.status === 'blocked')) throw new BeadsError('refused', BLOCKED_STATUS_HELP);
     if (!Array.isArray(nodes) || !nodes.length) throw new BeadsError('invalid', 'Nothing to create.');
@@ -669,7 +669,16 @@ export function createBeadsAdapter({
     const file = path.join(scratchDir, `plan-${opId}-${newId('p')}.json`);
     fs.writeFileSync(file, JSON.stringify(plan), { mode: 0o600 });
     try {
-      const res = await run(['create', '--graph', file, '--json', '--actor', actor || HUMAN_ACTOR], { write: true });
+      const argv = ['create', '--graph', file, '--json', '--actor', actor || HUMAN_ACTOR];
+      const exe = state.executable;
+      const res = check
+        ? await enqueue(async () => {
+          const exp = invalidated(exe) ? STALE : await spawnOnce(exe, ['--readonly', 'export', '--all'], { cwd: workspaceDir, timeout: READ_TIMEOUT_MS });
+          readOutcome(exp, 'Reading the Beads store');
+          check(parseExport(exp.stdout));
+          return invalidated(exe) ? STALE : spawnOnce(exe, argv, { cwd: workspaceDir, timeout: WRITE_TIMEOUT_MS });
+        })
+        : await run(argv, { write: true });
       writeOutcome(res, 'Creating beads');
       const ids = parseJson(res.stdout)?.ids;
       if (!ids || typeof ids !== 'object') throw new BeadsError('uncertain', 'bd reported success but returned no ids; the beads may exist. Reconcile before retrying.');

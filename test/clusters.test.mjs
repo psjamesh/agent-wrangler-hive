@@ -207,3 +207,79 @@ test('filing through hive_update_bead updates the archive records', async () => 
   assert.equal(f.doc().archived.old, undefined);
   assert.deepEqual(f.doc().archived.shut.ids, ['shut', 'old']);
 });
+
+function twoHives(f, { closed = false } = {}) {
+  under(f, 'root', 'other-root', null);
+  f.live['other-root'].dependencies = [];
+  under(f, 'ws', 'other-ws', 'other-root', closed ? { status: 'closed' } : {});
+  f.rt.metadata.mutate(d => { d.cells.other = { id: 'other', taskId: 'other-task', rootBeadId: 'other-root', enabled: true, queenSessionId: 'other-queen' }; });
+}
+
+const fencedCreate = f => {
+  let writes = 0;
+  f.rt.beads.createMany = async ({ nodes }, who, opId, check) => {
+    check?.({ issues: structuredClone(Object.values(f.live)), errors: [] });
+    writes++;
+    return { ids: Object.fromEntries(nodes.map(n => [n.key, `new-${n.key}`])) };
+  };
+  return () => writes;
+};
+
+test('creation rechecks closed clusters and parent hives against the store inside the write', async () => {
+  const f = fixture();
+  f.live.a.assignee = 'aw:worker';
+  twoHives(f);
+  await refresh(f);
+  const writes = fencedCreate(f);
+  f.live.ws.status = 'closed';
+  await assert.rejects(createBeads(f.rt, f.actor('worker', 'worker'), { beads: [{ title: 'Follow-up', parent: 'ws' }] }), /closed cluster ws/);
+  f.live.ws.status = 'open';
+  f.live.ws.dependencies = [{ issue_id: 'ws', depends_on_id: 'other-root', type: 'parent-child' }];
+  await assert.rejects(createBeads(f.rt, f.actor(), { beads: [{ title: 'Follow-up', parent: 'ws' }] }), err => err.code === 'conflict' && /no longer in hive cell/.test(err.message));
+  f.live.ws.dependencies = [{ issue_id: 'ws', depends_on_id: 'root', type: 'parent-child' }];
+  f.live.ws.metadata.hive_kind = 'work';
+  await assert.rejects(createBeads(f.rt, f.actor(), { beads: [{ title: 'Follow-up', parent: 'ws' }] }), /must sit inside a cluster/);
+  assert.equal(writes(), 0);
+  f.live.ws.metadata.hive_kind = 'workstream';
+  await createBeads(f.rt, f.actor(), { beads: [{ title: 'Follow-up', parent: 'ws' }] });
+  assert.equal(writes(), 1);
+});
+
+test('filing under a closed cluster needs queen authority in the destination hive', async () => {
+  const f = fixture();
+  twoHives(f, { closed: true });
+  f.rt.metadata.mutate(d => { d.bindings.other = [{ id: 'coord', active: true, sessionId: 'queen', role: 'coordinator', beadId: 'other-ws' }]; });
+  await refresh(f);
+  await assert.rejects(updateBead(f.rt, f.actor(), { bead_id: 'a', parent_id: 'other-ws' }), /Only the queen or human/);
+  f.rt.metadata.mutate(d => { d.cells.other.queenSessionId = 'queen'; });
+  await updateBead(f.rt, f.actor(), { bead_id: 'a', parent_id: 'other-ws' });
+});
+
+test('the update fence refuses a parent that moved into another hive', async () => {
+  const f = fixture();
+  twoHives(f);
+  await refresh(f);
+  f.live.b.dependencies = [{ issue_id: 'b', depends_on_id: 'other-ws', type: 'parent-child' }];
+  await assert.rejects(updateBead(f.rt, f.actor(), { bead_id: 'a', parent_id: 'b' }), err => err.code === 'conflict' && /Parent b is no longer in hive cell/.test(err.message));
+});
+
+test('the Beads adapter runs the create fence on a fresh export before creating', async t => {
+  const { hardenedAdapter } = await import('./helpers/beads-fake.mjs');
+  const f = fixture();
+  f.live.a.assignee = 'aw:worker';
+  await refresh(f);
+  f.live.ws.status = 'closed';
+  const script = (args) => (child, close) => {
+    if (args.includes('export')) return setImmediate(() => close(null, Object.values(f.live).map(issue => JSON.stringify(issue)).join('\n'), ''));
+    if (args[0] === 'create') return setImmediate(() => close(null, JSON.stringify({ ids: { n0: 'hive-new' } }), ''));
+    setImmediate(() => close(null, '', ''));
+  };
+  const real = await hardenedAdapter(t, { script });
+  f.rt.beads.hierarchy = { generation: 0, writing: false };
+  f.rt.beads.createMany = (...args) => real.adapter.createMany(...args);
+  await assert.rejects(createBeads(f.rt, f.actor('worker', 'worker'), { beads: [{ title: 'Follow-up', parent: 'ws' }] }), /closed cluster ws/);
+  assert.equal(real.spawned.filter(s => s.args[0] === 'create').length, 0);
+  f.live.ws.status = 'open';
+  await createBeads(f.rt, f.actor('worker', 'worker'), { beads: [{ title: 'Follow-up', parent: 'ws' }] });
+  assert.equal(real.spawned.filter(s => s.args[0] === 'create').length, 1);
+});
